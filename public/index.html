@@ -9,55 +9,53 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
+        <div class="topbar-title">
           <p class="eyebrow">OpenClaw</p>
           <h1>指挥中心</h1>
         </div>
+        <section class="topbar-status">
+          <div class="inline-status inline-status-selectable">
+            <span class="status-label">模型</span>
+            <button id="model-menu-button" class="status-menu-trigger" type="button" aria-label="选择模型" aria-expanded="false">▾</button>
+            <div id="model-menu" class="status-menu" hidden></div>
+            <strong id="model-badge">未知</strong>
+            <small id="model-meta" class="status-meta">未连接</small>
+          </div>
+          <div class="inline-status inline-status-selectable">
+            <span class="status-label">Agent</span>
+            <button id="agent-menu-button" class="status-menu-trigger" type="button" aria-label="选择 Agent" aria-expanded="false">▾</button>
+            <div id="agent-menu" class="status-menu" hidden></div>
+            <strong id="agent-badge">main</strong>
+            <small id="session-badge" class="status-meta">等待会话</small>
+          </div>
+          <div class="inline-status">
+            <span class="status-label">运行状态</span>
+            <strong id="status-badge">空闲</strong>
+            <small id="runtime-badge" class="status-meta">mock</small>
+          </div>
+          <div class="inline-status">
+            <span class="status-label">快速模式</span>
+            <label class="status-toggle">
+              <input id="fast-mode" type="checkbox" />
+              <span id="fast-badge">关闭</span>
+            </label>
+            <small id="mode-badge" class="status-meta">模拟</small>
+          </div>
+          <div class="inline-status">
+            <span class="status-label">上下文</span>
+            <strong><span id="context-length">0</span> / <span id="context-max">16000</span></strong>
+            <small id="context-meta" class="status-meta">等待状态</small>
+          </div>
+          <div class="inline-status">
+            <span class="status-label">队列</span>
+            <strong id="queue-badge">无</strong>
+            <small id="updated-badge" class="status-meta">暂无更新</small>
+          </div>
+        </section>
         <div class="topbar-controls">
-          <label class="field compact">
-            <span>模型</span>
-            <input id="model-input" type="text" value="" placeholder="等待检测真实模型" />
-          </label>
-          <label class="toggle">
-            <input id="fast-mode" type="checkbox" />
-            <span>快速模式</span>
-          </label>
-          <button id="reset-button" class="ghost">重置会话</button>
+          <button id="reset-button" class="ghost compact-button" title="重置对话 (⌘N)">重置对话</button>
         </div>
       </header>
-
-      <section class="status-strip">
-        <article class="status-card">
-          <span class="status-label">模型</span>
-          <strong id="model-badge">未知</strong>
-          <small id="model-meta" class="status-meta">未连接</small>
-        </article>
-        <article class="status-card">
-          <span class="status-label">Agent</span>
-          <strong id="agent-badge">main</strong>
-          <small id="session-badge" class="status-meta">等待会话</small>
-        </article>
-        <article class="status-card">
-          <span class="status-label">运行状态</span>
-          <strong id="status-badge">空闲</strong>
-          <small id="runtime-badge" class="status-meta">mock</small>
-        </article>
-        <article class="status-card">
-          <span class="status-label">快速模式</span>
-          <strong id="fast-badge">关闭</strong>
-          <small id="mode-badge" class="status-meta">模拟</small>
-        </article>
-        <article class="status-card">
-          <span class="status-label">上下文长度</span>
-          <strong><span id="context-length">0</span> / <span id="context-max">16000</span></strong>
-          <small id="context-meta" class="status-meta">等待状态</small>
-        </article>
-        <article class="status-card">
-          <span class="status-label">队列</span>
-          <strong id="queue-badge">无</strong>
-          <small id="updated-badge" class="status-meta">暂无更新</small>
-        </article>
-      </section>
 
       <main class="layout">
         <section class="chat-panel panel">
@@ -66,7 +64,6 @@
               <p class="eyebrow">对话</p>
               <h2>会话窗口</h2>
             </div>
-            <button id="seed-button" class="ghost">加载示例</button>
           </div>
 
           <div id="message-list" class="message-list"></div>
@@ -77,95 +74,96 @@
               <textarea id="prompt-input" rows="4" placeholder="描述你希望 Agent 在当前 workspace 中完成什么。"></textarea>
             </label>
             <div class="composer-actions">
-              <span id="request-hint">回车发送，Shift + 回车换行</span>
+              <span id="request-hint">Shift + 回车发送，回车换行</span>
               <button id="send-button">发送</button>
             </div>
           </div>
         </section>
 
-        <section class="right-rail">
-          <article class="panel stack-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">上下文</p>
-                <h2>会话摘要</h2>
-              </div>
-            </div>
-            <p id="session-summary" class="summary-text">暂无对话。</p>
-          </article>
-
-          <article class="panel stack-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">追踪</p>
-                <h2>工具历史</h2>
-              </div>
-            </div>
-            <div id="tool-list" class="list"></div>
-          </article>
-
-          <article class="panel stack-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">文件</p>
-                <h2>引入文件</h2>
-              </div>
-            </div>
-            <div id="file-list" class="list"></div>
-          </article>
-
-          <article class="panel stack-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">产出</p>
-                <h2>产出物</h2>
-              </div>
-            </div>
-            <div id="artifact-list" class="list"></div>
-          </article>
-
-          <article class="panel stack-panel">
-          <div class="panel-head">
-            <div>
-                <p class="eyebrow">恢复</p>
-                <h2>快照</h2>
-            </div>
+        <section class="right-rail panel">
+          <div class="tabbar" id="side-tabs">
+            <button type="button" class="tab-button is-active" data-tab="timeline">执行</button>
+            <button type="button" class="tab-button" data-tab="files">文件</button>
+            <button type="button" class="tab-button" data-tab="artifacts">产出</button>
+            <button type="button" class="tab-button" data-tab="snapshots">快照</button>
+            <button type="button" class="tab-button" data-tab="agents">协作</button>
+            <button type="button" class="tab-button" data-tab="peek">预览</button>
           </div>
-          <div id="snapshot-list" class="list"></div>
-        </article>
 
-          <article class="panel stack-panel">
-          <div class="panel-head">
-            <div>
-                <p class="eyebrow">协作</p>
-                <h2>Agent 结构</h2>
-            </div>
-          </div>
-          <div id="agent-graph" class="agent-graph"></div>
-        </article>
-
-          <article class="panel stack-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">预览</p>
-                <h2>工作区 / 终端 / 浏览器</h2>
+          <div class="tab-panels">
+            <article class="tab-panel is-active" data-tab-panel="timeline">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">追踪</p>
+                  <h2>执行时间线</h2>
+                </div>
               </div>
-            </div>
-          <div class="peek-grid">
-            <div class="list-item">
-                <span class="peek-label">工作区</span>
-                <p id="workspace-peek">等待加载…</p>
-            </div>
-            <div class="list-item">
-                <span class="peek-label">终端</span>
-                <p id="terminal-peek">等待加载…</p>
-            </div>
-            <div class="list-item">
-                <span class="peek-label">浏览器</span>
-                <p id="browser-peek">等待加载…</p>
-            </div>
+              <div id="tool-list" class="list"></div>
+            </article>
+
+            <article class="tab-panel" data-tab-panel="files">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">文件</p>
+                  <h2>引入文件</h2>
+                </div>
+              </div>
+              <div id="file-list" class="list"></div>
+            </article>
+
+            <article class="tab-panel" data-tab-panel="artifacts">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">产出</p>
+                  <h2>产出物</h2>
+                </div>
+              </div>
+              <div id="artifact-list" class="list"></div>
+            </article>
+
+            <article class="tab-panel" data-tab-panel="snapshots">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">恢复</p>
+                  <h2>快照</h2>
+                </div>
+              </div>
+              <div id="snapshot-list" class="list"></div>
+            </article>
+
+            <article class="tab-panel" data-tab-panel="agents">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">协作</p>
+                  <h2>Agent 结构</h2>
+                </div>
+              </div>
+              <div id="agent-graph" class="agent-graph"></div>
+            </article>
+
+            <article class="tab-panel" data-tab-panel="peek">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">预览</p>
+                  <h2>工作区 / 终端 / 浏览器</h2>
+                </div>
+              </div>
+              <div class="peek-grid">
+                <div class="list-item">
+                  <span class="peek-label">工作区</span>
+                  <p id="workspace-peek">等待加载…</p>
+                </div>
+                <div class="list-item">
+                  <span class="peek-label">终端</span>
+                  <p id="terminal-peek">等待加载…</p>
+                </div>
+                <div class="list-item">
+                  <span class="peek-label">浏览器</span>
+                  <p id="browser-peek">等待加载…</p>
+                </div>
+              </div>
+            </article>
           </div>
-        </article>
         </section>
       </main>
     </div>
@@ -176,7 +174,7 @@
           <span class="message-role"></span>
           <time class="message-time"></time>
         </header>
-        <pre class="message-body"></pre>
+        <div class="message-body"></div>
       </article>
     </template>
 

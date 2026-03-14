@@ -6,6 +6,7 @@ const { URL } = require('node:url');
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const DIST_DIR = path.join(__dirname, 'dist');
 const HOME_DIR = process.env.HOME || '';
 const PROJECT_ROOT = __dirname;
 const LOCAL_OPENCLAW_CONFIG = path.join(HOME_DIR, '.openclaw', 'openclaw.json');
@@ -46,6 +47,47 @@ function resolveDefaultAgentId(localConfig) {
   return process.env.OPENCLAW_AGENT_ID || defaultAgent?.id || 'main';
 }
 
+function resolveAgentModel(agent) {
+  return agent?.model?.primary || (typeof agent?.model === 'string' ? agent.model : '');
+}
+
+function collectAvailableModels(localConfig, preferred = []) {
+  const seen = new Set();
+  const ordered = [];
+
+  function addModel(value) {
+    const model = String(value || '').trim();
+    if (!model || seen.has(model)) {
+      return;
+    }
+    seen.add(model);
+    ordered.push(model);
+  }
+
+  preferred.forEach(addModel);
+  addModel(localConfig?.agents?.defaults?.model?.primary);
+  (localConfig?.agents?.list || []).forEach((agent) => addModel(resolveAgentModel(agent)));
+  return ordered;
+}
+
+function collectAvailableAgents(localConfig, preferred = []) {
+  const seen = new Set();
+  const ordered = [];
+
+  function addAgent(value) {
+    const agentId = String(value || '').trim();
+    if (!agentId || seen.has(agentId)) {
+      return;
+    }
+    seen.add(agentId);
+    ordered.push(agentId);
+  }
+
+  preferred.forEach(addAgent);
+  (localConfig?.agents?.list || []).forEach((agent) => addAgent(agent?.id));
+  return ordered;
+}
+
 function buildRuntimeConfig() {
   const localConfig = readJsonIfExists(LOCAL_OPENCLAW_CONFIG);
   const localGatewayPort = Number(localConfig?.gateway?.port || 18789);
@@ -56,11 +98,14 @@ function buildRuntimeConfig() {
   const envAgentId = process.env.OPENCLAW_AGENT_ID || '';
   const baseUrl = envBaseUrl || (localToken ? `http://127.0.0.1:${localGatewayPort}` : '');
   const agentId = envAgentId || localAgentId;
+  const defaultModel = localConfig?.agents?.defaults?.model?.primary || resolveAgentModel(localConfig?.agents?.list?.find((agent) => agent?.id === agentId));
   const workspaceRoot = localConfig?.agents?.defaults?.workspace || path.join(LOCAL_OPENCLAW_DIR, 'workspace');
+  const availableModels = collectAvailableModels(localConfig, [envModel]);
+  const availableAgents = collectAvailableAgents(localConfig, [agentId]);
 
   return {
     mode: baseUrl ? 'openclaw' : 'mock',
-    model: envModel || 'openclaw',
+    model: envModel || defaultModel || 'openclaw',
     agentId,
     baseUrl,
     apiKey: process.env.OPENCLAW_API_KEY || localToken,
@@ -73,10 +118,16 @@ function buildRuntimeConfig() {
     healthPort: localGatewayPort + 3,
     workspaceRoot,
     logsDir: path.join(LOCAL_OPENCLAW_DIR, 'logs'),
+    availableModels,
+    availableAgents,
   };
 }
 
 const config = buildRuntimeConfig();
+
+function getStaticDir() {
+  return fileExists(DIST_DIR) ? DIST_DIR : PUBLIC_DIR;
+}
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -146,7 +197,18 @@ function clip(text, maxLength = 140) {
     return '';
   }
 
-  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+  const normalized =
+    typeof text === 'string'
+      ? text
+      : (() => {
+          try {
+            return JSON.stringify(text, null, 2);
+          } catch {
+            return String(text);
+          }
+        })();
+
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
 }
 
 function summarizeMessages(messages) {
@@ -232,8 +294,18 @@ function tailLines(text, maxLines = 6) {
     .slice(-maxLines);
 }
 
-function getCommandCenterSessionKey(agentId = config.agentId) {
-  return `agent:${agentId}:openai-user:command-center`;
+function normalizeSessionUser(sessionUser = '') {
+  const normalized = String(sessionUser || 'command-center')
+    .trim()
+    .replace(/[^\w:-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-:]+|[-:]+$/g, '');
+
+  return normalized || 'command-center';
+}
+
+function getCommandCenterSessionKey(agentId = config.agentId, sessionUser = 'command-center') {
+  return `agent:${agentId}:openai-user:${normalizeSessionUser(sessionUser)}`;
 }
 
 function getSessionsIndexPath(agentId) {
@@ -316,6 +388,7 @@ function translateUpdatedLabel(label) {
 
   return String(label)
     .replace('updated just now', '刚刚更新')
+    .replace(/^updated\s+/i, '')
     .replace(/(\d+)m ago/g, '$1 分钟前')
     .replace(/(\d+)h ago/g, '$1 小时前');
 }
@@ -444,6 +517,7 @@ function collectFiles(entries, roots) {
           path: resolved.startsWith(PROJECT_ROOT) ? path.relative(PROJECT_ROOT, resolved) : resolved,
           kind: stat.isDirectory() ? '目录' : '文件',
           updatedAt: stat.mtimeMs,
+          updatedLabel: formatTimestamp(stat.mtimeMs),
         });
       }
     }
@@ -547,6 +621,151 @@ function collectToolHistory(entries) {
   }
 
   return history.slice(-12).reverse();
+}
+
+function summarizeToolsForRun(tools) {
+  if (!tools.length) {
+    return '本轮未调用工具';
+  }
+
+  return tools
+    .map((tool) => `${tool.name}(${tool.status})`)
+    .join(' · ');
+}
+
+function collectTaskTimeline(entries, roots) {
+  const runs = [];
+  let currentRun = null;
+  const unresolvedCalls = new Map();
+
+  function ensureRun(timestamp) {
+    if (currentRun) {
+      return currentRun;
+    }
+
+    currentRun = {
+      id: `run-${timestamp || Date.now()}`,
+      title: `执行 ${formatTimestamp(timestamp || Date.now())}`,
+      prompt: '',
+      timestamp: timestamp || Date.now(),
+      tools: [],
+      files: new Map(),
+      snapshots: [],
+      outcome: '',
+      status: '进行中',
+    };
+    runs.push(currentRun);
+    return currentRun;
+  }
+
+  for (const entry of entries) {
+    if (entry.type !== 'message') {
+      continue;
+    }
+
+    const payload = entry.message || {};
+    const timestamp = payload.timestamp || entry.timestamp || Date.now();
+    const content = Array.isArray(payload.content) ? payload.content : [];
+
+    if (payload.role === 'user') {
+      currentRun = {
+        id: entry.id || `run-${timestamp}`,
+        title: `执行 ${formatTimestamp(timestamp)}`,
+        prompt: clip(extractPlainTextSegments(content).join('\n\n'), 160),
+        timestamp,
+        tools: [],
+        files: new Map(),
+        snapshots: [],
+        outcome: '',
+        status: '进行中',
+      };
+      runs.push(currentRun);
+      continue;
+    }
+
+    const run = ensureRun(timestamp);
+
+    if (payload.role === 'assistant') {
+      for (const item of content) {
+        if (item?.type !== 'toolCall') {
+          continue;
+        }
+
+        const toolEvent = {
+          id: item.id,
+          name: item.name || 'tool.call',
+          status: '执行中',
+          input: clip(item.arguments || item.partialJson || '{}', 600),
+          output: '',
+          detail: clip(item.arguments || item.partialJson || '{}', 120),
+          timestamp,
+        };
+        run.tools.push(toolEvent);
+        unresolvedCalls.set(item.id, toolEvent);
+      }
+
+      const reply = cleanAssistantReply(extractPlainTextSegments(content).join('\n\n'));
+      if (reply) {
+        run.outcome = clip(reply, 180);
+        run.snapshots.push({
+          id: entry.id || `snapshot-${timestamp}`,
+          title: `快照 ${formatTimestamp(timestamp)}`,
+          detail: clip(reply, 120),
+          timestamp,
+        });
+        if (run.status !== '失败') {
+          run.status = '已完成';
+        }
+      }
+    }
+
+    if (payload.role === 'toolResult') {
+      const detail = clip(extractTextSegments(content).join('\n'), 600);
+      const pending = unresolvedCalls.get(payload.toolCallId);
+      const status = payload.details?.isError ? '失败' : '完成';
+      if (pending) {
+        pending.status = status;
+        pending.output = detail || pending.output;
+        pending.detail = clip(detail || pending.detail, 120);
+      } else {
+        run.tools.push({
+          id: payload.toolCallId || `${timestamp}`,
+          name: payload.toolName || 'tool.result',
+          status,
+          input: '',
+          output: detail,
+          detail: clip(detail, 120),
+          timestamp,
+        });
+      }
+
+      if (status === '失败') {
+        run.status = '失败';
+      }
+    }
+
+    const fileMatches = collectFiles([entry], roots);
+    for (const item of fileMatches) {
+      run.files.set(item.path, item);
+    }
+  }
+
+  return runs
+    .map((run) => ({
+      id: run.id,
+      title: run.title,
+      timestamp: run.timestamp,
+      prompt: run.prompt || '未记录输入',
+      status: run.status,
+      tools: run.tools,
+      toolsSummary: summarizeToolsForRun(run.tools),
+      files: [...run.files.values()].slice(0, 6),
+      snapshots: run.snapshots.slice(-3).reverse(),
+      outcome: run.outcome || '执行仍在进行，等待最终回复。',
+    }))
+    .filter((run) => run.prompt || run.tools.length || run.outcome)
+    .slice(-8)
+    .reverse();
 }
 
 function collectAgentActivity(agentId) {
@@ -698,14 +917,17 @@ function buildTerminalPeek() {
   };
 }
 
-function buildMockSnapshot(fastMode) {
+function buildMockSnapshot(fastMode, sessionUser = 'command-center') {
   const now = Date.now();
   return {
     session: {
       mode: 'mock',
       model: config.model,
+      selectedModel: config.model,
       agentId: config.agentId,
-      sessionKey: '',
+      selectedAgentId: config.agentId,
+      sessionUser: normalizeSessionUser(sessionUser),
+      sessionKey: getCommandCenterSessionKey(config.agentId, sessionUser),
       status: '已完成',
       fastMode: fastMode ? '开启' : '关闭',
       contextUsed: 0,
@@ -714,7 +936,35 @@ function buildMockSnapshot(fastMode) {
       runtime: 'mock',
       queue: 'none',
       updatedLabel: '刚刚',
+      availableModels: config.availableModels.length ? config.availableModels : [config.model],
+      availableAgents: config.availableAgents.length ? config.availableAgents : [config.agentId],
     },
+    taskTimeline: [
+      {
+        id: `run-${now}`,
+        title: `执行 ${formatTimestamp(now)}`,
+        timestamp: now,
+        prompt: '搭建最小 Command Center 原型',
+        status: '已完成',
+        toolsSummary: fastMode ? 'workspace.scan(完成) · planner.fast-path(完成)' : 'workspace.scan(完成) · planner.standard-path(完成)',
+        tools: [
+          { name: 'workspace.scan', status: '完成', input: '{}', output: '已扫描当前项目目录。', detail: '已扫描当前项目目录。' },
+          {
+            name: fastMode ? 'planner.fast-path' : 'planner.standard-path',
+            status: '完成',
+            input: '{"target":"command-center"}',
+            output: '已生成最小可运行原型。',
+            detail: '已生成最小可运行原型。',
+          },
+        ],
+        files: [
+          { path: 'server.js', kind: '文件', updatedLabel: formatTimestamp(now) },
+          { path: 'public/index.html', kind: '文件', updatedLabel: formatTimestamp(now) },
+        ],
+        snapshots: [{ id: `snapshot-${now}`, title: `快照 ${formatTimestamp(now)}`, detail: 'mock 会话快照', timestamp: now }],
+        outcome: 'mock 模式下的演示执行。',
+      },
+    ],
     toolHistory: [
       { name: 'workspace.scan', status: '完成', detail: '已扫描当前项目目录。', timestamp: now },
       { name: fastMode ? 'planner.fast-path' : 'planner.standard-path', status: '完成', detail: '已生成最小可运行原型。', timestamp: now },
@@ -740,8 +990,8 @@ function buildMockSnapshot(fastMode) {
   };
 }
 
-async function buildOpenClawSnapshot(fastMode) {
-  const sessionKey = getCommandCenterSessionKey(config.agentId);
+async function buildOpenClawSnapshot(fastMode, sessionUser = 'command-center') {
+  const sessionKey = getCommandCenterSessionKey(config.agentId, sessionUser);
   const sessionRecord = resolveSessionRecord(config.agentId, sessionKey);
   const transcriptPath = sessionRecord ? getTranscriptPath(config.agentId, sessionRecord.sessionId) : '';
   const entries = transcriptPath ? readJsonLines(transcriptPath).slice(-240) : [];
@@ -763,12 +1013,17 @@ async function buildOpenClawSnapshot(fastMode) {
     latestAssistant?.message?.model ||
     config.localConfig?.agents?.defaults?.model?.primary ||
     config.model;
+  const availableModels = collectAvailableModels(config.localConfig, [config.model, latestModel]);
+  const availableAgents = collectAvailableAgents(config.localConfig, [config.agentId]);
 
   return {
     session: {
       mode: 'openclaw',
       model: latestModel,
+      selectedModel: config.model || latestModel,
       agentId: config.agentId,
+      selectedAgentId: config.agentId,
+      sessionUser: normalizeSessionUser(sessionUser),
       sessionKey: parsedStatus?.sessionKey || sessionKey,
       status: '就绪',
       fastMode: fastMode ? '开启' : '关闭',
@@ -786,7 +1041,10 @@ async function buildOpenClawSnapshot(fastMode) {
       tokens: parsedStatus?.tokensDisplay || '',
       auth: parsedStatus?.authDisplay || '',
       time: parsedStatus?.time || '',
+      availableModels,
+      availableAgents,
     },
+    taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot]),
     toolHistory: collectToolHistory(entries),
     files: collectFiles(entries, [PROJECT_ROOT, config.workspaceRoot]),
     artifacts: collectArtifacts(entries),
@@ -800,14 +1058,14 @@ async function buildOpenClawSnapshot(fastMode) {
   };
 }
 
-async function buildDashboardSnapshot(fastMode = false) {
+async function buildDashboardSnapshot(fastMode = false, sessionUser = 'command-center') {
   if (config.mode !== 'openclaw') {
-    return buildMockSnapshot(fastMode);
+    return buildMockSnapshot(fastMode, sessionUser);
   }
-  return await buildOpenClawSnapshot(fastMode);
+  return await buildOpenClawSnapshot(fastMode, sessionUser);
 }
 
-async function callOpenClaw(messages, fastMode) {
+async function callOpenClaw(messages, fastMode, sessionUser = 'command-center') {
   const endpoint = new URL(config.apiPath, config.baseUrl).toString();
   const headers = {
     'Content-Type': 'application/json',
@@ -844,7 +1102,7 @@ async function callOpenClaw(messages, fastMode) {
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       temperature: fastMode ? 0.3 : 0.7,
       stream: false,
-      user: 'command-center',
+      user: normalizeSessionUser(sessionUser),
     };
   }
 
@@ -883,11 +1141,13 @@ async function handleChat(req, res) {
     const body = await parseRequestBody(req);
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const fastMode = Boolean(body.fastMode);
+    const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
     config.model = body.model || config.model;
+    config.agentId = body.agentId || config.agentId;
 
     const reply =
       config.mode === 'openclaw'
-        ? await callOpenClaw(messages, fastMode)
+        ? await callOpenClaw(messages, fastMode, sessionUser)
         : {
             outputText: [
               'OpenClaw command channel is online in mock mode.',
@@ -896,7 +1156,7 @@ async function handleChat(req, res) {
             usage: null,
           };
 
-    const snapshot = await buildDashboardSnapshot(fastMode);
+    const snapshot = await buildDashboardSnapshot(fastMode, sessionUser);
     snapshot.session.status = fastMode ? '已完成 / 快速' : '已完成 / 标准';
     const resolvedModel = snapshot.session?.model || config.model;
 
@@ -920,9 +1180,10 @@ async function handleChat(req, res) {
   }
 }
 
-async function handleRuntime(res) {
+async function handleRuntime(req, res) {
   try {
-    const snapshot = await buildDashboardSnapshot(false);
+    const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
+    const snapshot = await buildDashboardSnapshot(false, sessionUser);
     const resolvedModel = snapshot.session?.model || config.model;
     sendJson(res, 200, {
       ok: true,
@@ -935,11 +1196,16 @@ async function handleRuntime(res) {
   }
 }
 
-function handleSession(res) {
+function handleSession(req, res) {
+  const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
   sendJson(res, 200, {
     mode: config.mode,
     model: config.model,
     agentId: config.agentId,
+    sessionUser,
+    sessionKey: getCommandCenterSessionKey(config.agentId, sessionUser),
+    availableModels: config.availableModels,
+    availableAgents: config.availableAgents,
     apiStyle: config.apiStyle,
     hasBaseUrl: Boolean(config.baseUrl),
     hasApiKey: Boolean(config.apiKey),
@@ -947,16 +1213,48 @@ function handleSession(res) {
   });
 }
 
+async function handleSessionUpdate(req, res) {
+  try {
+    const body = await parseRequestBody(req);
+    const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+    if (body.model) {
+      config.model = String(body.model).trim() || config.model;
+      config.availableModels = collectAvailableModels(config.localConfig, [config.model]);
+    }
+    if (body.agentId) {
+      config.agentId = String(body.agentId).trim() || config.agentId;
+      config.availableAgents = collectAvailableAgents(config.localConfig, [config.agentId]);
+    }
+
+    const snapshot = await buildDashboardSnapshot(false, sessionUser);
+    sendJson(res, 200, {
+      ok: true,
+      mode: config.mode,
+      model: config.model,
+      agentId: config.agentId,
+      sessionUser,
+      ...snapshot,
+    });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || 'Session update failed' });
+  }
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (req.method === 'GET' && url.pathname === '/api/session') {
-    handleSession(res);
+    handleSession(req, res);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/session') {
+    handleSessionUpdate(req, res);
     return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/runtime') {
-    handleRuntime(res);
+    handleRuntime(req, res);
     return;
   }
 
@@ -970,11 +1268,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const staticDir = getStaticDir();
   const requestedPath = url.pathname === '/' ? '/index.html' : url.pathname;
-  const safePath = path.normalize(requestedPath).replace(/^(\.\.[/\\])+/, '');
-  const filePath = path.join(PUBLIC_DIR, safePath);
+  const safePath = path.normalize(requestedPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
+  const filePath = path.join(staticDir, safePath);
 
-  if (!filePath.startsWith(PUBLIC_DIR)) {
+  if (!filePath.startsWith(staticDir)) {
     sendJson(res, 403, { error: 'Forbidden' });
     return;
   }
