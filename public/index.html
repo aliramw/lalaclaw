@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CommandCenter</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">OpenClaw Agent Surface</p>
+          <h1>Command Center</h1>
+        </div>
+        <div class="topbar-controls">
+          <label class="field compact">
+            <span>Model</span>
+            <input id="model-input" type="text" value="openclaw-agent" />
+          </label>
+          <label class="toggle">
+            <input id="fast-mode" type="checkbox" />
+            <span>Fast Mode</span>
+          </label>
+          <button id="reset-button" class="ghost">Reset Session</button>
+        </div>
+      </header>
+
+      <section class="status-strip">
+        <article class="status-card">
+          <span class="status-label">Mode</span>
+          <strong id="mode-badge">mock</strong>
+        </article>
+        <article class="status-card">
+          <span class="status-label">Status</span>
+          <strong id="status-badge">Idle</strong>
+        </article>
+        <article class="status-card">
+          <span class="status-label">Context</span>
+          <strong><span id="context-length">0</span> / <span id="context-max">16000</span></strong>
+        </article>
+        <article class="status-card">
+          <span class="status-label">Imported Files</span>
+          <strong id="file-count">0</strong>
+        </article>
+      </section>
+
+      <main class="layout">
+        <section class="chat-panel panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Dialogue</p>
+              <h2>Agent Console</h2>
+            </div>
+            <button id="seed-button" class="ghost">Load Seed Prompt</button>
+          </div>
+
+          <div id="message-list" class="message-list"></div>
+
+          <div class="composer">
+            <label class="field">
+              <span>Operator Prompt</span>
+              <textarea id="prompt-input" rows="5" placeholder="描述你希望 Agent 在 workspace 里完成什么。"></textarea>
+            </label>
+            <div class="composer-actions">
+              <span id="request-hint">Enter to send, Shift+Enter for newline</span>
+              <button id="send-button">Dispatch</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="right-rail">
+          <article class="panel stack-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Context</p>
+                <h2>Session Summary</h2>
+              </div>
+            </div>
+            <p id="session-summary" class="summary-text">No conversation yet.</p>
+          </article>
+
+          <article class="panel stack-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Trace</p>
+                <h2>Tool History</h2>
+              </div>
+            </div>
+            <div id="tool-list" class="list"></div>
+          </article>
+
+          <article class="panel stack-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Files</p>
+                <h2>Imported Files</h2>
+              </div>
+            </div>
+            <div id="file-list" class="list"></div>
+          </article>
+
+          <article class="panel stack-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Output</p>
+                <h2>Artifacts</h2>
+              </div>
+            </div>
+            <div id="artifact-list" class="list"></div>
+          </article>
+        </section>
+      </main>
+
+      <section class="bottom-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Recovery</p>
+              <h2>Snapshots</h2>
+            </div>
+          </div>
+          <div id="snapshot-list" class="list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Coordination</p>
+              <h2>Agent Graph</h2>
+            </div>
+          </div>
+          <div id="agent-graph" class="agent-graph"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Peek</p>
+              <h2>Workspace / Terminal / Browser</h2>
+            </div>
+          </div>
+          <div class="peek-grid">
+            <div>
+              <span class="peek-label">Workspace</span>
+              <p>Bootstrap prototype with local Node runtime.</p>
+            </div>
+            <div>
+              <span class="peek-label">Terminal</span>
+              <p>Use `node server.js` to run. OpenClaw wiring is env-driven.</p>
+            </div>
+            <div>
+              <span class="peek-label">Browser</span>
+              <p>Single-page cockpit for chat, trace, artifacts, and state.</p>
+            </div>
+          </div>
+        </article>
+      </section>
+    </div>
+
+    <template id="message-template">
+      <article class="message">
+        <header>
+          <span class="message-role"></span>
+          <time class="message-time"></time>
+        </header>
+        <pre class="message-body"></pre>
+      </article>
+    </template>
+
+    <script src="/app.js" defer></script>
+  </body>
+  </html>

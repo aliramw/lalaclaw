@@ -1,0 +1,365 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1117;
+  --panel: rgba(12, 21, 29, 0.88);
+  --panel-strong: rgba(16, 29, 39, 0.98);
+  --line: rgba(112, 172, 195, 0.2);
+  --line-strong: rgba(136, 198, 222, 0.42);
+  --text: #edf7f8;
+  --muted: #8ea8ad;
+  --accent: #5be7c4;
+  --accent-strong: #9ff0db;
+  --warning: #f4b06c;
+  --shadow: 0 20px 80px rgba(0, 0, 0, 0.38);
+  --font-display: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-display);
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(91, 231, 196, 0.12), transparent 32%),
+    radial-gradient(circle at top right, rgba(125, 168, 255, 0.12), transparent 28%),
+    linear-gradient(180deg, #081015 0%, #0d161d 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(91, 231, 196, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 231, 196, 0.035) 1px, transparent 1px);
+  background-size: 26px 26px;
+  pointer-events: none;
+  mask-image: radial-gradient(circle at center, black, transparent 78%);
+}
+
+.app-shell {
+  position: relative;
+  z-index: 1;
+  max-width: 1520px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.topbar,
+.status-strip,
+.layout,
+.bottom-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.topbar {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.topbar h1,
+.panel-head h2 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.topbar-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.status-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.status-card,
+.panel {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(12, 21, 29, 0.95), rgba(10, 17, 23, 0.85));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.status-card {
+  border-radius: 18px;
+  padding: 14px 18px;
+}
+
+.status-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.layout {
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
+  align-items: start;
+}
+
+.right-rail,
+.bottom-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.bottom-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.panel {
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.stack-panel {
+  min-height: 180px;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.chat-panel {
+  min-height: 720px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.message-list {
+  min-height: 480px;
+  max-height: 58vh;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.message {
+  border: 1px solid rgba(136, 198, 222, 0.14);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(12, 21, 29, 0.76);
+}
+
+.message[data-role="user"] {
+  border-color: rgba(91, 231, 196, 0.28);
+  background: linear-gradient(180deg, rgba(12, 21, 29, 0.92), rgba(15, 35, 35, 0.9));
+}
+
+.message[data-role="assistant"] {
+  border-color: rgba(118, 168, 255, 0.22);
+}
+
+.message header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.message-body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.93rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.composer {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.field.compact {
+  min-width: 220px;
+}
+
+.field span,
+#request-hint,
+.summary-text,
+.list-item small,
+.peek-label {
+  color: var(--muted);
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: rgba(4, 10, 15, 0.7);
+  outline: none;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px rgba(91, 231, 196, 0.08);
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 18px;
+  background: linear-gradient(135deg, var(--accent), #83d3ff);
+  color: #041015;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.ghost {
+  background: rgba(14, 25, 34, 0.84);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.toggle input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+}
+
+.list-item {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(136, 198, 222, 0.14);
+  background: rgba(4, 10, 15, 0.34);
+}
+
+.list-item strong,
+.agent-node strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.summary-text {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.agent-graph {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-node {
+  position: relative;
+  padding: 12px 14px 12px 24px;
+  border-radius: 18px;
+  background: rgba(4, 10, 15, 0.34);
+  border: 1px solid rgba(136, 198, 222, 0.14);
+}
+
+.agent-node::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 16px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 16px rgba(91, 231, 196, 0.5);
+}
+
+.peek-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.peek-grid p {
+  margin: 4px 0 0;
+}
+
+@media (max-width: 1120px) {
+  .layout,
+  .bottom-grid,
+  .status-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-panel {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-controls,
+  .composer-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
