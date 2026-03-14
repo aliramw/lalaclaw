@@ -5,6 +5,7 @@ import { ChatPanel } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 
 const storageKey = "command-center-ui-state-v2";
+const themeStorageKey = "command-center-theme";
 const defaultTab = "timeline";
 const defaultSessionUser = "command-center";
 const maxPromptRows = 8;
@@ -48,6 +49,15 @@ function loadStoredState() {
   }
 }
 
+function loadStoredTheme() {
+  try {
+    const raw = window.localStorage.getItem(themeStorageKey);
+    return raw === "light" || raw === "dark" || raw === "system" ? raw : "system";
+  } catch {
+    return "system";
+  }
+}
+
 function baseSession(overrides = {}) {
   return {
     mode: "mock",
@@ -76,12 +86,14 @@ function baseSession(overrides = {}) {
 
 export default function App() {
   const stored = useMemo(() => loadStoredState(), []);
+  const storedTheme = useMemo(() => loadStoredTheme(), []);
   const [messages, setMessages] = useState(stored?.messages || []);
   const [queuedMessages, setQueuedMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [fastMode, setFastMode] = useState(Boolean(stored?.fastMode));
   const [model, setModel] = useState(stored?.model || "");
+  const [theme, setTheme] = useState(storedTheme);
   const [availableModels, setAvailableModels] = useState([]);
   const [availableAgents, setAvailableAgents] = useState([]);
   const [taskTimeline, setTaskTimeline] = useState([]);
@@ -100,6 +112,7 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const promptRef = useRef(null);
   const messageViewportRef = useRef(null);
+  const shouldAutoScrollRef = useRef(true);
   const busyRef = useRef(busy);
   const messagesRef = useRef(messages);
   const sessionStateRef = useRef({
@@ -149,6 +162,16 @@ export default function App() {
     } catch {}
   };
 
+  const focusPrompt = () => {
+    window.requestAnimationFrame(() => {
+      const textarea = promptRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
+    });
+  };
+
   const adjustPromptHeight = () => {
     const textarea = promptRef.current;
     if (!textarea) return;
@@ -168,6 +191,33 @@ export default function App() {
   useEffect(() => {
     adjustPromptHeight();
   }, [prompt]);
+
+  useEffect(() => {
+    focusPrompt();
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolved = theme === "system" ? (mediaQuery.matches ? "dark" : "light") : theme;
+      document.documentElement.classList.toggle("dark", resolved === "dark");
+      document.documentElement.dataset.theme = resolved;
+    };
+
+    applyTheme();
+    try {
+      window.localStorage.setItem(themeStorageKey, theme);
+    } catch {}
+
+    const handleChange = () => {
+      if (theme === "system") {
+        applyTheme();
+      }
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, [theme]);
 
   useEffect(() => {
     persist();
@@ -195,10 +245,24 @@ export default function App() {
 
   useEffect(() => {
     const viewport = messageViewportRef.current;
-    if (viewport) {
+    if (viewport && shouldAutoScrollRef.current) {
       viewport.scrollTop = viewport.scrollHeight;
     }
   }, [messages, activeQueuedMessages]);
+
+  useEffect(() => {
+    const viewport = messageViewportRef.current;
+    if (!viewport) return;
+
+    const updateAutoScroll = () => {
+      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      shouldAutoScrollRef.current = distanceFromBottom <= 48;
+    };
+
+    updateAutoScroll();
+    viewport.addEventListener("scroll", updateAutoScroll, { passive: true });
+    return () => viewport.removeEventListener("scroll", updateAutoScroll);
+  }, []);
 
   const applySnapshot = (snapshot, options = {}) => {
     if (!snapshot) return;
@@ -422,7 +486,9 @@ export default function App() {
       }),
     );
     setPrompt("");
+    focusPrompt();
     await loadRuntime(nextSessionUser, { force: true }).catch(() => {});
+    focusPrompt();
   };
 
   const onResetHotkey = useEffectEvent((event) => {
@@ -494,7 +560,9 @@ export default function App() {
             onAgentChange={handleAgentChange}
             onFastModeChange={setFastMode}
             onModelChange={handleModelChange}
+            onThemeChange={setTheme}
             session={session}
+            theme={theme}
           />
 
           <main className="grid min-h-0 flex-1 gap-3 overflow-hidden xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,1fr)]">

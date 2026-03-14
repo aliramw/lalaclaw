@@ -26,10 +26,19 @@ function EmptyConversation() {
 
 function MessageBubble({ message, formatTime }) {
   const isUser = message.role === "user";
+  const isPending = Boolean(message.pending);
+  const assistantTimeClassName = isPending
+    ? "pt-2 text-[11px] leading-5 text-muted-foreground tabular-nums"
+    : "sticky top-3 self-start pt-2 text-[11px] leading-5 text-muted-foreground tabular-nums";
 
   return (
-    <div className="flex">
-      <div className={cn("flex w-fit max-w-[86%] items-start gap-2", isUser && "ml-auto")}>
+    <div className={cn("flex", isUser || isPending ? "" : "w-full")}>
+      <div
+        className={cn(
+          "flex items-start gap-2",
+          isUser ? "ml-auto w-fit max-w-[86%]" : isPending ? "w-fit max-w-[50%]" : "w-[min(80%,960px)] max-w-full",
+        )}
+      >
         {!isUser ? null : (
           <time className="pt-2 text-[11px] leading-5 text-muted-foreground tabular-nums">
             {formatTime(message.timestamp)}
@@ -38,20 +47,21 @@ function MessageBubble({ message, formatTime }) {
         <Card
           className={cn(
             "min-w-0",
-            isUser ? "border-primary/10 bg-primary/[0.04]" : "bg-card",
+            !isUser && !isPending && "w-full",
+            isUser ? "!border-blue-600 !bg-blue-600 !text-white dark:!border-[#1a64a9] dark:!bg-[#1a64a9]" : "bg-card",
             message.pending && "animate-pulse",
           )}
         >
           <CardContent className="px-3 py-2.5">
             {isUser ? (
-              <div className="whitespace-pre-wrap text-[13px] leading-6">{message.content}</div>
+              <div className="whitespace-pre-wrap text-[13px] leading-6 text-white">{message.content}</div>
             ) : (
               <MarkdownContent content={message.content} className="text-[12px] leading-5" />
             )}
           </CardContent>
         </Card>
         {isUser ? null : (
-          <time className="pt-2 text-[11px] leading-5 text-muted-foreground tabular-nums">
+          <time className={assistantTimeClassName}>
             {formatTime(message.timestamp)}
           </time>
         )}
@@ -150,11 +160,12 @@ export function ChatPanel({
       <CardContent className="space-y-4 border-t border-border/70 bg-muted/20 px-4 py-4">
         <Textarea
           ref={promptRef}
+          rows={3}
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
           onKeyDown={onPromptKeyDown}
           placeholder="描述你希望 Agent 在当前 workspace 中完成什么。"
-          className="min-h-0 resize-none bg-background"
+          className="resize-none bg-background"
         />
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-y-1 text-xs text-muted-foreground">
@@ -164,7 +175,7 @@ export function ChatPanel({
           </div>
           <div className="flex items-center justify-end gap-3">
             <span className="text-xs text-muted-foreground">Shift + 回车发送，回车换行</span>
-            <Button onClick={onSend} className="md:min-w-28">
+            <Button onClick={onSend} className="md:min-w-28 dark:!border-[#1a64a9] dark:!bg-[#1a64a9] dark:!text-white dark:hover:!bg-[#175992]">
               {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               发送
             </Button>

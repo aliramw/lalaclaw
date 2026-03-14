@@ -15,6 +15,7 @@ function LinkRenderer({ href, children, ...props }) {
       href={href}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noreferrer" : undefined}
+      className="file-link"
       {...props}
     >
       {children}
@@ -37,10 +38,10 @@ function CopyButton({ code }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex h-6 items-center gap-1 rounded border border-white/10 bg-white/5 px-1.5 text-[10px] font-medium text-zinc-300 transition hover:bg-white/10"
+      className="inline-flex h-5 items-center gap-1 rounded border border-white/10 bg-white/5 px-1.5 text-[9px] font-medium text-zinc-300 transition hover:bg-white/10"
       aria-label={copied ? "代码已复制" : "复制代码"}
     >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
       {copied ? "已复制" : "复制"}
     </button>
   );
@@ -48,12 +49,16 @@ function CopyButton({ code }) {
 
 function CodeBlock({ code, language }) {
   const normalizedLanguage = String(language || "text").toLowerCase();
+  const languageLabel = normalizedLanguage
+    .split("-")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join("-");
 
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
-      <div className="flex items-center justify-between border-b border-white/10 bg-zinc-800/90 px-2.5 py-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500">
-          {normalizedLanguage}
+    <div className="my-2 overflow-hidden rounded-[5px] border border-zinc-700 bg-zinc-900">
+      <div className="flex items-center justify-between border-b border-white/10 bg-zinc-800/90 px-2 py-1">
+        <span className="text-[9px] font-medium tracking-[0.06em] text-zinc-100">
+          {languageLabel}
         </span>
         <CopyButton code={code} />
       </div>
@@ -78,11 +83,12 @@ function CodeBlock({ code, language }) {
   );
 }
 
-function CodeRenderer({ inline, className, children, ...props }) {
+function CodeRenderer({ className, children, ...props }) {
   const match = /language-([\w-]+)/.exec(className || "");
   const code = String(children || "").replace(/\n$/, "");
+  const isBlock = Boolean(match) || code.includes("\n");
 
-  if (inline) {
+  if (!isBlock) {
     return (
       <code
         className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[0.9em]"
@@ -96,6 +102,14 @@ function CodeRenderer({ inline, className, children, ...props }) {
   return <CodeBlock code={code} language={match?.[1] || "text"} />;
 }
 
+function TableRenderer({ children }) {
+  return (
+    <div className="my-2 overflow-hidden rounded-[5px] border border-border bg-background">
+      <table className="my-0 w-full border-collapse">{children}</table>
+    </div>
+  );
+}
+
 export default function MarkdownRenderer({ content, className, shellClassName }) {
   return (
     <div className={cn(shellClassName, className)}>
@@ -104,6 +118,7 @@ export default function MarkdownRenderer({ content, className, shellClassName })
         components={{
           a: LinkRenderer,
           code: CodeRenderer,
+          table: TableRenderer,
         }}
       >
         {String(content || "")}

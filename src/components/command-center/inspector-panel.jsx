@@ -8,8 +8,93 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
+const homePrefix = "/Users/marila";
+const fileActionSections = [
+  { key: "created", label: "创建" },
+  { key: "modified", label: "修改" },
+  { key: "viewed", label: "查看" },
+];
+
 function getItemKey(item, index) {
   return item.id || item.path || item.title || `${item.label || "item"}-${index}`;
+}
+
+function compactHomePath(filePath = "") {
+  if (!filePath) {
+    return "";
+  }
+  return filePath.startsWith(homePrefix) ? `~${filePath.slice(homePrefix.length)}` : filePath;
+}
+
+function getVsCodeHref(filePath) {
+  if (!filePath) {
+    return "#";
+  }
+  return `vscode://file/${encodeURIComponent(filePath)}`;
+}
+
+function FileLink({ item, compact = false }) {
+  const href = getVsCodeHref(item.fullPath || item.path);
+  const canOpen = Boolean(item.fullPath || item.path);
+
+  return (
+    <a
+      href={href}
+      className={cn(
+        "block rounded-md transition-colors focus-visible:outline-none",
+        canOpen ? "cursor-pointer focus-visible:ring-2 focus-visible:ring-ring/50" : "",
+        compact ? "px-0 py-0.5" : "",
+      )}
+      title={item.fullPath || item.path}
+    >
+      <div
+        className={cn(
+          "file-link break-all font-mono transition-colors",
+          compact ? "text-[11px] leading-5" : "text-sm",
+          canOpen ? "" : "no-underline",
+        )}
+      >
+        {compactHomePath(item.path)}
+      </div>
+    </a>
+  );
+}
+
+function FilesTab({ items }) {
+  const groups = fileActionSections
+    .map((section) => ({
+      ...section,
+      items: items.filter((item) => item.primaryAction === section.key),
+    }))
+    .filter((section) => section.items.length);
+
+  if (!groups.length) {
+    return <PanelEmpty text="当前会话中检测到的文件会显示在这里。" />;
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <Card>
+        <CardContent className="space-y-4 py-4">
+          {groups.map((group) => (
+            <section key={group.key} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{group.label}</div>
+                <Badge variant="default" className="h-5 px-1.5 py-0 text-[10px]">
+                  {group.items.length}
+                </Badge>
+              </div>
+              <div className="grid gap-1">
+                {group.items.map((item) => (
+                  <FileLink key={`${group.key}-${item.path}`} item={item} compact />
+                ))}
+              </div>
+            </section>
+          ))}
+        </CardContent>
+      </Card>
+    </ScrollArea>
+  );
 }
 
 function PanelEmpty({ text }) {
@@ -66,7 +151,9 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
             <div className="text-sm font-medium">{item.title}</div>
             <div className="text-sm text-muted-foreground">{item.prompt}</div>
           </div>
-          <Badge variant={badgeVariant}>{item.status}</Badge>
+          <Badge variant={badgeVariant} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">
+            {item.status}
+          </Badge>
         </div>
 
         <div className="grid gap-1 text-xs text-muted-foreground">
@@ -91,7 +178,9 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
                         <CardContent className="space-y-3 py-4">
                           <div className="flex items-center justify-between gap-3">
                             <div className="text-sm font-medium">{tool.name}</div>
-                            <Badge variant={tool.status === "失败" ? "default" : "success"}>{tool.status}</Badge>
+                            <Badge variant={tool.status === "失败" ? "default" : "success"} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">
+                              {tool.status}
+                            </Badge>
                           </div>
                           <div className="space-y-2 text-xs leading-6">
                             <div className="rounded-lg border border-border bg-background/90 p-3 whitespace-pre-wrap">{`输入\n${tool.input || "无"}`}</div>
@@ -107,12 +196,8 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
                 {item.files?.length
                   ? item.files.map((file) => (
                       <Card key={file.path} className="border-border/70 bg-muted/15">
-                        <CardContent className="space-y-1 py-4">
-                          <div className="text-sm font-medium">{file.path}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {file.kind}
-                            {file.updatedLabel ? ` · ${file.updatedLabel}` : ""}
-                          </div>
+                        <CardContent className="py-4">
+                          <FileLink item={file} />
                         </CardContent>
                       </Card>
                     ))
@@ -179,8 +264,8 @@ function PeekTab({ peeks, renderPeek }) {
 export function InspectorPanel({ activeTab, agents, artifacts, files, peeks, renderPeek, setActiveTab, snapshots, taskTimeline }) {
   return (
     <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden">
-      <CardHeader className="flex h-12 items-center border-b border-border/70 bg-card/80 px-3 py-2 backdrop-blur">
-        <div className="flex min-w-0 items-center gap-2">
+      <CardHeader className="flex h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
+        <div className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left">
           <CardTitle className="truncate text-sm leading-none">追踪与观察</CardTitle>
           <CardDescription className="truncate text-[11px] leading-none">执行、文件、产出与预览</CardDescription>
         </div>
@@ -220,16 +305,7 @@ export function InspectorPanel({ activeTab, agents, artifacts, files, peeks, ren
           </TabsContent>
 
           <TabsContent value="files" className="min-h-0">
-            <DataList
-              items={files}
-              empty="当前会话中检测到的文件会显示在这里。"
-              render={(item) => (
-                <>
-                  <div className="text-sm font-medium">{item.path}</div>
-                  <div className="text-xs text-muted-foreground">{item.kind}</div>
-                </>
-              )}
-            />
+            <FilesTab items={files} />
           </TabsContent>
 
           <TabsContent value="artifacts" className="min-h-0">

@@ -20,6 +20,31 @@
   --input: oklch(0.905 0.008 255.4);
   --ring: oklch(0.623 0.03 254.5);
   --radius: 0.9rem;
+  --file-link: #2563c9;
+  --file-link-hover: #1849a9;
+}
+
+.dark {
+  --background: oklch(0.19 0.01 255);
+  --foreground: oklch(0.95 0.01 255);
+  --card: oklch(0.24 0.01 255);
+  --card-foreground: oklch(0.95 0.01 255);
+  --popover: oklch(0.22 0.01 255);
+  --popover-foreground: oklch(0.95 0.01 255);
+  --primary: oklch(0.63 0.18 255);
+  --primary-foreground: oklch(0.98 0.002 95);
+  --secondary: oklch(0.29 0.01 255);
+  --secondary-foreground: oklch(0.95 0.01 255);
+  --muted: oklch(0.28 0.01 255);
+  --muted-foreground: oklch(0.72 0.015 255);
+  --accent: oklch(0.3 0.02 230);
+  --accent-foreground: oklch(0.96 0.01 255);
+  --destructive: oklch(0.64 0.21 25);
+  --border: oklch(0.34 0.01 255);
+  --input: oklch(0.34 0.01 255);
+  --ring: oklch(0.7 0.13 255);
+  --file-link: #6bb6ff;
+  --file-link-hover: #96ccff;
 }
 
 @theme inline {
@@ -64,5 +89,17 @@
     background-image:
       radial-gradient(circle at top left, color-mix(in oklab, var(--accent) 28%, transparent) 0, transparent 36%),
       linear-gradient(180deg, color-mix(in oklab, var(--background) 84%, white) 0%, var(--background) 100%);
+  }
+}
+
+@layer components {
+  .file-link {
+    color: var(--file-link);
+  }
+
+  .file-link:hover {
+    color: var(--file-link-hover);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 }

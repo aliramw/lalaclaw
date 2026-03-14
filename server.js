@@ -562,8 +562,89 @@ function normalizeCandidatePath(candidate, roots) {
   return null;
 }
 
-function collectFiles(entries, roots) {
+function isIgnoredWorkspacePath(targetPath) {
+  if (!targetPath) {
+    return true;
+  }
+
+  const segments = String(targetPath)
+    .split(path.sep)
+    .filter(Boolean)
+    .map((segment) => segment.toLowerCase());
+
+  return segments.includes('node_modules');
+}
+
+function inferExecFileAction(command = '') {
+  const normalized = String(command || '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (
+    /\b(touch|truncate)\b/.test(normalized) ||
+    /(^|[^>])>\s*\S/.test(normalized) ||
+    /\btee\b/.test(normalized)
+  ) {
+    return 'created';
+  }
+
+  if (
+    /\b(cat|less|more|head|tail|grep|rg|sed\s+-n|awk|wc|stat|ls|find|readlink)\b/.test(normalized)
+  ) {
+    return 'viewed';
+  }
+
+  if (
+    /\b(edit|write|cp|mv|sed\s+-i|perl\s+-pi|python|node|ruby)\b/.test(normalized)
+  ) {
+    return 'modified';
+  }
+
+  return null;
+}
+
+function inferToolFileAction(name = '', args = {}) {
+  const normalizedName = String(name || '').toLowerCase();
+  if (normalizedName === 'read' || normalizedName === 'memory_get') {
+    return 'viewed';
+  }
+  if (normalizedName === 'write') {
+    return 'created';
+  }
+  if (normalizedName === 'edit') {
+    return 'modified';
+  }
+  if (normalizedName === 'exec') {
+    return inferExecFileAction(args?.command || '');
+  }
+  return null;
+}
+
+function actionPriority(action = '') {
+  if (action === 'created') return 3;
+  if (action === 'modified') return 2;
+  if (action === 'viewed') return 1;
+  return 0;
+}
+
+function extractResolvedPathsFromSource(source, roots) {
   const pathPattern = /(?:\/Users\/[^\s"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
+  const matches = String(source || '').match(pathPattern) || [];
+  const resolvedPaths = [];
+
+  for (const match of matches) {
+    const resolved = normalizeCandidatePath(match, roots);
+    if (!resolved || isIgnoredWorkspacePath(resolved)) {
+      continue;
+    }
+    resolvedPaths.push(resolved);
+  }
+
+  return resolvedPaths;
+}
+
+function collectFiles(entries, roots) {
   const found = new Map();
 
   for (const entry of entries) {
@@ -573,30 +654,52 @@ function collectFiles(entries, roots) {
 
     const payload = entry.message || {};
     const content = payload.content || [];
-    const sources = [
-      ...extractTextSegments(content),
-      ...(Array.isArray(content)
-        ? content
-            .filter((item) => item?.type === 'toolCall')
-            .map((item) => item.arguments || item.partialJson || '')
-        : []),
-    ];
+    for (const item of Array.isArray(content) ? content : []) {
+      if (item?.type !== 'toolCall') {
+        continue;
+      }
 
-    for (const source of sources) {
-      const matches = String(source).match(pathPattern) || [];
-      for (const match of matches) {
-        const resolved = normalizeCandidatePath(match, roots);
-        if (!resolved || found.has(resolved)) {
-          continue;
+      const action = inferToolFileAction(item.name, item.arguments || {});
+      const sources = [item.arguments || item.partialJson || {}];
+
+      for (const source of sources) {
+        const resolvedPaths = extractResolvedPathsFromSource(
+          typeof source === 'string' ? source : JSON.stringify(source),
+          roots,
+        );
+
+        for (const resolved of resolvedPaths) {
+          const stat = fs.statSync(resolved);
+          if (stat.isDirectory()) {
+            continue;
+          }
+          const existing = found.get(resolved);
+          const nextAction =
+            actionPriority(action) >= actionPriority(existing?.primaryAction)
+              ? action || existing?.primaryAction || 'viewed'
+              : existing?.primaryAction || action || 'viewed';
+
+          if (!existing) {
+            found.set(resolved, {
+              path: resolved.startsWith(PROJECT_ROOT) ? path.relative(PROJECT_ROOT, resolved) : resolved,
+              fullPath: resolved,
+              kind: stat.isDirectory() ? '目录' : '文件',
+              updatedAt: stat.mtimeMs,
+              updatedLabel: formatTimestamp(stat.mtimeMs),
+              primaryAction: nextAction,
+              actions: action ? [action] : [],
+            });
+            continue;
+          }
+
+          found.set(resolved, {
+            ...existing,
+            updatedAt: stat.mtimeMs,
+            updatedLabel: formatTimestamp(stat.mtimeMs),
+            primaryAction: nextAction,
+            actions: Array.from(new Set([...(existing.actions || []), ...(action ? [action] : [])])),
+          });
         }
-
-        const stat = fs.statSync(resolved);
-        found.set(resolved, {
-          path: resolved.startsWith(PROJECT_ROOT) ? path.relative(PROJECT_ROOT, resolved) : resolved,
-          kind: stat.isDirectory() ? '目录' : '文件',
-          updatedAt: stat.mtimeMs,
-          updatedLabel: formatTimestamp(stat.mtimeMs),
-        });
       }
     }
   }
@@ -1298,7 +1401,7 @@ async function handleChat(req, res) {
     const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
     setSessionPreferences(sessionUser, { fastMode: nextFastMode });
 
-    const snapshot = await buildDashboardSnapshot(false, sessionUser);
+    const snapshot = await buildDashboardSnapshot(sessionUser);
     snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
     const resolvedModel = snapshot.session?.model || config.model;
 
