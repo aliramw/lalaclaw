@@ -6,15 +6,49 @@ const { URL } = require('node:url');
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const LOCAL_OPENCLAW_CONFIG = path.join(process.env.HOME || '', '.openclaw', 'openclaw.json');
 
-const config = {
-  mode: process.env.OPENCLAW_BASE_URL ? 'openclaw' : 'mock',
-  model: process.env.OPENCLAW_MODEL || 'openclaw-agent',
-  baseUrl: process.env.OPENCLAW_BASE_URL || '',
-  apiKey: process.env.OPENCLAW_API_KEY || '',
-  apiStyle: process.env.OPENCLAW_API_STYLE || 'chat',
-  apiPath: process.env.OPENCLAW_API_PATH || '/v1/chat/completions',
-};
+function readJsonIfExists(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return null;
+    }
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function resolveDefaultAgentId(localConfig) {
+  const defaultAgent = localConfig?.agents?.list?.find((agent) => agent?.default);
+  return process.env.OPENCLAW_AGENT_ID || defaultAgent?.id || 'main';
+}
+
+function buildRuntimeConfig() {
+  const localConfig = readJsonIfExists(LOCAL_OPENCLAW_CONFIG);
+  const localGatewayPort = localConfig?.gateway?.port || 18789;
+  const localToken = localConfig?.gateway?.auth?.token || '';
+  const localAgentId = resolveDefaultAgentId(localConfig);
+  const envBaseUrl = process.env.OPENCLAW_BASE_URL || '';
+  const envModel = process.env.OPENCLAW_MODEL || '';
+  const envAgentId = process.env.OPENCLAW_AGENT_ID || '';
+
+  const baseUrl = envBaseUrl || (localToken ? `http://127.0.0.1:${localGatewayPort}` : '');
+  const agentId = envAgentId || localAgentId;
+
+  return {
+    mode: baseUrl ? 'openclaw' : 'mock',
+    model: envModel || 'openclaw',
+    agentId,
+    baseUrl,
+    apiKey: process.env.OPENCLAW_API_KEY || localToken,
+    apiStyle: process.env.OPENCLAW_API_STYLE || 'chat',
+    apiPath: process.env.OPENCLAW_API_PATH || '/v1/chat/completions',
+    localDetected: Boolean(localToken),
+  };
+}
+
+const config = buildRuntimeConfig();
 
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -101,7 +135,7 @@ function summarizeMessages(messages) {
 function buildMockReply(messages, fastMode) {
   const lastUserMessage = [...messages].reverse().find((item) => item.role === 'user');
   const prompt = lastUserMessage?.content?.trim() || 'No prompt supplied.';
-  const status = fastMode ? '执行中 / Fast' : '执行中 / Standard';
+  const status = fastMode ? '已完成 / Fast' : '已完成 / Standard';
   const summary = summarizeMessages(messages);
   const lines = [
     'OpenClaw command channel is online in mock mode.',
@@ -190,6 +224,10 @@ async function callOpenClaw(messages, fastMode) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
 
+  if (config.agentId) {
+    headers['x-openclaw-agent-id'] = config.agentId;
+  }
+
   const systemPrompt =
     'You are OpenClaw, acting as the command center agent for a software workspace. ' +
     'Respond concisely and include operational clarity for the human operator.';
@@ -213,6 +251,7 @@ async function callOpenClaw(messages, fastMode) {
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       temperature: fastMode ? 0.3 : 0.7,
       stream: false,
+      user: 'command-center',
     };
   }
 
@@ -317,9 +356,11 @@ function handleSession(res) {
   sendJson(res, 200, {
     mode: config.mode,
     model: config.model,
+    agentId: config.agentId,
     apiStyle: config.apiStyle,
     hasBaseUrl: Boolean(config.baseUrl),
     hasApiKey: Boolean(config.apiKey),
+    localDetected: config.localDetected,
   });
 }
 
