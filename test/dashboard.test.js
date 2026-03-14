@@ -9,8 +9,11 @@ function createService(overrides = {}) {
     HOST: "127.0.0.1",
     PORT: 3000,
     PROJECT_ROOT: "/workspace/project",
+    callOpenClawGateway: vi.fn(async () => ({ agents: { list: [] } })),
     clip: (value, length = 999) => String(value || "").slice(0, length),
     collectAvailableAgents: vi.fn((_, preferred = []) => preferred),
+    collectAvailableSkills: vi.fn(() => []),
+    collectAllowedSubagents: vi.fn(() => []),
     collectAvailableModels: vi.fn((_, preferred = []) => preferred),
     collectArtifacts: vi.fn(() => [{ title: "artifact" }]),
     collectConversationMessages: vi.fn(() => []),
@@ -77,6 +80,7 @@ describe("createDashboardService", () => {
       resolveSessionThinkMode: vi.fn(() => "minimal"),
       collectAvailableModels: vi.fn(() => ["gpt-5"]),
       collectAvailableAgents: vi.fn(() => ["main"]),
+      collectAvailableSkills: vi.fn(() => [{ name: "planning", ownerAgentId: "main" }]),
     });
 
     const snapshot = await service.buildDashboardSnapshot("demo-user");
@@ -91,6 +95,7 @@ describe("createDashboardService", () => {
       workspaceRoot: "/workspace/openclaw",
       fastMode: "开启",
       thinkMode: "minimal",
+      availableSkills: [{ name: "planning", ownerAgentId: "main" }],
     });
     expect(snapshot.conversation).toEqual(localConversation);
     expect(snapshot.peeks.workspace.items[2].value).toContain("目录 src");
@@ -146,8 +151,30 @@ describe("createDashboardService", () => {
       fetchBrowserPeek: vi.fn(async () => {
         throw new Error("peek failed");
       }),
+      callOpenClawGateway: vi.fn(async () => ({
+        config: {
+          agents: {
+            list: [
+              {
+                id: "main",
+                subagents: {
+                  allowAgents: ["expert"],
+                },
+              },
+              {
+                id: "expert",
+                skills: ["coding"],
+              },
+            ],
+          },
+        },
+      })),
       collectAvailableModels: vi.fn(() => ["gpt-5", "gpt-5.1"]),
       collectAvailableAgents: vi.fn(() => ["main"]),
+      collectAvailableSkills: vi.fn((runtimeConfig, agentId) => {
+        const currentAgent = runtimeConfig?.agents?.list?.find((agent) => agent.id === agentId);
+        return (currentAgent?.subagents?.allowAgents || []).map((value) => ({ name: "coding", ownerAgentId: value }));
+      }),
     });
 
     const snapshot = await service.buildDashboardSnapshot("demo-user");
@@ -166,6 +193,7 @@ describe("createDashboardService", () => {
       auth: "team-key",
       version: "1.2.3",
       time: "2026-03-15 18:00",
+      availableSkills: [{ name: "coding", ownerAgentId: "expert" }],
     });
     expect(snapshot.conversation).toEqual([
       { role: "user", content: "local", timestamp: 10 },

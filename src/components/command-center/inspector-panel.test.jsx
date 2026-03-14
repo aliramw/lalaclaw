@@ -54,6 +54,7 @@ describe("InspectorPanel", () => {
   it("renders timeline details and switches tabs", async () => {
     renderWithTooltip(<TestHarness />);
 
+    expect(screen.getAllByRole("tab").slice(0, 3).map((tab) => tab.textContent)).toEqual(["文件1", "回复摘要", "运行记录"]);
     expect(screen.getByText("修复错误")).toBeInTheDocument();
     expect(screen.getByText("输入")).toBeInTheDocument();
     expect(screen.getByText("输出")).toBeInTheDocument();
@@ -66,9 +67,10 @@ describe("InspectorPanel", () => {
     await user.click(screen.getByRole("tab", { name: "文件" }));
     expect(screen.getByRole("tab", { name: "文件" })).toHaveAttribute("data-state", "active");
 
-    await user.click(screen.getByRole("tab", { name: "预览" }));
-    expect(screen.getByText(/工作区摘要/)).toBeInTheDocument();
-    expect(screen.getByText(/等待终端预览/)).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "预览" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "快照" }));
+    expect(screen.getByText("快照 1")).toBeInTheDocument();
   });
 
   it("collapses timeline detail blocks on demand", async () => {
@@ -200,6 +202,29 @@ describe("InspectorPanel", () => {
     expect(screen.queryByText("alpha.md")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建 查看详情" })).toBeInTheDocument();
     expect(screen.getByText("beta.md")).toBeInTheDocument();
+  });
+
+  it("shows a lightweight files hint above the grouped file list", () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/alpha.md", fullPath: "/Users/marila/projects/lalaclaw/alpha.md", kind: "文件", primaryAction: "created" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByText("这里会列出本次会话 Agent 创建、修改与查看所有文件，方便你检阅")).toBeInTheDocument();
   });
 
   it("opens a full-screen markdown preview when clicking a file", async () => {

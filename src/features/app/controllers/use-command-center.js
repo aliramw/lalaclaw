@@ -34,6 +34,7 @@ export function useCommandCenter() {
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
   const [pendingChatTurns, setPendingChatTurns] = useState(storedPendingChatTurns);
   const [busy, setBusy] = useState(false);
+  const [switchingAgentLabel, setSwitchingAgentLabel] = useState("");
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [fastMode, setFastMode] = useState(Boolean(stored?.fastMode));
   const [model, setModel] = useState(stored?.model || "");
@@ -336,7 +337,12 @@ export function useCommandCenter() {
 
   const handleAgentChange = async (nextAgent) => {
     if (!nextAgent || nextAgent === session.agentId) return;
-    await applySessionUpdate({ agentId: nextAgent });
+    setSwitchingAgentLabel(nextAgent);
+    try {
+      await applySessionUpdate({ agentId: nextAgent });
+    } finally {
+      setSwitchingAgentLabel("");
+    }
   };
 
   const handleFastModeChange = async (nextFastMode) => {
@@ -389,6 +395,7 @@ export function useCommandCenter() {
     setActiveTab,
     setTheme,
     snapshots,
+    switchingAgentLabel,
     taskTimeline,
     theme,
   };

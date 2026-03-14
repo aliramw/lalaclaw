@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, History } from "lucide-react";
+import { Boxes, Check, ChevronDown, Copy, FileText, FolderOpen, Hammer, History } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,7 +76,7 @@ function FileLink({ item, compact = false, currentWorkspaceRoot = "", onOpenPrev
       className={cn(
         "block w-full appearance-none rounded-sm border-0 bg-transparent px-1.5 text-left shadow-none transition-[background-color,color,box-shadow] focus:outline-none focus-visible:outline-none",
         canOpen ? "cursor-pointer hover:bg-accent/25 focus-visible:bg-accent/15 focus-visible:ring-1 focus-visible:ring-border/35" : "",
-        compact ? "px-1.5 py-0.5" : "px-2 py-1",
+        compact ? "px-0 py-0.5" : "px-2 py-1",
       )}
       title={item.fullPath || item.path}
       disabled={!canOpen}
@@ -211,52 +211,53 @@ function FilesTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview })
   return (
     <>
       <ScrollArea className="h-full">
-        <Card>
-          <CardContent className="space-y-4 py-4">
-            {groups.map((group) => (
-              <section key={group.key} className="space-y-2">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left transition hover:bg-muted/20"
-                  aria-expanded={!collapsedGroups[group.key]}
-                  aria-label={`${group.label} ${collapsedGroups[group.key] ? messages.inspector.timeline.expand : messages.inspector.timeline.collapse}`}
-                  onClick={() => {
-                    setCollapsedGroups((current) => ({
-                      ...current,
-                      [group.key]: !current[group.key],
-                    }));
-                  }}
-                >
-                  <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", collapsedGroups[group.key] ? "-rotate-90" : "rotate-0")} />
-                  <div className="text-[11px] font-medium uppercase text-muted-foreground">{group.label}</div>
-                  <Badge variant="default" className="h-5 px-1.5 py-0 text-[10px]">
-                    {group.items.length}
-                  </Badge>
-                </button>
-                {!collapsedGroups[group.key] ? (
-                  <div className="grid gap-1">
-                    {group.items.map((item) => (
-                      <FileLink
-                        key={`${group.key}-${item.path}`}
-                        item={item}
-                        compact
-                        currentWorkspaceRoot={currentWorkspaceRoot}
-                        onOpenPreview={onOpenPreview}
-                        onOpenContextMenu={(event, nextItem) => {
-                          setContextMenu({
-                            item: nextItem,
-                            x: event.clientX,
-                            y: event.clientY,
-                          });
-                        }}
-                      />
-                    ))}
-                  </div>
-                ) : null}
-              </section>
-            ))}
-          </CardContent>
-        </Card>
+        <div className="space-y-2 py-1">
+          <p className="pr-6 text-[11px] leading-5 text-muted-foreground/80">
+            {messages.inspector.filesHint}
+          </p>
+          {groups.map((group) => (
+            <section key={group.key} className="space-y-2">
+              <button
+                type="button"
+                className="grid w-full grid-cols-[1rem_auto_auto_1fr] items-center gap-2 rounded-md py-0.5 text-left transition hover:bg-muted/20"
+                aria-expanded={!collapsedGroups[group.key]}
+                aria-label={`${group.label} ${collapsedGroups[group.key] ? messages.inspector.timeline.expand : messages.inspector.timeline.collapse}`}
+                onClick={() => {
+                  setCollapsedGroups((current) => ({
+                    ...current,
+                    [group.key]: !current[group.key],
+                  }));
+                }}
+              >
+                <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", collapsedGroups[group.key] ? "-rotate-90" : "rotate-0")} />
+                <div className="text-[11px] font-medium uppercase text-muted-foreground">{group.label}</div>
+                <Badge variant="default" className="h-5 px-1.5 py-0 text-[10px]">
+                  {group.items.length}
+                </Badge>
+              </button>
+              {!collapsedGroups[group.key] ? (
+                <div className="grid gap-1 pl-6">
+                  {group.items.map((item) => (
+                    <FileLink
+                      key={`${group.key}-${item.path}`}
+                      item={item}
+                      compact
+                      currentWorkspaceRoot={currentWorkspaceRoot}
+                      onOpenPreview={onOpenPreview}
+                      onOpenContextMenu={(event, nextItem) => {
+                        setContextMenu({
+                          item: nextItem,
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ))}
+        </div>
       </ScrollArea>
       <FileContextMenu menu={contextMenu} messages={messages} onClose={() => setContextMenu(null)} />
     </>
@@ -271,7 +272,7 @@ function PanelEmpty({ compact = false, text }) {
   );
 }
 
-function TabCountBadge({ count }) {
+function TabCountBadge({ count, active = false }) {
   if (!count) {
     return null;
   }
@@ -279,7 +280,10 @@ function TabCountBadge({ count }) {
   return (
     <span
       aria-hidden="true"
-      className="inline-flex min-w-5 items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+      className={cn(
+        "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none",
+        active ? "bg-white text-[#1677eb]" : "bg-muted text-muted-foreground",
+      )}
     >
       {count}
     </span>
@@ -571,36 +575,16 @@ function TimelineTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview
   );
 }
 
-function PeekTab({ peeks, renderPeek, messages }) {
-  const sections = [
-    { key: "workspace", title: messages.inspector.peek.workspace, fallback: messages.inspector.empty.workspace },
-    { key: "terminal", title: messages.inspector.peek.terminal, fallback: messages.inspector.empty.terminal },
-    { key: "browser", title: messages.inspector.peek.browser, fallback: messages.inspector.empty.browser },
-  ];
-
-  return (
-    <ScrollArea className="h-full">
-      <div className="grid gap-3 pr-4">
-        {sections.map((section) => (
-          <Card key={section.key}>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">{section.title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="whitespace-pre-wrap rounded-lg border border-border bg-muted/20 p-3 text-xs leading-6 text-muted-foreground">
-                {renderPeek(peeks[section.key], section.fallback)}
-              </pre>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </ScrollArea>
-  );
-}
-
 export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceRoot = "", files, peeks, renderPeek, resolvedTheme = "light", setActiveTab, snapshots, taskTimeline }) {
   const { messages } = useI18n();
   const { filePreview, imagePreview, handleOpenPreview, closeFilePreview, closeImagePreview } = useFilePreview();
+  const tabDefinitions = [
+    { key: "files", icon: FolderOpen, label: messages.inspector.tabs.files, count: files.length },
+    { key: "artifacts", icon: FileText, label: messages.inspector.tabs.artifacts },
+    { key: "timeline", icon: Hammer, label: messages.inspector.tabs.timeline },
+    { key: "snapshots", icon: History, label: messages.inspector.tabs.snapshots },
+    { key: "agents", icon: Boxes, label: messages.inspector.tabs.agents },
+  ];
 
   return (
     <>
@@ -614,39 +598,31 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
 
         <CardContent className="min-h-0 p-4">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1 xl:grid-cols-6">
-              <TabsTrigger value="timeline">
-                <Hammer className="h-4 w-4" />
-                {messages.inspector.tabs.timeline}
-              </TabsTrigger>
-              <TabsTrigger value="files">
-                <FolderOpen className="h-4 w-4" />
-                {messages.inspector.tabs.files}
-                <TabCountBadge count={files.length} />
-              </TabsTrigger>
-              <TabsTrigger value="artifacts">
-                <FileText className="h-4 w-4" />
-                {messages.inspector.tabs.artifacts}
-              </TabsTrigger>
-              <TabsTrigger value="snapshots">
-                <History className="h-4 w-4" />
-                {messages.inspector.tabs.snapshots}
-              </TabsTrigger>
-              <TabsTrigger value="agents">
-                <Boxes className="h-4 w-4" />
-                {messages.inspector.tabs.agents}
-              </TabsTrigger>
-              <TabsTrigger value="peek">
-                <Eye className="h-4 w-4" />
-                {messages.inspector.tabs.peek}
-              </TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1 xl:grid-cols-5">
+              {tabDefinitions.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <TabsTrigger
+                    key={tab.key}
+                    value={tab.key}
+                    className={cn(
+                      "data-[state=active]:text-white data-[state=active]:shadow-sm",
+                      resolvedTheme === "dark"
+                        ? "data-[state=active]:bg-[#0f3e6a] data-[state=active]:hover:bg-[#0f3e6a]"
+                        : "data-[state=active]:bg-[#1677eb] data-[state=active]:hover:bg-[#0f6fe0]",
+                    )}
+                  >
+                    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+                      <Icon className="h-3.5 w-3.5 shrink-0 stroke-[1.9]" />
+                    </span>
+                    <span className="truncate">{tab.label}</span>
+                    <TabCountBadge count={tab.count} active={activeTab === tab.key} />
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
 
-            <TabsContent value="timeline" className="min-h-0">
-              <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
-            </TabsContent>
-
-            <TabsContent value="files" className="min-h-0">
+            <TabsContent value="files" className="mt-1 min-h-0">
               <FilesTab items={files} messages={messages} onOpenPreview={handleOpenPreview} currentWorkspaceRoot={currentWorkspaceRoot} />
             </TabsContent>
 
@@ -661,6 +637,10 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
                   </>
                 )}
               />
+            </TabsContent>
+
+            <TabsContent value="timeline" className="min-h-0">
+              <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
             </TabsContent>
 
             <TabsContent value="snapshots" className="min-h-0">
@@ -687,10 +667,6 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
                   </>
                 )}
               />
-            </TabsContent>
-
-            <TabsContent value="peek" className="min-h-0">
-              <PeekTab peeks={peeks} renderPeek={renderPeek} messages={messages} />
             </TabsContent>
           </Tabs>
         </CardContent>

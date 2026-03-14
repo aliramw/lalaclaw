@@ -122,6 +122,69 @@ function collectAvailableAgents(localConfig, preferred = []) {
   return ordered;
 }
 
+function collectAvailableSkills(localConfig, agentId) {
+  const configuredAgents = Array.isArray(localConfig?.agents?.list) ? localConfig.agents.list : [];
+  const currentAgent = configuredAgents.find((agent) => String(agent?.id || '').trim() === String(agentId || '').trim());
+  if (!currentAgent) {
+    return [];
+  }
+
+  const allowedAgentIds = [
+    String(currentAgent.id || '').trim(),
+    ...(Array.isArray(currentAgent?.subagents?.allowAgents) ? currentAgent.subagents.allowAgents : []),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  const allowedAgents = allowedAgentIds
+    .map((allowedId) => configuredAgents.find((agent) => String(agent?.id || '').trim() === allowedId))
+    .filter(Boolean);
+  const seen = new Set();
+  const ordered = [];
+
+  allowedAgents.forEach((agent) => {
+    const ownerAgentId = String(agent?.id || '').trim();
+    const skills = Array.isArray(agent?.skills) ? agent.skills : [];
+    skills.forEach((value) => {
+      const name = String(value || '').trim();
+      if (!name || seen.has(name)) {
+        return;
+      }
+      seen.add(name);
+      ordered.push({
+        name,
+        ownerAgentId,
+      });
+    });
+  });
+
+  return ordered;
+}
+
+function collectAllowedSubagents(localConfig, agentId) {
+  const configuredAgents = Array.isArray(localConfig?.agents?.list) ? localConfig.agents.list : [];
+  const configuredAgentIds = new Set(
+    configuredAgents
+      .map((agent) => String(agent?.id || '').trim())
+      .filter(Boolean),
+  );
+  const currentAgent = configuredAgents.find((agent) => String(agent?.id || '').trim() === String(agentId || '').trim());
+  const allowAgents = Array.isArray(currentAgent?.subagents?.allowAgents) ? currentAgent.subagents.allowAgents : [];
+  const seen = new Set();
+  const ordered = [];
+
+  allowAgents.forEach((value) => {
+    const nextAgentId = String(value || '').trim();
+    if (!nextAgentId || seen.has(nextAgentId) || !configuredAgentIds.has(nextAgentId)) {
+      return;
+    }
+    seen.add(nextAgentId);
+    ordered.push(nextAgentId);
+  });
+
+  return ordered;
+}
+
 function buildRuntimeConfig() {
   const localConfig = readJsonIfExists(LOCAL_OPENCLAW_CONFIG);
   const forceMockMode = ['1', 'true', 'yes', 'on'].includes(String(process.env.COMMANDCENTER_FORCE_MOCK || '').trim().toLowerCase());
@@ -141,6 +204,7 @@ function buildRuntimeConfig() {
   const workspaceRoot = localConfig?.agents?.defaults?.workspace || path.join(LOCAL_OPENCLAW_DIR, 'workspace');
   const availableModels = collectAvailableModels(localConfig, [envModel]);
   const availableAgents = collectAvailableAgents(localConfig, [agentId]);
+  const availableSkills = collectAvailableSkills(localConfig, agentId);
 
   return {
     mode: baseUrl ? 'openclaw' : 'mock',
@@ -160,6 +224,7 @@ function buildRuntimeConfig() {
     logsDir: path.join(LOCAL_OPENCLAW_DIR, 'logs'),
     availableModels,
     availableAgents,
+    availableSkills,
   };
 }
 
@@ -173,6 +238,8 @@ module.exports = {
   OPENCLAW_BIN,
   buildRuntimeConfig,
   collectAvailableAgents,
+  collectAvailableSkills,
+  collectAllowedSubagents,
   collectAvailableModels,
   fileExists,
   readJsonIfExists,

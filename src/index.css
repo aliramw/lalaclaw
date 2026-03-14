@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: oklch(0.985 0.003 95.1);
+  --background: #fbfbf6;
   --foreground: oklch(0.238 0.014 253.1);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.238 0.014 253.1);
@@ -45,8 +45,8 @@
   --border: oklch(0.34 0.01 255);
   --input: oklch(0.34 0.01 255);
   --ring: oklch(0.7 0.13 255);
-  --file-link: #6bb6ff;
-  --file-link-hover: #96ccff;
+  --file-link: #83c3ff;
+  --file-link-hover: #a7d6ff;
   --badge-success-bg: rgb(52 211 153 / 0.2);
   --badge-success-fg: #86efac;
 }
@@ -128,6 +128,30 @@
     50% {
       transform: scale(1.055);
       opacity: 1;
+    }
+  }
+
+  @keyframes cc-agent-switch-pulse {
+    0%,
+    100% {
+      transform: translateY(0) scale(0.88);
+      opacity: 0.42;
+    }
+
+    50% {
+      transform: translateY(-0.18rem) scale(1.08);
+      opacity: 1;
+    }
+  }
+
+  @keyframes cc-agent-switch-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-0.3rem);
     }
   }
 
@@ -215,6 +239,18 @@
     box-shadow: none !important;
   }
 
+  html[data-theme="light"] .cc-thinking-bubble,
+  html[data-theme="light"] .cc-thinking-bubble[class] {
+    border: 0 !important;
+    background: #f28c28 !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  html[data-theme="light"] .cc-thinking-bubble * {
+    color: #ffffff !important;
+  }
+
   .cc-thinking-bubble,
   .cc-thinking-bubble[class] {
     transform-origin: left center;
@@ -222,26 +258,57 @@
     will-change: transform, opacity;
   }
 
+  .cc-agent-switch-card,
+  .cc-agent-switch-card[class] {
+    animation: cc-agent-switch-float 1.9s ease-in-out infinite;
+  }
+
+  .cc-agent-switch-orbit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+  }
+
+  .cc-agent-switch-dot {
+    display: inline-block;
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--foreground) 76%, white 24%);
+    box-shadow: 0 0 0 0.45rem color-mix(in oklab, var(--accent) 44%, transparent);
+    animation: cc-agent-switch-pulse 1.05s ease-in-out infinite;
+    will-change: transform, opacity;
+  }
+
+  .cc-agent-switch-dot-2 {
+    animation-delay: 0.14s;
+  }
+
+  .cc-agent-switch-dot-3 {
+    animation-delay: 0.28s;
+  }
+
   html[data-theme="dark"] .cc-user-bubble,
   html[data-theme="dark"] .cc-user-bubble[class] {
     border: 0 !important;
-    background: #1a64a9 !important;
+    background: #0f3e6a !important;
     color: #ffffff !important;
     box-shadow: none !important;
   }
 
   html[data-theme="dark"] .cc-send-button,
   html[data-theme="dark"] .cc-send-button[class] {
-    border-color: #1a64a9 !important;
-    background: #1a64a9 !important;
+    border-color: #0f3e6a !important;
+    background: #0f3e6a !important;
     color: #ffffff !important;
     box-shadow: none !important;
   }
 
   html[data-theme="dark"] .cc-send-button:hover,
   html[data-theme="dark"] .cc-send-button[class]:hover {
-    border-color: #175992 !important;
-    background: #175992 !important;
+    border-color: #0f3e6a !important;
+    background: #0f3e6a !important;
     color: #ffffff !important;
   }
 
@@ -255,5 +322,17 @@
     background: #2b3138 !important;
     color: var(--card-foreground) !important;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+  }
+
+  html[data-theme="dark"] .cc-thinking-bubble,
+  html[data-theme="dark"] .cc-thinking-bubble[class] {
+    border: 0 !important;
+    background: #b86118 !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  html[data-theme="dark"] .cc-thinking-bubble * {
+    color: #ffffff !important;
   }
 }

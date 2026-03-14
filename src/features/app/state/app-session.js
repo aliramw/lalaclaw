@@ -26,6 +26,8 @@ export function createBaseSession(messages, overrides = {}) {
     time: "",
     availableModels: [],
     availableAgents: [],
+    availableMentionAgents: [],
+    availableSkills: [],
     ...overrides,
   };
 }

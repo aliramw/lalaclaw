@@ -927,6 +927,62 @@ describe("App", () => {
     });
   });
 
+  it("shows a blocking overlay while switching agents", async () => {
+    let resolveSessionUpdate;
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              availableAgents: ["main", "worker"],
+            },
+          }),
+        );
+      }
+
+      if (url === "/api/session" && init?.method === "POST") {
+        return new Promise((resolve) => {
+          resolveSessionUpdate = () =>
+            resolve(
+              mockJsonResponse(
+                createSnapshot({
+                  session: {
+                    ...createSnapshot().session,
+                    agentId: "worker",
+                    selectedAgentId: "worker",
+                    availableAgents: ["main", "worker"],
+                  },
+                }),
+              ),
+            );
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw.ai");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+
+    expect(await screen.findByText("正在切换到 worker...")).toBeInTheDocument();
+    expect(screen.getByText("请稍候，界面会在切换完成后恢复。")).toBeInTheDocument();
+
+    resolveSessionUpdate?.();
+
+    await waitFor(() => {
+      expect(screen.queryByText("正在切换到 worker...")).not.toBeInTheDocument();
+    });
+  });
+
   it("sends the next chat turn to the newly selected agent", async () => {
     const harness = createInteractiveFetchMock({
       availableAgents: ["main", "worker"],

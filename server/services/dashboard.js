@@ -23,8 +23,11 @@ function createDashboardService({
   HOST,
   PORT,
   PROJECT_ROOT,
+  callOpenClawGateway,
   clip,
   collectAvailableAgents,
+  collectAvailableSkills,
+  collectAllowedSubagents,
   collectAvailableModels,
   collectArtifacts,
   collectConversationMessages,
@@ -59,6 +62,40 @@ function createDashboardService({
   buildAgentGraph,
   tailLines,
 }) {
+  let liveConfigCache = {
+    fetchedAt: 0,
+    value: null,
+  };
+
+  async function resolveLiveConfig() {
+    if (config.mode !== 'openclaw') {
+      return config.localConfig;
+    }
+
+    if (liveConfigCache.value && Date.now() - liveConfigCache.fetchedAt < 60000) {
+      return liveConfigCache.value;
+    }
+
+    try {
+      const result = await callOpenClawGateway('config.get');
+      const nextConfig =
+        result?.config ||
+        result?.resolved ||
+        result?.parsed ||
+        (result?.agents?.list ? result : null);
+
+      if (nextConfig?.agents?.list) {
+        liveConfigCache = {
+          fetchedAt: Date.now(),
+          value: nextConfig,
+        };
+        return nextConfig;
+      }
+    } catch {}
+
+    return config.localConfig;
+  }
+
   function buildWorkspacePeek() {
     const projectEntries = listDirectoryPreview(PROJECT_ROOT);
     const agentEntries = listDirectoryPreview(config.workspaceRoot);
@@ -98,6 +135,8 @@ function createDashboardService({
     const localConversation = getLocalSessionConversation(sessionUser);
     const localFileEntries = getLocalSessionFileEntries(sessionUser);
     const localFiles = collectFiles(localFileEntries, [PROJECT_ROOT, workspaceRoot], { injectedFiles: [] });
+    const availableMentionAgents = collectAllowedSubagents(config.localConfig, agentId);
+    const availableSkills = collectAvailableSkills(config.localConfig, agentId);
     return {
       session: {
         mode: 'mock',
@@ -121,6 +160,8 @@ function createDashboardService({
         updatedAt: now,
         availableModels: collectAvailableModels(config.localConfig, [model]),
         availableAgents: collectAvailableAgents(config.localConfig, [agentId]),
+        availableMentionAgents,
+        availableSkills,
       },
       taskTimeline: [
         {
@@ -186,12 +227,13 @@ function createDashboardService({
     const transcriptPath = sessionRecord ? getTranscriptPath(agentId, sessionRecord.sessionId) : '';
     const entries = transcriptPath ? readJsonLines(transcriptPath).slice(-240) : [];
     const injectedFiles = sessionRecord?.systemPromptReport?.injectedWorkspaceFiles || [];
-    const [statusResult, browserPeek] = await Promise.all([
+    const [statusResult, browserPeek, liveConfig] = await Promise.all([
       invokeOpenClawTool('session_status', {}, sessionKey).catch(() => null),
       fetchBrowserPeek().catch(() => ({
         summary: '浏览器状态暂时不可用。',
         items: [{ label: '状态', value: '读取失败' }],
       })),
+      resolveLiveConfig(),
     ]);
 
     const statusText = statusResult?.details?.statusText || extractTextSegments(statusResult?.content).join('\n');
@@ -206,6 +248,8 @@ function createDashboardService({
       config.model;
     const availableModels = collectAvailableModels(config.localConfig, [selectedModel, latestModel]);
     const availableAgents = collectAvailableAgents(config.localConfig, [agentId]);
+    const availableMentionAgents = collectAllowedSubagents(config.localConfig, agentId);
+    const availableSkills = collectAvailableSkills(liveConfig || config.localConfig, agentId);
     const gatewayConversation = collectConversationMessages(entries);
     const localConversation = getLocalSessionConversation(sessionUser);
     const localFileEntries = getLocalSessionFileEntries(sessionUser);
@@ -249,6 +293,8 @@ function createDashboardService({
         time: parsedStatus?.time || '',
         availableModels,
         availableAgents,
+        availableMentionAgents,
+        availableSkills,
       },
       conversation: mergeConversationMessages(gatewayConversation, localConversation),
       taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }),

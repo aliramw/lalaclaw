@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "@/components/command-center/chat-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,11 +9,35 @@ function createSession(overrides = {}) {
   return {
     mode: "mock",
     agentId: "main",
+    availableMentionAgents: [],
+    availableSkills: [],
     status: "空闲",
     time: "10:00:00",
     version: "",
     ...overrides,
   };
+}
+
+function MentionHarness({ availableMentionAgents = ["reviewer", "writer"], availableSkills = [], sessionOverrides = {} }) {
+  const [prompt, setPrompt] = useState("");
+
+  return (
+    <TooltipProvider>
+      <ChatPanel
+        busy={false}
+        formatTime={() => "10:00:00"}
+        messageViewportRef={null}
+        messages={[]}
+        onPromptChange={setPrompt}
+        onPromptKeyDown={() => {}}
+        onReset={() => {}}
+        onSend={() => {}}
+        prompt={prompt}
+        promptRef={null}
+        session={createSession({ agentId: "main", availableMentionAgents, availableSkills, ...sessionOverrides })}
+      />
+    </TooltipProvider>
+  );
 }
 
 describe("ChatPanel", () => {
@@ -74,7 +99,13 @@ describe("ChatPanel", () => {
           onSend={() => {}}
           prompt="处理中"
           promptRef={null}
-          session={createSession({ mode: "openclaw", status: "执行中", agentId: "ops", version: "2026.3.13 (61d171a)" })}
+          session={createSession({
+            mode: "openclaw",
+            status: "执行中",
+            agentId: "ops",
+            version: "2026.3.13 (61d171a)",
+            runtime: "direct · Think: medium · elevated",
+          })}
         />
       </TooltipProvider>,
     );
@@ -83,7 +114,8 @@ describe("ChatPanel", () => {
     expect(screen.getByText(/\*?\*?已收到\*?\*?/)).toBeInTheDocument();
     expect(screen.getByText("OpenClaw 在线")).toBeInTheDocument();
     expect(screen.getByText("2026.3.13 (61d171a)")).toBeInTheDocument();
-    expect(screen.getByText("ops")).toBeInTheDocument();
+    expect(screen.getByText("ops - 当前会话")).toBeInTheDocument();
+    expect(screen.getByText("elevated")).toBeInTheDocument();
     expect(screen.getByText("思考中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
   });
@@ -262,5 +294,143 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(textarea).toHaveFocus();
     });
+  });
+
+  it("opens an agent menu on @ and inserts the selected agent into the composer", async () => {
+    render(<MentionHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+
+    await user.type(textarea, "@wr");
+
+    expect(screen.getByText("writer")).toBeInTheDocument();
+    expect(screen.queryByText("main")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /writer/i }));
+
+    expect(textarea).toHaveValue("writer ");
+    expect(screen.queryByRole("button", { name: /writer/i })).not.toBeInTheDocument();
+  });
+
+  it("supports keyboard navigation for the agent menu and uses a muted highlight", async () => {
+    render(<MentionHarness availableMentionAgents={["writer", "expert", "transformer"]} />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+
+    await user.type(textarea, "@");
+
+    const writerOption = screen.getByRole("button", { name: /writer/i });
+    expect(writerOption).toHaveClass("bg-muted");
+
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(textarea).toHaveValue("expert ");
+    expect(screen.queryByRole("button", { name: /expert/i })).not.toBeInTheDocument();
+  });
+
+  it("shows skills after agents and inserts the selected skill without the trigger character", async () => {
+    render(<MentionHarness availableMentionAgents={["writer"]} availableSkills={[{ name: "coding", ownerAgentId: "expert" }, { name: "nano-banana", ownerAgentId: "paint" }]} />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+
+    await user.type(textarea, "@co");
+
+    expect(screen.getByText("Skills")).toBeInTheDocument();
+    expect(screen.getByText("coding")).toBeInTheDocument();
+    expect(screen.getByText("expert")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /coding/i }));
+
+    expect(textarea).toHaveValue("coding ");
+  });
+
+  it.skip("offers a jump button when the latest assistant reply starts below the viewport", async () => {
+    const viewportRef = { current: null };
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "上面还有旧消息", timestamp: 1 },
+            {
+              role: "assistant",
+              content: "这是一个比较长的新回复，用来验证跳转按钮会把我带回最新 assistant 气泡的开头。",
+              timestamp: 2,
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1400 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+
+    latestAssistantAnchor.getBoundingClientRect = () => {
+      const top = 420 - viewport.scrollTop;
+      return {
+        top,
+        left: 0,
+        right: 560,
+        bottom: top + 260,
+        width: 560,
+        height: 260,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      };
+    };
+
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+      fireEvent.scroll(viewport);
+    });
+
+    fireEvent.scroll(viewport);
+
+    const jumpButton = await screen.findByRole("button", { name: "回到最新回复" });
+    expect(jumpButton).toBeInTheDocument();
+  });
+
+  it("does not open the agent menu when the current agent cannot use sub agents", async () => {
+    render(<MentionHarness availableMentionAgents={[]} />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+
+    await user.type(textarea, "@wr");
+
+    expect(screen.queryByText("writer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /writer/i })).not.toBeInTheDocument();
   });
 });

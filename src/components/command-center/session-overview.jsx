@@ -1,6 +1,5 @@
 import { Languages, Monitor, Moon, Sun } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownIcon,
   DropdownMenu,
@@ -261,17 +260,19 @@ export function SessionOverview({
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
   const isThinkModeEnabled = (session.thinkMode || "off") !== "off";
   const displayedModel = model || session.selectedModel || session.model || messages.common.unknown;
+  const runtimeDisplay = session.runtime || messages.common.unknown;
 
   return (
-    <section>
-      <Card className="overflow-hidden">
-        <CardContent className="space-y-1.5 px-3 py-2.5">
+    <section className="py-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 overflow-x-auto pb-1">
               <div className="flex min-w-max items-center gap-2">
-                <div className="mr-1 inline-flex h-14 min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
-                  <h1 className="truncate text-sm font-semibold tracking-tight">{messages.app.title}</h1>
-                  <span className="truncate text-xs text-muted-foreground">{messages.app.subtitle}</span>
+                <div className="mr-1 inline-flex h-14 min-w-0 items-center gap-2">
+                  <span className="flex h-full items-center text-[1.5rem] leading-none" aria-hidden="true">🦞</span>
+                  <div className="flex min-w-0 flex-col justify-center">
+                    <h1 className="max-w-full truncate text-sm font-semibold leading-none tracking-tight">LalaClaw.ai</h1>
+                    <span className="mt-1 max-w-full truncate text-[11px] leading-none text-muted-foreground">{messages.app.subtitle}</span>
+                  </div>
                 </div>
 
                 <SelectStatusPill
@@ -342,17 +343,6 @@ export function SessionOverview({
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <div className="flex min-w-max items-center gap-2">
-              <MetaChip label={messages.sessionOverview.labels.auth} value={session.auth} />
-              <MetaChip label={messages.sessionOverview.labels.runtime} value={session.runtime} />
-              <MetaChip label={messages.sessionOverview.labels.time} value={session.time} />
-              <MetaChip label={messages.sessionOverview.labels.session} value={session.sessionKey} />
-              <MetaChip label={messages.sessionOverview.labels.mode} value={session.mode === "openclaw" ? messages.common.liveGateway : messages.common.mockMode} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </section>
   );
 }

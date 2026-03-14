@@ -1,8 +1,11 @@
 import { Children, useEffect, useState } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
 import remarkGfm from "remark-gfm";
+import "katex/dist/katex.min.css";
 import { Prism } from "@/lib/prism-languages";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -119,6 +122,53 @@ function promoteStandaloneImageLinks(content = "") {
       return line;
     })
     .join("\n");
+}
+
+function normalizeMathDelimiters(content = "") {
+  return String(content || "")
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, expression) => `\n$$\n${String(expression || "").trim()}\n$$\n`)
+    .replace(/\\\((.+?)\\\)/g, (_, expression) => `$${String(expression || "").trim()}$`);
+}
+
+function resolveMarkdownImageSource(src = "") {
+  const normalizedSrc = String(src || "").trim();
+  if (!normalizedSrc) {
+    return "";
+  }
+
+  if (/^file:\/\//i.test(normalizedSrc)) {
+    try {
+      const fileUrl = new URL(normalizedSrc);
+      const filePath = decodeURIComponent(fileUrl.pathname || "");
+      const normalizedPath = /^\/[A-Za-z]:\//.test(filePath) ? filePath.slice(1) : filePath;
+      if (normalizedPath) {
+        return `/api/file-preview/content?path=${encodeURIComponent(normalizedPath)}`;
+      }
+    } catch {}
+  }
+
+  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedSrc)) {
+    return `/api/file-preview/content?path=${encodeURIComponent(normalizedSrc)}`;
+  }
+
+  return normalizedSrc;
+}
+
+function markdownUrlTransform(url = "") {
+  const normalizedUrl = String(url || "").trim();
+  if (!normalizedUrl) {
+    return normalizedUrl;
+  }
+
+  if (/^file:\/\//i.test(normalizedUrl)) {
+    return normalizedUrl;
+  }
+
+  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedUrl)) {
+    return normalizedUrl;
+  }
+
+  return defaultUrlTransform(normalizedUrl);
 }
 
 function flattenChildrenText(children) {
@@ -282,7 +332,7 @@ function TableRenderer({ children }) {
 export default function MarkdownRenderer({ content, files, headingScopeId = "message", resolvedTheme = "light", className, shellClassName, onOpenFilePreview }) {
   const { messages } = useI18n();
   const [previewImage, setPreviewImage] = useState(null);
-  const normalizedContent = promoteStandaloneImageLinks(content);
+  const normalizedContent = normalizeMathDelimiters(promoteStandaloneImageLinks(content));
   const outlineItems = extractHeadingOutline(normalizedContent);
   let headingRenderIndex = 0;
 
@@ -318,20 +368,30 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
     <>
       <div className={cn(shellClassName, className)}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          urlTransform={markdownUrlTransform}
           components={{
             a: (props) => <LinkRenderer {...props} files={files} onOpenFilePreview={onOpenFilePreview} />,
             code: (props) => <CodeRenderer {...props} files={files} resolvedTheme={resolvedTheme} onOpenFilePreview={onOpenFilePreview} />,
             table: TableRenderer,
-            img: ({ alt, src = "" }) => (
-              <button
-                type="button"
-                className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/60"
-                onClick={() => setPreviewImage({ src, alt: alt || "" })}
-              >
-                <img src={src} alt={alt || ""} className="h-[400px] w-[400px] max-w-full object-cover" loading="lazy" />
-              </button>
-            ),
+            img: ({ alt, src = "" }) => {
+              const resolvedSrc = resolveMarkdownImageSource(src);
+              return (
+                <button
+                  type="button"
+                  className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/40"
+                  onClick={() => setPreviewImage({ src: resolvedSrc, alt: alt || "" })}
+                >
+                  <img
+                    src={resolvedSrc}
+                    alt={alt || ""}
+                    className="block max-h-[28rem] w-auto max-w-full object-contain"
+                    loading="lazy"
+                  />
+                </button>
+              );
+            },
             h1: renderHeading("h1"),
             h2: renderHeading("h2"),
             h3: renderHeading("h3"),

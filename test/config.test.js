@@ -9,6 +9,8 @@ const {
   LOCAL_OPENCLAW_DIR,
   buildRuntimeConfig,
   collectAvailableAgents,
+  collectAvailableSkills,
+  collectAllowedSubagents,
   collectAvailableModels,
   resolveAgentModel,
   resolveCanonicalModelId,
@@ -93,6 +95,53 @@ describe("config", () => {
       "openai/gpt-5",
     ]);
     expect(collectAvailableAgents(localConfig, ["worker", "main"])).toEqual(["worker", "main"]);
+  });
+
+  it("collects only the configured sub agents allowed by the current agent", () => {
+    const localConfig = {
+      agents: {
+        list: [
+          {
+            id: "main",
+            subagents: {
+              allowAgents: ["writer", "reviewer", "writer", "missing"],
+            },
+          },
+          { id: "writer" },
+          { id: "reviewer" },
+          { id: "expert" },
+        ],
+      },
+    };
+
+    expect(collectAllowedSubagents(localConfig, "main")).toEqual(["writer", "reviewer"]);
+    expect(collectAllowedSubagents(localConfig, "expert")).toEqual([]);
+  });
+
+  it("collects skills from the current agent and its allowed sub agents", () => {
+    const localConfig = {
+      agents: {
+        list: [
+          {
+            id: "main",
+            subagents: {
+              allowAgents: ["writer", "reviewer", "missing"],
+            },
+            skills: ["planning"],
+          },
+          { id: "writer", skills: ["drafting", "planning"] },
+          { id: "reviewer", skills: ["checks"] },
+          { id: "expert", skills: ["coding"] },
+        ],
+      },
+    };
+
+    expect(collectAvailableSkills(localConfig, "main")).toEqual([
+      { name: "planning", ownerAgentId: "main" },
+      { name: "drafting", ownerAgentId: "writer" },
+      { name: "checks", ownerAgentId: "reviewer" },
+    ]);
+    expect(collectAvailableSkills(localConfig, "expert")).toEqual([{ name: "coding", ownerAgentId: "expert" }]);
   });
 
   it("builds runtime config from local openclaw config and respects force mock mode", () => {
