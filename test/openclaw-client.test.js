@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { createOpenClawClient } = require("../server/openclaw-client");
+const { createOpenClawClient } = require("../server/services");
 
 function createClient(overrides = {}) {
   return createOpenClawClient({
@@ -116,6 +116,29 @@ describe("createOpenClawClient", () => {
     expect(execFileAsync.mock.calls[0][1]).toContain("agent");
     expect(execFileAsync.mock.calls[1][1]).toContain("agent.wait");
     expect(execFileAsync.mock.calls[2][1]).toContain("chat.history");
+  });
+
+  it("dispatches fast text-only conversations through the direct HTTP API", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ output_text: "快速输出", usage: { total_tokens: 9 } }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const execFileAsync = vi.fn();
+    const client = createClient({ execFileAsync });
+    const result = await client.dispatchOpenClaw(
+      [{ role: "user", content: "快一点" }],
+      true,
+      "command-center",
+    );
+
+    expect(result).toEqual({
+      outputText: "快速输出",
+      usage: { total_tokens: 9 },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(execFileAsync).not.toHaveBeenCalled();
   });
 
   it("returns mock browser peek details when running outside openclaw mode", async () => {

@@ -9,6 +9,7 @@ function createMockReply(intent = '', clip) {
 }
 
 function createChatHandler({
+  appendLocalSessionFileEntries,
   appendLocalSessionConversation,
   buildDashboardSnapshot,
   callOpenClawGateway,
@@ -37,6 +38,24 @@ function createChatHandler({
   setSessionPreferences,
   summarizeMessages,
 }) {
+  async function patchOpenClawSession(callOpenClawGateway, delay, sessionKey, updates = {}) {
+    if (updates.model) {
+      await callOpenClawGateway('sessions.patch', {
+        key: sessionKey,
+        model: updates.model,
+      });
+      await delay(150);
+    }
+
+    if (updates.thinkingLevel) {
+      await callOpenClawGateway('sessions.patch', {
+        key: sessionKey,
+        thinkingLevel: updates.thinkingLevel,
+      });
+      await delay(150);
+    }
+  }
+
   return async function handleChat(req, res) {
     try {
       const body = await parseRequestBody(req);
@@ -53,29 +72,21 @@ function createChatHandler({
       const outboundMessages = latestUserMessage
         ? [{ role: 'user', content: latestUserContent, ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}) }]
         : [];
+      const requestTimestamp = Number(latestUserMessage?.timestamp) || Date.now();
 
-      if (body.agentId || body.model) {
-        const nextAgentId = String(body.agentId || resolveSessionAgentId(sessionUser)).trim() || getDefaultAgentId();
-        const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
-        const requestedModel = typeof body.model === 'string' ? resolveCanonicalModelId(body.model) : '';
-        const nextModel = requestedModel || resolveSessionModel(sessionUser, nextAgentId) || defaultModelForNextAgent;
-        setSessionPreferences(sessionUser, {
-          agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
-          model: requestedModel && requestedModel !== defaultModelForNextAgent ? nextModel : undefined,
-        });
-
-        if (config.mode === 'openclaw') {
-          const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
-          await callOpenClawGateway('sessions.patch', {
-            key: sessionKey,
-            model: nextModel,
-          });
-          await delay(150);
-        }
+      if (latestUserMessage) {
+        appendLocalSessionFileEntries(sessionUser, [
+          {
+            role: 'user',
+            content: latestUserContent,
+            timestamp: requestTimestamp,
+            attachments: latestUserAttachments,
+          },
+        ]);
       }
 
       if (fastCommand) {
-        const responseTimestamp = Date.now();
+        const responseTimestamp = requestTimestamp || Date.now();
         if (fastCommand.action === 'on' || fastCommand.action === 'off') {
           setSessionPreferences(sessionUser, { fastMode: fastCommand.action === 'on' });
         }
@@ -187,14 +198,54 @@ function createChatHandler({
         return;
       }
 
-      const reply =
-        config.mode === 'openclaw'
-          ? await dispatchOpenClaw(outboundMessages, fastMode, sessionUser, { commandBody })
-          : createMockReply(latestUserContent, clip);
-
+      const currentPreferences = getSessionPreferences(sessionUser);
+      const currentAgentId = resolveSessionAgentId(sessionUser);
+      const nextAgentId = body.agentId ? String(body.agentId).trim() || currentAgentId : currentAgentId;
+      const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
       const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
       const nextThinkMode = slashCommandState?.kind === 'thinkMode' ? slashCommandState.value : resolveSessionThinkMode(sessionUser);
-      setSessionPreferences(sessionUser, { fastMode: nextFastMode, thinkMode: nextThinkMode });
+      const requestedModel = typeof body.model === 'string' ? resolveCanonicalModelId(body.model) : '';
+
+      let nextModel = resolveSessionModel(sessionUser, currentAgentId);
+      let shouldPersistModel = Boolean(currentPreferences.model);
+
+      if (nextAgentId !== currentAgentId && !body.model) {
+        nextModel = defaultModelForNextAgent;
+        shouldPersistModel = false;
+      }
+
+      if (body.model) {
+        nextModel = requestedModel || defaultModelForNextAgent;
+        shouldPersistModel = Boolean(requestedModel) && requestedModel !== defaultModelForNextAgent;
+      }
+
+      const shouldPatchModel = nextAgentId !== currentAgentId || nextModel !== resolveSessionModel(sessionUser, currentAgentId);
+      const shouldPatchThinkMode = slashCommandState?.kind === 'thinkMode' && nextThinkMode !== resolveSessionThinkMode(sessionUser);
+      const nextPreferences = {
+        agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
+        model: shouldPersistModel ? nextModel : undefined,
+        fastMode: nextFastMode,
+        thinkMode: nextThinkMode,
+      };
+
+      if (config.mode === 'openclaw' && (shouldPatchModel || shouldPatchThinkMode)) {
+        await patchOpenClawSession(
+          callOpenClawGateway,
+          delay,
+          getCommandCenterSessionKey(nextAgentId, sessionUser),
+          {
+            ...(shouldPatchModel ? { model: nextModel } : {}),
+            ...(shouldPatchThinkMode ? { thinkingLevel: nextThinkMode } : {}),
+          },
+        );
+      }
+
+      setSessionPreferences(sessionUser, nextPreferences);
+
+      const reply =
+        config.mode === 'openclaw'
+          ? await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
+          : createMockReply(latestUserContent, clip);
 
       const snapshot = await buildDashboardSnapshot(sessionUser);
       snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';

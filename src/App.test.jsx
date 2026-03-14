@@ -20,6 +20,7 @@ function createSnapshot(overrides = {}) {
       selectedAgentId: "main",
       sessionUser: "command-center",
       sessionKey: "agent:main:openai-user:command-center",
+      workspaceRoot: "/Users/marila/.openclaw/workspace",
       status: "已完成",
       fastMode: "关闭",
       contextUsed: 0,
@@ -64,11 +65,94 @@ function createSessionSnapshot(sessionUser = "command-center") {
   };
 }
 
-function hasNormalizedText(target) {
-  const normalizedTarget = String(target).replace(/\s+/g, "");
-  return (_, element) => {
-    const text = element?.textContent?.replace(/\s+/g, "") || "";
-    return text === normalizedTarget;
+function createInteractiveFetchMock({
+  agentId = "main",
+  availableAgents = ["main"],
+  availableModels = ["openclaw"],
+  model = "openclaw",
+  sessionUser = "command-center",
+  thinkMode = "off",
+  agentModels = {},
+} = {}) {
+  const state = {
+    agentId,
+    availableAgents,
+    availableModels,
+    fastMode: false,
+    model,
+    sessionUser,
+    thinkMode,
+  };
+  const sessionUpdates = [];
+  const chatBodies = [];
+
+  const buildSnapshot = (overrides = {}) =>
+    createSnapshot({
+      model: state.model,
+      session: {
+        ...createSnapshot().session,
+        agentId: state.agentId,
+        selectedAgentId: state.agentId,
+        availableAgents: state.availableAgents,
+        availableModels: state.availableModels,
+        fastMode: state.fastMode ? "已开启" : "已关闭",
+        model: state.model,
+        selectedModel: state.model,
+        sessionKey: `agent:${state.agentId}:openai-user:${state.sessionUser}`,
+        sessionUser: state.sessionUser,
+        thinkMode: state.thinkMode,
+      },
+      ...overrides,
+    });
+
+  const fetchMock = vi.fn(async (input, init) => {
+    const url = String(input);
+    if (url.startsWith("/api/runtime")) {
+      return mockJsonResponse(buildSnapshot());
+    }
+
+    if (url === "/api/session" && init?.method === "POST") {
+      const body = JSON.parse(init.body);
+      sessionUpdates.push(body);
+
+      if (body.agentId) {
+        state.agentId = body.agentId;
+        state.model = agentModels[body.agentId] || body.model || state.model;
+      }
+
+      if (body.model) {
+        state.model = body.model;
+      }
+
+      if (typeof body.fastMode === "boolean") {
+        state.fastMode = body.fastMode;
+      }
+
+      if (typeof body.thinkMode === "string") {
+        state.thinkMode = body.thinkMode;
+      }
+
+      return mockJsonResponse(buildSnapshot());
+    }
+
+    if (url === "/api/chat" && init?.method === "POST") {
+      const body = JSON.parse(init.body);
+      chatBodies.push(body);
+
+      return mockJsonResponse({
+        ...buildSnapshot(),
+        outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+        metadata: { status: body.fastMode ? "已完成 / 快速" : "已完成 / 标准" },
+      });
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  return {
+    chatBodies,
+    fetchMock,
+    sessionUpdates,
   };
 }
 
@@ -709,7 +793,56 @@ describe("App", () => {
         }),
       );
     });
-    expect(screen.getByText("openrouter/google/gemini-3-flash-preview")).toBeInTheDocument();
+  });
+
+  it("keeps the previous model selected when session update fails", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            model: "openai-codex/gpt-5.4",
+            session: {
+              ...createSnapshot().session,
+              model: "openai-codex/gpt-5.4",
+              selectedModel: "openai-codex/gpt-5.4",
+              availableModels: ["openai-codex/gpt-5.4", "openrouter/google/gemini-3-flash-preview"],
+            },
+          }),
+        );
+      }
+
+      if (url === "/api/session" && init?.method === "POST") {
+        return mockJsonResponse({ ok: false, error: "Session update failed" }, false, 500);
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw.ai");
+
+    await user.click(screen.getByLabelText("切换模型"));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "openrouter/google/gemini-3-flash-preview" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/session",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("openrouter/google/gemini-3-flash-preview"),
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("openai-codex/gpt-5.4").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("openrouter/google/gemini-3-flash-preview")).not.toBeInTheDocument();
   });
 
   it("keeps prompt history isolated after resetting into a new session", async () => {
@@ -750,5 +883,82 @@ describe("App", () => {
     await user.click(textarea);
     await user.keyboard("{ArrowUp}");
     expect(textarea).toHaveValue("");
+  });
+
+  it("applies model, fast mode, and think mode changes before sending the next turn", async () => {
+    const harness = createInteractiveFetchMock({
+      availableModels: ["openai-codex/gpt-5.4", "openrouter/google/gemini-3-flash-preview"],
+      model: "openai-codex/gpt-5.4",
+    });
+
+    vi.stubGlobal("fetch", harness.fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw.ai");
+
+    await user.click(screen.getByLabelText("切换模型"));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "openrouter/google/gemini-3-flash-preview" }));
+
+    await user.click(screen.getByRole("button", { name: "快速模式 已关闭" }));
+
+    await user.click(screen.getByLabelText("切换思考模式"));
+    await user.click(
+      screen.getByRole("menuitemcheckbox", {
+        name: (name) => name.startsWith("high") && !name.startsWith("xhigh"),
+      }),
+    );
+
+    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "整理一下当前项目");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("已处理：整理一下当前项目")).toBeInTheDocument();
+    expect(harness.sessionUpdates).toEqual([
+      { sessionUser: "command-center", model: "openrouter/google/gemini-3-flash-preview" },
+      { sessionUser: "command-center", fastMode: true },
+      { sessionUser: "command-center", thinkMode: "high" },
+    ]);
+    expect(harness.chatBodies[0]).toMatchObject({
+      agentId: "main",
+      fastMode: true,
+      model: "openrouter/google/gemini-3-flash-preview",
+      sessionUser: "command-center",
+    });
+  });
+
+  it("sends the next chat turn to the newly selected agent", async () => {
+    const harness = createInteractiveFetchMock({
+      availableAgents: ["main", "worker"],
+      availableModels: ["openai-codex/gpt-5.4", "anthropic/claude-sonnet-4.5"],
+      agentModels: {
+        main: "openai-codex/gpt-5.4",
+        worker: "anthropic/claude-sonnet-4.5",
+      },
+      model: "openai-codex/gpt-5.4",
+    });
+
+    vi.stubGlobal("fetch", harness.fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw.ai");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+
+    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "继续处理 worker 任务");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("已处理：继续处理 worker 任务")).toBeInTheDocument();
+    expect(harness.sessionUpdates).toEqual([
+      { sessionUser: "command-center", agentId: "worker" },
+    ]);
+    expect(harness.chatBodies[0]).toMatchObject({
+      agentId: "worker",
+      model: "anthropic/claude-sonnet-4.5",
+      sessionUser: "command-center",
+    });
   });
 });

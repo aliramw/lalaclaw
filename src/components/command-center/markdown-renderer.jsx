@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { Children, useEffect, useState } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Prism } from "@/lib/prism-languages";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
-const codeTheme = themes.vsDark;
+const codeTheme = themes.dracula;
 const homePrefix = "/Users/marila";
+const trackedFileLinkButtonClassName =
+  "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
+const inlineTrackedFileClassName =
+  "cc-inline-code cc-inline-code-link inline cursor-pointer appearance-none rounded-[5px] border bg-transparent px-1.5 py-0.5 text-left align-baseline font-mono text-[0.9em] font-normal leading-tight no-underline";
 
 function compactHomePath(filePath = "") {
   if (!filePath) {
@@ -116,12 +121,39 @@ function promoteStandaloneImageLinks(content = "") {
     .join("\n");
 }
 
-function LinkRenderer({ href, children, ...props }) {
+function flattenChildrenText(children) {
+  return Children.toArray(children)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") {
+        return String(child);
+      }
+      return "";
+    })
+    .join("")
+    .trim();
+}
+
+function LinkRenderer({ href, children, files, onOpenFilePreview, ...props }) {
   const isExternal = typeof href === "string" && /^https?:\/\//i.test(href);
+  const matchedFile = resolveTrackedFile(href, files) || resolveTrackedFile(flattenChildrenText(children), files);
+
+  if (matchedFile && onOpenFilePreview) {
+    return (
+      <button
+        type="button"
+        title={matchedFile.fullPath || matchedFile.path}
+        className={trackedFileLinkButtonClassName}
+        onClick={() => onOpenFilePreview(matchedFile)}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  }
 
   return (
     <a
-      href={href}
+      href={matchedFile ? getVsCodeHref(matchedFile.fullPath || matchedFile.path) : href}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noreferrer" : undefined}
       className="file-link"
@@ -172,9 +204,9 @@ function CodeBlock({ code, language }) {
         </span>
         <CopyButton code={code} />
       </div>
-      <Highlight theme={codeTheme} code={code} language={normalizedLanguage}>
+      <Highlight prism={Prism} theme={codeTheme} code={code} language={normalizedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
-          <pre className="overflow-x-auto px-0 py-1.5 text-[12px] leading-5">
+          <pre className="overflow-x-auto px-0 py-1.5 text-[12px] leading-5 text-zinc-50">
             {tokens.map((line, lineIndex) => (
               <div
                 key={lineIndex}
@@ -193,7 +225,7 @@ function CodeBlock({ code, language }) {
   );
 }
 
-function CodeRenderer({ className, children, files, ...props }) {
+function CodeRenderer({ className, children, files, onOpenFilePreview, ...props }) {
   const match = /language-([\w-]+)/.exec(className || "");
   const code = String(children || "").replace(/\n$/, "");
   const isBlock = Boolean(match) || code.includes("\n");
@@ -202,11 +234,24 @@ function CodeRenderer({ className, children, files, ...props }) {
     const matchedFile = resolveTrackedFile(code, files);
 
     if (matchedFile) {
+      if (onOpenFilePreview) {
+        return (
+          <button
+            type="button"
+            title={matchedFile.fullPath || matchedFile.path}
+            className={inlineTrackedFileClassName}
+            onClick={() => onOpenFilePreview(matchedFile)}
+          >
+            {children}
+          </button>
+        );
+      }
+
       return (
         <a
           href={getVsCodeHref(matchedFile.fullPath || matchedFile.path)}
           title={matchedFile.fullPath || matchedFile.path}
-          className="cc-inline-code cc-inline-code-link inline cursor-pointer rounded-[5px] border px-1.5 py-0.5 font-mono text-[0.9em] no-underline"
+          className={inlineTrackedFileClassName}
         >
           {children}
         </a>
@@ -215,7 +260,7 @@ function CodeRenderer({ className, children, files, ...props }) {
 
     return (
       <code
-        className="cc-inline-code rounded-[5px] border px-1.5 py-0.5 font-mono text-[0.9em]"
+        className="cc-inline-code rounded-[5px] border px-1.5 py-0.5 font-mono text-[0.9em] leading-tight"
         {...props}
       >
         {children}
@@ -234,7 +279,7 @@ function TableRenderer({ children }) {
   );
 }
 
-export default function MarkdownRenderer({ content, files, headingScopeId = "message", className, shellClassName }) {
+export default function MarkdownRenderer({ content, files, headingScopeId = "message", resolvedTheme = "light", className, shellClassName, onOpenFilePreview }) {
   const { messages } = useI18n();
   const [previewImage, setPreviewImage] = useState(null);
   const normalizedContent = promoteStandaloneImageLinks(content);
@@ -275,8 +320,8 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
-            a: LinkRenderer,
-            code: (props) => <CodeRenderer {...props} files={files} />,
+            a: (props) => <LinkRenderer {...props} files={files} onOpenFilePreview={onOpenFilePreview} />,
+            code: (props) => <CodeRenderer {...props} files={files} resolvedTheme={resolvedTheme} onOpenFilePreview={onOpenFilePreview} />,
             table: TableRenderer,
             img: ({ alt, src = "" }) => (
               <button

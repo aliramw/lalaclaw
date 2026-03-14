@@ -146,4 +146,36 @@ describe("SessionOverview", () => {
 
     expect(screen.getByText("openrouter/qwen/qwen3.5-397b-a17b")).toBeInTheDocument();
   });
+
+  it("keeps the theme toggle as compact as the language switcher", () => {
+    window.localStorage.setItem(localeStorageKey, "en");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="dark"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "Switch language" })).toHaveClass("h-8");
+    expect(screen.getByRole("button", { name: "Follow system" }).parentElement).toHaveClass("h-8");
+    expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-7", "w-7");
+    expect(screen.getByRole("button", { name: "Light" })).toHaveClass("h-7", "w-7");
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveClass("h-7", "w-7");
+  });
 });

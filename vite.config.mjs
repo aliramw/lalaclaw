@@ -59,6 +59,23 @@ export default defineConfig({
     },
   },
   test: {
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      reportsDirectory: "./coverage",
+      thresholds: {
+        lines: 50,
+        functions: 52,
+        statements: 50,
+        branches: 40,
+      },
+      exclude: [
+        "dist/**",
+        "coverage/**",
+        "test/**",
+        "docs/**",
+      ],
+    },
     environment: "jsdom",
     globals: true,
     setupFiles: "./test/setup.js",

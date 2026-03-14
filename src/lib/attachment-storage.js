@@ -63,6 +63,8 @@ function createAttachmentReference(attachment = {}) {
     name: attachment.name,
     size: attachment.size,
     mimeType: attachment.mimeType,
+    path: attachment.path,
+    fullPath: attachment.fullPath,
     ...(attachment.truncated ? { truncated: attachment.truncated } : {}),
     storageKey: createAttachmentStorageKey(attachment),
   };

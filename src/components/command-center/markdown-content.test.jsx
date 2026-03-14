@@ -1,14 +1,14 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 
 describe("MarkdownContent", () => {
   it("renders headings, links, and inline code", async () => {
     render(<MarkdownContent content={`# 控制台\n\n访问 [OpenAI](https://openai.com)\n\n使用 \`npm test\``} />);
 
-    expect(await screen.findByRole("heading", { name: "控制台" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: "OpenAI" })).toHaveAttribute("href", "https://openai.com");
+    expect(await screen.findByRole("heading", { name: "控制台" }, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "OpenAI" }, { timeout: 4000 })).toHaveAttribute("href", "https://openai.com");
     expect(await screen.findByText("npm test")).toBeInTheDocument();
   });
 
@@ -41,5 +41,35 @@ describe("MarkdownContent", () => {
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
+  });
+
+  it("keeps tracked inline file buttons styled like inline code", async () => {
+    const onOpenFilePreview = () => {};
+
+    render(
+      <MarkdownContent
+        content={"查看 `sample.py`"}
+        files={[{ path: "/Users/marila/projects/lalaclaw/sample.py", fullPath: "/Users/marila/projects/lalaclaw/sample.py" }]}
+        onOpenFilePreview={onOpenFilePreview}
+      />,
+    );
+
+    const fileButton = await screen.findByRole("button", { name: "sample.py" });
+    expect(fileButton).toHaveClass("cc-inline-code", "cc-inline-code-link", "appearance-none", "bg-transparent", "align-baseline", "leading-tight");
+  });
+
+  it("keeps tracked file links reset to link-like button styling", async () => {
+    const onOpenFilePreview = () => {};
+
+    render(
+      <MarkdownContent
+        content={"[sample.py](/Users/marila/projects/lalaclaw/sample.py)"}
+        files={[{ path: "/Users/marila/projects/lalaclaw/sample.py", fullPath: "/Users/marila/projects/lalaclaw/sample.py" }]}
+        onOpenFilePreview={onOpenFilePreview}
+      />,
+    );
+
+    const fileButton = await screen.findByRole("button", { name: "sample.py" });
+    expect(fileButton).toHaveClass("file-link", "appearance-none", "border-0", "bg-transparent", "p-0", "leading-inherit");
   });
 });

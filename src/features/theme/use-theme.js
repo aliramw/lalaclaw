@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { loadStoredTheme, themeStorageKey } from "@/features/app/app-storage";
+import { loadStoredTheme, themeStorageKey } from "@/features/app/storage";
 
 export function useTheme() {
   const [theme, setTheme] = useState(() => loadStoredTheme());

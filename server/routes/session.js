@@ -50,6 +50,7 @@ function createSessionHandlers({
     try {
       const body = await parseRequestBody(req);
       const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+      const currentPreferences = getSessionPreferences(sessionUser);
       const nextFastMode = typeof body.fastMode === 'boolean' ? body.fastMode : resolveSessionFastMode(sessionUser);
       const requestedThinkMode = typeof body.thinkMode === 'string' ? normalizeThinkMode(body.thinkMode) : '';
       if (typeof body.thinkMode === 'string' && !requestedThinkMode) {
@@ -62,7 +63,7 @@ function createSessionHandlers({
       const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
 
       let nextModel = resolveSessionModel(sessionUser, previousAgentId);
-      let shouldPersistModel = Boolean(getSessionPreferences(sessionUser).model);
+      let shouldPersistModel = Boolean(currentPreferences.model);
 
       if (body.agentId && !body.model) {
         nextModel = defaultModelForNextAgent;
@@ -75,15 +76,15 @@ function createSessionHandlers({
         shouldPersistModel = Boolean(requestedModel) && requestedModel !== defaultModelForNextAgent;
       }
 
-      setSessionPreferences(sessionUser, {
+      const nextPreferences = {
         agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
         model: shouldPersistModel ? nextModel : undefined,
         fastMode: nextFastMode,
         thinkMode: nextThinkMode,
-      });
+      };
+      const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
 
       if (config.mode === 'openclaw' && (body.model || body.agentId)) {
-        const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
         await callOpenClawGateway('sessions.patch', {
           key: sessionKey,
           model: nextModel,
@@ -92,13 +93,14 @@ function createSessionHandlers({
       }
 
       if (config.mode === 'openclaw' && requestedThinkMode) {
-        const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
         await callOpenClawGateway('sessions.patch', {
           key: sessionKey,
           thinkingLevel: requestedThinkMode,
         });
         await delay(150);
       }
+
+      setSessionPreferences(sessionUser, nextPreferences);
 
       const snapshot = await buildDashboardSnapshot(sessionUser);
       sendJson(res, 200, {

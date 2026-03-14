@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { createTranscriptProjector } = require("../server/transcript");
+const { createTranscriptProjector } = require("../server/services");
 
 function createProjector(overrides = {}) {
   return createTranscriptProjector({
@@ -98,6 +98,168 @@ describe("createTranscriptProjector", () => {
         timestamp: 10,
       },
     ]);
+  });
+
+  it("collects files mentioned in assistant text and injected workspace files", () => {
+    const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
+    const writerWorkspace = path.join(tmpRoot, "workspace-writer");
+    const userFile = path.join(writerWorkspace, "USER.md");
+    const projectFile = path.join(tmpRoot, "src", "App.jsx");
+    fs.mkdirSync(path.dirname(userFile), { recursive: true });
+    fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+    fs.writeFileSync(userFile, "# user\n");
+    fs.writeFileSync(projectFile, "export default null;\n");
+
+    const projector = createProjector({
+      PROJECT_ROOT: tmpRoot,
+    });
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "assistant",
+          timestamp: 1,
+          content: [{ type: "text", text: "你的 `USER.md` 里定义了风格。" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [{ type: "text", text: `完整路径是 \`${projectFile}\`` }],
+        },
+      },
+    ];
+
+    expect(
+      projector.collectFiles(entries, [tmpRoot], {
+        injectedFiles: [{ path: userFile }],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        path: "src/App.jsx",
+        fullPath: projectFile,
+        primaryAction: "viewed",
+      }),
+      expect.objectContaining({
+        path: "workspace-writer/USER.md",
+        fullPath: userFile,
+        primaryAction: "viewed",
+      }),
+    ]);
+  });
+
+  it("collects files from message attachments with local paths", () => {
+    const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
+    const imageFile = path.join(tmpRoot, "assets", "poster.png");
+    fs.mkdirSync(path.dirname(imageFile), { recursive: true });
+    fs.writeFileSync(imageFile, "png");
+
+    const projector = createProjector({
+      PROJECT_ROOT: tmpRoot,
+    });
+
+    expect(
+      projector.collectFiles(
+        [
+          {
+            type: "message",
+            timestamp: 1,
+            message: {
+              role: "user",
+              timestamp: 1,
+              content: [{ type: "text", text: "帮我看这张图" }],
+              attachments: [{ name: "poster.png", path: imageFile, fullPath: imageFile, kind: "image" }],
+            },
+          },
+        ],
+        [tmpRoot],
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        path: "assets/poster.png",
+        fullPath: imageFile,
+        primaryAction: "viewed",
+      }),
+    ]);
+  });
+
+  it("prioritizes recently mentioned files over older file mtimes", () => {
+    const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
+    const recentWorkspaceFile = path.join(tmpRoot, "workspace", "latest.md");
+    const olderMentionedFile = path.join(tmpRoot, "assets", "poster.png");
+    fs.mkdirSync(path.dirname(recentWorkspaceFile), { recursive: true });
+    fs.mkdirSync(path.dirname(olderMentionedFile), { recursive: true });
+    fs.writeFileSync(recentWorkspaceFile, "latest");
+    fs.writeFileSync(olderMentionedFile, "poster");
+    fs.utimesSync(recentWorkspaceFile, new Date("2026-03-15T00:00:00Z"), new Date("2026-03-15T00:00:00Z"));
+    fs.utimesSync(olderMentionedFile, new Date("2026-03-01T00:00:00Z"), new Date("2026-03-01T00:00:00Z"));
+
+    const projector = createProjector({
+      PROJECT_ROOT: tmpRoot,
+    });
+
+    const files = projector.collectFiles(
+      [
+        {
+          type: "message",
+          timestamp: 1,
+          message: {
+            role: "assistant",
+            timestamp: 1,
+            content: [{ type: "text", text: `更新了 ${recentWorkspaceFile}` }],
+          },
+        },
+        {
+          type: "message",
+          timestamp: 2,
+          message: {
+            role: "user",
+            timestamp: 2,
+            content: [{ type: "text", text: `你看一下这个文件：${olderMentionedFile}` }],
+          },
+        },
+      ],
+      [tmpRoot],
+    );
+
+    expect(files[0]).toMatchObject({
+      path: "assets/poster.png",
+      fullPath: olderMentionedFile,
+      primaryAction: "viewed",
+    });
+  });
+
+  it("preserves all detected files instead of truncating to eight entries", () => {
+    const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
+    const projector = createProjector({
+      PROJECT_ROOT: tmpRoot,
+    });
+
+    const entries = Array.from({ length: 9 }, (_, index) => {
+      const filePath = path.join(tmpRoot, "batch", `file-${index + 1}.md`);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, `file ${index + 1}`);
+      return {
+        type: "message",
+        timestamp: index + 1,
+        message: {
+          role: "assistant",
+          timestamp: index + 1,
+          content: [{ type: "text", text: `查看 ${filePath}` }],
+        },
+      };
+    });
+
+    const files = projector.collectFiles(entries, [tmpRoot]);
+
+    expect(files).toHaveLength(9);
+    expect(files.at(-1)).toMatchObject({
+      path: "batch/file-1.md",
+    });
   });
 
   it("builds agent graph from local config and session index activity", () => {

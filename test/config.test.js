@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const configModule = require("../server/config");
+const configModule = require("../server/core");
 
 const {
   LOCAL_OPENCLAW_DIR,

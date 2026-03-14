@@ -118,6 +118,19 @@
 }
 
 @layer components {
+  @keyframes cc-thinking-breath {
+    0%,
+    100% {
+      transform: scale(0.965);
+      opacity: 0.84;
+    }
+
+    50% {
+      transform: scale(1.055);
+      opacity: 1;
+    }
+  }
+
   .file-link {
     color: var(--file-link);
   }
@@ -132,6 +145,7 @@
     border: 1px solid #d7dde7 !important;
     background: #eef3f8 !important;
     color: #243345 !important;
+    line-height: 1.2 !important;
   }
 
   .cc-inline-code-link {
@@ -199,6 +213,13 @@
     background: #f1f2f6 !important;
     color: #18212b !important;
     box-shadow: none !important;
+  }
+
+  .cc-thinking-bubble,
+  .cc-thinking-bubble[class] {
+    transform-origin: left center;
+    animation: cc-thinking-breath 1.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    will-change: transform, opacity;
   }
 
   html[data-theme="dark"] .cc-user-bubble,

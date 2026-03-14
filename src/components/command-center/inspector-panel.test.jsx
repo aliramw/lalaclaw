@@ -1,8 +1,13 @@
 import { useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+function renderWithTooltip(node) {
+  return render(<TooltipProvider delayDuration={0}>{node}</TooltipProvider>);
+}
 
 function TestHarness() {
   const [activeTab, setActiveTab] = useState("timeline");
@@ -12,6 +17,7 @@ function TestHarness() {
       activeTab={activeTab}
       agents={[{ label: "main", detail: "主 Agent" }]}
       artifacts={[{ title: "交付结果", type: "assistant_output", detail: "生成完成" }]}
+      currentWorkspaceRoot="/Users/marila/.openclaw/workspace-writer"
       files={[{ path: "src/App.jsx", kind: "文件" }]}
       peeks={{
         workspace: { summary: "工作区摘要", items: [{ label: "目录", value: "src" }] },
@@ -41,8 +47,12 @@ function TestHarness() {
 }
 
 describe("InspectorPanel", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders timeline details and switches tabs", async () => {
-    render(<TestHarness />);
+    renderWithTooltip(<TestHarness />);
 
     expect(screen.getByText("修复错误")).toBeInTheDocument();
     expect(screen.getByText("输入")).toBeInTheDocument();
@@ -62,7 +72,7 @@ describe("InspectorPanel", () => {
   });
 
   it("collapses timeline detail blocks on demand", async () => {
-    render(<TestHarness />);
+    renderWithTooltip(<TestHarness />);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "收起详情" }));
@@ -74,7 +84,7 @@ describe("InspectorPanel", () => {
   it("hides the files count badge when there are no files", () => {
     const [activeTab, setActiveTab] = ["timeline", () => {}];
 
-    render(
+    renderWithTooltip(
       <InspectorPanel
         activeTab={activeTab}
         agents={[]}
@@ -89,5 +99,330 @@ describe("InspectorPanel", () => {
     );
 
     expect(screen.getByRole("tab", { name: "文件" })).toHaveTextContent(/^文件$/);
+  });
+
+  it("renders copy buttons for tool input and output headers", async () => {
+    renderWithTooltip(<TestHarness />);
+
+    const user = userEvent.setup();
+    const copyButtons = screen.getAllByRole("button", { name: "复制代码" });
+    expect(copyButtons).toHaveLength(2);
+    await user.click(copyButtons[0]);
+  });
+
+  it("collapses individual tool cards inside the detail section", async () => {
+    renderWithTooltip(<TestHarness />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "edit_file 收起详情" }));
+
+    expect(screen.queryByText("输入")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "edit_file 查看详情" })).toBeInTheDocument();
+  });
+
+  it("clips workspace-root paths in file displays while keeping external paths full", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace-writer"
+        files={[
+          { path: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", fullPath: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", kind: "文件", primaryAction: "viewed" },
+          { path: "/Users/marila/projects/lalaclaw/src/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/App.jsx", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByText("TOOLS.md")).toBeInTheDocument();
+    expect(screen.getByText("~/projects/lalaclaw/src/App.jsx")).toBeInTheDocument();
+  });
+
+  it("sorts file groups alphabetically by display path", () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/zeta.md", fullPath: "/Users/marila/projects/lalaclaw/zeta.md", kind: "文件", primaryAction: "viewed" },
+          { path: "/Users/marila/projects/lalaclaw/alpha.md", fullPath: "/Users/marila/projects/lalaclaw/alpha.md", kind: "文件", primaryAction: "viewed" },
+          { path: "/Users/marila/projects/lalaclaw/folder/beta.md", fullPath: "/Users/marila/projects/lalaclaw/folder/beta.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    const links = screen.getAllByTitle(/\/Users\/marila\/projects\/lalaclaw\//);
+    expect(links.map((element) => element.textContent)).toEqual(["alpha.md", "folder/beta.md", "zeta.md"]);
+  });
+
+  it("supports collapsing file action groups", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/alpha.md", fullPath: "/Users/marila/projects/lalaclaw/alpha.md", kind: "文件", primaryAction: "created" },
+          { path: "/Users/marila/projects/lalaclaw/beta.md", fullPath: "/Users/marila/projects/lalaclaw/beta.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByText("alpha.md")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "创建 收起详情" }));
+
+    expect(screen.queryByText("alpha.md")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建 查看详情" })).toBeInTheDocument();
+    expect(screen.getByText("beta.md")).toBeInTheDocument();
+  });
+
+  it("opens a full-screen markdown preview when clicking a file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          kind: "markdown",
+          path: "/Users/marila/.openclaw/workspace-writer/TOOLS.md",
+          name: "TOOLS.md",
+          content: "# Title\n\nhello preview",
+        }),
+      })),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace-writer"
+        files={[
+          { path: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", fullPath: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "TOOLS.md" }));
+
+    expect(await screen.findByText("hello preview")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByText("hello preview")).not.toBeInTheDocument();
+  });
+
+  it("renders code-like text previews with the same code block UI as json", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          kind: "text",
+          path: "/Users/marila/projects/lalaclaw/src/App.jsx",
+          name: "App.jsx",
+          content: "export default function App() { return null; }",
+        }),
+      })),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/src/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/App.jsx", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "src/App.jsx" }));
+
+    expect(await screen.findByText("jsx")).toBeInTheDocument();
+    expect(document.querySelector("pre")?.textContent).toContain("export default function App() { return null; }");
+  });
+
+  it("renders lua text previews with lua syntax highlighting", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          kind: "text",
+          path: "/Users/marila/projects/lalaclaw/scripts/init.lua",
+          name: "init.lua",
+          content: "local answer = 42\nreturn answer\n",
+        }),
+      })),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/scripts/init.lua", fullPath: "/Users/marila/projects/lalaclaw/scripts/init.lua", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "scripts/init.lua" }));
+
+    expect(await screen.findByText("lua")).toBeInTheDocument();
+    expect(document.querySelector("pre")?.textContent).toContain("local answer = 42");
+  });
+
+  it.each([
+    {
+      label: "scripts/main.dart",
+      path: "/Users/marila/projects/lalaclaw/scripts/main.dart",
+      language: "dart",
+      content: "void main() {\n  print('hi');\n}\n",
+      expectedSnippet: "void main()",
+    },
+    {
+      label: "lib/app.ex",
+      path: "/Users/marila/projects/lalaclaw/lib/app.ex",
+      language: "elixir",
+      content: "defmodule App do\nend\n",
+      expectedSnippet: "defmodule App do",
+    },
+    {
+      label: "tools/build.pl",
+      path: "/Users/marila/projects/lalaclaw/tools/build.pl",
+      language: "perl",
+      content: "my $value = 42;\nprint $value;\n",
+      expectedSnippet: "my $value = 42;",
+    },
+    {
+      label: "analysis/report.r",
+      path: "/Users/marila/projects/lalaclaw/analysis/report.r",
+      language: "r",
+      content: "value <- 42\nprint(value)\n",
+      expectedSnippet: "value <- 42",
+    },
+  ])("renders $language text previews with syntax highlighting", async ({ label, path, language, content, expectedSnippet }) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          kind: "text",
+          path,
+          name: path.split("/").pop(),
+          content,
+        }),
+      })),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[{ path, fullPath: path, kind: "文件", primaryAction: "viewed" }]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: label }));
+
+    expect(await screen.findByText(language)).toBeInTheDocument();
+    expect(document.querySelector("pre")?.textContent).toContain(expectedSnippet);
+  });
+
+  it("opens a context menu on right click and shows copy path", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "AGENTS.md" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+
+    expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
   });
 });

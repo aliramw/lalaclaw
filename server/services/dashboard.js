@@ -1,0 +1,289 @@
+function mergeConversationMessages(primary = [], secondary = []) {
+  return [...primary, ...secondary]
+    .filter((entry) => entry?.role && entry?.content)
+    .sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0))
+    .slice(-80);
+}
+
+function mergeProjectedFiles(primary = [], secondary = []) {
+  const merged = new Map();
+
+  [...primary, ...secondary].forEach((item) => {
+    const key = item?.fullPath || item?.path;
+    if (!key || merged.has(key)) {
+      return;
+    }
+    merged.set(key, item);
+  });
+
+  return [...merged.values()];
+}
+
+function createDashboardService({
+  HOST,
+  PORT,
+  PROJECT_ROOT,
+  clip,
+  collectAvailableAgents,
+  collectAvailableModels,
+  collectArtifacts,
+  collectConversationMessages,
+  collectFiles,
+  collectLatestRunUsage,
+  collectSnapshots,
+  collectTaskTimeline,
+  collectToolHistory,
+  config,
+  extractTextSegments,
+  fetchBrowserPeek,
+  formatTokenBadge,
+  formatTimestamp,
+  getCommandCenterSessionKey,
+  getDefaultModelForAgent,
+  getLocalSessionFileEntries,
+  getLocalSessionConversation,
+  getTranscriptPath,
+  invokeOpenClawTool,
+  listDirectoryPreview,
+  normalizeSessionUser,
+  parseSessionStatusText,
+  readJsonLines,
+  readTextIfExists,
+  resolveAgentDisplayName,
+  resolveAgentWorkspace,
+  resolveSessionAgentId,
+  resolveSessionFastMode,
+  resolveSessionModel,
+  resolveSessionRecord,
+  resolveSessionThinkMode,
+  buildAgentGraph,
+  tailLines,
+}) {
+  function buildWorkspacePeek() {
+    const projectEntries = listDirectoryPreview(PROJECT_ROOT);
+    const agentEntries = listDirectoryPreview(config.workspaceRoot);
+
+    return {
+      summary: '当前项目目录与 OpenClaw 主工作区的只读预览。',
+      items: [
+        { label: '当前项目', value: PROJECT_ROOT },
+        { label: 'Agent 工作区', value: config.workspaceRoot },
+        { label: '项目内容', value: projectEntries.map((item) => `${item.kind === 'dir' ? '目录' : '文件'} ${item.name}`).join(' · ') || '暂无内容' },
+        { label: '工作区内容', value: agentEntries.map((item) => `${item.kind === 'dir' ? '目录' : '文件'} ${item.name}`).join(' · ') || '暂无内容' },
+      ],
+    };
+  }
+
+  function buildTerminalPeek() {
+    const gatewayLogLines = tailLines(readTextIfExists(`${config.logsDir}/gateway.log`), 5);
+
+    return {
+      summary: '本地服务端口与最近日志。',
+      items: [
+        { label: 'CommandCenter', value: `http://${HOST}:${PORT}` },
+        { label: 'OpenClaw Gateway', value: config.mode === 'openclaw' ? config.baseUrl : '未连接' },
+        { label: '最近日志', value: gatewayLogLines.length ? gatewayLogLines.join(' | ') : '暂无日志' },
+      ],
+    };
+  }
+
+  function buildMockSnapshot(sessionUser = 'command-center') {
+    const now = Date.now();
+    const agentId = resolveSessionAgentId(sessionUser);
+    const agentLabel = resolveAgentDisplayName(agentId);
+    const workspaceRoot = typeof resolveAgentWorkspace === 'function' ? resolveAgentWorkspace(agentId) : config.workspaceRoot;
+    const model = resolveSessionModel(sessionUser, agentId);
+    const fastMode = resolveSessionFastMode(sessionUser);
+    const thinkMode = resolveSessionThinkMode(sessionUser);
+    const localConversation = getLocalSessionConversation(sessionUser);
+    const localFileEntries = getLocalSessionFileEntries(sessionUser);
+    const localFiles = collectFiles(localFileEntries, [PROJECT_ROOT, workspaceRoot], { injectedFiles: [] });
+    return {
+      session: {
+        mode: 'mock',
+        model,
+        selectedModel: model,
+        agentId,
+        agentLabel,
+        selectedAgentId: agentId,
+        sessionUser: normalizeSessionUser(sessionUser),
+        sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
+        workspaceRoot,
+        status: '已完成',
+        fastMode: fastMode ? '开启' : '关闭',
+        thinkMode,
+        contextUsed: 0,
+        contextMax: 16000,
+        contextDisplay: '0 / 16000',
+        runtime: 'mock',
+        queue: 'none',
+        updatedLabel: '',
+        updatedAt: now,
+        availableModels: collectAvailableModels(config.localConfig, [model]),
+        availableAgents: collectAvailableAgents(config.localConfig, [agentId]),
+      },
+      taskTimeline: [
+        {
+          id: `run-${now}`,
+          title: `执行 ${formatTimestamp(now)}`,
+          timestamp: now,
+          prompt: '搭建最小 Command Center 原型',
+          status: '已完成',
+          toolsSummary: fastMode ? 'workspace.scan(完成) · planner.fast-path(完成)' : 'workspace.scan(完成) · planner.standard-path(完成)',
+          tools: [
+            { name: 'workspace.scan', status: '完成', input: '{}', output: '已扫描当前项目目录。', detail: '已扫描当前项目目录。' },
+            {
+              name: fastMode ? 'planner.fast-path' : 'planner.standard-path',
+              status: '完成',
+              input: '{"target":"command-center"}',
+              output: '已生成最小可运行原型。',
+              detail: '已生成最小可运行原型。',
+            },
+          ],
+          files: [
+            { path: 'server.js', kind: '文件', updatedLabel: formatTimestamp(now) },
+            { path: 'src/App.jsx', kind: '文件', updatedLabel: formatTimestamp(now) },
+          ],
+          snapshots: [{ id: `snapshot-${now}`, title: `快照 ${formatTimestamp(now)}`, detail: 'mock 会话快照', timestamp: now }],
+          outcome: 'mock 模式下的演示执行。',
+        },
+      ],
+      toolHistory: [
+        { name: 'workspace.scan', status: '完成', detail: '已扫描当前项目目录。', timestamp: now },
+        { name: fastMode ? 'planner.fast-path' : 'planner.standard-path', status: '完成', detail: '已生成最小可运行原型。', timestamp: now },
+      ],
+      conversation: localConversation,
+      files: mergeProjectedFiles(localFiles, [
+        { path: 'server.js', kind: '文件' },
+        { path: 'src/App.jsx', kind: '文件' },
+      ]),
+      artifacts: [
+        { title: '当前回复', type: 'assistant_output', detail: 'mock 模式下的演示输出。', timestamp: now },
+      ],
+      snapshots: [
+        { id: `snapshot-${now}`, title: `快照 ${formatTimestamp(now)}`, detail: 'mock 会话快照', timestamp: now },
+      ],
+      agents: [
+        { id: agentId, label: agentId, state: 'active', detail: `主 Agent · ${clip(model, 42)}`, updatedAt: now, sessionCount: 1 },
+      ],
+      peeks: {
+        workspace: buildWorkspacePeek(),
+        terminal: buildTerminalPeek(),
+        browser: { summary: 'mock 模式未接入浏览器控制。', items: [{ label: '状态', value: '未连接 OpenClaw' }] },
+      },
+    };
+  }
+
+  async function buildOpenClawSnapshot(sessionUser = 'command-center') {
+    const agentId = resolveSessionAgentId(sessionUser);
+    const agentLabel = resolveAgentDisplayName(agentId);
+    const workspaceRoot = typeof resolveAgentWorkspace === 'function' ? resolveAgentWorkspace(agentId) : config.workspaceRoot;
+    const selectedModel = resolveSessionModel(sessionUser, agentId);
+    const fastMode = resolveSessionFastMode(sessionUser);
+    const preferredThinkMode = resolveSessionThinkMode(sessionUser);
+    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const sessionRecord = resolveSessionRecord(agentId, sessionKey);
+    const transcriptPath = sessionRecord ? getTranscriptPath(agentId, sessionRecord.sessionId) : '';
+    const entries = transcriptPath ? readJsonLines(transcriptPath).slice(-240) : [];
+    const injectedFiles = sessionRecord?.systemPromptReport?.injectedWorkspaceFiles || [];
+    const [statusResult, browserPeek] = await Promise.all([
+      invokeOpenClawTool('session_status', {}, sessionKey).catch(() => null),
+      fetchBrowserPeek().catch(() => ({
+        summary: '浏览器状态暂时不可用。',
+        items: [{ label: '状态', value: '读取失败' }],
+      })),
+    ]);
+
+    const statusText = statusResult?.details?.statusText || extractTextSegments(statusResult?.content).join('\n');
+    const parsedStatus = parseSessionStatusText(statusText);
+    const latestAssistant = [...entries]
+      .reverse()
+      .find((entry) => entry.type === 'message' && entry.message?.role === 'assistant');
+    const latestModel =
+      parsedStatus?.modelDisplay ||
+      latestAssistant?.message?.model ||
+      getDefaultModelForAgent(agentId) ||
+      config.model;
+    const availableModels = collectAvailableModels(config.localConfig, [selectedModel, latestModel]);
+    const availableAgents = collectAvailableAgents(config.localConfig, [agentId]);
+    const gatewayConversation = collectConversationMessages(entries);
+    const localConversation = getLocalSessionConversation(sessionUser);
+    const localFileEntries = getLocalSessionFileEntries(sessionUser);
+    const latestRunUsage = collectLatestRunUsage(entries);
+    const tokenBadge = formatTokenBadge(
+      latestRunUsage || {
+        input: parsedStatus?.tokensInput || 0,
+        output: parsedStatus?.tokensOutput || 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+    );
+
+    return {
+      session: {
+        mode: 'openclaw',
+        model: latestModel,
+        selectedModel,
+        agentId,
+        agentLabel,
+        selectedAgentId: agentId,
+        sessionUser: normalizeSessionUser(sessionUser),
+        sessionKey: parsedStatus?.sessionKey || sessionKey,
+        workspaceRoot,
+        status: '就绪',
+        fastMode: fastMode ? '开启' : '关闭',
+        thinkMode: parsedStatus?.thinkMode || preferredThinkMode,
+        contextUsed: parsedStatus?.contextUsed || null,
+        contextMax: parsedStatus?.contextMax || 272000,
+        contextDisplay:
+          parsedStatus?.contextUsed && parsedStatus?.contextMax
+            ? `${parsedStatus.contextUsed} / ${parsedStatus.contextMax}`
+            : parsedStatus?.contextDisplay || '未知',
+        runtime: parsedStatus?.runtimeDisplay || '未知',
+        queue: parsedStatus?.queueDisplay || '未知',
+        updatedLabel: parsedStatus?.updatedLabel || '',
+        updatedAt: sessionRecord?.updatedAt || null,
+        tokens: tokenBadge || parsedStatus?.tokensDisplay || '',
+        auth: parsedStatus?.authDisplay || '',
+        version: parsedStatus?.versionDisplay || '',
+        time: parsedStatus?.time || '',
+        availableModels,
+        availableAgents,
+      },
+      conversation: mergeConversationMessages(gatewayConversation, localConversation),
+      taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }),
+      toolHistory: collectToolHistory(entries),
+      files: mergeProjectedFiles(
+        collectFiles([...entries, ...localFileEntries], [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }),
+        [],
+      ),
+      artifacts: collectArtifacts(entries),
+      snapshots: collectSnapshots(entries, sessionRecord),
+      agents: buildAgentGraph(),
+      peeks: {
+        workspace: buildWorkspacePeek(),
+        terminal: buildTerminalPeek(),
+        browser: browserPeek,
+      },
+    };
+  }
+
+  async function buildDashboardSnapshot(sessionUser = 'command-center') {
+    if (config.mode !== 'openclaw') {
+      return buildMockSnapshot(sessionUser);
+    }
+    return await buildOpenClawSnapshot(sessionUser);
+  }
+
+  return {
+    buildDashboardSnapshot,
+    buildMockSnapshot,
+    buildOpenClawSnapshot,
+    buildTerminalPeek,
+    buildWorkspacePeek,
+  };
+}
+
+module.exports = {
+  createDashboardService,
+};

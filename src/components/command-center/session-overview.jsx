@@ -56,7 +56,7 @@ function SelectStatusPill({
         className="inline-flex h-14 min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-left transition-[background-color,border-color,box-shadow] hover:bg-accent/40 focus-visible:outline-none focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-1 focus-visible:ring-border/70"
       >
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
+          <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
           <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
             {value}
           </div>
@@ -73,7 +73,7 @@ function StatusPill({ label, value, action, valueClassName, valueStyle, children
   return (
     <div className="inline-flex h-14 min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2">
       <div className="min-w-0 flex-1">
-        <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
+        <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
         <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
           {value}
         </div>
@@ -86,13 +86,10 @@ function StatusPill({ label, value, action, valueClassName, valueStyle, children
 
 function MetaChip({ label, value }) {
   if (!value) return null;
-  const usesWideTracking = !/[\u3400-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/.test(String(label));
 
   return (
     <div className="inline-flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground">
-      <span className={cn(usesWideTracking && "uppercase tracking-[0.12em]")} style={usesWideTracking ? undefined : { letterSpacing: 0 }}>
-        {label}
-      </span>
+      <span className="uppercase">{label}</span>
       <span className="max-w-[28rem] truncate text-foreground/80">{value}</span>
     </div>
   );
@@ -170,7 +167,7 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
   return (
     <div
       className={cn(
-        "inline-flex items-center rounded-full border p-0.5",
+        "inline-flex h-8 items-center rounded-full border p-0.5",
         resolvedTheme === "light"
           ? "border-slate-200 bg-slate-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
           : "border-border/70 bg-background/90",
@@ -187,7 +184,7 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
                 onClick={() => onChange(option.id)}
                 aria-label={option.label}
                 className={cn(
-                  "inline-flex h-8 w-8 items-center justify-center rounded-full border transition-[background-color,color,box-shadow,border-color] duration-200",
+                  "inline-flex h-7 w-7 items-center justify-center rounded-full border transition-[background-color,color,box-shadow,border-color] duration-200",
                   active
                     ? resolvedTheme === "light"
                       ? "border-transparent bg-white text-[#0f6fd6] shadow-[0_1px_2px_rgba(15,23,42,0.06),0_6px_16px_rgba(15,111,214,0.12)]"
@@ -197,7 +194,7 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
                       : "border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                 )}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="px-2.5 py-2">
@@ -215,6 +212,7 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
 
 function LanguageToggle() {
   const { locale, localeOptions, messages, setLocale } = useI18n();
+  const activeLocale = localeOptions.find((option) => option.value === locale);
 
   return (
     <DropdownMenu>
@@ -222,9 +220,10 @@ function LanguageToggle() {
         <button
           type="button"
           aria-label={messages.locale.switchLabel}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+          className="inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
         >
           <Languages className="h-4 w-4" />
+          <span className="text-xs font-medium text-foreground">{activeLocale?.label || locale.toUpperCase()}</span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

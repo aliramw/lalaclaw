@@ -1,4 +1,6 @@
 import path from "node:path";
+import os from "node:os";
+import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -6,7 +8,7 @@ process.env.COMMANDCENTER_FORCE_MOCK = "1";
 
 const require = createRequire(import.meta.url);
 const { createAppServer, __test } = require("../server");
-const { DIST_DIR } = require("../server/config");
+const { DIST_DIR } = require("../server/core");
 
 async function readJson(response) {
   return await response.json();
@@ -64,7 +66,7 @@ describe("server helpers", () => {
         message: {
           role: "assistant",
           timestamp: 2,
-          content: [{ type: "toolCall", id: "tool-1", name: "edit_file", arguments: `{\"path\":\"${serverPath}\"}` }],
+          content: [{ type: "toolCall", id: "tool-1", name: "edit_file", arguments: `{"path":"${serverPath}"}` }],
         },
       },
       {
@@ -155,12 +157,14 @@ describe("server routes", () => {
   let server;
   let baseUrl;
   let spawnedSessionUsers;
+  let tempDir;
 
   beforeEach(async () => {
     server = createAppServer();
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
     spawnedSessionUsers = new Set();
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "commandcenter-preview-"));
     __test.clearSessionPreferences("api-user");
   });
 
@@ -170,6 +174,7 @@ describe("server routes", () => {
       __test.clearSessionPreferences(sessionUser);
     }
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    await fs.rm(tempDir, { recursive: true, force: true });
   });
 
   it("returns session details and supports session updates", async () => {
@@ -353,5 +358,34 @@ describe("server routes", () => {
 
     expect(missingResponse.status).toBe(404);
     expect(missingPayload.error).toBe("Not found");
+  });
+
+  it("returns markdown preview payloads and serves raw media content", async () => {
+    const markdownPath = path.join(tempDir, "TOOLS.md");
+    const imagePath = path.join(tempDir, "preview.png");
+    await fs.writeFile(markdownPath, "# Hello\n\nPreview body");
+    await fs.writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const markdownResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(markdownPath)}`);
+    const markdownPayload = await readJson(markdownResponse);
+
+    expect(markdownResponse.ok).toBe(true);
+    expect(markdownPayload).toMatchObject({
+      ok: true,
+      kind: "markdown",
+      name: "TOOLS.md",
+      content: "# Hello\n\nPreview body",
+    });
+
+    const imageResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(imagePath)}`);
+    const imagePayload = await readJson(imageResponse);
+
+    expect(imageResponse.ok).toBe(true);
+    expect(imagePayload.kind).toBe("image");
+    expect(imagePayload.contentUrl).toContain("/api/file-preview/content?path=");
+
+    const mediaResponse = await fetch(`${baseUrl}${imagePayload.contentUrl}`);
+    expect(mediaResponse.ok).toBe(true);
+    expect(mediaResponse.headers.get("content-type")).toContain("image/png");
   });
 });

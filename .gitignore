@@ -1,1 +1,14 @@
 AGENTS.md
+node_modules/
+dist/
+.DS_Store
+.env
+.env.local
+.env.*.local
+coverage/
+.vite/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

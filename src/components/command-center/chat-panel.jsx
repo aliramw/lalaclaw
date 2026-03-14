@@ -1,11 +1,13 @@
-import { Check, Copy, LoaderCircle, Paperclip, RotateCcw, Send, X } from "lucide-react";
+import { Check, Copy, Paperclip, RotateCcw, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FilePreviewOverlay, ImagePreviewOverlay } from "@/components/command-center/file-preview-overlay";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useI18n } from "@/lib/i18n";
@@ -370,7 +372,7 @@ function AgentLabel({ tokenBadge, value }) {
   );
 }
 
-function MessageBubble({ agentLabel, formatTime, files, message, messageId, separated, userLabel }) {
+function MessageBubble({ agentLabel, formatTime, files, handleOpenFilePreview, message, messageId, resolvedTheme, separated, userLabel }) {
   const [previewImage, setPreviewImage] = useState(null);
   const isUser = message.role === "user";
   const isPending = Boolean(message.pending);
@@ -432,7 +434,7 @@ function MessageBubble({ agentLabel, formatTime, files, message, messageId, sepa
               data-bubble-layout="compact"
               className={cn(
                 bubbleBaseClassName,
-                "inline-block w-fit max-w-[min(60vw,14rem)] shrink-0 animate-pulse",
+                "cc-thinking-bubble inline-block w-fit max-w-[min(60vw,14rem)] shrink-0 motion-reduce:animate-none",
                 "cc-assistant-bubble",
                 assistantBubbleClassName,
               )}
@@ -442,6 +444,8 @@ function MessageBubble({ agentLabel, formatTime, files, message, messageId, sepa
                   content={message.content}
                   files={files}
                   headingScopeId={headingScopeId}
+                  resolvedTheme={resolvedTheme}
+                  onOpenFilePreview={handleOpenFilePreview}
                   className="text-[12px] leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap"
                 />
               </CardContent>
@@ -462,7 +466,14 @@ function MessageBubble({ agentLabel, formatTime, files, message, messageId, sepa
             <div className="inline-flex min-w-0 max-w-full items-start gap-3">
               <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, "w-[700px] max-w-[calc(100vw-20rem)] shrink-0", "cc-assistant-bubble", assistantBubbleClassName)}>
                 <CardContent className={bubbleContentClassName}>
-                  <MarkdownContent content={message.content} files={files} headingScopeId={headingScopeId} className="text-[12px] leading-5" />
+                  <MarkdownContent
+                    content={message.content}
+                    files={files}
+                    headingScopeId={headingScopeId}
+                    resolvedTheme={resolvedTheme}
+                    onOpenFilePreview={handleOpenFilePreview}
+                    className="text-[12px] leading-5"
+                  />
                 </CardContent>
               </Card>
               <MessageOutline headingScopeId={headingScopeId} items={outlineItems} onSelect={handleSelectHeading} />
@@ -482,7 +493,14 @@ function MessageBubble({ agentLabel, formatTime, files, message, messageId, sepa
           <div className="inline-flex max-w-full items-center gap-2">
             <Card data-bubble-layout="compact" className={cn(bubbleBaseClassName, compactAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
               <CardContent className={bubbleContentClassName}>
-                <MarkdownContent content={message.content} files={files} headingScopeId={headingScopeId} className="text-[12px] leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap" />
+                <MarkdownContent
+                  content={message.content}
+                  files={files}
+                  headingScopeId={headingScopeId}
+                  resolvedTheme={resolvedTheme}
+                  onOpenFilePreview={handleOpenFilePreview}
+                  className="text-[12px] leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap"
+                />
               </CardContent>
             </Card>
             <MessageMeta align="right" content={message.content} formatTime={formatTime} compact={compactMeta} timestamp={message.timestamp} />
@@ -499,7 +517,14 @@ function MessageBubble({ agentLabel, formatTime, files, message, messageId, sepa
         <div className="inline-flex max-w-full items-start gap-2">
           <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, longAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
             <CardContent className={bubbleContentClassName}>
-              <MarkdownContent content={message.content} files={files} headingScopeId={headingScopeId} className="text-[12px] leading-5" />
+              <MarkdownContent
+                content={message.content}
+                files={files}
+                headingScopeId={headingScopeId}
+                resolvedTheme={resolvedTheme}
+                onOpenFilePreview={handleOpenFilePreview}
+                className="text-[12px] leading-5"
+              />
             </CardContent>
           </Card>
           <MessageMeta align="right" content={message.content} formatTime={formatTime} sticky timestamp={message.timestamp} />
@@ -569,12 +594,56 @@ export function ChatPanel({
   prompt,
   promptRef,
   queuedMessages,
+  resolvedTheme,
   session,
   userLabel = "marila",
 }) {
   const { messages: i18n } = useI18n();
   const attachmentInputRef = useRef(null);
   const [composerPreviewImage, setComposerPreviewImage] = useState(null);
+  const { filePreview, imagePreview, handleOpenPreview, closeFilePreview, closeImagePreview } = useFilePreview();
+
+  const focusComposer = () => {
+    window.requestAnimationFrame(() => {
+      const textarea = promptRef?.current;
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange?.(end, end);
+    });
+  };
+
+  const addAttachmentsAndFocus = async (fileList) => {
+    if (!fileList) {
+      return;
+    }
+
+    await onAddAttachments?.(fileList);
+    focusComposer();
+  };
+
+  useEffect(() => {
+    const handleGlobalPaste = (event) => {
+      const clipboardData = event.clipboardData;
+      if (!clipboardData) {
+        return;
+      }
+
+      const pastedFiles = Array.from(clipboardData.files || []).filter(Boolean);
+      if (!pastedFiles.length) {
+        return;
+      }
+
+      event.preventDefault();
+      addAttachmentsAndFocus(pastedFiles).catch(() => {});
+    };
+
+    window.addEventListener("paste", handleGlobalPaste);
+    return () => window.removeEventListener("paste", handleGlobalPaste);
+  }, [onAddAttachments, promptRef]);
 
   return (
     <>
@@ -610,11 +679,13 @@ export function ChatPanel({
                 ? messages.map((message, index) => (
                     <MessageBubble
                       agentLabel={agentLabel}
+                      handleOpenFilePreview={handleOpenPreview}
                       key={`${message.timestamp}-${index}`}
                       message={message}
                       messageId={`${message.timestamp}-${index}`}
                       formatTime={formatTime}
                       files={files}
+                      resolvedTheme={resolvedTheme}
                       separated={index > 0 && messages[index - 1]?.role !== message.role}
                       userLabel={userLabel}
                     />
@@ -631,7 +702,7 @@ export function ChatPanel({
             multiple
             className="hidden"
             onChange={(event) => {
-              onAddAttachments?.(event.target.files);
+              addAttachmentsAndFocus(event.target.files).catch(() => {});
               event.target.value = "";
             }}
           />
@@ -667,19 +738,17 @@ export function ChatPanel({
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 px-3"
+                    className="h-10 w-10 rounded-xl border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground"
                     onClick={() => attachmentInputRef.current?.click()}
                   >
-                    <Paperclip className="h-3.5 w-3.5" />
-                    {i18n.common.attachment}
+                    <Paperclip className="h-4.5 w-4.5" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{i18n.chat.uploadAttachment}</TooltipContent>
               </Tooltip>
               <Button
                 onClick={onSend}
-                className="cc-send-button md:min-w-28 px-5"
+                className="cc-send-button h-10 min-w-[7.5rem] rounded-xl px-4 text-sm font-medium"
               >
                 <span className="grid w-full grid-cols-[0.875rem_1fr_0.875rem] items-center gap-2">
                   <span className="flex h-3.5 w-3.5 items-center justify-center">
@@ -696,6 +765,8 @@ export function ChatPanel({
         </CardContent>
       </Card>
       <ImageLightbox image={composerPreviewImage} onClose={() => setComposerPreviewImage(null)} />
+      <FilePreviewOverlay files={files} preview={filePreview} resolvedTheme={resolvedTheme} onClose={closeFilePreview} onOpenFilePreview={handleOpenPreview} />
+      <ImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
     </>
   );
 }

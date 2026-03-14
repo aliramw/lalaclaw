@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require("../server/session-store");
+const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require("../server/core");
 
 describe("session-store", () => {
   it("normalizes session users and think modes", () => {
@@ -71,5 +71,42 @@ describe("session-store", () => {
       { role: "assistant", content: "后到", timestamp: 30, tokenBadge: "↑2" },
     ]);
     expect(store.getLocalSessionConversation("demo")).toEqual(merged);
+  });
+
+  it("stores local file entries with text and attachment paths", () => {
+    const store = createSessionStore({
+      getDefaultAgentId: () => "main",
+      getDefaultModelForAgent: () => "gpt-5",
+      resolveCanonicalModelId: (value) => value,
+    });
+
+    const merged = store.appendLocalSessionFileEntries("demo", [
+      {
+        role: "user",
+        content: "看这张图 /tmp/ref.png",
+        timestamp: 20,
+        attachments: [{ name: "ref.png", path: "/tmp/ref.png", fullPath: "/tmp/ref.png", kind: "image" }],
+      },
+      {
+        role: "user",
+        content: "   ",
+        timestamp: 10,
+        attachments: [],
+      },
+    ]);
+
+    expect(merged).toEqual([
+      {
+        type: "message",
+        timestamp: 20,
+        message: {
+          role: "user",
+          timestamp: 20,
+          content: [{ type: "text", text: "看这张图 /tmp/ref.png" }],
+          attachments: [{ id: "", kind: "image", name: "ref.png", path: "/tmp/ref.png", fullPath: "/tmp/ref.png" }],
+        },
+      },
+    ]);
+    expect(store.getLocalSessionFileEntries("demo")).toEqual(merged);
   });
 });

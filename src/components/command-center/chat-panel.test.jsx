@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "@/components/command-center/chat-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -16,6 +16,11 @@ function createSession(overrides = {}) {
 }
 
 describe("ChatPanel", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("renders empty state and forwards reset/send actions", async () => {
     const onReset = vi.fn();
     const onSend = vi.fn();
@@ -113,6 +118,55 @@ describe("ChatPanel", () => {
     expect(screen.getByText(/这是一个稍长一些的回复/).closest("[data-bubble-layout]")).toHaveAttribute("data-bubble-layout", "full");
   });
 
+  it("opens file previews when clicking tracked files in assistant bubbles", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          kind: "text",
+          path: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+          name: "sample.py",
+          content: "print('preview works')\n",
+        }),
+      })),
+    );
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          files={[
+            {
+              path: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+              fullPath: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+              kind: "文件",
+              primaryAction: "viewed",
+            },
+          ]}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[{ role: "assistant", content: "可以先看 `sample.py`。", timestamp: 1 }]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          resolvedTheme="dark"
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "sample.py" }));
+
+    expect(await screen.findByText("python")).toBeInTheDocument();
+    expect(document.querySelector("pre")?.textContent).toContain("print('preview works')");
+  });
+
   it("renders user image attachments and composer attachments", async () => {
     render(
       <TooltipProvider>
@@ -170,5 +224,43 @@ describe("ChatPanel", () => {
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
+  });
+
+  it("routes pasted files from anywhere on the page through the attachment flow and refocuses the composer", async () => {
+    const onAddAttachments = vi.fn(async () => {});
+    const promptRef = { current: null };
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onAddAttachments={onAddAttachments}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={promptRef}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const pastedFile = new File(["hello"], "paste.txt", { type: "text/plain" });
+
+    fireEvent.paste(window, {
+      clipboardData: {
+        files: [pastedFile],
+      },
+    });
+
+    expect(onAddAttachments).toHaveBeenCalledWith(expect.arrayContaining([pastedFile]));
+    await waitFor(() => {
+      expect(textarea).toHaveFocus();
+    });
   });
 });
