@@ -100,17 +100,37 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const promptRef = useRef(null);
   const messageViewportRef = useRef(null);
+  const busyRef = useRef(busy);
   const messagesRef = useRef(messages);
+  const sessionStateRef = useRef({
+    sessionUser: stored?.sessionUser || defaultSessionUser,
+    agentId: stored?.agentId || "main",
+    model: stored?.model || "",
+    fastMode: Boolean(stored?.fastMode),
+  });
   const activeTargetRef = useRef({
     sessionUser: stored?.sessionUser || defaultSessionUser,
     agentId: stored?.agentId || "main",
   });
+  const runtimeRequestRef = useRef(0);
 
   const activeConversationKey = `${session.sessionUser}:${session.agentId}`;
   const activeQueuedMessages = useMemo(
     () => queuedMessages.filter((item) => item.key === activeConversationKey),
     [activeConversationKey, queuedMessages],
   );
+
+  const setMessagesSynced = (value) => {
+    setMessages((current) => {
+      const next = typeof value === "function" ? value(current) : value;
+      messagesRef.current = next;
+      return next;
+    });
+  };
+
+  const setActiveTarget = (value) => {
+    activeTargetRef.current = value;
+  };
 
   const persist = (next = {}) => {
     try {
@@ -154,14 +174,23 @@ export default function App() {
   }, [messages, fastMode, activeTab, model, session.agentId, session.sessionUser]);
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    busyRef.current = busy;
+  }, [busy]);
 
   useEffect(() => {
-    activeTargetRef.current = {
+    sessionStateRef.current = {
       sessionUser: session.sessionUser,
       agentId: session.agentId,
+      model,
+      fastMode,
     };
+  }, [fastMode, model, session.agentId, session.sessionUser]);
+
+  useEffect(() => {
+    setActiveTarget({
+      sessionUser: session.sessionUser,
+      agentId: session.agentId,
+    });
   }, [session.agentId, session.sessionUser]);
 
   useEffect(() => {
@@ -171,7 +200,7 @@ export default function App() {
     }
   }, [messages, activeQueuedMessages]);
 
-  const applySnapshot = (snapshot) => {
+  const applySnapshot = (snapshot, options = {}) => {
     if (!snapshot) return;
     const nextSession = baseSession({
       ...session,
@@ -184,8 +213,8 @@ export default function App() {
       snapshot.fastMode === true;
     setSession(nextSession);
     setFastMode(nextFastMode);
-    if (Array.isArray(snapshot.conversation)) {
-      setMessages(snapshot.conversation);
+    if (options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
+      setMessagesSynced(snapshot.conversation);
     }
     setAvailableModels(snapshot.session?.availableModels || snapshot.availableModels || []);
     setAvailableAgents(snapshot.session?.availableAgents || snapshot.availableAgents || []);
@@ -198,13 +227,22 @@ export default function App() {
     setModel(snapshot.session?.selectedModel || snapshot.model || nextSession.model || "");
   };
 
-  const loadRuntime = async (sessionUser = session.sessionUser) => {
+  const loadRuntime = async (sessionUser = session.sessionUser, options = {}) => {
+    const requestId = runtimeRequestRef.current + 1;
+    runtimeRequestRef.current = requestId;
     const response = await fetch(`/api/runtime?sessionUser=${encodeURIComponent(sessionUser)}`);
     const payload = await response.json();
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error || "Runtime snapshot failed");
     }
+    if (requestId !== runtimeRequestRef.current) {
+      return payload;
+    }
+    if (!options.force && busyRef.current) {
+      return payload;
+    }
     applySnapshot(payload);
+    return payload;
   };
 
   useEffect(() => {
@@ -246,7 +284,7 @@ export default function App() {
       activeTargetRef.current.agentId === entry.agentId;
 
     if (isStillActive) {
-      setMessages(nextMessages);
+      setMessagesSynced(nextMessages);
       setSession((current) => ({ ...current, status: "执行中" }));
     }
 
@@ -276,10 +314,7 @@ export default function App() {
         activeTargetRef.current.agentId === entry.agentId;
 
       if (shouldApply) {
-        applySnapshot(payload);
-      }
-      if (shouldApply && !Array.isArray(payload.conversation)) {
-        setMessages((current) => {
+        setMessagesSynced((current) => {
           const withoutPending = current.filter((item) => !item.pending);
           return [
             ...withoutPending,
@@ -290,6 +325,7 @@ export default function App() {
             },
           ];
         });
+        applySnapshot(payload, { syncConversation: false });
       }
       if (shouldApply) {
         setSession((current) => ({ ...current, status: payload.metadata?.status || "已完成" }));
@@ -300,7 +336,7 @@ export default function App() {
         activeTargetRef.current.agentId === entry.agentId;
 
       if (shouldApply) {
-        setMessages((current) => {
+        setMessagesSynced((current) => {
           const withoutPending = current.filter((item) => !item.pending);
           return [
             ...withoutPending,
@@ -334,13 +370,13 @@ export default function App() {
 
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      key: activeConversationKey,
+      key: `${sessionStateRef.current.sessionUser}:${sessionStateRef.current.agentId}`,
       content,
       timestamp: Date.now(),
-      agentId: session.agentId,
-      sessionUser: session.sessionUser,
-      model,
-      fastMode,
+      agentId: sessionStateRef.current.agentId,
+      sessionUser: sessionStateRef.current.sessionUser,
+      model: sessionStateRef.current.model,
+      fastMode: sessionStateRef.current.fastMode,
     };
 
     setPrompt("");
@@ -355,26 +391,38 @@ export default function App() {
 
   const handleReset = async () => {
     const nextSessionUser = `command-center-${Date.now()}`;
-    setMessages([]);
+    const nextAgentId = sessionStateRef.current.agentId;
+    const nextModel = sessionStateRef.current.model;
+    setMessagesSynced([]);
     setQueuedMessages([]);
     setTaskTimeline([]);
     setFiles([]);
     setArtifacts([]);
     setSnapshots([]);
+    sessionStateRef.current = {
+      ...sessionStateRef.current,
+      sessionUser: nextSessionUser,
+      agentId: nextAgentId,
+      model: nextModel,
+    };
+    setActiveTarget({
+      sessionUser: nextSessionUser,
+      agentId: nextAgentId,
+    });
     setSession((current) =>
       baseSession({
         ...current,
-        model: current.model,
-        selectedModel: current.selectedModel,
-        agentId: current.agentId,
-        selectedAgentId: current.selectedAgentId,
+        model: nextModel || current.model,
+        selectedModel: nextModel || current.selectedModel,
+        agentId: nextAgentId || current.agentId,
+        selectedAgentId: nextAgentId || current.selectedAgentId,
         sessionUser: nextSessionUser,
         contextMax: current.contextMax || 16000,
         updatedLabel: "刚刚重置",
       }),
     );
     setPrompt("");
-    await loadRuntime(nextSessionUser).catch(() => {});
+    await loadRuntime(nextSessionUser, { force: true }).catch(() => {});
   };
 
   const onResetHotkey = useEffectEvent((event) => {
@@ -399,12 +447,24 @@ export default function App() {
 
   const handleModelChange = async (nextModel) => {
     if (!nextModel || nextModel === model) return;
+    sessionStateRef.current = {
+      ...sessionStateRef.current,
+      model: nextModel,
+    };
     setModel(nextModel);
     await updateSessionSettings({ model: nextModel }).catch(() => {});
   };
 
   const handleAgentChange = async (nextAgent) => {
     if (!nextAgent || nextAgent === session.agentId) return;
+    sessionStateRef.current = {
+      ...sessionStateRef.current,
+      agentId: nextAgent,
+    };
+    setActiveTarget({
+      sessionUser: sessionStateRef.current.sessionUser,
+      agentId: nextAgent,
+    });
     setSession((current) => ({ ...current, agentId: nextAgent, selectedAgentId: nextAgent }));
     await updateSessionSettings({ agentId: nextAgent }).catch(() => {});
   };

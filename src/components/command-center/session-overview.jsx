@@ -51,20 +51,6 @@ export function SessionOverview({
               </div>
 
               <StatusPill
-                label="模型"
-                value={model || session.model || "未知"}
-                action={
-                  <SelectionMenu
-                    label="切换模型"
-                    items={availableModels}
-                    value={model || session.model}
-                    onSelect={onModelChange}
-                    emptyText="暂无可选模型"
-                  />
-                }
-              />
-
-              <StatusPill
                 label="Agent"
                 value={session.agentId || "main"}
                 action={
@@ -74,6 +60,20 @@ export function SessionOverview({
                     value={session.agentId}
                     onSelect={onAgentChange}
                     emptyText="暂无可选 Agent"
+                  />
+                }
+              />
+
+              <StatusPill
+                label="模型"
+                value={model || session.model || "未知"}
+                action={
+                  <SelectionMenu
+                    label="切换模型"
+                    items={availableModels}
+                    value={model || session.model}
+                    onSelect={onModelChange}
+                    emptyText="暂无可选模型"
                   />
                 }
               />

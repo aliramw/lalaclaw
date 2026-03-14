@@ -1269,6 +1269,9 @@ async function handleChat(req, res) {
     const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
     const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
     const slashCommandState = parseSlashCommandState(latestUserMessage?.content);
+    const outboundMessages = latestUserMessage
+      ? [{ role: 'user', content: normalizeChatMessage(latestUserMessage) }]
+      : [];
 
     if (body.agentId || body.model) {
       const nextAgentId = String(body.agentId || resolveSessionAgentId(sessionUser)).trim() || getDefaultAgentId();
@@ -1283,11 +1286,11 @@ async function handleChat(req, res) {
 
     const reply =
       config.mode === 'openclaw'
-        ? await callOpenClaw(messages, fastMode, sessionUser)
+        ? await callOpenClaw(outboundMessages, fastMode, sessionUser)
         : {
             outputText: [
               'OpenClaw command channel is online in mock mode.',
-              `Current intent: ${clip(messages.at(-1)?.content || 'No prompt supplied.', 160)}`,
+              `Current intent: ${clip(latestUserMessage?.content || 'No prompt supplied.', 160)}`,
             ].join('\n'),
             usage: null,
           };

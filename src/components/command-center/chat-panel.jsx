@@ -28,8 +28,8 @@ function MessageBubble({ message, formatTime }) {
   const isUser = message.role === "user";
 
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div className="flex max-w-[86%] items-start gap-2">
+    <div className="flex">
+      <div className={cn("flex w-fit max-w-[86%] items-start gap-2", isUser && "ml-auto")}>
         {!isUser ? null : (
           <time className="pt-2 text-[11px] leading-5 text-muted-foreground tabular-nums">
             {formatTime(message.timestamp)}
