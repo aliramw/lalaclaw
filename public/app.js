@@ -1,14 +1,36 @@
 const state = {
+  model: '',
   messages: [],
   contextMax: 16000,
+  toolHistory: [],
   files: [],
   artifacts: [],
   snapshots: [],
-  toolHistory: [],
   agents: [],
-  mode: 'mock',
-  model: 'openclaw-agent',
+  peeks: {
+    workspace: null,
+    terminal: null,
+    browser: null,
+  },
+  session: {
+    mode: 'mock',
+    model: '',
+    agentId: 'main',
+    status: '空闲',
+    fastMode: '关闭',
+    contextUsed: 0,
+    contextMax: 16000,
+    runtime: 'mock',
+    queue: '无',
+    updatedLabel: '暂无更新',
+    sessionKey: '',
+  },
   busy: false,
+};
+
+const modeLabels = {
+  mock: '模拟',
+  openclaw: '真实网关',
 };
 
 const elements = {
@@ -26,10 +48,21 @@ const elements = {
   snapshotList: document.querySelector('#snapshot-list'),
   agentGraph: document.querySelector('#agent-graph'),
   modeBadge: document.querySelector('#mode-badge'),
+  modelBadge: document.querySelector('#model-badge'),
+  modelMeta: document.querySelector('#model-meta'),
+  agentBadge: document.querySelector('#agent-badge'),
+  sessionBadge: document.querySelector('#session-badge'),
   statusBadge: document.querySelector('#status-badge'),
+  runtimeBadge: document.querySelector('#runtime-badge'),
+  fastBadge: document.querySelector('#fast-badge'),
+  queueBadge: document.querySelector('#queue-badge'),
+  updatedBadge: document.querySelector('#updated-badge'),
   contextLength: document.querySelector('#context-length'),
   contextMax: document.querySelector('#context-max'),
-  fileCount: document.querySelector('#file-count'),
+  contextMeta: document.querySelector('#context-meta'),
+  workspacePeek: document.querySelector('#workspace-peek'),
+  terminalPeek: document.querySelector('#terminal-peek'),
+  browserPeek: document.querySelector('#browser-peek'),
   messageTemplate: document.querySelector('#message-template'),
 };
 
@@ -41,11 +74,18 @@ function formatTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
-function getContextLength() {
-  return state.messages.reduce((total, message) => total + (message.content?.length || 0), 0);
+function formatStatusLabel(text) {
+  if (!text) {
+    return '空闲';
+  }
+
+  return text
+    .replaceAll('Fast', '快速')
+    .replaceAll('Standard', '标准');
 }
 
 function setStatus(text) {
+  state.session.status = text;
   elements.statusBadge.textContent = text;
 }
 
@@ -55,7 +95,7 @@ function renderMessages() {
   if (!state.messages.length) {
     const empty = document.createElement('div');
     empty.className = 'list-item';
-    empty.innerHTML = '<strong>No messages</strong><small>Send the first operator prompt to start the session.</small>';
+    empty.innerHTML = '<strong>暂无消息</strong><small>发送第一条指令后开始会话。</small>';
     elements.messageList.appendChild(empty);
     return;
   }
@@ -63,7 +103,7 @@ function renderMessages() {
   for (const message of state.messages) {
     const node = elements.messageTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.role = message.role;
-    node.querySelector('.message-role').textContent = message.role === 'user' ? 'Operator' : 'OpenClaw';
+    node.querySelector('.message-role').textContent = message.role === 'user' ? '你' : 'OpenClaw';
     node.querySelector('.message-time').textContent = formatTime(message.timestamp);
     node.querySelector('.message-body').textContent = message.content;
     elements.messageList.appendChild(node);
@@ -95,28 +135,55 @@ function renderAgents() {
   elements.agentGraph.innerHTML = '';
 
   if (!state.agents.length) {
-    elements.agentGraph.innerHTML = '<div class="list-item"><strong>No agent topology</strong><small>Agent graph appears after the first run.</small></div>';
+    elements.agentGraph.innerHTML = '<div class="list-item"><strong>暂无结构</strong><small>首次执行后显示 Agent 协作结构。</small></div>';
     return;
   }
 
   state.agents.forEach((agent) => {
     const node = document.createElement('article');
     node.className = 'agent-node';
-    node.innerHTML = `<strong>${agent.label}</strong><small>${agent.state}</small>`;
+    node.innerHTML = `<strong>${agent.label}</strong><small>${agent.detail || agent.state}</small>`;
     elements.agentGraph.appendChild(node);
   });
 }
 
 function renderSummary() {
   const lastAssistant = [...state.messages].reverse().find((message) => message.role === 'assistant');
-  elements.sessionSummary.textContent = lastAssistant?.summary || 'No conversation yet.';
+  elements.sessionSummary.textContent = lastAssistant?.summary || `会话键：${state.session.sessionKey || '暂无对话。'}`;
+}
+
+function renderPeek(target, section, fallback) {
+  if (!section) {
+    target.textContent = fallback;
+    return;
+  }
+
+  const lines = [section.summary, ...(section.items || []).map((item) => `${item.label}：${item.value}`)].filter(Boolean);
+  target.textContent = lines.join('\n');
 }
 
 function renderMeta() {
-  elements.modeBadge.textContent = state.mode;
-  elements.contextLength.textContent = String(getContextLength());
-  elements.contextMax.textContent = String(state.contextMax);
-  elements.fileCount.textContent = String(state.files.length);
+  const resolvedModel = state.session.model || state.model || '未知';
+  elements.modeBadge.textContent = modeLabels[state.session.mode] || state.session.mode;
+  elements.modelBadge.textContent = resolvedModel;
+  elements.modelMeta.textContent = state.session.auth || state.session.time || '等待模型状态';
+  elements.agentBadge.textContent = state.session.agentId || 'main';
+  elements.sessionBadge.textContent = state.session.sessionKey || '等待会话';
+  elements.statusBadge.textContent = state.session.status || '空闲';
+  elements.runtimeBadge.textContent = state.session.runtime || '未知';
+  elements.fastBadge.textContent = elements.fastMode.checked ? '开启' : '关闭';
+  elements.queueBadge.textContent = state.session.queue || '无';
+  elements.updatedBadge.textContent = state.session.updatedLabel || '暂无更新';
+  elements.contextLength.textContent = String(state.session.contextUsed || 0);
+  elements.contextMax.textContent = String(state.session.contextMax || state.contextMax);
+  elements.contextMeta.textContent = state.session.tokens || state.session.contextDisplay || '等待状态';
+  renderPeek(elements.workspacePeek, state.peeks.workspace, '等待工作区预览…');
+  renderPeek(elements.terminalPeek, state.peeks.terminal, '等待终端预览…');
+  renderPeek(elements.browserPeek, state.peeks.browser, '等待浏览器预览…');
+
+  if (document.activeElement !== elements.modelInput) {
+    elements.modelInput.value = resolvedModel === '未知' ? '' : resolvedModel;
+  }
 }
 
 function renderAll() {
@@ -126,40 +193,61 @@ function renderAll() {
     elements.toolList,
     state.toolHistory,
     (item) => `<strong>${item.name}</strong><small>${item.status} · ${item.detail}</small>`,
-    'No tool calls',
-    'Tool trace will appear after the agent starts executing.',
+    '暂无工具调用',
+    'Agent 开始执行后会在这里记录工具轨迹。',
   );
   renderList(
     elements.fileList,
     state.files,
     (item) => `<strong>${item.path}</strong><small>${item.kind}</small>`,
-    'No imported files',
-    'Attach or detect files during the next iteration.',
+    '暂无文件',
+    '当前会话中检测到的文件会显示在这里。',
   );
   renderList(
     elements.artifactList,
     state.artifacts,
     (item) => `<strong>${item.title}</strong><small>${item.type} · ${item.detail}</small>`,
-    'No artifacts',
-    'Generated outputs will show up here.',
+    '暂无产出物',
+    '助手的真实产出会显示在这里。',
   );
   renderList(
     elements.snapshotList,
     state.snapshots,
     (item) => `<strong>${item.title}</strong><small>${item.detail}</small>`,
-    'No snapshots',
-    'State checkpoints will be listed here.',
+    '暂无快照',
+    '每次完成回复后会生成一个可回看快照。',
   );
   renderAgents();
   renderMeta();
 }
 
-async function loadSession() {
-  const response = await fetch('/api/session');
-  const session = await response.json();
-  state.mode = session.mode;
-  state.model = session.model;
-  elements.modelInput.value = session.model;
+function applyRuntimeSnapshot(snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  state.session = {
+    ...state.session,
+    ...(snapshot.session || {}),
+    mode: snapshot.session?.mode || state.session.mode,
+  };
+  state.toolHistory = snapshot.toolHistory || [];
+  state.files = snapshot.files || [];
+  state.artifacts = snapshot.artifacts || [];
+  state.snapshots = snapshot.snapshots || [];
+  state.agents = snapshot.agents || [];
+  state.peeks = snapshot.peeks || state.peeks;
+}
+
+async function loadRuntime() {
+  const response = await fetch('/api/runtime');
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Runtime snapshot failed');
+  }
+
+  applyRuntimeSnapshot(payload);
+  state.model = payload.session?.model || payload.model || state.model;
   renderAll();
 }
 
@@ -176,7 +264,7 @@ async function dispatchPrompt() {
   };
   state.messages.push(userMessage);
   state.busy = true;
-  setStatus('Executing');
+  setStatus('执行中');
   renderAll();
   elements.promptInput.value = '';
 
@@ -199,29 +287,24 @@ async function dispatchPrompt() {
       throw new Error(payload.error || 'Request failed');
     }
 
-    state.mode = payload.mode;
-    state.model = payload.model;
-    state.toolHistory = payload.toolHistory || [];
-    state.files = payload.files || [];
-    state.artifacts = payload.artifacts || [];
-    state.snapshots = payload.snapshots || [];
-    state.agents = payload.agents || [];
+    applyRuntimeSnapshot(payload);
+    state.model = payload.session?.model || payload.model || state.model;
     state.messages.push({
       role: 'assistant',
       content: payload.outputText,
       timestamp: Date.now(),
-      summary: payload.metadata?.summary || 'No summary available.',
+      summary: payload.metadata?.summary || '暂无摘要。',
       usage: payload.usage || null,
     });
-    setStatus(payload.metadata?.status || 'Completed');
+    setStatus(formatStatusLabel(payload.metadata?.status || state.session.status || '已完成'));
   } catch (error) {
     state.messages.push({
       role: 'assistant',
-      content: `Command dispatch failed.\n${error.message}`,
+      content: `请求失败。\n${error.message}`,
       timestamp: Date.now(),
-      summary: 'Request failed.',
+      summary: '请求失败。',
     });
-    setStatus('Failed');
+    setStatus('失败');
   } finally {
     state.busy = false;
     renderAll();
@@ -230,21 +313,16 @@ async function dispatchPrompt() {
 
 function resetSession() {
   state.messages = [];
-  state.files = [];
-  state.artifacts = [];
-  state.snapshots = [];
-  state.toolHistory = [];
-  state.agents = [];
   elements.promptInput.value = '';
-  setStatus('Idle');
+  setStatus('空闲');
   renderAll();
 }
 
 function loadSeedPrompt() {
   elements.promptInput.value = [
-    '你现在是 OpenClaw 的 Agent 指挥中心。',
-    '请先确认当前 workspace 状态，并给出把单 Agent 聊天跑通的最小实施路径。',
-    '同时返回你预计会记录哪些 tool trace 和 session state。',
+    '请先给我当前 OpenClaw 会话的真实 session_status。',
+    '然后列出最近发生的工具调用、文件涉及和可回看的会话快照。',
+    '如果有可调度的 subagent，也一起说明当前关系。',
   ].join('\n');
   elements.promptInput.focus();
 }
@@ -252,6 +330,7 @@ function loadSeedPrompt() {
 elements.sendButton.addEventListener('click', dispatchPrompt);
 elements.resetButton.addEventListener('click', resetSession);
 elements.seedButton.addEventListener('click', loadSeedPrompt);
+elements.fastMode.addEventListener('change', renderMeta);
 elements.promptInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
@@ -259,6 +338,14 @@ elements.promptInput.addEventListener('keydown', (event) => {
   }
 });
 
-loadSession().catch(() => {
-  setStatus('Offline');
-});
+loadRuntime()
+  .then(() => {
+    setInterval(() => {
+      if (!state.busy) {
+        loadRuntime().catch(() => {});
+      }
+    }, 15000);
+  })
+  .catch(() => {
+    setStatus('离线');
+  });

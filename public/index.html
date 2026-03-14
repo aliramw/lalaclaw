@@ -3,45 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CommandCenter</title>
+    <title>OpenClaw 指挥中心</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">OpenClaw Agent Surface</p>
-          <h1>Command Center</h1>
+          <p class="eyebrow">OpenClaw</p>
+          <h1>指挥中心</h1>
         </div>
         <div class="topbar-controls">
           <label class="field compact">
-            <span>Model</span>
-            <input id="model-input" type="text" value="openclaw-agent" />
+            <span>模型</span>
+            <input id="model-input" type="text" value="" placeholder="等待检测真实模型" />
           </label>
           <label class="toggle">
             <input id="fast-mode" type="checkbox" />
-            <span>Fast Mode</span>
+            <span>快速模式</span>
           </label>
-          <button id="reset-button" class="ghost">Reset Session</button>
+          <button id="reset-button" class="ghost">重置会话</button>
         </div>
       </header>
 
       <section class="status-strip">
         <article class="status-card">
-          <span class="status-label">Mode</span>
-          <strong id="mode-badge">mock</strong>
+          <span class="status-label">模型</span>
+          <strong id="model-badge">未知</strong>
+          <small id="model-meta" class="status-meta">未连接</small>
         </article>
         <article class="status-card">
-          <span class="status-label">Status</span>
-          <strong id="status-badge">Idle</strong>
+          <span class="status-label">Agent</span>
+          <strong id="agent-badge">main</strong>
+          <small id="session-badge" class="status-meta">等待会话</small>
         </article>
         <article class="status-card">
-          <span class="status-label">Context</span>
+          <span class="status-label">运行状态</span>
+          <strong id="status-badge">空闲</strong>
+          <small id="runtime-badge" class="status-meta">mock</small>
+        </article>
+        <article class="status-card">
+          <span class="status-label">快速模式</span>
+          <strong id="fast-badge">关闭</strong>
+          <small id="mode-badge" class="status-meta">模拟</small>
+        </article>
+        <article class="status-card">
+          <span class="status-label">上下文长度</span>
           <strong><span id="context-length">0</span> / <span id="context-max">16000</span></strong>
+          <small id="context-meta" class="status-meta">等待状态</small>
         </article>
         <article class="status-card">
-          <span class="status-label">Imported Files</span>
-          <strong id="file-count">0</strong>
+          <span class="status-label">队列</span>
+          <strong id="queue-badge">无</strong>
+          <small id="updated-badge" class="status-meta">暂无更新</small>
         </article>
       </section>
 
@@ -49,22 +63,22 @@
         <section class="chat-panel panel">
           <div class="panel-head">
             <div>
-              <p class="eyebrow">Dialogue</p>
-              <h2>Agent Console</h2>
+              <p class="eyebrow">对话</p>
+              <h2>会话窗口</h2>
             </div>
-            <button id="seed-button" class="ghost">Load Seed Prompt</button>
+            <button id="seed-button" class="ghost">加载示例</button>
           </div>
 
           <div id="message-list" class="message-list"></div>
 
           <div class="composer">
             <label class="field">
-              <span>Operator Prompt</span>
-              <textarea id="prompt-input" rows="5" placeholder="描述你希望 Agent 在 workspace 里完成什么。"></textarea>
+              <span>输入指令</span>
+              <textarea id="prompt-input" rows="4" placeholder="描述你希望 Agent 在当前 workspace 中完成什么。"></textarea>
             </label>
             <div class="composer-actions">
-              <span id="request-hint">Enter to send, Shift+Enter for newline</span>
-              <button id="send-button">Dispatch</button>
+              <span id="request-hint">回车发送，Shift + 回车换行</span>
+              <button id="send-button">发送</button>
             </div>
           </div>
         </section>
@@ -73,18 +87,18 @@
           <article class="panel stack-panel">
             <div class="panel-head">
               <div>
-                <p class="eyebrow">Context</p>
-                <h2>Session Summary</h2>
+                <p class="eyebrow">上下文</p>
+                <h2>会话摘要</h2>
               </div>
             </div>
-            <p id="session-summary" class="summary-text">No conversation yet.</p>
+            <p id="session-summary" class="summary-text">暂无对话。</p>
           </article>
 
           <article class="panel stack-panel">
             <div class="panel-head">
               <div>
-                <p class="eyebrow">Trace</p>
-                <h2>Tool History</h2>
+                <p class="eyebrow">追踪</p>
+                <h2>工具历史</h2>
               </div>
             </div>
             <div id="tool-list" class="list"></div>
@@ -93,8 +107,8 @@
           <article class="panel stack-panel">
             <div class="panel-head">
               <div>
-                <p class="eyebrow">Files</p>
-                <h2>Imported Files</h2>
+                <p class="eyebrow">文件</p>
+                <h2>引入文件</h2>
               </div>
             </div>
             <div id="file-list" class="list"></div>
@@ -103,59 +117,57 @@
           <article class="panel stack-panel">
             <div class="panel-head">
               <div>
-                <p class="eyebrow">Output</p>
-                <h2>Artifacts</h2>
+                <p class="eyebrow">产出</p>
+                <h2>产出物</h2>
               </div>
             </div>
             <div id="artifact-list" class="list"></div>
           </article>
-        </section>
-      </main>
 
-      <section class="bottom-grid">
-        <article class="panel">
+          <article class="panel stack-panel">
           <div class="panel-head">
             <div>
-              <p class="eyebrow">Recovery</p>
-              <h2>Snapshots</h2>
+                <p class="eyebrow">恢复</p>
+                <h2>快照</h2>
             </div>
           </div>
           <div id="snapshot-list" class="list"></div>
         </article>
 
-        <article class="panel">
+          <article class="panel stack-panel">
           <div class="panel-head">
             <div>
-              <p class="eyebrow">Coordination</p>
-              <h2>Agent Graph</h2>
+                <p class="eyebrow">协作</p>
+                <h2>Agent 结构</h2>
             </div>
           </div>
           <div id="agent-graph" class="agent-graph"></div>
         </article>
 
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Peek</p>
-              <h2>Workspace / Terminal / Browser</h2>
+          <article class="panel stack-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">预览</p>
+                <h2>工作区 / 终端 / 浏览器</h2>
+              </div>
             </div>
-          </div>
           <div class="peek-grid">
-            <div>
-              <span class="peek-label">Workspace</span>
-              <p>Bootstrap prototype with local Node runtime.</p>
+            <div class="list-item">
+                <span class="peek-label">工作区</span>
+                <p id="workspace-peek">等待加载…</p>
             </div>
-            <div>
-              <span class="peek-label">Terminal</span>
-              <p>Use `node server.js` to run. OpenClaw wiring is env-driven.</p>
+            <div class="list-item">
+                <span class="peek-label">终端</span>
+                <p id="terminal-peek">等待加载…</p>
             </div>
-            <div>
-              <span class="peek-label">Browser</span>
-              <p>Single-page cockpit for chat, trace, artifacts, and state.</p>
+            <div class="list-item">
+                <span class="peek-label">浏览器</span>
+                <p id="browser-peek">等待加载…</p>
             </div>
           </div>
         </article>
-      </section>
+        </section>
+      </main>
     </div>
 
     <template id="message-template">
