@@ -1,4 +1,5 @@
 const http = require('node:http');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
@@ -1778,6 +1779,94 @@ async function callOpenClaw(messages, fastMode, sessionUser = 'command-center', 
   return parseOpenClawResponse(data);
 }
 
+function buildOpenClawSessionMessage(message) {
+  const text = normalizeChatMessage(message).trim();
+  const attachments = getMessageAttachments(message);
+  const attachmentPrompts = attachments.map((attachment) => describeAttachmentForModel(attachment)).filter(Boolean);
+  const textPrompt = text || (attachmentPrompts.length ? `用户附加了 ${attachmentPrompts.length} 个附件，请结合附件内容处理请求。` : '');
+  return [textPrompt, ...attachmentPrompts].filter(Boolean).join('\n\n').trim();
+}
+
+function requiresDirectOpenClawRequest(messages = []) {
+  return messages.some((message) =>
+    getMessageAttachments(message).some((attachment) => attachment.kind === 'image' && attachment.dataUrl),
+  );
+}
+
+async function callOpenClawSession(messages, sessionUser = 'command-center', timeoutMs = 30000) {
+  const agentId = resolveSessionAgentId(sessionUser);
+  const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+  const message = messages.map((entry) => buildOpenClawSessionMessage(entry)).filter(Boolean).join('\n\n').trim();
+
+  if (!message) {
+    return {
+      outputText: 'OpenClaw returned an empty response.',
+      usage: null,
+    };
+  }
+
+  const runId = crypto.randomUUID();
+  const startResult = await callOpenClawGateway(
+    'agent',
+    {
+      message,
+      sessionKey,
+      idempotencyKey: runId,
+      deliver: false,
+      channel: 'webchat',
+      lane: 'nested',
+    },
+    10000,
+  );
+
+  const resolvedRunId = typeof startResult?.runId === 'string' && startResult.runId.trim() ? startResult.runId.trim() : runId;
+  const acceptedAt = Number(startResult?.acceptedAt) || Date.now();
+  const waitResult = await callOpenClawGateway(
+    'agent.wait',
+    {
+      runId: resolvedRunId,
+      timeoutMs,
+    },
+    timeoutMs + 2000,
+  );
+
+  if (waitResult?.status === 'timeout') {
+    throw new Error(waitResult?.error || 'OpenClaw session timed out');
+  }
+
+  if (waitResult?.status === 'error') {
+    throw new Error(waitResult?.error || 'OpenClaw session failed');
+  }
+
+  const history = await callOpenClawGateway(
+    'chat.history',
+    {
+      sessionKey,
+      limit: 50,
+    },
+    10000,
+  );
+
+  const historyMessages = Array.isArray(history?.messages) ? history.messages : [];
+  const latestAssistant =
+    [...historyMessages]
+      .reverse()
+      .find((entry) => entry?.role === 'assistant' && Number(entry?.timestamp) >= acceptedAt && normalizeChatMessage(entry)) ||
+    [...historyMessages].reverse().find((entry) => entry?.role === 'assistant' && normalizeChatMessage(entry));
+
+  return {
+    outputText: latestAssistant ? normalizeChatMessage(latestAssistant) || 'OpenClaw returned an empty response.' : 'OpenClaw returned an empty response.',
+    usage: latestAssistant?.usage || null,
+  };
+}
+
+async function dispatchOpenClaw(messages, fastMode, sessionUser = 'command-center', options = {}) {
+  if (requiresDirectOpenClawRequest(messages)) {
+    return await callOpenClaw(messages, fastMode, sessionUser, options);
+  }
+  return await callOpenClawSession(messages, sessionUser);
+}
+
 function parseOpenClawResponse(data) {
   if (typeof data.output_text === 'string') {
     return {
@@ -1890,7 +1979,7 @@ async function handleChat(req, res) {
       if (resetCommand.tail) {
         const resetReply =
           config.mode === 'openclaw'
-            ? await callOpenClaw([{ role: 'user', content: resetCommand.tail }], fastMode, nextSessionUser)
+            ? await dispatchOpenClaw([{ role: 'user', content: resetCommand.tail }], fastMode, nextSessionUser)
             : {
                 outputText: [
                   'OpenClaw command channel is online in mock mode.',
@@ -1951,7 +2040,7 @@ async function handleChat(req, res) {
 
     const reply =
       config.mode === 'openclaw'
-        ? await callOpenClaw(outboundMessages, fastMode, sessionUser, { commandBody })
+        ? await dispatchOpenClaw(outboundMessages, fastMode, sessionUser, { commandBody })
         : {
             outputText: [
               'OpenClaw command channel is online in mock mode.',
