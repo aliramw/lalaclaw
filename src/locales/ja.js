@@ -136,6 +136,7 @@ const ja = {
       noSnapshots: "このターンのスナップショットはありません",
     },
     timeline: {
+      runTitle: "実行",
       tool: "ツール",
       result: "結果",
       noToolCalls: "ツール呼び出しなし",

@@ -8,7 +8,6 @@ const {
   HOST,
   PORT,
   PROJECT_ROOT,
-  PUBLIC_DIR,
   DIST_DIR,
   LOCAL_OPENCLAW_DIR,
   OPENCLAW_BIN,
@@ -22,6 +21,9 @@ const {
   resolveCanonicalModelId,
 } = require('./server/config');
 const { createOpenClawClient } = require('./server/openclaw-client');
+const { createChatHandler } = require('./server/routes/chat');
+const { createRuntimeHandler } = require('./server/routes/runtime');
+const { createSessionHandlers } = require('./server/routes/session');
 const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require('./server/session-store');
 const { createTranscriptProjector } = require('./server/transcript');
 
@@ -636,7 +638,7 @@ function buildMockSnapshot(sessionUser = 'command-center') {
         ],
         files: [
           { path: 'server.js', kind: '文件', updatedLabel: formatTimestamp(now) },
-          { path: 'public/index.html', kind: '文件', updatedLabel: formatTimestamp(now) },
+          { path: 'src/App.jsx', kind: '文件', updatedLabel: formatTimestamp(now) },
         ],
         snapshots: [{ id: `snapshot-${now}`, title: `快照 ${formatTimestamp(now)}`, detail: 'mock 会话快照', timestamp: now }],
         outcome: 'mock 模式下的演示执行。',
@@ -649,7 +651,7 @@ function buildMockSnapshot(sessionUser = 'command-center') {
     conversation: localConversation,
     files: [
       { path: 'server.js', kind: '文件' },
-      { path: 'public/index.html', kind: '文件' },
+      { path: 'src/App.jsx', kind: '文件' },
     ],
     artifacts: [
       { title: '当前回复', type: 'assistant_output', detail: 'mock 模式下的演示输出。', timestamp: now },
@@ -763,308 +765,66 @@ async function buildDashboardSnapshot(sessionUser = 'command-center') {
   return await buildOpenClawSnapshot(sessionUser);
 }
 
-async function handleChat(req, res) {
-  try {
-    const body = await parseRequestBody(req);
-    const messages = Array.isArray(body.messages) ? body.messages : [];
-    const fastMode = Boolean(body.fastMode);
-    const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
-    const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
-    const latestUserContent = normalizeChatMessage(latestUserMessage);
-    const latestUserAttachments = getMessageAttachments(latestUserMessage);
-    const resetCommand = parseSessionResetCommand(latestUserContent);
-    const fastCommand = parseFastCommand(latestUserContent);
-    const commandBody = latestUserContent.startsWith('/') ? latestUserContent : '';
-    const slashCommandState = parseSlashCommandState(latestUserMessage?.content);
-    const outboundMessages = latestUserMessage
-      ? [{ role: 'user', content: latestUserContent, ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}) }]
-      : [];
+const handleChat = createChatHandler({
+  appendLocalSessionConversation,
+  buildDashboardSnapshot,
+  callOpenClawGateway,
+  clip,
+  config,
+  delay,
+  dispatchOpenClaw,
+  formatTokenBadge,
+  getCommandCenterSessionKey,
+  getDefaultAgentId,
+  getDefaultModelForAgent,
+  getMessageAttachments,
+  getSessionPreferences,
+  normalizeChatMessage,
+  normalizeSessionUser,
+  parseFastCommand,
+  parseRequestBody,
+  parseSessionResetCommand,
+  parseSlashCommandState,
+  resolveCanonicalModelId,
+  resolveSessionAgentId,
+  resolveSessionFastMode,
+  resolveSessionModel,
+  resolveSessionThinkMode,
+  sendJson,
+  setSessionPreferences,
+  summarizeMessages,
+});
 
-    if (body.agentId || body.model) {
-      const nextAgentId = String(body.agentId || resolveSessionAgentId(sessionUser)).trim() || getDefaultAgentId();
-      const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
-      const requestedModel = typeof body.model === 'string' ? resolveCanonicalModelId(body.model) : '';
-      const nextModel = requestedModel || resolveSessionModel(sessionUser, nextAgentId) || defaultModelForNextAgent;
-      setSessionPreferences(sessionUser, {
-        agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
-        model: requestedModel && requestedModel !== defaultModelForNextAgent ? nextModel : undefined,
-      });
+const handleRuntime = createRuntimeHandler({
+  buildDashboardSnapshot,
+  config,
+  normalizeSessionUser,
+  sendJson,
+});
 
-      if (config.mode === 'openclaw') {
-        const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
-        await callOpenClawGateway('sessions.patch', {
-          key: sessionKey,
-          model: nextModel,
-        });
-        await delay(150);
-      }
-    }
-
-    if (fastCommand) {
-      const responseTimestamp = Date.now();
-      if (fastCommand.action === 'on' || fastCommand.action === 'off') {
-        setSessionPreferences(sessionUser, { fastMode: fastCommand.action === 'on' });
-      }
-
-      const fastEnabled = resolveSessionFastMode(sessionUser);
-      const outputText =
-        fastCommand.action === 'status'
-          ? `Fast 当前${fastEnabled ? '已开启' : '已关闭'}。`
-          : fastCommand.action === 'on'
-            ? '已开启 fast。'
-            : fastCommand.action === 'off'
-              ? '已关闭 fast。'
-              : '用法：/fast status|on|off';
-
-      appendLocalSessionConversation(sessionUser, [
-        {
-          role: 'user',
-          content: latestUserContent,
-          timestamp: responseTimestamp - 1,
-        },
-        {
-          role: 'assistant',
-          content: outputText,
-          timestamp: responseTimestamp,
-        },
-      ]);
-
-      const snapshot = await buildDashboardSnapshot(sessionUser);
-      snapshot.session.status = '已完成 / 标准';
-
-      sendJson(res, 200, {
-        ok: true,
-        mode: config.mode,
-        model: snapshot.session?.model || config.model,
-        outputText,
-        usage: null,
-        tokenBadge: '',
-        commandHandled: 'fast',
-        metadata: {
-          status: snapshot.session.status,
-          summary: `fast: ${fastCommand.action}`,
-        },
-        ...snapshot,
-      });
-      return;
-    }
-
-    if (resetCommand) {
-      const nextSessionUser = normalizeSessionUser(`${sessionUser}-${Date.now()}`);
-      const currentPreferences = getSessionPreferences(sessionUser);
-      setSessionPreferences(nextSessionUser, { ...currentPreferences });
-
-      let outputText = '新会话已开始。直接说你要我干什么。';
-      let usage = null;
-
-      if (resetCommand.tail) {
-        const resetReply =
-          config.mode === 'openclaw'
-            ? await dispatchOpenClaw([{ role: 'user', content: resetCommand.tail }], fastMode, nextSessionUser)
-            : {
-                outputText: [
-                  'OpenClaw command channel is online in mock mode.',
-                  `Current intent: ${clip(resetCommand.tail, 160)}`,
-                ].join('\n'),
-                usage: null,
-              };
-
-        outputText = resetReply.outputText;
-        usage = resetReply.usage;
-      }
-
-      appendLocalSessionConversation(
-        nextSessionUser,
-        resetCommand.tail
-          ? [
-              {
-                role: 'user',
-                content: resetCommand.tail,
-                timestamp: Date.now() - 1,
-              },
-              {
-                role: 'assistant',
-                content: outputText,
-                timestamp: Date.now(),
-                ...(usage ? { tokenBadge: formatTokenBadge(usage) } : {}),
-              },
-            ]
-          : [
-              {
-                role: 'assistant',
-                content: outputText,
-                timestamp: Date.now(),
-              },
-            ],
-      );
-
-      const snapshot = await buildDashboardSnapshot(nextSessionUser);
-      snapshot.session.status = fastMode ? '已完成 / 快速' : '已完成 / 标准';
-
-      sendJson(res, 200, {
-        ok: true,
-        mode: config.mode,
-        model: snapshot.session?.model || config.model,
-        outputText,
-        usage,
-        tokenBadge: formatTokenBadge(usage),
-        resetSessionUser: nextSessionUser,
-        commandHandled: resetCommand.kind,
-        metadata: {
-          status: snapshot.session.status,
-          summary: resetCommand.tail ? `user: ${clip(resetCommand.tail, 72)}` : `${resetCommand.kind}: session reset`,
-        },
-        ...snapshot,
-      });
-      return;
-    }
-
-    const reply =
-      config.mode === 'openclaw'
-        ? await dispatchOpenClaw(outboundMessages, fastMode, sessionUser, { commandBody })
-        : {
-            outputText: [
-              'OpenClaw command channel is online in mock mode.',
-              `Current intent: ${clip(latestUserContent || 'No prompt supplied.', 160)}`,
-            ].join('\n'),
-            usage: null,
-          };
-
-    const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
-    const nextThinkMode = slashCommandState?.kind === 'thinkMode' ? slashCommandState.value : resolveSessionThinkMode(sessionUser);
-    setSessionPreferences(sessionUser, { fastMode: nextFastMode, thinkMode: nextThinkMode });
-
-    const snapshot = await buildDashboardSnapshot(sessionUser);
-    snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
-    const resolvedModel = snapshot.session?.model || config.model;
-
-    sendJson(res, 200, {
-      ok: true,
-      mode: config.mode,
-      model: resolvedModel,
-      outputText: reply.outputText,
-      usage: reply.usage,
-      tokenBadge: formatTokenBadge(reply.usage),
-      metadata: {
-        status: snapshot.session.status,
-        summary: summarizeMessages(messages),
-      },
-      ...snapshot,
-    });
-  } catch (error) {
-    sendJson(res, 500, {
-      ok: false,
-      error: error.message || 'Unknown server error',
-    });
-  }
-}
-
-async function handleRuntime(req, res) {
-  try {
-    const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
-    const snapshot = await buildDashboardSnapshot(sessionUser);
-    const resolvedModel = snapshot.session?.model || config.model;
-    sendJson(res, 200, {
-      ok: true,
-      mode: config.mode,
-      model: resolvedModel,
-      ...snapshot,
-    });
-  } catch (error) {
-    sendJson(res, 500, { ok: false, error: error.message || 'Runtime snapshot failed' });
-  }
-}
-
-function handleSession(req, res) {
-  const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
-  const agentId = resolveSessionAgentId(sessionUser);
-  const agentLabel = resolveAgentDisplayName(agentId);
-  const model = resolveSessionModel(sessionUser, agentId);
-  const thinkMode = resolveSessionThinkMode(sessionUser);
-  sendJson(res, 200, {
-    mode: config.mode,
-    model,
-    agentId,
-    agentLabel,
-    thinkMode,
-    sessionUser,
-    sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
-    availableModels: collectAvailableModels(config.localConfig, [model]),
-    availableAgents: collectAvailableAgents(config.localConfig, [agentId]),
-    apiStyle: config.apiStyle,
-    hasBaseUrl: Boolean(config.baseUrl),
-    hasApiKey: Boolean(config.apiKey),
-    localDetected: config.localDetected,
-  });
-}
-
-async function handleSessionUpdate(req, res) {
-  try {
-    const body = await parseRequestBody(req);
-    const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
-    const nextFastMode = typeof body.fastMode === 'boolean' ? body.fastMode : resolveSessionFastMode(sessionUser);
-    const requestedThinkMode = typeof body.thinkMode === 'string' ? normalizeThinkMode(body.thinkMode) : '';
-    if (typeof body.thinkMode === 'string' && !requestedThinkMode) {
-      sendJson(res, 400, { ok: false, error: 'Invalid think mode' });
-      return;
-    }
-    const nextThinkMode = requestedThinkMode || resolveSessionThinkMode(sessionUser);
-    const previousAgentId = resolveSessionAgentId(sessionUser);
-    const nextAgentId = body.agentId ? String(body.agentId).trim() || previousAgentId : previousAgentId;
-    const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
-
-    let nextModel = resolveSessionModel(sessionUser, previousAgentId);
-    let shouldPersistModel = Boolean(getSessionPreferences(sessionUser).model);
-
-    if (body.agentId && !body.model) {
-      nextModel = defaultModelForNextAgent;
-      shouldPersistModel = false;
-    }
-
-    if (body.model) {
-      const requestedModel = resolveCanonicalModelId(body.model);
-      nextModel = requestedModel || defaultModelForNextAgent;
-      shouldPersistModel = Boolean(requestedModel) && requestedModel !== defaultModelForNextAgent;
-    }
-
-    setSessionPreferences(sessionUser, {
-      agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
-      model: shouldPersistModel ? nextModel : undefined,
-      fastMode: nextFastMode,
-      thinkMode: nextThinkMode,
-    });
-
-    if (config.mode === 'openclaw' && (body.model || body.agentId)) {
-      const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
-      await callOpenClawGateway('sessions.patch', {
-        key: sessionKey,
-        model: nextModel,
-      });
-      await delay(150);
-    }
-
-    if (config.mode === 'openclaw' && requestedThinkMode) {
-      const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
-      await callOpenClawGateway('sessions.patch', {
-        key: sessionKey,
-        thinkingLevel: requestedThinkMode,
-      });
-      await delay(150);
-    }
-
-    const snapshot = await buildDashboardSnapshot(sessionUser);
-    sendJson(res, 200, {
-      ok: true,
-      mode: config.mode,
-      model: snapshot.session?.selectedModel || resolveSessionModel(sessionUser, nextAgentId),
-      agentId: snapshot.session?.agentId || nextAgentId,
-      sessionUser,
-      ...snapshot,
-    });
-  } catch (error) {
-    sendJson(res, 500, { ok: false, error: error.message || 'Session update failed' });
-  }
-}
+const { handleSession, handleSessionUpdate } = createSessionHandlers({
+  buildDashboardSnapshot,
+  callOpenClawGateway,
+  collectAvailableAgents,
+  collectAvailableModels,
+  config,
+  delay,
+  getCommandCenterSessionKey,
+  getDefaultAgentId,
+  getDefaultModelForAgent,
+  getSessionPreferences,
+  normalizeSessionUser,
+  normalizeThinkMode,
+  parseRequestBody,
+  resolveAgentDisplayName,
+  resolveCanonicalModelId,
+  resolveSessionAgentId,
+  resolveSessionFastMode,
+  resolveSessionModel,
+  resolveSessionThinkMode,
+  sendJson,
+  setSessionPreferences,
+});
 
 function createRequestHandler() {
   return (req, res) => {

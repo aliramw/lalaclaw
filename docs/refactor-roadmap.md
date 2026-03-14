@@ -65,7 +65,7 @@
 
 ### Phase 4: Remove legacy static app
 
-- Decide whether `public/index.html` and `public/app.js` are still needed.
+- Legacy static UI files in `public/index.html` and `public/app.js` have been removed; `dist` is now the only served frontend bundle.
 - If not, remove them and let the Node server fall back to the Vite app entry or built assets only.
 - Update README so local run instructions always match the active frontend.
 

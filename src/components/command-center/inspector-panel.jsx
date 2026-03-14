@@ -181,6 +181,7 @@ function ToolIoCodeBlock({ label, value, emptyText }) {
 }
 
 function TimelineItemCard({ item, defaultOpen = false, index, messages }) {
+  const { intlLocale } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
@@ -190,13 +191,24 @@ function TimelineItemCard({ item, defaultOpen = false, index, messages }) {
   }, [defaultOpen]);
 
   const badgeVariant = item.status === "失败" ? "default" : item.status?.includes("进行") ? "success" : "active";
+  const displayTime = item.timestamp
+    ? new Intl.DateTimeFormat(intlLocale, {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(item.timestamp))
+    : "";
 
   return (
     <Card>
       <CardContent className="space-y-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <div className="text-sm font-medium">{item.title}</div>
+            <div className="text-sm font-medium">
+              <span>{item.timestamp ? messages.inspector.timeline.runTitle : item.title}</span>
+              {displayTime ? <span className="text-muted-foreground"> {displayTime}</span> : null}
+            </div>
             <div className="text-sm text-muted-foreground">{item.prompt}</div>
           </div>
           <Badge variant={badgeVariant} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">

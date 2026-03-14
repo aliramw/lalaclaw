@@ -136,6 +136,7 @@ const fr = {
       noSnapshots: "Aucun instantané pour ce tour",
     },
     timeline: {
+      runTitle: "Exécution",
       tool: "Outils",
       result: "Résultat",
       noToolCalls: "Aucun outil appelé",

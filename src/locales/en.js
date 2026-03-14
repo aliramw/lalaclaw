@@ -136,6 +136,7 @@ const en = {
       noSnapshots: "No snapshots in this turn",
     },
     timeline: {
+      runTitle: "Run",
       tool: "Tools",
       result: "Result",
       noToolCalls: "No tools called",

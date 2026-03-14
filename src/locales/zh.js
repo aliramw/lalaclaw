@@ -136,6 +136,7 @@ const zh = {
       noSnapshots: "本轮暂无快照",
     },
     timeline: {
+      runTitle: "执行",
       tool: "工具",
       result: "结果",
       noToolCalls: "未调用工具",

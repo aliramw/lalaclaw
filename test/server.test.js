@@ -154,16 +154,21 @@ describe("server helpers", () => {
 describe("server routes", () => {
   let server;
   let baseUrl;
+  let spawnedSessionUsers;
 
   beforeEach(async () => {
     server = createAppServer();
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
+    spawnedSessionUsers = new Set();
     __test.clearSessionPreferences("api-user");
   });
 
   afterEach(async () => {
     __test.clearSessionPreferences("api-user");
+    for (const sessionUser of spawnedSessionUsers) {
+      __test.clearSessionPreferences(sessionUser);
+    }
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   });
 
@@ -207,6 +212,125 @@ describe("server routes", () => {
     expect(invalidSessionResponse.status).toBe(500);
     expect(invalidSessionPayload.ok).toBe(false);
     expect(invalidSessionPayload.error).toBe("Invalid JSON body");
+  });
+
+  it("handles fast slash commands and reflects the updated runtime state", async () => {
+    const fastOnResponse = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        messages: [{ role: "user", content: "/fast on" }],
+      }),
+    });
+    const fastOnPayload = await readJson(fastOnResponse);
+
+    expect(fastOnResponse.ok).toBe(true);
+    expect(fastOnPayload.commandHandled).toBe("fast");
+    expect(fastOnPayload.outputText).toBe("已开启 fast。");
+    expect(fastOnPayload.session.fastMode).toBe("开启");
+    expect(fastOnPayload.metadata.summary).toBe("fast: on");
+
+    const runtimeResponse = await fetch(`${baseUrl}/api/runtime?sessionUser=api-user`);
+    const runtimePayload = await readJson(runtimeResponse);
+
+    expect(runtimeResponse.ok).toBe(true);
+    expect(runtimePayload.session.fastMode).toBe("开启");
+    expect(runtimePayload.conversation.at(-2)).toMatchObject({
+      role: "user",
+      content: "/fast on",
+    });
+    expect(runtimePayload.conversation.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "已开启 fast。",
+    });
+
+    const fastStatusResponse = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        messages: [{ role: "user", content: "/fast status" }],
+      }),
+    });
+    const fastStatusPayload = await readJson(fastStatusResponse);
+
+    expect(fastStatusPayload.outputText).toBe("Fast 当前已开启。");
+    expect(fastStatusPayload.metadata.summary).toBe("fast: status");
+  });
+
+  it("persists think mode from slash commands on normal chat requests", async () => {
+    const chatResponse = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        fastMode: false,
+        messages: [{ role: "user", content: "/think high" }],
+      }),
+    });
+    const chatPayload = await readJson(chatResponse);
+
+    expect(chatResponse.ok).toBe(true);
+    expect(chatPayload.outputText).toContain("Current intent: /think high");
+    expect(chatPayload.session.thinkMode).toBe("high");
+    expect(chatPayload.metadata.status).toBe("已完成 / 标准");
+
+    const sessionResponse = await fetch(`${baseUrl}/api/session?sessionUser=api-user`);
+    const sessionPayload = await readJson(sessionResponse);
+
+    expect(sessionPayload.thinkMode).toBe("high");
+  });
+
+  it("creates a fresh session when /new is sent and carries over preferences", async () => {
+    const updateResponse = await fetch(`${baseUrl}/api/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        model: "custom-model",
+        fastMode: true,
+        thinkMode: "minimal",
+      }),
+    });
+    const updatePayload = await readJson(updateResponse);
+
+    expect(updateResponse.ok).toBe(true);
+    expect(updatePayload.session.selectedModel).toBe("custom-model");
+
+    const resetResponse = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        fastMode: true,
+        messages: [{ role: "user", content: "/new 继续整理项目结构" }],
+      }),
+    });
+    const resetPayload = await readJson(resetResponse);
+
+    spawnedSessionUsers.add(resetPayload.resetSessionUser);
+
+    expect(resetResponse.ok).toBe(true);
+    expect(resetPayload.commandHandled).toBe("new");
+    expect(resetPayload.resetSessionUser).toMatch(/^api-user-/);
+    expect(resetPayload.outputText).toContain("Current intent: 继续整理项目结构");
+    expect(resetPayload.session.sessionUser).toBe(resetPayload.resetSessionUser);
+    expect(resetPayload.session.selectedModel).toBe("custom-model");
+    expect(resetPayload.session.fastMode).toBe("开启");
+    expect(resetPayload.session.thinkMode).toBe("minimal");
+    expect(resetPayload.conversation[0]).toMatchObject({
+      role: "user",
+      content: "继续整理项目结构",
+    });
+
+    const nextSessionResponse = await fetch(
+      `${baseUrl}/api/session?sessionUser=${encodeURIComponent(resetPayload.resetSessionUser)}`,
+    );
+    const nextSessionPayload = await readJson(nextSessionResponse);
+
+    expect(nextSessionPayload.model).toBe("custom-model");
+    expect(nextSessionPayload.thinkMode).toBe("minimal");
   });
 
   it("serves the web app and rejects unsupported methods", async () => {
