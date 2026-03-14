@@ -10,6 +10,18 @@ node server.js
 
 Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
+## Test
+
+```bash
+npm test
+```
+
+Watch mode:
+
+```bash
+npm run test:watch
+```
+
 ## OpenClaw wiring
 
 If `~/.openclaw/openclaw.json` exists, CommandCenter will automatically detect your local OpenClaw gateway and reuse its loopback endpoint plus gateway token.

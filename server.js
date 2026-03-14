@@ -124,6 +124,73 @@ function buildRuntimeConfig() {
 }
 
 const config = buildRuntimeConfig();
+const sessionPreferences = new Map();
+
+function getAgentConfig(agentId) {
+  return config.localConfig?.agents?.list?.find((agent) => agent?.id === agentId) || null;
+}
+
+function getDefaultModelForAgent(agentId = config.agentId) {
+  const trimmedAgentId = String(agentId || config.agentId).trim() || config.agentId;
+  const agentConfig = getAgentConfig(trimmedAgentId);
+  return resolveAgentModel(agentConfig) || config.localConfig?.agents?.defaults?.model?.primary || config.model;
+}
+
+function getDefaultAgentId() {
+  return String(config.agentId || '').trim() || 'main';
+}
+
+function getSessionPreferences(sessionUser = 'command-center') {
+  const key = normalizeSessionUser(sessionUser);
+  return sessionPreferences.get(key) || {};
+}
+
+function setSessionPreferences(sessionUser = 'command-center', next = {}) {
+  const key = normalizeSessionUser(sessionUser);
+  const current = sessionPreferences.get(key) || {};
+  const merged = { ...current, ...next };
+
+  if (!merged.model) {
+    delete merged.model;
+  }
+  if (!merged.agentId) {
+    delete merged.agentId;
+  }
+  if (typeof merged.fastMode !== 'boolean') {
+    delete merged.fastMode;
+  }
+
+  if (!Object.keys(merged).length) {
+    sessionPreferences.delete(key);
+    return {};
+  }
+
+  sessionPreferences.set(key, merged);
+  return merged;
+}
+
+function resolveSessionAgentId(sessionUser = 'command-center') {
+  const preferences = getSessionPreferences(sessionUser);
+  return String(preferences.agentId || getDefaultAgentId()).trim() || getDefaultAgentId();
+}
+
+function resolveSessionModel(sessionUser = 'command-center', agentId = resolveSessionAgentId(sessionUser)) {
+  const preferences = getSessionPreferences(sessionUser);
+  return String(preferences.model || getDefaultModelForAgent(agentId)).trim() || getDefaultModelForAgent(agentId);
+}
+
+function resolveSessionFastMode(sessionUser = 'command-center') {
+  const preferences = getSessionPreferences(sessionUser);
+  return Boolean(preferences.fastMode);
+}
+
+function clearSessionPreferences(sessionUser = 'command-center') {
+  sessionPreferences.delete(normalizeSessionUser(sessionUser));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function getStaticDir() {
   return fileExists(DIST_DIR) ? DIST_DIR : PUBLIC_DIR;
@@ -304,7 +371,18 @@ function normalizeSessionUser(sessionUser = '') {
   return normalized || 'command-center';
 }
 
-function getCommandCenterSessionKey(agentId = config.agentId, sessionUser = 'command-center') {
+function parseSlashCommandState(message = '') {
+  const normalized = String(message || '').trim().toLowerCase();
+  if (/^\/fast\s+on\s*$/i.test(normalized)) {
+    return { kind: 'fastMode', value: true };
+  }
+  if (/^\/fast\s+off\s*$/i.test(normalized)) {
+    return { kind: 'fastMode', value: false };
+  }
+  return null;
+}
+
+function getCommandCenterSessionKey(agentId = getDefaultAgentId(), sessionUser = 'command-center') {
   return `agent:${agentId}:openai-user:${normalizeSessionUser(sessionUser)}`;
 }
 
@@ -547,6 +625,43 @@ function collectArtifacts(entries) {
     .filter(Boolean)
     .slice(-6)
     .reverse();
+}
+
+function collectConversationMessages(entries) {
+  return entries
+    .filter((entry) => entry.type === 'message')
+    .map((entry) => {
+      const payload = entry.message || {};
+      if (payload.role === 'user') {
+        const content = extractPlainTextSegments(payload.content).join('\n\n').trim();
+        if (!content) {
+          return null;
+        }
+
+        return {
+          role: 'user',
+          content,
+          timestamp: payload.timestamp || Date.parse(entry.timestamp) || Date.now(),
+        };
+      }
+
+      if (payload.role === 'assistant') {
+        const content = cleanAssistantReply(extractPlainTextSegments(payload.content).join('\n\n'));
+        if (!content) {
+          return null;
+        }
+
+        return {
+          role: 'assistant',
+          content,
+          timestamp: payload.timestamp || Date.parse(entry.timestamp) || Date.now(),
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean)
+    .slice(-80);
 }
 
 function collectSnapshots(entries, sessionRecord) {
@@ -917,17 +1032,20 @@ function buildTerminalPeek() {
   };
 }
 
-function buildMockSnapshot(fastMode, sessionUser = 'command-center') {
+function buildMockSnapshot(sessionUser = 'command-center') {
   const now = Date.now();
+  const agentId = resolveSessionAgentId(sessionUser);
+  const model = resolveSessionModel(sessionUser, agentId);
+  const fastMode = resolveSessionFastMode(sessionUser);
   return {
     session: {
       mode: 'mock',
-      model: config.model,
-      selectedModel: config.model,
-      agentId: config.agentId,
-      selectedAgentId: config.agentId,
+      model,
+      selectedModel: model,
+      agentId,
+      selectedAgentId: agentId,
       sessionUser: normalizeSessionUser(sessionUser),
-      sessionKey: getCommandCenterSessionKey(config.agentId, sessionUser),
+      sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
       status: '已完成',
       fastMode: fastMode ? '开启' : '关闭',
       contextUsed: 0,
@@ -936,8 +1054,8 @@ function buildMockSnapshot(fastMode, sessionUser = 'command-center') {
       runtime: 'mock',
       queue: 'none',
       updatedLabel: '刚刚',
-      availableModels: config.availableModels.length ? config.availableModels : [config.model],
-      availableAgents: config.availableAgents.length ? config.availableAgents : [config.agentId],
+      availableModels: collectAvailableModels(config.localConfig, [model]),
+      availableAgents: collectAvailableAgents(config.localConfig, [agentId]),
     },
     taskTimeline: [
       {
@@ -969,6 +1087,7 @@ function buildMockSnapshot(fastMode, sessionUser = 'command-center') {
       { name: 'workspace.scan', status: '完成', detail: '已扫描当前项目目录。', timestamp: now },
       { name: fastMode ? 'planner.fast-path' : 'planner.standard-path', status: '完成', detail: '已生成最小可运行原型。', timestamp: now },
     ],
+    conversation: [],
     files: [
       { path: 'server.js', kind: '文件' },
       { path: 'public/index.html', kind: '文件' },
@@ -980,7 +1099,7 @@ function buildMockSnapshot(fastMode, sessionUser = 'command-center') {
       { id: `snapshot-${now}`, title: `快照 ${formatTimestamp(now)}`, detail: 'mock 会话快照', timestamp: now },
     ],
     agents: [
-      { id: 'main', label: 'main', state: 'active', detail: '主 Agent · mock', updatedAt: now, sessionCount: 1 },
+      { id: agentId, label: agentId, state: 'active', detail: `主 Agent · ${clip(model, 42)}`, updatedAt: now, sessionCount: 1 },
     ],
     peeks: {
       workspace: buildWorkspacePeek(),
@@ -990,10 +1109,13 @@ function buildMockSnapshot(fastMode, sessionUser = 'command-center') {
   };
 }
 
-async function buildOpenClawSnapshot(fastMode, sessionUser = 'command-center') {
-  const sessionKey = getCommandCenterSessionKey(config.agentId, sessionUser);
-  const sessionRecord = resolveSessionRecord(config.agentId, sessionKey);
-  const transcriptPath = sessionRecord ? getTranscriptPath(config.agentId, sessionRecord.sessionId) : '';
+async function buildOpenClawSnapshot(sessionUser = 'command-center') {
+  const agentId = resolveSessionAgentId(sessionUser);
+  const selectedModel = resolveSessionModel(sessionUser, agentId);
+  const fastMode = resolveSessionFastMode(sessionUser);
+  const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+  const sessionRecord = resolveSessionRecord(agentId, sessionKey);
+  const transcriptPath = sessionRecord ? getTranscriptPath(agentId, sessionRecord.sessionId) : '';
   const entries = transcriptPath ? readJsonLines(transcriptPath).slice(-240) : [];
   const [statusResult, browserPeek] = await Promise.all([
     invokeOpenClawTool('session_status', {}, sessionKey).catch(() => null),
@@ -1011,18 +1133,18 @@ async function buildOpenClawSnapshot(fastMode, sessionUser = 'command-center') {
   const latestModel =
     parsedStatus?.modelDisplay ||
     latestAssistant?.message?.model ||
-    config.localConfig?.agents?.defaults?.model?.primary ||
+    getDefaultModelForAgent(agentId) ||
     config.model;
-  const availableModels = collectAvailableModels(config.localConfig, [config.model, latestModel]);
-  const availableAgents = collectAvailableAgents(config.localConfig, [config.agentId]);
+  const availableModels = collectAvailableModels(config.localConfig, [selectedModel, latestModel]);
+  const availableAgents = collectAvailableAgents(config.localConfig, [agentId]);
 
   return {
     session: {
       mode: 'openclaw',
       model: latestModel,
-      selectedModel: config.model || latestModel,
-      agentId: config.agentId,
-      selectedAgentId: config.agentId,
+      selectedModel,
+      agentId,
+      selectedAgentId: agentId,
       sessionUser: normalizeSessionUser(sessionUser),
       sessionKey: parsedStatus?.sessionKey || sessionKey,
       status: '就绪',
@@ -1044,6 +1166,7 @@ async function buildOpenClawSnapshot(fastMode, sessionUser = 'command-center') {
       availableModels,
       availableAgents,
     },
+    conversation: collectConversationMessages(entries),
     taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot]),
     toolHistory: collectToolHistory(entries),
     files: collectFiles(entries, [PROJECT_ROOT, config.workspaceRoot]),
@@ -1058,14 +1181,16 @@ async function buildOpenClawSnapshot(fastMode, sessionUser = 'command-center') {
   };
 }
 
-async function buildDashboardSnapshot(fastMode = false, sessionUser = 'command-center') {
+async function buildDashboardSnapshot(sessionUser = 'command-center') {
   if (config.mode !== 'openclaw') {
-    return buildMockSnapshot(fastMode, sessionUser);
+    return buildMockSnapshot(sessionUser);
   }
-  return await buildOpenClawSnapshot(fastMode, sessionUser);
+  return await buildOpenClawSnapshot(sessionUser);
 }
 
 async function callOpenClaw(messages, fastMode, sessionUser = 'command-center') {
+  const agentId = resolveSessionAgentId(sessionUser);
+  const model = resolveSessionModel(sessionUser, agentId);
   const endpoint = new URL(config.apiPath, config.baseUrl).toString();
   const headers = {
     'Content-Type': 'application/json',
@@ -1075,8 +1200,8 @@ async function callOpenClaw(messages, fastMode, sessionUser = 'command-center') 
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
 
-  if (config.agentId) {
-    headers['x-openclaw-agent-id'] = config.agentId;
+  if (agentId) {
+    headers['x-openclaw-agent-id'] = agentId;
   }
 
   const systemPrompt =
@@ -1086,7 +1211,7 @@ async function callOpenClaw(messages, fastMode, sessionUser = 'command-center') 
   let payload;
   if (config.apiStyle === 'responses') {
     payload = {
-      model: config.model,
+      model,
       input: [
         { role: 'system', content: systemPrompt },
         ...messages.map((message) => ({
@@ -1098,7 +1223,7 @@ async function callOpenClaw(messages, fastMode, sessionUser = 'command-center') 
     };
   } else {
     payload = {
-      model: config.model,
+      model,
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       temperature: fastMode ? 0.3 : 0.7,
       stream: false,
@@ -1142,8 +1267,19 @@ async function handleChat(req, res) {
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const fastMode = Boolean(body.fastMode);
     const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
-    config.model = body.model || config.model;
-    config.agentId = body.agentId || config.agentId;
+    const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
+    const slashCommandState = parseSlashCommandState(latestUserMessage?.content);
+
+    if (body.agentId || body.model) {
+      const nextAgentId = String(body.agentId || resolveSessionAgentId(sessionUser)).trim() || getDefaultAgentId();
+      const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
+      const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
+      const nextModel = requestedModel || resolveSessionModel(sessionUser, nextAgentId) || defaultModelForNextAgent;
+      setSessionPreferences(sessionUser, {
+        agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
+        model: requestedModel && requestedModel !== defaultModelForNextAgent ? nextModel : undefined,
+      });
+    }
 
     const reply =
       config.mode === 'openclaw'
@@ -1156,8 +1292,11 @@ async function handleChat(req, res) {
             usage: null,
           };
 
-    const snapshot = await buildDashboardSnapshot(fastMode, sessionUser);
-    snapshot.session.status = fastMode ? '已完成 / 快速' : '已完成 / 标准';
+    const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
+    setSessionPreferences(sessionUser, { fastMode: nextFastMode });
+
+    const snapshot = await buildDashboardSnapshot(false, sessionUser);
+    snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
     const resolvedModel = snapshot.session?.model || config.model;
 
     sendJson(res, 200, {
@@ -1183,7 +1322,7 @@ async function handleChat(req, res) {
 async function handleRuntime(req, res) {
   try {
     const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
-    const snapshot = await buildDashboardSnapshot(false, sessionUser);
+    const snapshot = await buildDashboardSnapshot(sessionUser);
     const resolvedModel = snapshot.session?.model || config.model;
     sendJson(res, 200, {
       ok: true,
@@ -1198,14 +1337,16 @@ async function handleRuntime(req, res) {
 
 function handleSession(req, res) {
   const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
+  const agentId = resolveSessionAgentId(sessionUser);
+  const model = resolveSessionModel(sessionUser, agentId);
   sendJson(res, 200, {
     mode: config.mode,
-    model: config.model,
-    agentId: config.agentId,
+    model,
+    agentId,
     sessionUser,
-    sessionKey: getCommandCenterSessionKey(config.agentId, sessionUser),
-    availableModels: config.availableModels,
-    availableAgents: config.availableAgents,
+    sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
+    availableModels: collectAvailableModels(config.localConfig, [model]),
+    availableAgents: collectAvailableAgents(config.localConfig, [agentId]),
     apiStyle: config.apiStyle,
     hasBaseUrl: Boolean(config.baseUrl),
     hasApiKey: Boolean(config.apiKey),
@@ -1217,21 +1358,42 @@ async function handleSessionUpdate(req, res) {
   try {
     const body = await parseRequestBody(req);
     const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
-    if (body.model) {
-      config.model = String(body.model).trim() || config.model;
-      config.availableModels = collectAvailableModels(config.localConfig, [config.model]);
-    }
-    if (body.agentId) {
-      config.agentId = String(body.agentId).trim() || config.agentId;
-      config.availableAgents = collectAvailableAgents(config.localConfig, [config.agentId]);
+    const previousAgentId = resolveSessionAgentId(sessionUser);
+    const nextAgentId = body.agentId ? String(body.agentId).trim() || previousAgentId : previousAgentId;
+    const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
+
+    let nextModel = resolveSessionModel(sessionUser, previousAgentId);
+    let shouldPersistModel = Boolean(getSessionPreferences(sessionUser).model);
+
+    if (body.agentId && !body.model) {
+      nextModel = defaultModelForNextAgent;
+      shouldPersistModel = false;
     }
 
-    const snapshot = await buildDashboardSnapshot(false, sessionUser);
+    if (body.model) {
+      const requestedModel = String(body.model).trim();
+      nextModel = requestedModel || defaultModelForNextAgent;
+      shouldPersistModel = Boolean(requestedModel) && requestedModel !== defaultModelForNextAgent;
+    }
+
+    setSessionPreferences(sessionUser, {
+      agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
+      model: shouldPersistModel ? nextModel : undefined,
+    });
+
+    if (config.mode === 'openclaw' && (body.model || body.agentId)) {
+      const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
+      const toolModel = shouldPersistModel ? nextModel : 'default';
+      await invokeOpenClawTool('session_status', { sessionKey, model: toolModel }, sessionKey).catch(() => null);
+      await delay(150);
+    }
+
+    const snapshot = await buildDashboardSnapshot(sessionUser);
     sendJson(res, 200, {
       ok: true,
       mode: config.mode,
-      model: config.model,
-      agentId: config.agentId,
+      model: snapshot.session?.selectedModel || resolveSessionModel(sessionUser, nextAgentId),
+      agentId: snapshot.session?.agentId || nextAgentId,
       sessionUser,
       ...snapshot,
     });
@@ -1240,48 +1402,80 @@ async function handleSessionUpdate(req, res) {
   }
 }
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+function createRequestHandler() {
+  return (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
 
-  if (req.method === 'GET' && url.pathname === '/api/session') {
-    handleSession(req, res);
-    return;
-  }
+    if (req.method === 'GET' && url.pathname === '/api/session') {
+      handleSession(req, res);
+      return;
+    }
 
-  if (req.method === 'POST' && url.pathname === '/api/session') {
-    handleSessionUpdate(req, res);
-    return;
-  }
+    if (req.method === 'POST' && url.pathname === '/api/session') {
+      handleSessionUpdate(req, res);
+      return;
+    }
 
-  if (req.method === 'GET' && url.pathname === '/api/runtime') {
-    handleRuntime(req, res);
-    return;
-  }
+    if (req.method === 'GET' && url.pathname === '/api/runtime') {
+      handleRuntime(req, res);
+      return;
+    }
 
-  if (req.method === 'POST' && url.pathname === '/api/chat') {
-    handleChat(req, res);
-    return;
-  }
+    if (req.method === 'POST' && url.pathname === '/api/chat') {
+      handleChat(req, res);
+      return;
+    }
 
-  if (req.method !== 'GET') {
-    sendJson(res, 405, { error: 'Method not allowed' });
-    return;
-  }
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'Method not allowed' });
+      return;
+    }
 
-  const staticDir = getStaticDir();
-  const requestedPath = url.pathname === '/' ? '/index.html' : url.pathname;
-  const safePath = path.normalize(requestedPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
-  const filePath = path.join(staticDir, safePath);
+    const staticDir = getStaticDir();
+    const requestedPath = url.pathname === '/' ? '/index.html' : url.pathname;
+    const safePath = path.normalize(requestedPath).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
+    const filePath = path.join(staticDir, safePath);
 
-  if (!filePath.startsWith(staticDir)) {
-    sendJson(res, 403, { error: 'Forbidden' });
-    return;
-  }
+    if (!filePath.startsWith(staticDir)) {
+      sendJson(res, 403, { error: 'Forbidden' });
+      return;
+    }
 
-  sendFile(res, filePath);
-});
+    sendFile(res, filePath);
+  };
+}
 
-server.listen(PORT, HOST, () => {
-  console.log(`CommandCenter running at http://${HOST}:${PORT}`);
-  console.log(`Mode: ${config.mode}`);
-});
+function createAppServer() {
+  return http.createServer(createRequestHandler());
+}
+
+function startServer() {
+  const server = createAppServer();
+  server.listen(PORT, HOST, () => {
+    console.log(`CommandCenter running at http://${HOST}:${PORT}`);
+    console.log(`Mode: ${config.mode}`);
+  });
+  return server;
+}
+
+module.exports = {
+  config,
+  createAppServer,
+  startServer,
+  __test: {
+    clearSessionPreferences,
+    clip,
+    collectTaskTimeline,
+    getCommandCenterSessionKey,
+    normalizeChatMessage,
+    normalizeSessionUser,
+    parseCompactNumber,
+    parseOpenClawResponse,
+    parseSessionStatusText,
+    summarizeMessages,
+  },
+};
+
+if (require.main === module) {
+  startServer();
+}
