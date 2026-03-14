@@ -40,17 +40,15 @@ function TestHarness() {
   );
 }
 
-function hasExactText(text) {
-  return (_, element) => element?.textContent === text;
-}
-
 describe("InspectorPanel", () => {
   it("renders timeline details and switches tabs", async () => {
     render(<TestHarness />);
 
     expect(screen.getByText("修复错误")).toBeInTheDocument();
-    expect(screen.getByText(hasExactText("输入\n{}"))).toBeInTheDocument();
-    expect(screen.getByText(hasExactText("输出\nok"))).toBeInTheDocument();
+    expect(screen.getByText("输入")).toBeInTheDocument();
+    expect(screen.getByText("输出")).toBeInTheDocument();
+    expect(screen.getAllByText((_, element) => element?.textContent === "{}").length).toBeGreaterThan(0);
+    expect(screen.getAllByText((_, element) => element?.textContent === "ok").length).toBeGreaterThan(0);
     expect(screen.getAllByTitle("src/App.jsx").length).toBeGreaterThan(0);
     expect(within(screen.getByRole("tab", { name: "文件" })).getByText("1")).toBeInTheDocument();
 

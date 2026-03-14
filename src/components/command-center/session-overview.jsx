@@ -86,10 +86,13 @@ function StatusPill({ label, value, action, valueClassName, valueStyle, children
 
 function MetaChip({ label, value }) {
   if (!value) return null;
+  const usesWideTracking = !/[\u3400-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/.test(String(label));
 
   return (
     <div className="inline-flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground">
-      <span className="uppercase tracking-[0.12em]">{label}</span>
+      <span className={cn(usesWideTracking && "uppercase tracking-[0.12em]")} style={usesWideTracking ? undefined : { letterSpacing: 0 }}>
+        {label}
+      </span>
       <span className="max-w-[28rem] truncate text-foreground/80">{value}</span>
     </div>
   );

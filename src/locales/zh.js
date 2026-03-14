@@ -2,6 +2,7 @@ const zh = {
   app: {
     title: "LalaClaw.ai",
     subtitle: "龙虾指挥中心",
+    documentTitle: "LalaClaw.ai | 龙虾指挥中心",
   },
   locale: {
     label: "语言",

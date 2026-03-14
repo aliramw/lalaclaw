@@ -1,0 +1,703 @@
+const fs = require('node:fs');
+const path = require('node:path');
+
+function createTranscriptProjector({
+  PROJECT_ROOT,
+  LOCAL_OPENCLAW_DIR,
+  config,
+  fileExists,
+  readJsonIfExists,
+  readTextIfExists,
+  normalizeThinkMode,
+  parseCompactNumber,
+  parseTokenDisplay,
+  formatTokenBadge,
+  clip,
+  formatTimestamp,
+}) {
+  function getSessionsIndexPath(agentId) {
+    return path.join(LOCAL_OPENCLAW_DIR, 'agents', agentId, 'sessions', 'sessions.json');
+  }
+
+  function getTranscriptPath(agentId, sessionId) {
+    return path.join(LOCAL_OPENCLAW_DIR, 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
+  }
+
+  function loadSessionsIndex(agentId) {
+    return readJsonIfExists(getSessionsIndexPath(agentId)) || {};
+  }
+
+  function resolveSessionRecord(agentId, sessionKey) {
+    const sessionsIndex = loadSessionsIndex(agentId);
+    return sessionsIndex[sessionKey] || null;
+  }
+
+  function readJsonLines(filePath) {
+    const raw = readTextIfExists(filePath);
+    if (!raw) {
+      return [];
+    }
+
+    return raw
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  }
+
+  function extractTextSegments(content) {
+    if (!Array.isArray(content)) {
+      return [];
+    }
+
+    return content
+      .map((item) => {
+        if (item?.type === 'text') {
+          return item.text || '';
+        }
+        if (item?.type === 'toolCall') {
+          return item.arguments || item.partialJson || '';
+        }
+        return '';
+      })
+      .filter(Boolean);
+  }
+
+  function extractPlainTextSegments(content) {
+    if (!Array.isArray(content)) {
+      return [];
+    }
+
+    return content
+      .filter((item) => item?.type === 'text')
+      .map((item) => item.text || '')
+      .filter(Boolean);
+  }
+
+  function cleanAssistantReply(text) {
+    return String(text || '')
+      .replace(/\*\*<small>.*?<\/small>\*\*/g, '')
+      .replace(/\[\[reply_to_current\]\]/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function cleanUserMessage(text) {
+    let cleaned = String(text || '').trim();
+
+    cleaned = cleaned.replace(
+      /^Sender \(untrusted metadata\):\s*(?:```json\s*[\s\S]*?```\s*)?/i,
+      '',
+    );
+    cleaned = cleaned.replace(
+      /^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*/i,
+      '',
+    );
+
+    if (
+      /^OpenClaw runtime context \(internal\):/i.test(cleaned) &&
+      /runtime-generated,\s*not user-authored/i.test(cleaned)
+    ) {
+      return '';
+    }
+
+    return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function parseSessionStatusText(statusText) {
+    if (!statusText) {
+      return null;
+    }
+
+    const versionLine = statusText.match(/^🦞\s*OpenClaw\s+(.+)$/m);
+    const modelLine = statusText.match(/🧠 Model:\s*(.+?)(?:\s*·\s*🔑\s*(.+))?$/m);
+    const tokensLine = statusText.match(/🧮 Tokens:\s*(.+)$/m);
+    const contextLine = statusText.match(/📚 Context:\s*([^\n]+)$/m);
+    const sessionLine = statusText.match(/🧵 Session:\s*([^•\n]+)(?:•\s*(.+))?$/m);
+    const runtimeLine = statusText.match(/⚙️ Runtime:\s*(.+)$/m);
+    const queueLine = statusText.match(/🪢 Queue:\s*(.+)$/m);
+    const timeLine = statusText.match(/🕒 Time:\s*(.+)$/m);
+
+    let contextUsed = null;
+    let contextMax = null;
+    let contextRaw = '';
+    if (contextLine?.[1]) {
+      contextRaw = contextLine[1];
+      const contextMatch = contextLine[1].match(/([0-9.]+[km]?)\/([0-9.]+[km]?)/i);
+      if (contextMatch) {
+        contextUsed = parseCompactNumber(contextMatch[1]);
+        contextMax = parseCompactNumber(contextMatch[2]);
+      }
+    }
+
+    const parsedTokens = parseTokenDisplay(tokensLine?.[1] || '');
+    const runtimeDisplay = runtimeLine?.[1] || '';
+    const parsedThinkMode = normalizeThinkMode(runtimeDisplay.match(/(?:^|·)\s*Think:\s*([a-z]+)\s*(?:·|$)/i)?.[1] || '');
+
+    return {
+      text: statusText,
+      versionDisplay: versionLine?.[1]?.trim() || '',
+      time: timeLine?.[1] || '',
+      modelDisplay: modelLine?.[1] || '',
+      authDisplay: modelLine?.[2] || '',
+      tokensDisplay: tokensLine?.[1] || '',
+      tokensInput: parsedTokens?.input || 0,
+      tokensOutput: parsedTokens?.output || 0,
+      contextDisplay: contextRaw,
+      contextUsed,
+      contextMax,
+      sessionKey: sessionLine?.[1]?.trim() || '',
+      updatedLabel: sessionLine?.[2]?.trim() || '',
+      runtimeDisplay,
+      thinkMode: parsedThinkMode || '',
+      queueDisplay: queueLine?.[1] || '',
+    };
+  }
+
+  function listDirectoryPreview(rootDir, maxEntries = 6) {
+    try {
+      const entries = fs
+        .readdirSync(rootDir, { withFileTypes: true })
+        .filter((entry) => !entry.name.startsWith('.'))
+        .map((entry) => {
+          const fullPath = path.join(rootDir, entry.name);
+          const stat = fs.statSync(fullPath);
+          return {
+            name: entry.name,
+            kind: entry.isDirectory() ? 'dir' : 'file',
+            path: fullPath,
+            updatedAt: stat.mtimeMs,
+            size: entry.isDirectory() ? '' : `${Math.max(1, Math.round(stat.size / 1024))} KB`,
+          };
+        })
+        .sort((left, right) => {
+          if (left.kind !== right.kind) {
+            return left.kind === 'dir' ? -1 : 1;
+          }
+          return right.updatedAt - left.updatedAt;
+        })
+        .slice(0, maxEntries);
+
+      return entries;
+    } catch {
+      return [];
+    }
+  }
+
+  function normalizeCandidatePath(candidate, roots) {
+    const cleaned = String(candidate || '').replace(/[),.;:]+$/g, '');
+    if (!cleaned || /^https?:/i.test(cleaned) || cleaned.includes('://')) {
+      return null;
+    }
+
+    if (path.isAbsolute(cleaned) && fileExists(cleaned)) {
+      return cleaned;
+    }
+
+    for (const root of roots) {
+      const resolved = path.resolve(root, cleaned);
+      if (fileExists(resolved)) {
+        return resolved;
+      }
+    }
+
+    return null;
+  }
+
+  function isIgnoredWorkspacePath(targetPath) {
+    if (!targetPath) {
+      return true;
+    }
+
+    const segments = String(targetPath)
+      .split(path.sep)
+      .filter(Boolean)
+      .map((segment) => segment.toLowerCase());
+
+    return segments.includes('node_modules');
+  }
+
+  function inferExecFileAction(command = '') {
+    const normalized = String(command || '').trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+
+    if (
+      /\b(touch|truncate)\b/.test(normalized) ||
+      /(^|[^>])>\s*\S/.test(normalized) ||
+      /\btee\b/.test(normalized)
+    ) {
+      return 'created';
+    }
+
+    if (
+      /\b(cat|less|more|head|tail|grep|rg|sed\s+-n|awk|wc|stat|ls|find|readlink)\b/.test(normalized)
+    ) {
+      return 'viewed';
+    }
+
+    if (
+      /\b(edit|write|cp|mv|sed\s+-i|perl\s+-pi|python|node|ruby)\b/.test(normalized)
+    ) {
+      return 'modified';
+    }
+
+    return null;
+  }
+
+  function inferToolFileAction(name = '', args = {}) {
+    const normalizedName = String(name || '').toLowerCase();
+    if (normalizedName === 'read' || normalizedName === 'memory_get') {
+      return 'viewed';
+    }
+    if (normalizedName === 'write') {
+      return 'created';
+    }
+    if (normalizedName === 'edit') {
+      return 'modified';
+    }
+    if (normalizedName === 'exec') {
+      return inferExecFileAction(args?.command || '');
+    }
+    return null;
+  }
+
+  function actionPriority(action = '') {
+    if (action === 'created') return 3;
+    if (action === 'modified') return 2;
+    if (action === 'viewed') return 1;
+    return 0;
+  }
+
+  function extractResolvedPathsFromSource(source, roots) {
+    const pathPattern = /(?:\/Users\/[^\s"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
+    const matches = String(source || '').match(pathPattern) || [];
+    const resolvedPaths = [];
+
+    for (const match of matches) {
+      const resolved = normalizeCandidatePath(match, roots);
+      if (!resolved || isIgnoredWorkspacePath(resolved)) {
+        continue;
+      }
+      resolvedPaths.push(resolved);
+    }
+
+    return resolvedPaths;
+  }
+
+  function collectFiles(entries, roots) {
+    const found = new Map();
+
+    for (const entry of entries) {
+      if (entry.type !== 'message') {
+        continue;
+      }
+
+      const payload = entry.message || {};
+      const content = payload.content || [];
+      for (const item of Array.isArray(content) ? content : []) {
+        if (item?.type !== 'toolCall') {
+          continue;
+        }
+
+        const action = inferToolFileAction(item.name, item.arguments || {});
+        const sources = [item.arguments || item.partialJson || {}];
+
+        for (const source of sources) {
+          const resolvedPaths = extractResolvedPathsFromSource(
+            typeof source === 'string' ? source : JSON.stringify(source),
+            roots,
+          );
+
+          for (const resolved of resolvedPaths) {
+            const stat = fs.statSync(resolved);
+            if (stat.isDirectory()) {
+              continue;
+            }
+            const existing = found.get(resolved);
+            const nextAction =
+              actionPriority(action) >= actionPriority(existing?.primaryAction)
+                ? action || existing?.primaryAction || 'viewed'
+                : existing?.primaryAction || action || 'viewed';
+
+            if (!existing) {
+              found.set(resolved, {
+                path: resolved.startsWith(PROJECT_ROOT) ? path.relative(PROJECT_ROOT, resolved) : resolved,
+                fullPath: resolved,
+                kind: stat.isDirectory() ? '目录' : '文件',
+                updatedAt: stat.mtimeMs,
+                updatedLabel: formatTimestamp(stat.mtimeMs),
+                primaryAction: nextAction,
+                actions: action ? [action] : [],
+              });
+              continue;
+            }
+
+            found.set(resolved, {
+              ...existing,
+              updatedAt: stat.mtimeMs,
+              updatedLabel: formatTimestamp(stat.mtimeMs),
+              primaryAction: nextAction,
+              actions: Array.from(new Set([...(existing.actions || []), ...(action ? [action] : [])])),
+            });
+          }
+        }
+      }
+    }
+
+    return [...found.values()]
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, 8);
+  }
+
+  function collectArtifacts(entries) {
+    return entries
+      .filter((entry) => entry.type === 'message' && entry.message?.role === 'assistant')
+      .map((entry) => {
+        const reply = cleanAssistantReply(extractPlainTextSegments(entry.message.content).join('\n\n'));
+        if (!reply) {
+          return null;
+        }
+
+        return {
+          title: `回复 ${formatTimestamp(entry.message.timestamp || entry.timestamp)}`,
+          type: 'assistant_output',
+          detail: clip(reply, 180),
+          timestamp: entry.message.timestamp || entry.timestamp,
+        };
+      })
+      .filter(Boolean)
+      .slice(-6)
+      .reverse();
+  }
+
+  function collectConversationMessages(entries) {
+    return entries
+      .filter((entry) => entry.type === 'message')
+      .map((entry) => {
+        const payload = entry.message || {};
+        if (payload.role === 'user') {
+          const content = cleanUserMessage(extractPlainTextSegments(payload.content).join('\n\n'));
+          if (!content) {
+            return null;
+          }
+
+          return {
+            role: 'user',
+            content,
+            timestamp: payload.timestamp || Date.parse(entry.timestamp) || Date.now(),
+          };
+        }
+
+        if (payload.role === 'assistant') {
+          const content = cleanAssistantReply(extractPlainTextSegments(payload.content).join('\n\n'));
+          if (!content) {
+            return null;
+          }
+
+          const tokenBadge = formatTokenBadge(payload.usage);
+
+          return {
+            role: 'assistant',
+            content,
+            timestamp: payload.timestamp || Date.parse(entry.timestamp) || Date.now(),
+            ...(tokenBadge ? { tokenBadge } : {}),
+          };
+        }
+
+        return null;
+      })
+      .filter(Boolean)
+      .slice(-80);
+  }
+
+  function collectSnapshots(entries, sessionRecord) {
+    return entries
+      .filter((entry) => entry.type === 'message' && entry.message?.role === 'assistant')
+      .map((entry) => {
+        const reply = cleanAssistantReply(extractPlainTextSegments(entry.message.content).join('\n\n'));
+        if (!reply) {
+          return null;
+        }
+
+        return {
+          id: entry.id,
+          title: `快照 ${formatTimestamp(entry.message.timestamp || entry.timestamp)}`,
+          detail: clip(reply, 120),
+          sessionId: sessionRecord?.sessionId || '',
+          timestamp: entry.message.timestamp || entry.timestamp,
+        };
+      })
+      .filter(Boolean)
+      .slice(-6)
+      .reverse();
+  }
+
+  function collectToolHistory(entries) {
+    const history = [];
+    const unresolvedCalls = new Map();
+
+    for (const entry of entries) {
+      if (entry.type !== 'message') {
+        continue;
+      }
+
+      const payload = entry.message || {};
+      const content = Array.isArray(payload.content) ? payload.content : [];
+
+      if (payload.role === 'assistant') {
+        for (const item of content) {
+          if (item?.type !== 'toolCall') {
+            continue;
+          }
+
+          const toolEvent = {
+            id: item.id,
+            name: item.name || 'tool.call',
+            status: '执行中',
+            detail: clip(item.arguments || item.partialJson || '{}', 160),
+            timestamp: payload.timestamp || entry.timestamp,
+          };
+          history.push(toolEvent);
+          unresolvedCalls.set(item.id, toolEvent);
+        }
+      }
+
+      if (payload.role === 'toolResult') {
+        const pending = unresolvedCalls.get(payload.toolCallId);
+        const text = extractTextSegments(payload.content).join('\n');
+        const status = payload.details?.isError ? '失败' : '完成';
+        if (pending) {
+          pending.status = status;
+          pending.detail = clip(text || pending.detail, 160);
+        } else {
+          history.push({
+            id: payload.toolCallId,
+            name: payload.toolName || 'tool.result',
+            status,
+            detail: clip(text, 160),
+            timestamp: payload.timestamp || entry.timestamp,
+          });
+        }
+      }
+    }
+
+    return history.slice(-12).reverse();
+  }
+
+  function summarizeToolsForRun(tools) {
+    if (!tools.length) {
+      return '本轮未调用工具';
+    }
+
+    return tools
+      .map((tool) => `${tool.name}(${tool.status})`)
+      .join(' · ');
+  }
+
+  function collectTaskTimeline(entries, roots) {
+    const runs = [];
+    let currentRun = null;
+    const unresolvedCalls = new Map();
+
+    function ensureRun(timestamp) {
+      if (currentRun) {
+        return currentRun;
+      }
+
+      currentRun = {
+        id: `run-${timestamp || Date.now()}`,
+        title: `执行 ${formatTimestamp(timestamp || Date.now())}`,
+        prompt: '',
+        timestamp: timestamp || Date.now(),
+        tools: [],
+        files: new Map(),
+        snapshots: [],
+        outcome: '',
+        status: '进行中',
+      };
+      runs.push(currentRun);
+      return currentRun;
+    }
+
+    for (const entry of entries) {
+      if (entry.type !== 'message') {
+        continue;
+      }
+
+      const payload = entry.message || {};
+      const timestamp = payload.timestamp || entry.timestamp || Date.now();
+      const content = Array.isArray(payload.content) ? payload.content : [];
+
+      if (payload.role === 'user') {
+        const prompt = cleanUserMessage(extractPlainTextSegments(content).join('\n\n'));
+        currentRun = {
+          id: entry.id || `run-${timestamp}`,
+          title: `执行 ${formatTimestamp(timestamp)}`,
+          prompt: clip(prompt, 160),
+          timestamp,
+          tools: [],
+          files: new Map(),
+          snapshots: [],
+          outcome: '',
+          status: '进行中',
+        };
+        runs.push(currentRun);
+        continue;
+      }
+
+      const run = ensureRun(timestamp);
+
+      if (payload.role === 'assistant') {
+        for (const item of content) {
+          if (item?.type !== 'toolCall') {
+            continue;
+          }
+
+          const toolEvent = {
+            id: item.id,
+            name: item.name || 'tool.call',
+            status: '执行中',
+            input: clip(item.arguments || item.partialJson || '{}', 600),
+            output: '',
+            detail: clip(item.arguments || item.partialJson || '{}', 120),
+            timestamp,
+          };
+          run.tools.push(toolEvent);
+          unresolvedCalls.set(item.id, toolEvent);
+        }
+
+        const reply = cleanAssistantReply(extractPlainTextSegments(content).join('\n\n'));
+        if (reply) {
+          run.outcome = clip(reply, 180);
+          run.snapshots.push({
+            id: entry.id || `snapshot-${timestamp}`,
+            title: `快照 ${formatTimestamp(timestamp)}`,
+            detail: clip(reply, 120),
+            timestamp,
+          });
+          if (run.status !== '失败') {
+            run.status = '已完成';
+          }
+        }
+      }
+
+      if (payload.role === 'toolResult') {
+        const detail = clip(extractTextSegments(content).join('\n'), 600);
+        const pending = unresolvedCalls.get(payload.toolCallId);
+        const status = payload.details?.isError ? '失败' : '完成';
+        if (pending) {
+          pending.status = status;
+          pending.output = detail || pending.output;
+          pending.detail = clip(detail || pending.detail, 120);
+        } else {
+          run.tools.push({
+            id: payload.toolCallId || `${timestamp}`,
+            name: payload.toolName || 'tool.result',
+            status,
+            input: '',
+            output: detail,
+            detail: clip(detail, 120),
+            timestamp,
+          });
+        }
+
+        if (status === '失败') {
+          run.status = '失败';
+        }
+      }
+
+      const fileMatches = collectFiles([entry], roots);
+      for (const item of fileMatches) {
+        run.files.set(item.path, item);
+      }
+    }
+
+    return runs
+      .map((run) => ({
+        id: run.id,
+        title: run.title,
+        timestamp: run.timestamp,
+        prompt: run.prompt || '未记录输入',
+        status: run.status,
+        tools: run.tools,
+        toolsSummary: summarizeToolsForRun(run.tools),
+        files: [...run.files.values()].slice(0, 6),
+        snapshots: run.snapshots.slice(-3).reverse(),
+        outcome: run.outcome || '执行仍在进行，等待最终回复。',
+      }))
+      .filter((run) => run.prompt || run.tools.length || run.outcome)
+      .slice(-8)
+      .reverse();
+  }
+
+  function collectAgentActivity(agentId) {
+    const sessions = loadSessionsIndex(agentId);
+    const updatedAt = Object.values(sessions).reduce((latest, session) => {
+      const next = session?.updatedAt || 0;
+      return next > latest ? next : latest;
+    }, 0);
+    return {
+      updatedAt,
+      sessionCount: Object.keys(sessions).length,
+    };
+  }
+
+  function buildAgentGraph() {
+    const localConfig = config.localConfig;
+    if (!localConfig?.agents?.list?.length) {
+      return [{ id: config.agentId, label: config.agentId, state: 'active', detail: '当前 Agent' }];
+    }
+
+    const mainAgent = localConfig.agents.list.find((agent) => agent.default) || localConfig.agents.list[0];
+    const allowed = new Set(mainAgent?.subagents?.allowAgents || []);
+    return localConfig.agents.list.map((agent) => {
+      const activity = collectAgentActivity(agent.id);
+      const isMain = agent.id === mainAgent?.id;
+      const role = isMain ? '主 Agent' : allowed.has(agent.id) ? '可调度子 Agent' : '独立 Agent';
+      const modelPrimary =
+        agent?.model?.primary ||
+        (typeof agent?.model === 'string' ? agent.model : '') ||
+        config.localConfig?.agents?.defaults?.model?.primary ||
+        config.model;
+
+      return {
+        id: agent.id,
+        label: agent.id,
+        state: isMain ? 'active' : allowed.has(agent.id) ? 'ready' : 'idle',
+        detail: `${role} · ${clip(modelPrimary, 42)}`,
+        updatedAt: activity.updatedAt,
+        sessionCount: activity.sessionCount,
+      };
+    });
+  }
+
+  return {
+    buildAgentGraph,
+    cleanAssistantReply,
+    cleanUserMessage,
+    collectArtifacts,
+    collectConversationMessages,
+    collectFiles,
+    collectSnapshots,
+    collectTaskTimeline,
+    collectToolHistory,
+    extractTextSegments,
+    getTranscriptPath,
+    listDirectoryPreview,
+    parseSessionStatusText,
+    readJsonLines,
+    resolveSessionRecord,
+  };
+}
+
+module.exports = {
+  createTranscriptProjector,
+};

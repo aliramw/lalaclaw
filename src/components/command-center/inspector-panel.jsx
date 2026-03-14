@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Boxes, ChevronDown, Eye, FileText, FolderOpen, Hammer, History } from "lucide-react";
+import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
 const homePrefix = "/Users/marila";
+const toolIoTheme = themes.vsDark;
 
 function getItemKey(item, index) {
   return item.id || item.path || item.title || `${item.label || "item"}-${index}`;
@@ -148,6 +150,36 @@ function TimelineDetailCard({ title, children, emptyText }) {
   );
 }
 
+function looksLikeJson(value = "") {
+  const trimmed = String(value || "").trim();
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
+}
+
+function ToolIoCodeBlock({ label, value, emptyText }) {
+  const content = String(value || emptyText || "").trim() || String(emptyText || "");
+  const language = looksLikeJson(content) ? "json" : "text";
+
+  return (
+    <div className="rounded-lg border border-border bg-background/90">
+      <div className="border-b border-border/70 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">{label}</div>
+      <Highlight theme={toolIoTheme} code={content} language={language}>
+        {({ tokens, getLineProps, getTokenProps }) => (
+          <pre className="tool-io-code overflow-x-auto px-0 py-2 whitespace-pre-wrap">
+            {tokens.map((line, lineIndex) => (
+              <div key={lineIndex} {...getLineProps({ line })} className="min-h-5 px-3">
+                {line.length ? line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />) : <span>&nbsp;</span>}
+              </div>
+            ))}
+          </pre>
+        )}
+      </Highlight>
+    </div>
+  );
+}
+
 function TimelineItemCard({ item, defaultOpen = false, index, messages }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -204,8 +236,8 @@ function TimelineItemCard({ item, defaultOpen = false, index, messages }) {
                             </Badge>
                           </div>
                           <div className="space-y-2 text-xs leading-6">
-                            <div className="rounded-lg border border-border bg-background/90 p-3 whitespace-pre-wrap">{`${messages.inspector.timeline.input}\n${tool.input || messages.inspector.timeline.none}`}</div>
-                            <div className="rounded-lg border border-border bg-background/90 p-3 whitespace-pre-wrap">{`${messages.inspector.timeline.output}\n${tool.output || tool.detail || messages.inspector.timeline.noOutput}`}</div>
+                            <ToolIoCodeBlock label={messages.inspector.timeline.input} value={tool.input} emptyText={messages.inspector.timeline.none} />
+                            <ToolIoCodeBlock label={messages.inspector.timeline.output} value={tool.output || tool.detail} emptyText={messages.inspector.timeline.noOutput} />
                           </div>
                         </CardContent>
                       </Card>

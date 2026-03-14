@@ -2,14 +2,22 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+process.env.COMMANDCENTER_FORCE_MOCK = "1";
+
 const require = createRequire(import.meta.url);
 const { createAppServer, __test } = require("../server");
+const { DIST_DIR } = require("../server/config");
 
 async function readJson(response) {
   return await response.json();
 }
 
 describe("server helpers", () => {
+  it("uses dist as the only static app directory", () => {
+    expect(__test.getStaticDir()).toBe(DIST_DIR);
+    expect(__test.isWebAppBuilt()).toBe(true);
+  });
+
   it("parses compact numbers and session metadata", () => {
     expect(__test.parseCompactNumber("1.5k")).toBe(1500);
     expect(__test.parseCompactNumber("12m")).toBe(12000000);
@@ -98,6 +106,48 @@ describe("server helpers", () => {
         choices: [{ message: { content: [{ type: "text", text: "聊天输出" }] } }],
       }),
     ).toMatchObject({ outputText: "聊天输出" });
+  });
+
+  it("strips OpenClaw user wrappers from hydrated messages", () => {
+    expect(
+      __test.cleanUserMessage(
+        [
+          "Sender (untrusted metadata):",
+          "```json",
+          '{"label":"openclaw-control-ui","id":"openclaw-control-ui"}',
+          "```",
+          "",
+          "[Sun 2026-03-15 01:11 GMT+8] hi",
+        ].join("\n"),
+      ),
+    ).toBe("hi");
+    expect(__test.cleanUserMessage("[Sun 2026-03-15 01:03 GMT+8] 你是谁？")).toBe("你是谁？");
+    expect(
+      __test.cleanUserMessage(
+        [
+          "[Thu 2026-03-05 22:34 GMT+8] OpenClaw runtime context (internal):",
+          "This context is runtime-generated, not user-authored. Keep internal details private.",
+        ].join("\n"),
+      ),
+    ).toBe("");
+  });
+
+  it("uses cleaned user prompts in the task timeline", () => {
+    const entries = [
+      {
+        id: "user-1",
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [{ type: "text", text: "[Sun 2026-03-15 01:11 GMT+8] hi" }],
+        },
+      },
+    ];
+
+    const [run] = __test.collectTaskTimeline(entries, [process.cwd()]);
+    expect(run.prompt).toBe("hi");
   });
 });
 

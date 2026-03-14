@@ -1,3 +1,10 @@
+const localeConfig = window.__commandCenterLocale || { locale: 'zh', intlLocale: 'zh-CN', messages: {} };
+const bootMessages = localeConfig.messages || {};
+
+function t(key, fallback) {
+  return Object.prototype.hasOwnProperty.call(bootMessages, key) ? bootMessages[key] : fallback;
+}
+
 const state = {
   model: '',
   availableModels: [],
@@ -20,13 +27,13 @@ const state = {
     model: '',
     agentId: 'main',
     sessionUser: 'command-center',
-    status: '空闲',
-    fastMode: '关闭',
+    status: t('status.idle', '空闲'),
+    fastMode: t('status.off', '关闭'),
     contextUsed: 0,
     contextMax: 16000,
     runtime: 'mock',
-    queue: '无',
-    updatedLabel: '暂无更新',
+    queue: t('status.none', '无'),
+    updatedLabel: t('status.noUpdates', '暂无更新'),
     sessionKey: '',
   },
   activeTab: 'timeline',
@@ -34,7 +41,7 @@ const state = {
 };
 
 const modeLabels = {
-  mock: '模拟',
+  mock: t('status.mock', '模拟'),
   openclaw: '真实网关',
 };
 
@@ -78,7 +85,7 @@ const elements = {
 };
 
 function formatTime(timestamp) {
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(localeConfig.intlLocale || 'zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

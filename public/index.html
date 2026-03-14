@@ -3,57 +3,352 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenClaw 指挥中心</title>
+    <title>LalaClaw.ai</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script>
+      (function () {
+        var storageKey = "command-center-locale";
+        var langMap = {
+          zh: "zh-CN",
+          en: "en-US",
+          ja: "ja-JP",
+          fr: "fr-FR"
+        };
+        var messages = {
+          zh: {
+            "doc.title": "OpenClaw 指挥中心",
+            "topbar.heading": "指挥中心",
+            "status.model": "模型",
+            "status.modelAria": "选择模型",
+            "status.unknown": "未知",
+            "status.disconnected": "未连接",
+            "status.agent": "Agent",
+            "status.agentAria": "选择 Agent",
+            "status.waitingSession": "等待会话",
+            "status.runtime": "运行状态",
+            "status.idle": "空闲",
+            "status.fastMode": "快速模式",
+            "status.off": "关闭",
+            "status.mock": "模拟",
+            "status.context": "上下文",
+            "status.waitingState": "等待状态",
+            "status.queue": "队列",
+            "status.none": "无",
+            "status.noUpdates": "暂无更新",
+            "controls.reset": "重置对话",
+            "controls.resetTitle": "重置对话 (⌘N)",
+            "chat.eyebrow": "对话",
+            "chat.heading": "会话窗口",
+            "chat.inputLabel": "输入指令",
+            "chat.placeholder": "描述你希望 Agent 在当前 workspace 中完成什么。",
+            "chat.hint": "Shift + 回车发送，回车换行",
+            "chat.send": "发送",
+            "tabs.timeline": "执行",
+            "tabs.files": "文件",
+            "tabs.artifacts": "产出",
+            "tabs.snapshots": "快照",
+            "tabs.agents": "协作",
+            "tabs.peek": "预览",
+            "panel.timelineEyebrow": "追踪",
+            "panel.timelineHeading": "执行时间线",
+            "panel.filesEyebrow": "文件",
+            "panel.filesHeading": "引入文件",
+            "panel.artifactsEyebrow": "产出",
+            "panel.artifactsHeading": "产出物",
+            "panel.snapshotsEyebrow": "恢复",
+            "panel.snapshotsHeading": "快照",
+            "panel.agentsEyebrow": "协作",
+            "panel.agentsHeading": "Agent 结构",
+            "panel.peekEyebrow": "预览",
+            "panel.peekHeading": "工作区 / 终端 / 浏览器",
+            "peek.workspace": "工作区",
+            "peek.terminal": "终端",
+            "peek.browser": "浏览器",
+            "peek.waiting": "等待加载…"
+          },
+          en: {
+            "doc.title": "OpenClaw Command Center",
+            "topbar.heading": "Command Center",
+            "status.model": "Model",
+            "status.modelAria": "Select model",
+            "status.unknown": "Unknown",
+            "status.disconnected": "Disconnected",
+            "status.agent": "Agent",
+            "status.agentAria": "Select agent",
+            "status.waitingSession": "Waiting for session",
+            "status.runtime": "Runtime",
+            "status.idle": "Idle",
+            "status.fastMode": "Fast mode",
+            "status.off": "Off",
+            "status.mock": "Mock",
+            "status.context": "Context",
+            "status.waitingState": "Waiting for state",
+            "status.queue": "Queue",
+            "status.none": "None",
+            "status.noUpdates": "No updates",
+            "controls.reset": "Reset conversation",
+            "controls.resetTitle": "Reset conversation (⌘N)",
+            "chat.eyebrow": "Chat",
+            "chat.heading": "Session Window",
+            "chat.inputLabel": "Input Prompt",
+            "chat.placeholder": "Describe what you want the Agent to complete in the current workspace.",
+            "chat.hint": "Shift + Enter to send, Enter for newline",
+            "chat.send": "Send",
+            "tabs.timeline": "Timeline",
+            "tabs.files": "Files",
+            "tabs.artifacts": "Outputs",
+            "tabs.snapshots": "Snapshots",
+            "tabs.agents": "Collab",
+            "tabs.peek": "Preview",
+            "panel.timelineEyebrow": "Trace",
+            "panel.timelineHeading": "Execution Timeline",
+            "panel.filesEyebrow": "Files",
+            "panel.filesHeading": "Tracked Files",
+            "panel.artifactsEyebrow": "Outputs",
+            "panel.artifactsHeading": "Artifacts",
+            "panel.snapshotsEyebrow": "Recovery",
+            "panel.snapshotsHeading": "Snapshots",
+            "panel.agentsEyebrow": "Collab",
+            "panel.agentsHeading": "Agent Graph",
+            "panel.peekEyebrow": "Preview",
+            "panel.peekHeading": "Workspace / Terminal / Browser",
+            "peek.workspace": "Workspace",
+            "peek.terminal": "Terminal",
+            "peek.browser": "Browser",
+            "peek.waiting": "Waiting to load…"
+          },
+          ja: {
+            "doc.title": "OpenClaw コマンドセンター",
+            "topbar.heading": "コマンドセンター",
+            "status.model": "モデル",
+            "status.modelAria": "モデルを選択",
+            "status.unknown": "不明",
+            "status.disconnected": "未接続",
+            "status.agent": "Agent",
+            "status.agentAria": "Agent を選択",
+            "status.waitingSession": "セッション待機中",
+            "status.runtime": "実行状態",
+            "status.idle": "待機中",
+            "status.fastMode": "高速モード",
+            "status.off": "オフ",
+            "status.mock": "モック",
+            "status.context": "コンテキスト",
+            "status.waitingState": "状態待機中",
+            "status.queue": "キュー",
+            "status.none": "なし",
+            "status.noUpdates": "更新なし",
+            "controls.reset": "会話をリセット",
+            "controls.resetTitle": "会話をリセット (⌘N)",
+            "chat.eyebrow": "会話",
+            "chat.heading": "セッションウィンドウ",
+            "chat.inputLabel": "入力指示",
+            "chat.placeholder": "現在の workspace で Agent にしてほしいことを説明してください。",
+            "chat.hint": "Shift + Enter で送信、Enter で改行",
+            "chat.send": "送信",
+            "tabs.timeline": "実行",
+            "tabs.files": "ファイル",
+            "tabs.artifacts": "出力",
+            "tabs.snapshots": "快照",
+            "tabs.agents": "協業",
+            "tabs.peek": "プレビュー",
+            "panel.timelineEyebrow": "追跡",
+            "panel.timelineHeading": "実行タイムライン",
+            "panel.filesEyebrow": "ファイル",
+            "panel.filesHeading": "取り込みファイル",
+            "panel.artifactsEyebrow": "出力",
+            "panel.artifactsHeading": "成果物",
+            "panel.snapshotsEyebrow": "復元",
+            "panel.snapshotsHeading": "スナップショット",
+            "panel.agentsEyebrow": "協業",
+            "panel.agentsHeading": "Agent 構造",
+            "panel.peekEyebrow": "プレビュー",
+            "panel.peekHeading": "Workspace / Terminal / Browser",
+            "peek.workspace": "Workspace",
+            "peek.terminal": "Terminal",
+            "peek.browser": "Browser",
+            "peek.waiting": "読み込み待機中…"
+          },
+          fr: {
+            "doc.title": "Centre de Commandement OpenClaw",
+            "topbar.heading": "Centre de Commandement",
+            "status.model": "Modèle",
+            "status.modelAria": "Choisir le modèle",
+            "status.unknown": "Inconnu",
+            "status.disconnected": "Déconnecté",
+            "status.agent": "Agent",
+            "status.agentAria": "Choisir l'agent",
+            "status.waitingSession": "En attente de session",
+            "status.runtime": "État d'exécution",
+            "status.idle": "En attente",
+            "status.fastMode": "Mode rapide",
+            "status.off": "Désactivé",
+            "status.mock": "Simulé",
+            "status.context": "Contexte",
+            "status.waitingState": "En attente d'état",
+            "status.queue": "File",
+            "status.none": "Aucun",
+            "status.noUpdates": "Aucune mise à jour",
+            "controls.reset": "Réinitialiser la conversation",
+            "controls.resetTitle": "Réinitialiser la conversation (⌘N)",
+            "chat.eyebrow": "Conversation",
+            "chat.heading": "Fenêtre de Session",
+            "chat.inputLabel": "Saisie de commande",
+            "chat.placeholder": "Décrivez ce que vous voulez que l'Agent accomplisse dans l'espace de travail actuel.",
+            "chat.hint": "Shift + Entrée pour envoyer, Entrée pour un retour à la ligne",
+            "chat.send": "Envoyer",
+            "tabs.timeline": "Exécution",
+            "tabs.files": "Fichiers",
+            "tabs.artifacts": "Sorties",
+            "tabs.snapshots": "Instantanés",
+            "tabs.agents": "Collab",
+            "tabs.peek": "Aperçu",
+            "panel.timelineEyebrow": "Trace",
+            "panel.timelineHeading": "Chronologie d'exécution",
+            "panel.filesEyebrow": "Fichiers",
+            "panel.filesHeading": "Fichiers suivis",
+            "panel.artifactsEyebrow": "Sorties",
+            "panel.artifactsHeading": "Artéfacts",
+            "panel.snapshotsEyebrow": "Restauration",
+            "panel.snapshotsHeading": "Instantanés",
+            "panel.agentsEyebrow": "Collab",
+            "panel.agentsHeading": "Structure des agents",
+            "panel.peekEyebrow": "Aperçu",
+            "panel.peekHeading": "Workspace / Terminal / Browser",
+            "peek.workspace": "Workspace",
+            "peek.terminal": "Terminal",
+            "peek.browser": "Browser",
+            "peek.waiting": "En attente de chargement…"
+          }
+        };
+
+        function normalizeLocale(rawLocale) {
+          var normalized = String(rawLocale || "").toLowerCase();
+          if (normalized.indexOf("zh") === 0) return "zh";
+          if (normalized.indexOf("ja") === 0) return "ja";
+          if (normalized.indexOf("fr") === 0) return "fr";
+          if (normalized.indexOf("en") === 0) return "en";
+          return null;
+        }
+
+        function getMessage(copy, key) {
+          return Object.prototype.hasOwnProperty.call(copy, key) ? copy[key] : null;
+        }
+
+        var locale = null;
+
+        try {
+          locale = normalizeLocale(window.localStorage.getItem(storageKey));
+        } catch {}
+
+        if (!locale) {
+          var candidates = Array.isArray(navigator.languages) && navigator.languages.length
+            ? navigator.languages
+            : [navigator.language];
+          locale = candidates.map(normalizeLocale).find(Boolean) || "zh";
+        }
+
+        var copy = messages[locale] || messages.zh;
+        var intlLocale = langMap[locale] || "zh-CN";
+
+        window.__commandCenterLocale = {
+          locale: locale,
+          intlLocale: intlLocale,
+          messages: copy
+        };
+
+        document.documentElement.lang = intlLocale;
+        document.title = getMessage(copy, "doc.title") || "OpenClaw Command Center";
+
+        function applyLocalizedContent() {
+          document.querySelectorAll("[data-i18n-text]").forEach(function (node) {
+            var key = node.getAttribute("data-i18n-text");
+            var value = getMessage(copy, key);
+            if (value !== null) {
+              node.textContent = value;
+            }
+          });
+
+          document.querySelectorAll("[data-i18n-placeholder]").forEach(function (node) {
+            var key = node.getAttribute("data-i18n-placeholder");
+            var value = getMessage(copy, key);
+            if (value !== null) {
+              node.setAttribute("placeholder", value);
+            }
+          });
+
+          document.querySelectorAll("[data-i18n-title]").forEach(function (node) {
+            var key = node.getAttribute("data-i18n-title");
+            var value = getMessage(copy, key);
+            if (value !== null) {
+              node.setAttribute("title", value);
+            }
+          });
+
+          document.querySelectorAll("[data-i18n-aria-label]").forEach(function (node) {
+            var key = node.getAttribute("data-i18n-aria-label");
+            var value = getMessage(copy, key);
+            if (value !== null) {
+              node.setAttribute("aria-label", value);
+            }
+          });
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", applyLocalizedContent, { once: true });
+        } else {
+          applyLocalizedContent();
+        }
+      })();
+    </script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div class="topbar-title">
           <p class="eyebrow">OpenClaw</p>
-          <h1>指挥中心</h1>
+          <h1 data-i18n-text="topbar.heading">指挥中心</h1>
         </div>
         <section class="topbar-status">
           <div class="inline-status inline-status-selectable">
-            <span class="status-label">模型</span>
-            <button id="model-menu-button" class="status-menu-trigger" type="button" aria-label="选择模型" aria-expanded="false">▾</button>
+            <span class="status-label" data-i18n-text="status.model">模型</span>
+            <button id="model-menu-button" class="status-menu-trigger" type="button" data-i18n-aria-label="status.modelAria" aria-label="选择模型" aria-expanded="false">▾</button>
             <div id="model-menu" class="status-menu" hidden></div>
-            <strong id="model-badge">未知</strong>
-            <small id="model-meta" class="status-meta">未连接</small>
+            <strong id="model-badge" data-i18n-text="status.unknown">未知</strong>
+            <small id="model-meta" class="status-meta" data-i18n-text="status.disconnected">未连接</small>
           </div>
           <div class="inline-status inline-status-selectable">
-            <span class="status-label">Agent</span>
-            <button id="agent-menu-button" class="status-menu-trigger" type="button" aria-label="选择 Agent" aria-expanded="false">▾</button>
+            <span class="status-label" data-i18n-text="status.agent">Agent</span>
+            <button id="agent-menu-button" class="status-menu-trigger" type="button" data-i18n-aria-label="status.agentAria" aria-label="选择 Agent" aria-expanded="false">▾</button>
             <div id="agent-menu" class="status-menu" hidden></div>
             <strong id="agent-badge">main</strong>
-            <small id="session-badge" class="status-meta">等待会话</small>
+            <small id="session-badge" class="status-meta" data-i18n-text="status.waitingSession">等待会话</small>
           </div>
           <div class="inline-status">
-            <span class="status-label">运行状态</span>
-            <strong id="status-badge">空闲</strong>
+            <span class="status-label" data-i18n-text="status.runtime">运行状态</span>
+            <strong id="status-badge" data-i18n-text="status.idle">空闲</strong>
             <small id="runtime-badge" class="status-meta">mock</small>
           </div>
           <div class="inline-status">
-            <span class="status-label">快速模式</span>
+            <span class="status-label" data-i18n-text="status.fastMode">快速模式</span>
             <label class="status-toggle">
               <input id="fast-mode" type="checkbox" />
-              <span id="fast-badge">关闭</span>
+              <span id="fast-badge" data-i18n-text="status.off">关闭</span>
             </label>
-            <small id="mode-badge" class="status-meta">模拟</small>
+            <small id="mode-badge" class="status-meta" data-i18n-text="status.mock">模拟</small>
           </div>
           <div class="inline-status">
-            <span class="status-label">上下文</span>
+            <span class="status-label" data-i18n-text="status.context">上下文</span>
             <strong><span id="context-length">0</span> / <span id="context-max">16000</span></strong>
-            <small id="context-meta" class="status-meta">等待状态</small>
+            <small id="context-meta" class="status-meta" data-i18n-text="status.waitingState">等待状态</small>
           </div>
           <div class="inline-status">
-            <span class="status-label">队列</span>
-            <strong id="queue-badge">无</strong>
-            <small id="updated-badge" class="status-meta">暂无更新</small>
+            <span class="status-label" data-i18n-text="status.queue">队列</span>
+            <strong id="queue-badge" data-i18n-text="status.none">无</strong>
+            <small id="updated-badge" class="status-meta" data-i18n-text="status.noUpdates">暂无更新</small>
           </div>
         </section>
         <div class="topbar-controls">
-          <button id="reset-button" class="ghost compact-button" title="重置对话 (⌘N)">重置对话</button>
+          <button id="reset-button" class="ghost compact-button" data-i18n-text="controls.reset" data-i18n-title="controls.resetTitle" title="重置对话 (⌘N)">重置对话</button>
         </div>
       </header>
 
@@ -61,8 +356,8 @@
         <section class="chat-panel panel">
           <div class="panel-head">
             <div>
-              <p class="eyebrow">对话</p>
-              <h2>会话窗口</h2>
+              <p class="eyebrow" data-i18n-text="chat.eyebrow">对话</p>
+              <h2 data-i18n-text="chat.heading">会话窗口</h2>
             </div>
           </div>
 
@@ -70,32 +365,32 @@
 
           <div class="composer">
             <label class="field">
-              <span>输入指令</span>
-              <textarea id="prompt-input" rows="4" placeholder="描述你希望 Agent 在当前 workspace 中完成什么。"></textarea>
+              <span data-i18n-text="chat.inputLabel">输入指令</span>
+              <textarea id="prompt-input" rows="4" data-i18n-placeholder="chat.placeholder" placeholder="描述你希望 Agent 在当前 workspace 中完成什么。"></textarea>
             </label>
             <div class="composer-actions">
-              <span id="request-hint">Shift + 回车发送，回车换行</span>
-              <button id="send-button">发送</button>
+              <span id="request-hint" data-i18n-text="chat.hint">Shift + 回车发送，回车换行</span>
+              <button id="send-button" data-i18n-text="chat.send">发送</button>
             </div>
           </div>
         </section>
 
         <section class="right-rail panel">
           <div class="tabbar" id="side-tabs">
-            <button type="button" class="tab-button is-active" data-tab="timeline">执行</button>
-            <button type="button" class="tab-button" data-tab="files">文件</button>
-            <button type="button" class="tab-button" data-tab="artifacts">产出</button>
-            <button type="button" class="tab-button" data-tab="snapshots">快照</button>
-            <button type="button" class="tab-button" data-tab="agents">协作</button>
-            <button type="button" class="tab-button" data-tab="peek">预览</button>
+            <button type="button" class="tab-button is-active" data-tab="timeline" data-i18n-text="tabs.timeline">执行</button>
+            <button type="button" class="tab-button" data-tab="files" data-i18n-text="tabs.files">文件</button>
+            <button type="button" class="tab-button" data-tab="artifacts" data-i18n-text="tabs.artifacts">产出</button>
+            <button type="button" class="tab-button" data-tab="snapshots" data-i18n-text="tabs.snapshots">快照</button>
+            <button type="button" class="tab-button" data-tab="agents" data-i18n-text="tabs.agents">协作</button>
+            <button type="button" class="tab-button" data-tab="peek" data-i18n-text="tabs.peek">预览</button>
           </div>
 
           <div class="tab-panels">
             <article class="tab-panel is-active" data-tab-panel="timeline">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">追踪</p>
-                  <h2>执行时间线</h2>
+                  <p class="eyebrow" data-i18n-text="panel.timelineEyebrow">追踪</p>
+                  <h2 data-i18n-text="panel.timelineHeading">执行时间线</h2>
                 </div>
               </div>
               <div id="tool-list" class="list"></div>
@@ -104,8 +399,8 @@
             <article class="tab-panel" data-tab-panel="files">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">文件</p>
-                  <h2>引入文件</h2>
+                  <p class="eyebrow" data-i18n-text="panel.filesEyebrow">文件</p>
+                  <h2 data-i18n-text="panel.filesHeading">引入文件</h2>
                 </div>
               </div>
               <div id="file-list" class="list"></div>
@@ -114,8 +409,8 @@
             <article class="tab-panel" data-tab-panel="artifacts">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">产出</p>
-                  <h2>产出物</h2>
+                  <p class="eyebrow" data-i18n-text="panel.artifactsEyebrow">产出</p>
+                  <h2 data-i18n-text="panel.artifactsHeading">产出物</h2>
                 </div>
               </div>
               <div id="artifact-list" class="list"></div>
@@ -124,8 +419,8 @@
             <article class="tab-panel" data-tab-panel="snapshots">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">恢复</p>
-                  <h2>快照</h2>
+                  <p class="eyebrow" data-i18n-text="panel.snapshotsEyebrow">恢复</p>
+                  <h2 data-i18n-text="panel.snapshotsHeading">快照</h2>
                 </div>
               </div>
               <div id="snapshot-list" class="list"></div>
@@ -134,8 +429,8 @@
             <article class="tab-panel" data-tab-panel="agents">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">协作</p>
-                  <h2>Agent 结构</h2>
+                  <p class="eyebrow" data-i18n-text="panel.agentsEyebrow">协作</p>
+                  <h2 data-i18n-text="panel.agentsHeading">Agent 结构</h2>
                 </div>
               </div>
               <div id="agent-graph" class="agent-graph"></div>
@@ -144,22 +439,22 @@
             <article class="tab-panel" data-tab-panel="peek">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">预览</p>
-                  <h2>工作区 / 终端 / 浏览器</h2>
+                  <p class="eyebrow" data-i18n-text="panel.peekEyebrow">预览</p>
+                  <h2 data-i18n-text="panel.peekHeading">工作区 / 终端 / 浏览器</h2>
                 </div>
               </div>
               <div class="peek-grid">
                 <div class="list-item">
-                  <span class="peek-label">工作区</span>
-                  <p id="workspace-peek">等待加载…</p>
+                  <span class="peek-label" data-i18n-text="peek.workspace">工作区</span>
+                  <p id="workspace-peek" data-i18n-text="peek.waiting">等待加载…</p>
                 </div>
                 <div class="list-item">
-                  <span class="peek-label">终端</span>
-                  <p id="terminal-peek">等待加载…</p>
+                  <span class="peek-label" data-i18n-text="peek.terminal">终端</span>
+                  <p id="terminal-peek" data-i18n-text="peek.waiting">等待加载…</p>
                 </div>
                 <div class="list-item">
-                  <span class="peek-label">浏览器</span>
-                  <p id="browser-peek">等待加载…</p>
+                  <span class="peek-label" data-i18n-text="peek.browser">浏览器</span>
+                  <p id="browser-peek" data-i18n-text="peek.waiting">等待加载…</p>
                 </div>
               </div>
             </article>

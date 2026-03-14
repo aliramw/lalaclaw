@@ -144,6 +144,16 @@
     text-underline-offset: 2px;
   }
 
+  .tool-io-code,
+  .tool-io-code[class] {
+    margin: 0;
+    font-family: var(--default-mono-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace) !important;
+    font-size: 12px;
+    line-height: 1.65;
+    font-variant-ligatures: none;
+    font-feature-settings: normal;
+  }
+
   html[data-theme="dark"] .cc-inline-code,
   html[data-theme="dark"] .cc-inline-code[class] {
     border: 1px solid #4b5563 !important;

@@ -1,252 +1,29 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SessionOverview } from "@/components/command-center/session-overview";
 import { ChatPanel } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
-import { hydrateAttachmentStateFromStorage, serializeAttachmentStateForStorage } from "@/lib/attachment-storage";
+import {
+  appendPromptHistory,
+  createConversationKey,
+  defaultSessionUser,
+  defaultTab,
+  loadPendingChatTurns,
+  loadStoredPromptHistory,
+  loadStoredState,
+} from "@/features/app/app-storage";
+import { useAppHotkeys } from "@/features/app/use-app-hotkeys";
+import { useAppPersistence } from "@/features/app/use-app-persistence";
+import {
+  formatCompactK,
+  formatTime,
+  maxPromptRows,
+} from "@/features/chat/chat-utils";
+import { useChatController } from "@/features/chat/use-chat-controller";
+import { usePromptHistory } from "@/features/chat/use-prompt-history";
+import { useRuntimeSnapshot } from "@/features/session/use-runtime-snapshot";
+import { useTheme } from "@/features/theme/use-theme";
 import { I18nProvider, useI18n } from "@/lib/i18n";
-
-const storageKey = "command-center-ui-state-v2";
-const themeStorageKey = "command-center-theme";
-const promptHistoryStorageKey = "command-center-prompt-history-v1";
-const pendingChatStorageKey = "command-center-pending-chat-v1";
-const defaultTab = "timeline";
-const defaultSessionUser = "command-center";
-const maxPromptRows = 8;
-const promptHistoryLimit = 50;
-const rapidEnterSendThresholdMs = 420;
-const textAttachmentExtensions = /\.(txt|md|markdown|json|js|jsx|ts|tsx|css|scss|less|html|htm|xml|yml|yaml|py|rb|go|rs|java|kt|swift|sh|bash|zsh|sql|csv|log)$/i;
-const textAttachmentMimePattern = /^(text\/|application\/(json|xml|javascript|x-javascript)|image\/svg\+xml)/i;
-
-function formatTime(timestamp, locale) {
-  return new Intl.DateTimeFormat(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(timestamp));
-}
-
-function formatCompactK(value) {
-  const numeric = Number(value) || 0;
-  if (numeric < 1000) return String(numeric);
-  if (numeric >= 1_000_000) {
-    const scaledMillion = numeric / 1_000_000;
-    if (scaledMillion >= 10) return `${Math.round(scaledMillion)}m`;
-    return `${scaledMillion.toFixed(1).replace(/\.0$/, "")}m`;
-  }
-  const scaled = numeric / 1000;
-  if (scaled >= 10) return `${Math.round(scaled)}k`;
-  return `${scaled.toFixed(1).replace(/\.0$/, "")}k`;
-}
-
-function loadStoredState() {
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return {
-      activeTab: parsed?.activeTab || defaultTab,
-      messages: Array.isArray(parsed?.messages) ? parsed.messages : [],
-      fastMode: Boolean(parsed?.fastMode),
-      thinkMode: typeof parsed?.thinkMode === "string" ? parsed.thinkMode : "off",
-      model: parsed?.model || "",
-      agentId: parsed?.agentId || "main",
-      sessionUser: parsed?.sessionUser || defaultSessionUser,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function loadStoredTheme() {
-  try {
-    const raw = window.localStorage.getItem(themeStorageKey);
-    return raw === "light" || raw === "dark" || raw === "system" ? raw : "system";
-  } catch {
-    return "system";
-  }
-}
-
-function loadStoredPromptHistory() {
-  try {
-    const raw = window.localStorage.getItem(promptHistoryStorageKey);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      return {};
-    }
-
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([, value]) => Array.isArray(value))
-        .map(([key, value]) => [
-          key,
-          value
-            .map((item) => String(item || "").trim())
-            .filter(Boolean)
-            .slice(-promptHistoryLimit),
-        ]),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function loadPendingChatTurns() {
-  try {
-    const raw = window.localStorage.getItem(pendingChatStorageKey);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function createConversationKey(sessionUser = defaultSessionUser, agentId = "main") {
-  return `${sessionUser}:${agentId}`;
-}
-
-function appendPromptHistory(historyMap, key, prompt) {
-  const normalizedPrompt = String(prompt || "").trim();
-  if (!normalizedPrompt) {
-    return historyMap;
-  }
-
-  const currentHistory = Array.isArray(historyMap[key]) ? historyMap[key] : [];
-  return {
-    ...historyMap,
-    [key]: [...currentHistory, normalizedPrompt].slice(-promptHistoryLimit),
-  };
-}
-
-function extractUserPromptHistory(messages = []) {
-  return messages
-    .filter((message) => message?.role === "user")
-    .map((message) => String(message.content || "").trim())
-    .filter(Boolean)
-    .slice(-promptHistoryLimit);
-}
-
-function isImageAttachment(file) {
-  return /^image\//i.test(file?.type || "");
-}
-
-function isTextAttachment(file) {
-  return textAttachmentMimePattern.test(file?.type || "") || textAttachmentExtensions.test(file?.name || "");
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("Failed to read file as data URL"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("Failed to read file as text"));
-    reader.readAsText(file);
-  });
-}
-
-function sanitizeMessagesForStorage(messages = []) {
-  return messages
-    .filter((message) => !message.pending)
-    .slice(-80)
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-      timestamp: message.timestamp,
-      ...(message.attachments?.length ? { attachments: message.attachments } : {}),
-      ...(message.tokenBadge ? { tokenBadge: message.tokenBadge } : {}),
-    }));
-}
-
-function mergeConversationAttachments(snapshotMessages = [], localMessages = []) {
-  const nextMessages = snapshotMessages.map((message) => ({ ...message }));
-  const usedIndices = new Set();
-
-  localMessages.forEach((localMessage) => {
-    if (!localMessage?.attachments?.length) {
-      return;
-    }
-
-    const matchIndex = nextMessages.findIndex(
-      (message, index) =>
-        !usedIndices.has(index) &&
-        message.role === localMessage.role &&
-        String(message.content || "") === String(localMessage.content || ""),
-    );
-
-    if (matchIndex === -1) {
-      return;
-    }
-
-    nextMessages[matchIndex] = {
-      ...nextMessages[matchIndex],
-      attachments: localMessage.attachments,
-    };
-    usedIndices.add(matchIndex);
-  });
-
-  return nextMessages;
-}
-
-function mergePendingConversation(snapshotMessages = [], pendingEntry, pendingLabel) {
-  if (!pendingEntry) {
-    return snapshotMessages;
-  }
-
-  const hasAssistantReply = snapshotMessages.some(
-    (message) => message.role === "assistant" && Number(message.timestamp || 0) >= Number(pendingEntry.startedAt || 0),
-  );
-
-  if (hasAssistantReply) {
-    return snapshotMessages;
-  }
-
-  const latestUserMessage = [...snapshotMessages].reverse().find((message) => message.role === "user");
-  const hasPendingUserMessage =
-    String(latestUserMessage?.content || "") === String(pendingEntry.userMessage?.content || "");
-
-  const merged = hasPendingUserMessage ? [...snapshotMessages] : [...snapshotMessages, pendingEntry.userMessage];
-  return [
-    ...merged,
-    {
-      role: "assistant",
-      content: pendingLabel,
-      timestamp: pendingEntry.pendingTimestamp,
-      pending: true,
-    },
-  ];
-}
-
-function moveCaretToEnd(textarea) {
-  if (!textarea) return;
-  const end = textarea.value.length;
-  textarea.setSelectionRange(end, end);
-}
-
-function applyTextareaEnter(value = "", selectionStart = 0, selectionEnd = selectionStart) {
-  return `${value.slice(0, selectionStart)}\n${value.slice(selectionEnd)}`;
-}
-
-function isEditableElement(element) {
-  if (!(element instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (element.isContentEditable) {
-    return true;
-  }
-
-  return ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName);
-}
 
 function baseSession(messages, overrides = {}) {
   return {
@@ -281,7 +58,6 @@ function baseSession(messages, overrides = {}) {
 function AppContent() {
   const { intlLocale, messages: i18n } = useI18n();
   const stored = useMemo(() => loadStoredState(), []);
-  const storedTheme = useMemo(() => loadStoredTheme(), []);
   const storedPromptHistory = useMemo(() => loadStoredPromptHistory(), []);
   const storedPendingChatTurns = useMemo(() => loadPendingChatTurns(), []);
   const [session, setSession] = useState(
@@ -293,31 +69,17 @@ function AppContent() {
     }),
   );
   const [messages, setMessages] = useState(stored?.messages || []);
-  const [queuedMessages, setQueuedMessages] = useState([]);
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
   const [pendingChatTurns, setPendingChatTurns] = useState(storedPendingChatTurns);
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [fastMode, setFastMode] = useState(Boolean(stored?.fastMode));
   const [model, setModel] = useState(stored?.model || "");
-  const [theme, setTheme] = useState(storedTheme);
-  const [resolvedTheme, setResolvedTheme] = useState("light");
-  const [availableModels, setAvailableModels] = useState([]);
-  const [availableAgents, setAvailableAgents] = useState([]);
-  const [taskTimeline, setTaskTimeline] = useState([]);
-  const [files, setFiles] = useState([]);
-  const [artifacts, setArtifacts] = useState([]);
-  const [snapshots, setSnapshots] = useState([]);
-  const [agents, setAgents] = useState([]);
-  const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null });
+  const { resolvedTheme, setTheme, theme } = useTheme();
   const [prompt, setPrompt] = useState("");
-  const [composerAttachments, setComposerAttachments] = useState([]);
-  const [promptHistoryNavigation, setPromptHistoryNavigation] = useState(null);
   const promptRef = useRef(null);
-  const lastPlainEnterRef = useRef({ timestamp: 0, expectedValue: "" });
   const messageViewportRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
-  const busyRef = useRef(busy);
   const messagesRef = useRef(messages);
   const sessionStateRef = useRef({
     sessionUser: stored?.sessionUser || defaultSessionUser,
@@ -330,18 +92,12 @@ function AppContent() {
     sessionUser: stored?.sessionUser || defaultSessionUser,
     agentId: stored?.agentId || "main",
   });
-  const runtimeRequestRef = useRef(0);
-  const storageRequestRef = useRef(0);
   const localizedFormatTime = useMemo(() => (timestamp) => formatTime(timestamp, intlLocale), [intlLocale]);
   const initialStoredMessagesRef = useRef(stored?.messages || []);
   const initialStoredPendingRef = useRef(storedPendingChatTurns);
 
   const activeConversationKey = createConversationKey(session.sessionUser, session.agentId);
   const activePendingChat = pendingChatTurns[activeConversationKey] || null;
-  const activeQueuedMessages = useMemo(
-    () => queuedMessages.filter((item) => item.key === activeConversationKey),
-    [activeConversationKey, queuedMessages],
-  );
 
   const setMessagesSynced = (value) => {
     setMessages((current) => {
@@ -354,6 +110,56 @@ function AppContent() {
   const setActiveTarget = (value) => {
     activeTargetRef.current = value;
   };
+
+  const {
+    agents,
+    applySnapshot,
+    artifacts,
+    availableAgents,
+    availableModels,
+    clearSnapshotData,
+    files,
+    loadRuntime,
+    peeks,
+    snapshots,
+    taskTimeline,
+    updateSessionSettings,
+  } = useRuntimeSnapshot({
+    activePendingChat,
+    busy,
+    i18n,
+    messagesRef,
+    pendingChatTurns,
+    session,
+    setBusy,
+    setFastMode,
+    setMessagesSynced,
+    setModel,
+    setPendingChatTurns,
+    setPromptHistoryByConversation,
+    setSession,
+  });
+
+  const {
+    activeQueuedMessages,
+    composerAttachments,
+    enqueueOrRunEntry,
+    handleAddAttachments,
+    handleRemoveAttachment,
+    setComposerAttachments,
+    setQueuedMessages,
+  } = useChatController({
+    activeConversationKey,
+    activeTargetRef,
+    applySnapshot,
+    busy,
+    i18n,
+    messagesRef,
+    setBusy,
+    setMessagesSynced,
+    setPendingChatTurns,
+    setSession,
+  });
 
   const focusPrompt = () => {
     window.requestAnimationFrame(() => {
@@ -390,99 +196,6 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const applyTheme = () => {
-      const resolved = theme === "system" ? (mediaQuery.matches ? "dark" : "light") : theme;
-      document.documentElement.classList.toggle("dark", resolved === "dark");
-      document.documentElement.dataset.theme = resolved;
-      setResolvedTheme(resolved);
-    };
-
-    applyTheme();
-    try {
-      window.localStorage.setItem(themeStorageKey, theme);
-    } catch {}
-
-    const handleChange = () => {
-      if (theme === "system") {
-        applyTheme();
-      }
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  }, [theme]);
-
-  useEffect(() => {
-    const requestId = storageRequestRef.current + 1;
-    storageRequestRef.current = requestId;
-
-    const nextStorageState = {
-      activeTab,
-      fastMode,
-      thinkMode: session.thinkMode,
-      model,
-      agentId: session.agentId,
-      sessionUser: session.sessionUser,
-    };
-
-    void serializeAttachmentStateForStorage(messages, pendingChatTurns)
-      .then((serializedState) => {
-        if (requestId !== storageRequestRef.current) {
-          return;
-        }
-
-        window.localStorage.setItem(
-          storageKey,
-          JSON.stringify({
-            ...nextStorageState,
-            messages: sanitizeMessagesForStorage(serializedState.messages),
-          }),
-        );
-        window.localStorage.setItem(pendingChatStorageKey, JSON.stringify(serializedState.pendingChatTurns));
-      })
-      .catch(() => {
-        try {
-          window.localStorage.setItem(
-            storageKey,
-            JSON.stringify({
-              ...nextStorageState,
-              messages: sanitizeMessagesForStorage(messages),
-            }),
-          );
-          window.localStorage.setItem(pendingChatStorageKey, JSON.stringify(pendingChatTurns));
-        } catch {}
-      });
-  }, [activeTab, fastMode, messages, model, pendingChatTurns, session.agentId, session.sessionUser, session.thinkMode]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(promptHistoryStorageKey, JSON.stringify(promptHistoryByConversation));
-    } catch {}
-  }, [promptHistoryByConversation]);
-
-  useEffect(() => {
-    const initialMessages = initialStoredMessagesRef.current;
-    const initialPendingChatTurns = initialStoredPendingRef.current;
-
-    if (!initialMessages.length && !Object.keys(initialPendingChatTurns || {}).length) {
-      return;
-    }
-
-    void hydrateAttachmentStateFromStorage(initialMessages, initialPendingChatTurns).then((hydratedState) => {
-      if (messagesRef.current === initialMessages) {
-        setMessagesSynced(hydratedState.messages);
-      }
-
-      setPendingChatTurns((current) => (current === initialPendingChatTurns ? hydratedState.pendingChatTurns : current));
-    });
-  }, []);
-
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
-
-  useEffect(() => {
     sessionStateRef.current = {
       sessionUser: session.sessionUser,
       agentId: session.agentId,
@@ -504,12 +217,20 @@ function AppContent() {
     setComposerAttachments([]);
   }, [activeConversationKey]);
 
-  useEffect(() => {
-    if (activePendingChat) {
-      setBusy(true);
-      setSession((current) => ({ ...current, status: i18n.common.running }));
-    }
-  }, [activePendingChat, i18n.common.running]);
+  useAppPersistence({
+    activeTab,
+    fastMode,
+    initialStoredMessagesRef,
+    initialStoredPendingRef,
+    messages,
+    messagesRef,
+    model,
+    pendingChatTurns,
+    promptHistoryByConversation,
+    session,
+    setMessagesSynced,
+    setPendingChatTurns,
+  });
 
   useEffect(() => {
     const viewport = messageViewportRef.current;
@@ -532,327 +253,6 @@ function AppContent() {
     return () => viewport.removeEventListener("scroll", updateAutoScroll);
   }, []);
 
-  const applySnapshot = (snapshot, options = {}) => {
-    if (!snapshot) return;
-    const nextSession = baseSession(i18n, {
-      ...session,
-      ...(snapshot.session || {}),
-      mode: snapshot.session?.mode || session.mode,
-    });
-    const nextConversationKey = createConversationKey(
-      snapshot.session?.sessionUser || nextSession.sessionUser,
-      snapshot.session?.agentId || nextSession.agentId,
-    );
-    const pendingEntry = pendingChatTurns[nextConversationKey] || null;
-    const snapshotPromptHistory = extractUserPromptHistory(snapshot.conversation);
-    const nextFastMode =
-      snapshot.session?.fastMode === i18n.sessionOverview.fastMode.on ||
-      snapshot.session?.fastMode === "开启" ||
-      snapshot.session?.fastMode === true ||
-      snapshot.fastMode === true;
-    setFastMode(nextFastMode);
-    if (options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
-      const mergedConversation = mergeConversationAttachments(snapshot.conversation, messagesRef.current);
-      const hydratedConversation = mergePendingConversation(mergedConversation, pendingEntry, i18n.chat.thinkingPlaceholder);
-      const hasPendingBubble = hydratedConversation.some((message) => message.pending);
-      setSession({ ...nextSession, status: hasPendingBubble ? i18n.common.running : nextSession.status });
-      setMessagesSynced(hydratedConversation);
-      setBusy(hasPendingBubble);
-      if (pendingEntry && !hasPendingBubble) {
-        setPendingChatTurns((current) => {
-          if (!current[nextConversationKey]) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[nextConversationKey];
-          return next;
-        });
-      }
-    } else {
-      setSession(nextSession);
-    }
-    setAvailableModels(snapshot.session?.availableModels || snapshot.availableModels || []);
-    setAvailableAgents(snapshot.session?.availableAgents || snapshot.availableAgents || []);
-    setTaskTimeline(snapshot.taskTimeline || []);
-    setFiles(snapshot.files || []);
-    setArtifacts(snapshot.artifacts || []);
-    setSnapshots(snapshot.snapshots || []);
-    setAgents(snapshot.agents || []);
-    setPeeks(snapshot.peeks || { workspace: null, terminal: null, browser: null });
-    setModel(snapshot.session?.selectedModel || snapshot.model || nextSession.model || "");
-    if (snapshotPromptHistory.length) {
-      setPromptHistoryByConversation((current) => {
-        const previous = current[nextConversationKey] || [];
-        if (JSON.stringify(previous) === JSON.stringify(snapshotPromptHistory)) {
-          return current;
-        }
-        return {
-          ...current,
-          [nextConversationKey]: snapshotPromptHistory,
-        };
-      });
-    }
-  };
-
-  const loadRuntime = async (sessionUser = session.sessionUser, options = {}) => {
-    const requestId = runtimeRequestRef.current + 1;
-    runtimeRequestRef.current = requestId;
-    const response = await fetch(`/api/runtime?sessionUser=${encodeURIComponent(sessionUser)}`);
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || "Runtime snapshot failed");
-    }
-    if (requestId !== runtimeRequestRef.current) {
-      return payload;
-    }
-    applySnapshot(payload);
-    return payload;
-  };
-
-  useEffect(() => {
-    loadRuntime(session.sessionUser).catch(() => {
-      setSession((current) => ({ ...current, status: i18n.common.offline }));
-    });
-
-    const pollInterval = busy || activePendingChat ? 4000 : 15000;
-    const id = window.setInterval(() => {
-      loadRuntime(session.sessionUser).catch(() => {});
-    }, pollInterval);
-
-    return () => window.clearInterval(id);
-  }, [activePendingChat, busy, i18n.common.offline, session.sessionUser]);
-
-  const updateSessionSettings = async (payload) => {
-    const response = await fetch("/api/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionUser: session.sessionUser,
-        ...payload,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || "Session update failed");
-    }
-    applySnapshot(data);
-  };
-
-  const runChatTurn = async (entry) => {
-    const userMessage = {
-      role: "user",
-      content: entry.content || (entry.attachments?.length ? `已发送 ${entry.attachments.length} 个附件` : ""),
-      timestamp: entry.timestamp,
-      ...(entry.attachments?.length ? { attachments: entry.attachments } : {}),
-    };
-    const pendingMessage = { role: "assistant", content: i18n.chat.thinkingPlaceholder, timestamp: Date.now(), pending: true };
-    const nextMessages = [...messagesRef.current, userMessage, pendingMessage];
-    const isStillActive =
-      activeTargetRef.current.sessionUser === entry.sessionUser &&
-      activeTargetRef.current.agentId === entry.agentId;
-
-    if (isStillActive) {
-      setMessagesSynced(nextMessages);
-      setSession((current) => ({ ...current, status: i18n.common.running }));
-    }
-
-    setBusy(true);
-    setPendingChatTurns((current) => ({
-      ...current,
-      [entry.key]: {
-        key: entry.key,
-        startedAt: Date.now(),
-        pendingTimestamp: pendingMessage.timestamp,
-        userMessage: {
-          role: "user",
-          content: userMessage.content,
-          timestamp: userMessage.timestamp,
-          ...(userMessage.attachments?.length ? { attachments: userMessage.attachments } : {}),
-        },
-      },
-    }));
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: entry.model,
-          agentId: entry.agentId,
-          sessionUser: entry.sessionUser,
-          fastMode: entry.fastMode,
-          messages: nextMessages
-            .filter((message) => !message.pending)
-            .map(({ role, content: messageContent, attachments }) => ({
-              role,
-              content: messageContent,
-              ...(attachments?.length ? { attachments } : {}),
-            })),
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Request failed");
-      }
-
-      const shouldApply =
-        activeTargetRef.current.sessionUser === entry.sessionUser &&
-        activeTargetRef.current.agentId === entry.agentId;
-
-      if (shouldApply) {
-        if (payload.resetSessionUser) {
-          const nextSessionUser = payload.resetSessionUser;
-          const nextAgentId = payload.session?.agentId || entry.agentId;
-          const nextModel = payload.session?.selectedModel || payload.session?.model || entry.model;
-          const nextFastMode =
-            payload.session?.fastMode === i18n.sessionOverview.fastMode.on ||
-            payload.session?.fastMode === "开启" ||
-            payload.session?.fastMode === true ||
-            payload.fastMode === true;
-
-          sessionStateRef.current = {
-            sessionUser: nextSessionUser,
-            agentId: nextAgentId,
-            model: nextModel,
-            fastMode: nextFastMode,
-          };
-          setActiveTarget({
-            sessionUser: nextSessionUser,
-            agentId: nextAgentId,
-          });
-          setQueuedMessages((current) =>
-            current.filter((item) => item.key !== `${entry.sessionUser}:${entry.agentId}`),
-          );
-
-          const displayConversation =
-            Array.isArray(payload.conversation) && payload.conversation.length
-              ? payload.conversation
-              : [
-                  {
-                    role: "assistant",
-                    content: payload.outputText,
-                    timestamp: Date.now(),
-                    ...(payload.tokenBadge ? { tokenBadge: payload.tokenBadge } : {}),
-                  },
-                ];
-
-          setMessagesSynced(displayConversation);
-          applySnapshot(payload, { syncConversation: false });
-          setSession((current) => ({
-            ...current,
-            status: payload.metadata?.status || i18n.common.idle,
-          }));
-          return;
-        }
-
-        setMessagesSynced((current) => {
-          const withoutPending = current.filter((item) => !item.pending);
-          return [
-            ...withoutPending,
-            {
-              role: "assistant",
-              content: payload.outputText,
-              timestamp: Date.now(),
-              ...(payload.tokenBadge ? { tokenBadge: payload.tokenBadge } : {}),
-            },
-          ];
-        });
-        applySnapshot(payload, { syncConversation: false });
-      }
-      if (shouldApply) {
-        setSession((current) => ({ ...current, status: payload.metadata?.status || i18n.common.idle }));
-      }
-    } catch (error) {
-      const shouldApply =
-        activeTargetRef.current.sessionUser === entry.sessionUser &&
-        activeTargetRef.current.agentId === entry.agentId;
-
-      if (shouldApply) {
-        setMessagesSynced((current) => {
-          const withoutPending = current.filter((item) => !item.pending);
-          return [
-            ...withoutPending,
-            {
-              role: "assistant",
-              content: `${i18n.common.requestFailed}\n${error.message}`,
-              timestamp: Date.now(),
-            },
-          ];
-        });
-        setSession((current) => ({ ...current, status: i18n.common.failed }));
-      }
-    } finally {
-      setPendingChatTurns((current) => {
-        if (!current[entry.key]) {
-          return current;
-        }
-        const next = { ...current };
-        delete next[entry.key];
-        return next;
-      });
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (busy || !activeQueuedMessages.length) {
-      return;
-    }
-
-    const [nextEntry] = activeQueuedMessages;
-    setQueuedMessages((current) => current.filter((item) => item.id !== nextEntry.id));
-    runChatTurn(nextEntry).catch(() => {});
-  }, [activeQueuedMessages, busy]);
-
-  const handleAddAttachments = async (fileList) => {
-    const selectedFiles = Array.from(fileList || []).filter(Boolean);
-    if (!selectedFiles.length) {
-      return;
-    }
-
-    const nextAttachments = await Promise.all(
-      selectedFiles.map(async (file) => {
-        const baseAttachment = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          name: file.name,
-          size: file.size,
-          mimeType: file.type || "application/octet-stream",
-        };
-
-        if (isImageAttachment(file)) {
-          const dataUrl = await readFileAsDataUrl(file);
-          return {
-            ...baseAttachment,
-            kind: "image",
-            dataUrl,
-            previewUrl: dataUrl,
-          };
-        }
-
-        if (isTextAttachment(file)) {
-          const textContent = await readFileAsText(file);
-          return {
-            ...baseAttachment,
-            kind: "text",
-            textContent: textContent.slice(0, 120_000),
-            truncated: textContent.length > 120_000,
-          };
-        }
-
-        return {
-          ...baseAttachment,
-          kind: "file",
-        };
-      }),
-    );
-
-    setComposerAttachments((current) => [...current, ...nextAttachments]);
-  };
-
-  const handleRemoveAttachment = (attachmentId) => {
-    setComposerAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
-  };
-
   const handleSend = async () => {
     const content = prompt.trim();
     const attachments = composerAttachments;
@@ -869,20 +269,38 @@ function AppContent() {
       sessionUser: sessionStateRef.current.sessionUser,
       model: sessionStateRef.current.model,
       fastMode: sessionStateRef.current.fastMode,
+      onSessionStateChange: (nextSessionState) => {
+        sessionStateRef.current = nextSessionState;
+        setActiveTarget({
+          sessionUser: nextSessionState.sessionUser,
+          agentId: nextSessionState.agentId,
+        });
+      },
     };
 
     setPrompt("");
     setComposerAttachments([]);
     setPromptHistoryNavigation(null);
+    resetRapidEnterState();
     setPromptHistoryByConversation((current) => appendPromptHistory(current, entry.key, content));
 
-    if (busy || activeQueuedMessages.length) {
-      setQueuedMessages((current) => [...current, entry]);
-      return;
-    }
-
-    await runChatTurn(entry);
+    await enqueueOrRunEntry(entry);
   };
+
+  const {
+    handlePromptChange,
+    handlePromptKeyDown,
+    resetRapidEnterState,
+    setPromptHistoryNavigation,
+  } = usePromptHistory({
+    activeConversationKey,
+    composerAttachments,
+    handleSend,
+    prompt,
+    promptHistoryByConversation,
+    promptRef,
+    setPrompt,
+  });
 
   const handleReset = async () => {
     const nextSessionUser = `command-center-${Date.now()}`;
@@ -900,10 +318,7 @@ function AppContent() {
       delete next[previousConversationKey];
       return next;
     });
-    setTaskTimeline([]);
-    setFiles([]);
-    setArtifacts([]);
-    setSnapshots([]);
+    clearSnapshotData();
     sessionStateRef.current = {
       ...sessionStateRef.current,
       sessionUser: nextSessionUser,
@@ -928,84 +343,17 @@ function AppContent() {
     );
     setPrompt("");
     focusPrompt();
-    await loadRuntime(nextSessionUser, { force: true }).catch(() => {});
+    await loadRuntime(nextSessionUser).catch(() => {});
     focusPrompt();
   };
 
-  const onResetHotkey = useEffectEvent((event) => {
-    const isResetCombo = (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && (event.code === "KeyN" || event.key?.toLowerCase() === "n");
-    if (!isResetCombo || event.repeat || event.isComposing) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    handleReset().catch(() => {});
+  useAppHotkeys({
+    handlePromptChange,
+    handleReset,
+    prompt,
+    promptRef,
+    setTheme,
   });
-
-  const onThemeHotkey = useEffectEvent((event) => {
-    const normalizedKey = event.key?.toLowerCase();
-    const isThemeCombo = event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey;
-    if (!isThemeCombo || event.repeat || event.isComposing) {
-      return;
-    }
-
-    const nextTheme =
-      normalizedKey === "f" ? "system" : normalizedKey === "l" ? "light" : normalizedKey === "d" ? "dark" : null;
-    if (!nextTheme) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    setTheme(nextTheme);
-  });
-
-  const onPromptCharacterHotkey = useEffectEvent((event) => {
-    if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    if (event.key !== " " && event.key.length !== 1) {
-      return;
-    }
-
-    const textarea = promptRef.current;
-    if (!textarea) {
-      return;
-    }
-
-    const activeElement = document.activeElement;
-    if (activeElement === textarea || isEditableElement(activeElement)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const nextPrompt = `${prompt}${event.key}`;
-    handlePromptChange(nextPrompt);
-    window.requestAnimationFrame(() => {
-      const nextTextarea = promptRef.current;
-      if (!nextTextarea) {
-        return;
-      }
-      nextTextarea.focus();
-      const end = nextPrompt.length;
-      nextTextarea.setSelectionRange(end, end);
-    });
-  });
-
-  useEffect(() => {
-    const listener = (event) => {
-      onResetHotkey(event);
-      onThemeHotkey(event);
-      onPromptCharacterHotkey(event);
-    };
-
-    window.addEventListener("keydown", listener, { capture: true });
-    return () => window.removeEventListener("keydown", listener, { capture: true });
-  }, [onPromptCharacterHotkey, onResetHotkey, onThemeHotkey]);
 
   const handleModelChange = async (nextModel) => {
     if (!nextModel || nextModel === model) return;
@@ -1057,112 +405,6 @@ function AppContent() {
       thinkMode: nextThinkMode,
     }));
     await updateSessionSettings({ thinkMode: nextThinkMode }).catch(() => {});
-  };
-
-  const handlePromptKeyDown = (event) => {
-    const textarea = event.currentTarget;
-    const history = promptHistoryByConversation[activeConversationKey] || [];
-    const hasComposerAttachments = composerAttachments.length > 0;
-    const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
-    const caretAtStart = textarea.selectionStart === 0 && textarea.selectionEnd === 0;
-    const caretAtEnd =
-      textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length;
-    const canBrowseUp =
-      event.key === "ArrowUp" &&
-      history.length &&
-      !hasSelection &&
-      !hasComposerAttachments &&
-      (!prompt || caretAtStart || promptHistoryNavigation);
-    const canBrowseDown =
-      event.key === "ArrowDown" &&
-      history.length &&
-      !hasSelection &&
-      !hasComposerAttachments &&
-      promptHistoryNavigation &&
-      (caretAtEnd || !prompt);
-
-    if (canBrowseUp || canBrowseDown) {
-      event.preventDefault();
-
-      if (!promptHistoryNavigation || promptHistoryNavigation.key !== activeConversationKey) {
-        if (event.key === "ArrowUp") {
-          const nextIndex = history.length - 1;
-          setPromptHistoryNavigation({
-            key: activeConversationKey,
-            index: nextIndex,
-            draft: prompt,
-          });
-          setPrompt(history[nextIndex] || "");
-          window.requestAnimationFrame(() => moveCaretToEnd(promptRef.current));
-        }
-        return;
-      }
-
-      if (event.key === "ArrowUp") {
-        const nextIndex = Math.max(0, promptHistoryNavigation.index - 1);
-        setPromptHistoryNavigation((current) => ({ ...current, index: nextIndex }));
-        setPrompt(history[nextIndex] || "");
-        window.requestAnimationFrame(() => moveCaretToEnd(promptRef.current));
-        return;
-      }
-
-      const nextIndex = promptHistoryNavigation.index + 1;
-      if (nextIndex >= history.length) {
-        setPrompt(promptHistoryNavigation.draft || "");
-        setPromptHistoryNavigation(null);
-        window.requestAnimationFrame(() => moveCaretToEnd(promptRef.current));
-        return;
-      }
-
-      setPromptHistoryNavigation((current) => ({ ...current, index: nextIndex }));
-      setPrompt(history[nextIndex] || "");
-      window.requestAnimationFrame(() => moveCaretToEnd(promptRef.current));
-      return;
-    }
-
-    const isPlainEnter = event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
-    if (isPlainEnter && !event.isComposing) {
-      const normalizedPrompt = prompt.replace(/\r\n/g, "\n");
-      const expectedValue = applyTextareaEnter(normalizedPrompt, textarea.selectionStart, textarea.selectionEnd);
-      const now = Date.now();
-      const isRapidRepeat =
-        normalizedPrompt.includes("\n") &&
-        lastPlainEnterRef.current.expectedValue === normalizedPrompt &&
-        now - lastPlainEnterRef.current.timestamp <= rapidEnterSendThresholdMs;
-
-      if (isRapidRepeat) {
-        event.preventDefault();
-        lastPlainEnterRef.current = { timestamp: 0, expectedValue: "" };
-        handleSend();
-        return;
-      }
-
-      lastPlainEnterRef.current = {
-        timestamp: now,
-        expectedValue,
-      };
-    }
-
-    if (event.key === "Enter" && event.shiftKey) {
-      event.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handlePromptChange = (nextPrompt) => {
-    setPrompt(nextPrompt);
-    if (!promptHistoryNavigation) {
-      if (nextPrompt.replace(/\r\n/g, "\n") !== lastPlainEnterRef.current.expectedValue) {
-        lastPlainEnterRef.current = { timestamp: 0, expectedValue: "" };
-      }
-      return;
-    }
-
-    const history = promptHistoryByConversation[activeConversationKey] || [];
-    const activeHistoryEntry = history[promptHistoryNavigation.index] || "";
-    if (nextPrompt !== activeHistoryEntry) {
-      setPromptHistoryNavigation(null);
-    }
   };
 
   const renderPeek = (section, fallback) => {

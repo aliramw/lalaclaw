@@ -46,3 +46,9 @@ export OPENCLAW_API_PATH="/v1/responses"
 ```
 
 Without these variables, the app runs in `mock` mode so the UI and chat loop remain usable during bootstrap.
+
+To force `mock` mode even when a local `~/.openclaw/openclaw.json` is present, set:
+
+```bash
+export COMMANDCENTER_FORCE_MOCK=1
+```

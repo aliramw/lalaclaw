@@ -3,11 +3,60 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
+function getPackageName(id) {
+  const normalized = id.split("\\").join("/");
+  const marker = "/node_modules/";
+  const markerIndex = normalized.lastIndexOf(marker);
+  if (markerIndex === -1) {
+    return "";
+  }
+
+  const packagePath = normalized.slice(markerIndex + marker.length);
+  const [scopeOrName, nestedName] = packagePath.split("/");
+  if (!scopeOrName) {
+    return "";
+  }
+
+  return scopeOrName.startsWith("@") ? `${scopeOrName}/${nestedName || ""}` : scopeOrName;
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return null;
+          }
+
+          const packageName = getPackageName(id);
+          if (!packageName) {
+            return "vendor";
+          }
+
+          if (["react", "react-dom", "scheduler"].includes(packageName)) {
+            return "react-vendor";
+          }
+
+          if (packageName.startsWith("@radix-ui/")) {
+            return "radix-vendor";
+          }
+
+          if (packageName === "lucide-react") {
+            return "icons-vendor";
+          }
+
+          if (["clsx", "class-variance-authority", "tailwind-merge"].includes(packageName)) {
+            return "ui-utils-vendor";
+          }
+
+          return "vendor";
+        },
+      },
+    },
   },
   test: {
     environment: "jsdom",

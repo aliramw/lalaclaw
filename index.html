@@ -4,7 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>OpenClaw 指挥中心</title>
+    <title>LalaClaw.ai</title>
+    <script>
+      (function () {
+        var storageKey = "command-center-locale";
+        var langMap = {
+          zh: "zh-CN",
+          en: "en-US",
+          ja: "ja-JP",
+          fr: "fr-FR"
+        };
+        var titleMap = {
+          zh: "LalaClaw.ai | 龙虾指挥中心",
+          en: "LalaClaw.ai | OpenClaw Command Center",
+          ja: "LalaClaw.ai | OpenClaw コマンドセンター",
+          fr: "LalaClaw.ai | Centre de Commandement OpenClaw"
+        };
+
+        function normalizeLocale(rawLocale) {
+          var normalized = String(rawLocale || "").toLowerCase();
+          if (normalized.indexOf("zh") === 0) return "zh";
+          if (normalized.indexOf("ja") === 0) return "ja";
+          if (normalized.indexOf("fr") === 0) return "fr";
+          if (normalized.indexOf("en") === 0) return "en";
+          return null;
+        }
+
+        var locale = null;
+
+        try {
+          locale = normalizeLocale(window.localStorage.getItem(storageKey));
+        } catch {}
+
+        if (!locale) {
+          var candidates = Array.isArray(navigator.languages) && navigator.languages.length
+            ? navigator.languages
+            : [navigator.language];
+          locale = candidates.map(normalizeLocale).find(Boolean) || "zh";
+        }
+
+        document.documentElement.lang = langMap[locale] || "zh-CN";
+        document.title = titleMap[locale] || titleMap.zh;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -68,6 +68,15 @@ export function I18nProvider({ children }) {
     } catch {}
   }, [locale]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    document.documentElement.lang = intlLocaleMap[locale] || "zh-CN";
+    document.title = dictionaries[locale]?.app?.documentTitle || dictionaries[locale]?.app?.title || document.title;
+  }, [locale]);
+
   const value = useMemo(
     () => ({
       locale,

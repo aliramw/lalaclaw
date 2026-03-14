@@ -2,6 +2,7 @@ const ja = {
   app: {
     title: "LalaClaw.ai",
     subtitle: "OpenClaw コマンドセンター",
+    documentTitle: "LalaClaw.ai | OpenClaw コマンドセンター",
   },
   locale: {
     label: "言語",
