@@ -1,4 +1,4 @@
-# CommandCenter
+# LalaClaw
 
 Agent command center prototype for an OpenClaw-style operator cockpit.
 
