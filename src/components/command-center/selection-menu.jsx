@@ -9,21 +9,32 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export function SelectionMenu({ label, items, value, onSelect, emptyText }) {
+export function SelectionMenu({ children, label, triggerLabel, items, value, onSelect, emptyText, getItemDescription, getItemLabel }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={label} className="h-7 w-7">
-          <DropdownIcon />
-        </Button>
-      </DropdownMenuTrigger>
+      {children ? (
+        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      ) : (
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label={triggerLabel || label} className="h-7 w-7">
+            <DropdownIcon />
+          </Button>
+        </DropdownMenuTrigger>
+      )}
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {items.length ? (
           items.map((item) => (
             <DropdownMenuCheckboxItem key={item} checked={item === value} onCheckedChange={() => onSelect(item)}>
-              {item}
+              {getItemDescription ? (
+                <div className="grid min-w-[14rem] grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3">
+                  <span className="font-medium">{getItemLabel ? getItemLabel(item) : item}</span>
+                  <span className="text-muted-foreground">{getItemDescription(item)}</span>
+                </div>
+              ) : (
+                getItemLabel ? getItemLabel(item) : item
+              )}
             </DropdownMenuCheckboxItem>
           ))
         ) : (

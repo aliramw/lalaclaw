@@ -6,7 +6,7 @@ export const Tabs = TabsPrimitive.Root;
 export function TabsList({ className, ...props }) {
   return (
     <TabsPrimitive.List
-      className={cn("inline-flex h-10 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground", className)}
+      className={cn("inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground", className)}
       {...props}
     />
   );

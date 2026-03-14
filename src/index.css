@@ -19,9 +19,11 @@
   --border: oklch(0.905 0.008 255.4);
   --input: oklch(0.905 0.008 255.4);
   --ring: oklch(0.623 0.03 254.5);
-  --radius: 0.9rem;
+  --radius: 0.72rem;
   --file-link: #2563c9;
   --file-link-hover: #1849a9;
+  --badge-success-bg: #e7f6ef;
+  --badge-success-fg: #0f6b49;
 }
 
 .dark {
@@ -45,6 +47,8 @@
   --ring: oklch(0.7 0.13 255);
   --file-link: #6bb6ff;
   --file-link-hover: #96ccff;
+  --badge-success-bg: rgb(52 211 153 / 0.2);
+  --badge-success-fg: #86efac;
 }
 
 @theme inline {
@@ -77,6 +81,27 @@
     @apply border-border;
   }
 
+  :where(
+      button:not(:disabled),
+      [role="button"]:not([aria-disabled="true"]),
+      [role="tab"]:not([aria-disabled="true"]),
+      [role="menuitem"]:not([aria-disabled="true"]),
+      [role="option"]:not([aria-disabled="true"]),
+      [role="switch"]:not([aria-disabled="true"]),
+      a[href],
+      summary,
+      label[for],
+      select:not(:disabled),
+      input[type="checkbox"]:not(:disabled),
+      input[type="radio"]:not(:disabled)
+    ) {
+    cursor: pointer;
+  }
+
+  :where(button:disabled, select:disabled, input:disabled, textarea:disabled) {
+    cursor: not-allowed;
+  }
+
   html,
   body,
   #root {
@@ -101,5 +126,103 @@
     color: var(--file-link-hover);
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+
+  .cc-inline-code {
+    border: 1px solid #d7dde7 !important;
+    background: #eef3f8 !important;
+    color: #243345 !important;
+  }
+
+  .cc-inline-code-link {
+    color: var(--file-link) !important;
+  }
+
+  .cc-inline-code-link:hover {
+    color: var(--file-link-hover) !important;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  html[data-theme="dark"] .cc-inline-code,
+  html[data-theme="dark"] .cc-inline-code[class] {
+    border: 1px solid #4b5563 !important;
+    background: #2a3340 !important;
+    color: #eef4ff !important;
+  }
+
+  html[data-theme="dark"] .cc-inline-code-link,
+  html[data-theme="dark"] .cc-inline-code-link[class] {
+    color: var(--file-link) !important;
+  }
+
+  html[data-theme="light"] .cc-user-bubble,
+  html[data-theme="light"] .cc-user-bubble[class] {
+    border: 0 !important;
+    background: #007aff !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  html[data-theme="light"] .cc-send-button,
+  html[data-theme="light"] .cc-send-button[class] {
+    border-color: #007aff !important;
+    background: #007aff !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  html[data-theme="light"] .cc-send-button:hover,
+  html[data-theme="light"] .cc-send-button[class]:hover {
+    border-color: #006ee6 !important;
+    background: #006ee6 !important;
+    color: #ffffff !important;
+  }
+
+  html[data-theme="light"] .cc-user-bubble * {
+    color: #ffffff !important;
+  }
+
+  html[data-theme="light"] .cc-assistant-bubble,
+  html[data-theme="light"] .cc-assistant-bubble[class] {
+    border: 0 !important;
+    background: #f1f2f6 !important;
+    color: #18212b !important;
+    box-shadow: none !important;
+  }
+
+  html[data-theme="dark"] .cc-user-bubble,
+  html[data-theme="dark"] .cc-user-bubble[class] {
+    border: 0 !important;
+    background: #1a64a9 !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  html[data-theme="dark"] .cc-send-button,
+  html[data-theme="dark"] .cc-send-button[class] {
+    border-color: #1a64a9 !important;
+    background: #1a64a9 !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  html[data-theme="dark"] .cc-send-button:hover,
+  html[data-theme="dark"] .cc-send-button[class]:hover {
+    border-color: #175992 !important;
+    background: #175992 !important;
+    color: #ffffff !important;
+  }
+
+  html[data-theme="dark"] .cc-user-bubble * {
+    color: #ffffff !important;
+  }
+
+  html[data-theme="dark"] .cc-assistant-bubble,
+  html[data-theme="dark"] .cc-assistant-bubble[class] {
+    border: 0 !important;
+    background: #2b3138 !important;
+    color: var(--card-foreground) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
   }
 }

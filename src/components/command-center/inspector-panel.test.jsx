@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
@@ -40,18 +40,23 @@ function TestHarness() {
   );
 }
 
+function hasExactText(text) {
+  return (_, element) => element?.textContent === text;
+}
+
 describe("InspectorPanel", () => {
   it("renders timeline details and switches tabs", async () => {
     render(<TestHarness />);
 
     expect(screen.getByText("修复错误")).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.textContent === "输入\n{}")).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.textContent === "输出\nok")).toBeInTheDocument();
-    expect(screen.getAllByText("src/App.jsx").length).toBeGreaterThan(0);
+    expect(screen.getByText(hasExactText("输入\n{}"))).toBeInTheDocument();
+    expect(screen.getByText(hasExactText("输出\nok"))).toBeInTheDocument();
+    expect(screen.getAllByTitle("src/App.jsx").length).toBeGreaterThan(0);
+    expect(within(screen.getByRole("tab", { name: "文件" })).getByText("1")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: "文件" }));
-    expect(screen.getAllByText("src/App.jsx").length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { name: "文件" })).toHaveAttribute("data-state", "active");
 
     await user.click(screen.getByRole("tab", { name: "预览" }));
     expect(screen.getByText(/工作区摘要/)).toBeInTheDocument();
@@ -66,5 +71,25 @@ describe("InspectorPanel", () => {
 
     expect(screen.queryByText("输入")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看详情" })).toBeInTheDocument();
+  });
+
+  it("hides the files count badge when there are no files", () => {
+    const [activeTab, setActiveTab] = ["timeline", () => {}];
+
+    render(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        files={[]}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "文件" })).toHaveTextContent(/^文件$/);
   });
 });

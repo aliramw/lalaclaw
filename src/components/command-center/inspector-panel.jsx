@@ -7,13 +7,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 const homePrefix = "/Users/marila";
-const fileActionSections = [
-  { key: "created", label: "创建" },
-  { key: "modified", label: "修改" },
-  { key: "viewed", label: "查看" },
-];
 
 function getItemKey(item, index) {
   return item.id || item.path || item.title || `${item.label || "item"}-${index}`;
@@ -60,7 +56,12 @@ function FileLink({ item, compact = false }) {
   );
 }
 
-function FilesTab({ items }) {
+function FilesTab({ items, messages }) {
+  const fileActionSections = [
+    { key: "created", label: messages.inspector.fileActions.created },
+    { key: "modified", label: messages.inspector.fileActions.modified },
+    { key: "viewed", label: messages.inspector.fileActions.viewed },
+  ];
   const groups = fileActionSections
     .map((section) => ({
       ...section,
@@ -69,7 +70,7 @@ function FilesTab({ items }) {
     .filter((section) => section.items.length);
 
   if (!groups.length) {
-    return <PanelEmpty text="当前会话中检测到的文件会显示在这里。" />;
+    return <PanelEmpty text={messages.inspector.empty.files} />;
   }
 
   return (
@@ -97,11 +98,26 @@ function FilesTab({ items }) {
   );
 }
 
-function PanelEmpty({ text }) {
+function PanelEmpty({ compact = false, text }) {
   return (
-    <Card className="border-dashed bg-muted/20">
-      <CardContent className="py-8 text-sm text-muted-foreground">{text}</CardContent>
+    <Card className={cn("border-dashed bg-muted/20", compact && "rounded-[16px]")}>
+      <CardContent className={cn("text-sm text-muted-foreground", compact ? "px-5 py-5" : "py-8")}>{text}</CardContent>
     </Card>
+  );
+}
+
+function TabCountBadge({ count }) {
+  if (!count) {
+    return null;
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex min-w-5 items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+    >
+      {count}
+    </span>
   );
 }
 
@@ -125,14 +141,14 @@ function DataList({ items, empty, render }) {
 
 function TimelineDetailCard({ title, children, emptyText }) {
   return (
-    <section className="space-y-2">
-      <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{title}</div>
-      {children || <PanelEmpty text={emptyText} />}
+    <section className="space-y-1.5">
+      <div className="text-xs font-medium text-muted-foreground">{title}</div>
+      {children || <PanelEmpty text={emptyText} compact />}
     </section>
   );
 }
 
-function TimelineItemCard({ item, defaultOpen = false, index }) {
+function TimelineItemCard({ item, defaultOpen = false, index, messages }) {
   const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
@@ -157,21 +173,26 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
         </div>
 
         <div className="grid gap-1 text-xs text-muted-foreground">
-          <div>工具：{item.toolsSummary || "未调用工具"}</div>
-          <div>结果：{item.outcome}</div>
+          <div>{messages.inspector.timeline.tool}：{item.toolsSummary || messages.inspector.timeline.noToolCalls}</div>
+          <div>{messages.inspector.timeline.result}：{item.outcome}</div>
         </div>
 
         <Separator />
 
-        <div className="space-y-4">
-          <Button variant="ghost" size="sm" className="px-0 text-sm" onClick={() => setOpen((current) => !current)}>
-            <ChevronDown className={cn("h-4 w-4 transition-transform", open ? "rotate-0" : "-rotate-90")} />
-            {open ? "收起详情" : "查看详情"}
+        <div className="space-y-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 rounded-md px-1 text-xs font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
+            onClick={() => setOpen((current) => !current)}
+          >
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open ? "rotate-0" : "-rotate-90")} />
+            {open ? messages.inspector.timeline.collapse : messages.inspector.timeline.expand}
           </Button>
 
           {open ? (
-            <div className="space-y-4">
-              <TimelineDetailCard title="工具输入 / 输出" emptyText="本轮未调用工具">
+            <div className="space-y-3">
+              <TimelineDetailCard title={messages.inspector.timeline.toolIo} emptyText={messages.inspector.empty.noTools}>
                 {item.tools?.length
                   ? item.tools.map((tool) => (
                       <Card key={tool.id || `${tool.name}-${tool.timestamp}`} className="border-border/70 bg-muted/15">
@@ -183,8 +204,8 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
                             </Badge>
                           </div>
                           <div className="space-y-2 text-xs leading-6">
-                            <div className="rounded-lg border border-border bg-background/90 p-3 whitespace-pre-wrap">{`输入\n${tool.input || "无"}`}</div>
-                            <div className="rounded-lg border border-border bg-background/90 p-3 whitespace-pre-wrap">{`输出\n${tool.output || tool.detail || "等待结果"}`}</div>
+                            <div className="rounded-lg border border-border bg-background/90 p-3 whitespace-pre-wrap">{`${messages.inspector.timeline.input}\n${tool.input || messages.inspector.timeline.none}`}</div>
+                            <div className="rounded-lg border border-border bg-background/90 p-3 whitespace-pre-wrap">{`${messages.inspector.timeline.output}\n${tool.output || tool.detail || messages.inspector.timeline.noOutput}`}</div>
                           </div>
                         </CardContent>
                       </Card>
@@ -192,7 +213,7 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
                   : null}
               </TimelineDetailCard>
 
-              <TimelineDetailCard title="文件变更" emptyText="未检测到文件变更">
+              <TimelineDetailCard title={messages.inspector.timeline.fileChanges} emptyText={messages.inspector.empty.noFiles}>
                 {item.files?.length
                   ? item.files.map((file) => (
                       <Card key={file.path} className="border-border/70 bg-muted/15">
@@ -204,7 +225,7 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
                   : null}
               </TimelineDetailCard>
 
-              <TimelineDetailCard title="快照入口" emptyText="本轮暂无快照">
+              <TimelineDetailCard title={messages.inspector.timeline.snapshotEntries} emptyText={messages.inspector.empty.noSnapshots}>
                 {item.snapshots?.length
                   ? item.snapshots.map((snapshot) => (
                       <Card key={snapshot.id} className="border-border/70 bg-muted/15">
@@ -224,21 +245,21 @@ function TimelineItemCard({ item, defaultOpen = false, index }) {
   );
 }
 
-function TimelineTab({ items }) {
+function TimelineTab({ items, messages }) {
   return (
     <ScrollArea className="h-full">
       <div className="grid gap-3 pr-4">
-        {items.length ? items.map((item, index) => <TimelineItemCard key={getItemKey(item, index)} item={item} index={index} defaultOpen={index === 0} />) : <PanelEmpty text="每次任务执行后，这里会按时间线聚合展示工具链路。" />}
+        {items.length ? items.map((item, index) => <TimelineItemCard key={getItemKey(item, index)} item={item} index={index} defaultOpen={index === 0} messages={messages} />) : <PanelEmpty text={messages.inspector.empty.timeline} />}
       </div>
     </ScrollArea>
   );
 }
 
-function PeekTab({ peeks, renderPeek }) {
+function PeekTab({ peeks, renderPeek, messages }) {
   const sections = [
-    { key: "workspace", title: "工作区", fallback: "等待工作区预览…" },
-    { key: "terminal", title: "终端", fallback: "等待终端预览…" },
-    { key: "browser", title: "浏览器", fallback: "等待浏览器预览…" },
+    { key: "workspace", title: messages.inspector.peek.workspace, fallback: messages.inspector.empty.workspace },
+    { key: "terminal", title: messages.inspector.peek.terminal, fallback: messages.inspector.empty.terminal },
+    { key: "browser", title: messages.inspector.peek.browser, fallback: messages.inspector.empty.browser },
   ];
 
   return (
@@ -262,12 +283,14 @@ function PeekTab({ peeks, renderPeek }) {
 }
 
 export function InspectorPanel({ activeTab, agents, artifacts, files, peeks, renderPeek, setActiveTab, snapshots, taskTimeline }) {
+  const { messages } = useI18n();
+
   return (
     <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden">
       <CardHeader className="flex h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
         <div className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left">
-          <CardTitle className="truncate text-sm leading-none">追踪与观察</CardTitle>
-          <CardDescription className="truncate text-[11px] leading-none">执行、文件、产出与预览</CardDescription>
+          <CardTitle className="truncate text-sm leading-none">{messages.inspector.title}</CardTitle>
+          <CardDescription className="truncate text-[11px] leading-none">{messages.inspector.subtitle}</CardDescription>
         </div>
       </CardHeader>
 
@@ -276,42 +299,43 @@ export function InspectorPanel({ activeTab, agents, artifacts, files, peeks, ren
           <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1 xl:grid-cols-6">
             <TabsTrigger value="timeline">
               <Hammer className="h-4 w-4" />
-              执行
+              {messages.inspector.tabs.timeline}
             </TabsTrigger>
             <TabsTrigger value="files">
               <FolderOpen className="h-4 w-4" />
-              文件
+              {messages.inspector.tabs.files}
+              <TabCountBadge count={files.length} />
             </TabsTrigger>
             <TabsTrigger value="artifacts">
               <FileText className="h-4 w-4" />
-              产出
+              {messages.inspector.tabs.artifacts}
             </TabsTrigger>
             <TabsTrigger value="snapshots">
               <History className="h-4 w-4" />
-              快照
+              {messages.inspector.tabs.snapshots}
             </TabsTrigger>
             <TabsTrigger value="agents">
               <Boxes className="h-4 w-4" />
-              协作
+              {messages.inspector.tabs.agents}
             </TabsTrigger>
             <TabsTrigger value="peek">
               <Eye className="h-4 w-4" />
-              预览
+              {messages.inspector.tabs.peek}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="timeline" className="min-h-0">
-            <TimelineTab items={taskTimeline} />
+            <TimelineTab items={taskTimeline} messages={messages} />
           </TabsContent>
 
           <TabsContent value="files" className="min-h-0">
-            <FilesTab items={files} />
+            <FilesTab items={files} messages={messages} />
           </TabsContent>
 
           <TabsContent value="artifacts" className="min-h-0">
             <DataList
               items={artifacts}
-              empty="助手的真实产出会显示在这里。"
+              empty={messages.inspector.empty.artifacts}
               render={(item) => (
                 <>
                   <div className="text-sm font-medium">{item.title}</div>
@@ -326,7 +350,7 @@ export function InspectorPanel({ activeTab, agents, artifacts, files, peeks, ren
           <TabsContent value="snapshots" className="min-h-0">
             <DataList
               items={snapshots}
-              empty="每次完成回复后会生成一个可回看快照。"
+              empty={messages.inspector.empty.snapshots}
               render={(item) => (
                 <>
                   <div className="text-sm font-medium">{item.title}</div>
@@ -339,7 +363,7 @@ export function InspectorPanel({ activeTab, agents, artifacts, files, peeks, ren
           <TabsContent value="agents" className="min-h-0">
             <DataList
               items={agents}
-              empty="首次执行后显示 Agent 协作结构。"
+              empty={messages.inspector.empty.agents}
               render={(item) => (
                 <>
                   <div className="text-sm font-medium">{item.label}</div>
@@ -350,7 +374,7 @@ export function InspectorPanel({ activeTab, agents, artifacts, files, peeks, ren
           </TabsContent>
 
           <TabsContent value="peek" className="min-h-0">
-            <PeekTab peeks={peeks} renderPeek={renderPeek} />
+            <PeekTab peeks={peeks} renderPeek={renderPeek} messages={messages} />
           </TabsContent>
         </Tabs>
       </CardContent>

@@ -2,7 +2,7 @@ import * as React from "react";
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-const cardVariants = cva("rounded-xl border border-border bg-card text-card-foreground", {
+const cardVariants = cva("rounded-lg border border-border bg-card text-card-foreground", {
   variants: {
     size: {
       default: "",

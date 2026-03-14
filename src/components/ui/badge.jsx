@@ -7,7 +7,9 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: "border-transparent bg-secondary text-secondary-foreground",
-        success: "border-transparent bg-emerald-500/15 text-emerald-700",
+        // Theme-specific success colors are defined in index.css tokens on purpose,
+        // so light/dark can evolve independently without coupling both modes here.
+        success: "border-transparent bg-[var(--badge-success-bg)] text-[var(--badge-success-fg)]",
         active: "border-transparent bg-primary text-primary-foreground",
       },
     },

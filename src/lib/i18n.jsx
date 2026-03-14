@@ -1,0 +1,89 @@
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import en from "@/locales/en";
+import fr from "@/locales/fr";
+import ja from "@/locales/ja";
+import zh from "@/locales/zh";
+
+const localeStorageKey = "command-center-locale";
+const dictionaries = { zh, en, ja, fr };
+const supportedLocales = ["zh", "en", "ja", "fr"];
+const intlLocaleMap = {
+  zh: "zh-CN",
+  en: "en-US",
+  ja: "ja-JP",
+  fr: "fr-FR",
+};
+const localeOptions = supportedLocales.map((locale) => ({
+  value: locale,
+  label: dictionaries[locale].locale.options[locale],
+}));
+
+function normalizeLocale(rawLocale = "") {
+  const normalized = String(rawLocale || "").toLowerCase();
+  if (normalized.startsWith("zh")) return "zh";
+  if (normalized.startsWith("ja")) return "ja";
+  if (normalized.startsWith("fr")) return "fr";
+  if (normalized.startsWith("en")) return "en";
+  return null;
+}
+
+function detectSystemLocale() {
+  if (typeof navigator === "undefined") {
+    return "zh";
+  }
+
+  const candidates = Array.isArray(navigator.languages) && navigator.languages.length
+    ? navigator.languages
+    : [navigator.language];
+  return candidates.map(normalizeLocale).find(Boolean) || "zh";
+}
+
+function loadStoredLocale() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(localeStorageKey);
+    return supportedLocales.includes(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+const I18nContext = createContext({
+  locale: "zh",
+  setLocale: () => {},
+  localeOptions,
+  messages: zh,
+  intlLocale: "zh-CN",
+});
+
+export function I18nProvider({ children }) {
+  const [locale, setLocale] = useState(() => loadStoredLocale() || detectSystemLocale());
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(localeStorageKey, locale);
+    } catch {}
+  }, [locale]);
+
+  const value = useMemo(
+    () => ({
+      locale,
+      setLocale,
+      localeOptions,
+      messages: dictionaries[locale] || zh,
+      intlLocale: intlLocaleMap[locale] || "zh-CN",
+    }),
+    [locale],
+  );
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function useI18n() {
+  return useContext(I18nContext);
+}
+
+export { localeStorageKey, supportedLocales };

@@ -1,6 +1,8 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { URL } = require('node:url');
 
 const HOST = process.env.HOST || '127.0.0.1';
@@ -11,6 +13,8 @@ const HOME_DIR = process.env.HOME || '';
 const PROJECT_ROOT = __dirname;
 const LOCAL_OPENCLAW_CONFIG = path.join(HOME_DIR, '.openclaw', 'openclaw.json');
 const LOCAL_OPENCLAW_DIR = path.join(HOME_DIR, '.openclaw');
+const OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw';
+const execFileAsync = promisify(execFile);
 
 function readJsonIfExists(filePath) {
   try {
@@ -47,8 +51,43 @@ function resolveDefaultAgentId(localConfig) {
   return process.env.OPENCLAW_AGENT_ID || defaultAgent?.id || 'main';
 }
 
-function resolveAgentModel(agent) {
-  return agent?.model?.primary || (typeof agent?.model === 'string' ? agent.model : '');
+function resolveAgentModel(agent, localConfig = config.localConfig) {
+  const primary = agent?.model?.primary || (typeof agent?.model === 'string' ? agent.model : '');
+  return resolveCanonicalModelId(primary, localConfig);
+}
+
+function getConfiguredModelEntries(localConfig = config.localConfig) {
+  return Object.entries(localConfig?.agents?.defaults?.models || {}).filter(([modelId]) => String(modelId || '').trim());
+}
+
+function resolveCanonicalModelId(value = '', localConfig = config.localConfig) {
+  const requestedModel = String(value || '').trim();
+  if (!requestedModel) {
+    return '';
+  }
+
+  const configuredModels = getConfiguredModelEntries(localConfig);
+  if (!configuredModels.length) {
+    return requestedModel;
+  }
+
+  const normalizedRequestedModel = requestedModel.toLowerCase();
+  const exactMatch = configuredModels.find(([modelId]) => modelId.toLowerCase() === normalizedRequestedModel);
+  if (exactMatch) {
+    return exactMatch[0];
+  }
+
+  const aliasMatch = configuredModels.find(([, meta]) => String(meta?.alias || '').trim().toLowerCase() === normalizedRequestedModel);
+  if (aliasMatch) {
+    return aliasMatch[0];
+  }
+
+  const suffixMatches = configuredModels.filter(([modelId]) => modelId.toLowerCase().endsWith(`/${normalizedRequestedModel}`));
+  if (suffixMatches.length === 1) {
+    return suffixMatches[0][0];
+  }
+
+  return requestedModel;
 }
 
 function collectAvailableModels(localConfig, preferred = []) {
@@ -56,7 +95,7 @@ function collectAvailableModels(localConfig, preferred = []) {
   const ordered = [];
 
   function addModel(value) {
-    const model = String(value || '').trim();
+    const model = resolveCanonicalModelId(value, localConfig);
     if (!model || seen.has(model)) {
       return;
     }
@@ -66,7 +105,7 @@ function collectAvailableModels(localConfig, preferred = []) {
 
   preferred.forEach(addModel);
   addModel(localConfig?.agents?.defaults?.model?.primary);
-  (localConfig?.agents?.list || []).forEach((agent) => addModel(resolveAgentModel(agent)));
+  (localConfig?.agents?.list || []).forEach((agent) => addModel(resolveAgentModel(agent, localConfig)));
   return ordered;
 }
 
@@ -88,17 +127,58 @@ function collectAvailableAgents(localConfig, preferred = []) {
   return ordered;
 }
 
+function getAgentWorkspace(agentId) {
+  const agentConfig = getAgentConfig(agentId);
+  return agentConfig?.workspace || config.localConfig?.agents?.defaults?.workspace || path.join(LOCAL_OPENCLAW_DIR, 'workspace');
+}
+
+function parseIdentityName(identityText = '', fallback = '') {
+  const text = String(identityText || '');
+  if (!text) {
+    return fallback;
+  }
+
+  const inlineMatch = text.match(/^-+\s*\*\*Name:\*\*\s*(.+)$/im);
+  if (inlineMatch?.[1]) {
+    return inlineMatch[1].trim();
+  }
+
+  const blockMatch = text.match(/^-+\s*\*\*Name:\*\*\s*\n([\s\S]*?)(?:\n-+\s*\*\*[A-Za-z]+:\*\*|\n---|\n$)/im);
+  if (!blockMatch?.[1]) {
+    return fallback;
+  }
+
+  const normalized = blockMatch[1]
+    .split('\n')
+    .map((line) => line.trim().replace(/^[-*]\s*/, ''))
+    .filter(Boolean)
+    .join(' ');
+
+  return normalized || fallback;
+}
+
+function resolveAgentDisplayName(agentId) {
+  const normalizedAgentId = String(agentId || '').trim() || getDefaultAgentId();
+  const workspace = getAgentWorkspace(normalizedAgentId);
+  const identityPath = path.join(workspace, 'IDENTITY.md');
+  const identityText = readTextIfExists(identityPath);
+  return parseIdentityName(identityText, normalizedAgentId);
+}
+
 function buildRuntimeConfig() {
   const localConfig = readJsonIfExists(LOCAL_OPENCLAW_CONFIG);
   const localGatewayPort = Number(localConfig?.gateway?.port || 18789);
   const localToken = localConfig?.gateway?.auth?.token || '';
   const localAgentId = resolveDefaultAgentId(localConfig);
   const envBaseUrl = process.env.OPENCLAW_BASE_URL || '';
-  const envModel = process.env.OPENCLAW_MODEL || '';
+  const envModel = resolveCanonicalModelId(process.env.OPENCLAW_MODEL || '', localConfig);
   const envAgentId = process.env.OPENCLAW_AGENT_ID || '';
   const baseUrl = envBaseUrl || (localToken ? `http://127.0.0.1:${localGatewayPort}` : '');
   const agentId = envAgentId || localAgentId;
-  const defaultModel = localConfig?.agents?.defaults?.model?.primary || resolveAgentModel(localConfig?.agents?.list?.find((agent) => agent?.id === agentId));
+  const defaultModel = resolveCanonicalModelId(
+    localConfig?.agents?.defaults?.model?.primary || resolveAgentModel(localConfig?.agents?.list?.find((agent) => agent?.id === agentId), localConfig),
+    localConfig,
+  );
   const workspaceRoot = localConfig?.agents?.defaults?.workspace || path.join(LOCAL_OPENCLAW_DIR, 'workspace');
   const availableModels = collectAvailableModels(localConfig, [envModel]);
   const availableAgents = collectAvailableAgents(localConfig, [agentId]);
@@ -125,6 +205,8 @@ function buildRuntimeConfig() {
 
 const config = buildRuntimeConfig();
 const sessionPreferences = new Map();
+const localSessionConversation = new Map();
+const THINK_MODES = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive'];
 
 function getAgentConfig(agentId) {
   return config.localConfig?.agents?.list?.find((agent) => agent?.id === agentId) || null;
@@ -133,7 +215,7 @@ function getAgentConfig(agentId) {
 function getDefaultModelForAgent(agentId = config.agentId) {
   const trimmedAgentId = String(agentId || config.agentId).trim() || config.agentId;
   const agentConfig = getAgentConfig(trimmedAgentId);
-  return resolveAgentModel(agentConfig) || config.localConfig?.agents?.defaults?.model?.primary || config.model;
+  return resolveCanonicalModelId(resolveAgentModel(agentConfig) || config.localConfig?.agents?.defaults?.model?.primary || config.model);
 }
 
 function getDefaultAgentId() {
@@ -159,6 +241,11 @@ function setSessionPreferences(sessionUser = 'command-center', next = {}) {
   if (typeof merged.fastMode !== 'boolean') {
     delete merged.fastMode;
   }
+  if (!THINK_MODES.includes(String(merged.thinkMode || '').trim().toLowerCase())) {
+    delete merged.thinkMode;
+  } else {
+    merged.thinkMode = String(merged.thinkMode).trim().toLowerCase();
+  }
 
   if (!Object.keys(merged).length) {
     sessionPreferences.delete(key);
@@ -176,7 +263,7 @@ function resolveSessionAgentId(sessionUser = 'command-center') {
 
 function resolveSessionModel(sessionUser = 'command-center', agentId = resolveSessionAgentId(sessionUser)) {
   const preferences = getSessionPreferences(sessionUser);
-  return String(preferences.model || getDefaultModelForAgent(agentId)).trim() || getDefaultModelForAgent(agentId);
+  return resolveCanonicalModelId(preferences.model || getDefaultModelForAgent(agentId)) || getDefaultModelForAgent(agentId);
 }
 
 function resolveSessionFastMode(sessionUser = 'command-center') {
@@ -184,8 +271,53 @@ function resolveSessionFastMode(sessionUser = 'command-center') {
   return Boolean(preferences.fastMode);
 }
 
+function normalizeThinkMode(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return THINK_MODES.includes(normalized) ? normalized : '';
+}
+
+function resolveSessionThinkMode(sessionUser = 'command-center') {
+  const preferences = getSessionPreferences(sessionUser);
+  return normalizeThinkMode(preferences.thinkMode) || 'off';
+}
+
 function clearSessionPreferences(sessionUser = 'command-center') {
   sessionPreferences.delete(normalizeSessionUser(sessionUser));
+}
+
+function getLocalSessionConversation(sessionUser = 'command-center') {
+  return localSessionConversation.get(normalizeSessionUser(sessionUser)) || [];
+}
+
+function appendLocalSessionConversation(sessionUser = 'command-center', entries = []) {
+  const key = normalizeSessionUser(sessionUser);
+  const current = localSessionConversation.get(key) || [];
+  const normalizedEntries = entries
+    .filter(Boolean)
+    .map((entry) => ({
+      role: entry.role,
+      content: String(entry.content || '').trim(),
+      timestamp: Number(entry.timestamp) || Date.now(),
+      ...(entry.tokenBadge ? { tokenBadge: String(entry.tokenBadge) } : {}),
+    }))
+    .filter((entry) => entry.role && entry.content);
+
+  if (!normalizedEntries.length) {
+    return current;
+  }
+
+  const merged = [...current, ...normalizedEntries]
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .slice(-80);
+  localSessionConversation.set(key, merged);
+  return merged;
+}
+
+function mergeConversationMessages(primary = [], secondary = []) {
+  return [...primary, ...secondary]
+    .filter((entry) => entry?.role && entry?.content)
+    .sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0))
+    .slice(-80);
 }
 
 function delay(ms) {
@@ -236,7 +368,7 @@ function parseRequestBody(req) {
 
     req.on('data', (chunk) => {
       raw += chunk;
-      if (raw.length > 1_000_000) {
+      if (raw.length > 25_000_000) {
         reject(new Error('Request body too large'));
         req.destroy();
       }
@@ -285,7 +417,11 @@ function summarizeMessages(messages) {
   }
 
   return recent
-    .map((item) => `${item.role}: ${clip(String(item.content || '').replace(/\s+/g, ' ').trim(), 72)}`)
+    .map((item) => {
+      const attachments = getMessageAttachments(item);
+      const attachmentSummary = attachments.length ? ` [${attachments.map((attachment) => attachment.name).join(', ')}]` : '';
+      return `${item.role}: ${clip(normalizeChatMessage(item).replace(/\s+/g, ' ').trim() || '附件消息', 72)}${attachmentSummary}`;
+    })
     .join(' | ');
 }
 
@@ -316,6 +452,81 @@ function normalizeChatMessage(message) {
   return '';
 }
 
+function getMessageAttachments(message) {
+  if (!Array.isArray(message?.attachments)) {
+    return [];
+  }
+
+  return message.attachments
+    .map((attachment) => ({
+      id: attachment?.id || '',
+      kind: attachment?.kind || '',
+      name: String(attachment?.name || '').trim(),
+      mimeType: String(attachment?.mimeType || '').trim(),
+      size: Number(attachment?.size) || 0,
+      dataUrl: typeof attachment?.dataUrl === 'string' ? attachment.dataUrl : '',
+      textContent: typeof attachment?.textContent === 'string' ? attachment.textContent : '',
+      truncated: Boolean(attachment?.truncated),
+    }))
+    .filter((attachment) => attachment.name);
+}
+
+function describeAttachmentForModel(attachment) {
+  if (attachment.textContent) {
+    return `附件 ${attachment.name}:\n${attachment.textContent}${attachment.truncated ? '\n[内容已截断]' : ''}`;
+  }
+
+  const attachmentDetails = [attachment.mimeType, attachment.size ? `${Math.max(1, Math.round(attachment.size / 1024))} KB` : '']
+    .filter(Boolean)
+    .join(', ');
+  return `附件 ${attachment.name}${attachmentDetails ? ` (${attachmentDetails})` : ''} 已附加。`;
+}
+
+function buildOpenClawMessageContent(message, apiStyle = 'chat') {
+  const text = normalizeChatMessage(message).trim();
+  const attachments = getMessageAttachments(message);
+  const textPrompt = text || (attachments.length ? `用户附加了 ${attachments.length} 个附件，请结合附件内容处理请求。` : '');
+
+  if (apiStyle === 'responses') {
+    const content = [];
+
+    if (textPrompt) {
+      content.push({ type: 'input_text', text: textPrompt });
+    }
+
+    attachments.forEach((attachment) => {
+      if (attachment.kind === 'image' && attachment.dataUrl) {
+        content.push({ type: 'input_image', image_url: attachment.dataUrl });
+        return;
+      }
+
+      content.push({ type: 'input_text', text: describeAttachmentForModel(attachment) });
+    });
+
+    return content.length ? content : [{ type: 'input_text', text: '继续。' }];
+  }
+
+  if (!attachments.length) {
+    return textPrompt;
+  }
+
+  const content = [];
+  if (textPrompt) {
+    content.push({ type: 'text', text: textPrompt });
+  }
+
+  attachments.forEach((attachment) => {
+    if (attachment.kind === 'image' && attachment.dataUrl) {
+      content.push({ type: 'image_url', image_url: { url: attachment.dataUrl } });
+      return;
+    }
+
+    content.push({ type: 'text', text: describeAttachmentForModel(attachment) });
+  });
+
+  return content;
+}
+
 function parseCompactNumber(raw) {
   if (!raw) {
     return null;
@@ -334,6 +545,95 @@ function parseCompactNumber(raw) {
   }
   const numeric = Number.parseInt(value.replace(/[^\d]/g, ''), 10);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatCompactTokenCount(value) {
+  const numeric = Number(value) || 0;
+  if (numeric <= 0) {
+    return '';
+  }
+  if (numeric >= 1_000_000) {
+    return `${(numeric / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`;
+  }
+  if (numeric >= 1_000) {
+    return `${(numeric / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+  }
+  return String(Math.round(numeric));
+}
+
+function parseTokenDisplay(tokenDisplay = '') {
+  const match = String(tokenDisplay || '').match(/([0-9.]+[km]?)\s+in\s*\/\s*([0-9.]+[km]?)\s+out/i);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    input: parseCompactNumber(match[1]) || 0,
+    output: parseCompactNumber(match[2]) || 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  };
+}
+
+function formatTokenBadge(usage) {
+  if (!usage) {
+    return '';
+  }
+
+  const parts = [];
+  if (usage.input) {
+    parts.push(`↑${formatCompactTokenCount(usage.input)}`);
+  }
+  if (usage.output) {
+    parts.push(`↓${formatCompactTokenCount(usage.output)}`);
+  }
+  if (usage.cacheRead) {
+    parts.push(`R${formatCompactTokenCount(usage.cacheRead)}`);
+  }
+  if (usage.cacheWrite) {
+    parts.push(`W${formatCompactTokenCount(usage.cacheWrite)}`);
+  }
+
+  return parts.join(' ');
+}
+
+function collectLatestRunUsage(entries = []) {
+  if (!Array.isArray(entries) || !entries.length) {
+    return null;
+  }
+
+  let latestUserIndex = -1;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index]?.message?.role === 'user') {
+      latestUserIndex = index;
+      break;
+    }
+  }
+
+  const scope = latestUserIndex >= 0 ? entries.slice(latestUserIndex + 1) : entries;
+  const totals = scope.reduce(
+    (acc, entry) => {
+      const message = entry?.message || {};
+      const usage = message.usage;
+      if (message.role !== 'assistant' || !usage) {
+        return acc;
+      }
+
+      acc.input += Number(usage.input || 0);
+      acc.output += Number(usage.output || 0);
+      acc.cacheRead += Number(usage.cacheRead || 0);
+      acc.cacheWrite += Number(usage.cacheWrite || 0);
+      acc.count += 1;
+      return acc;
+    },
+    { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, count: 0 },
+  );
+
+  if (!totals.count) {
+    return null;
+  }
+
+  return totals;
 }
 
 function formatTimestamp(timestamp) {
@@ -373,13 +673,51 @@ function normalizeSessionUser(sessionUser = '') {
 
 function parseSlashCommandState(message = '') {
   const normalized = String(message || '').trim().toLowerCase();
-  if (/^\/fast\s+on\s*$/i.test(normalized)) {
+  if (/^\/fast\s+(on|yes|true|1)\s*$/i.test(normalized)) {
     return { kind: 'fastMode', value: true };
   }
-  if (/^\/fast\s+off\s*$/i.test(normalized)) {
+  if (/^\/fast\s+(off|no|false|0)\s*$/i.test(normalized)) {
     return { kind: 'fastMode', value: false };
   }
+  const thinkMatch = normalized.match(/^\/think(?:\s+([^\s]+))?\s*$/i);
+  const thinkMode = normalizeThinkMode(thinkMatch?.[1] || '');
+  if (thinkMode) {
+    return { kind: 'thinkMode', value: thinkMode };
+  }
   return null;
+}
+
+function parseFastCommand(message = '') {
+  const normalized = String(message || '').trim().toLowerCase();
+  const match = normalized.match(/^\/fast(?:\s+([^\s]+))?\s*$/);
+  if (!match) {
+    return null;
+  }
+
+  const mode = match[1] || 'status';
+  if (['status'].includes(mode)) {
+    return { kind: 'fast', action: 'status' };
+  }
+  if (['on', 'yes', 'true', '1'].includes(mode)) {
+    return { kind: 'fast', action: 'on' };
+  }
+  if (['off', 'no', 'false', '0'].includes(mode)) {
+    return { kind: 'fast', action: 'off' };
+  }
+
+  return { kind: 'fast', action: 'invalid' };
+}
+
+function parseSessionResetCommand(message = '') {
+  const match = String(message || '').trim().match(/^\/(new|reset)(?:\s+([\s\S]+))?$/i);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    kind: match[1].toLowerCase() === 'reset' ? 'reset' : 'new',
+    tail: (match[2] || '').trim(),
+  };
 }
 
 function getCommandCenterSessionKey(agentId = getDefaultAgentId(), sessionUser = 'command-center') {
@@ -459,23 +797,12 @@ function cleanAssistantReply(text) {
     .trim();
 }
 
-function translateUpdatedLabel(label) {
-  if (!label) {
-    return '';
-  }
-
-  return String(label)
-    .replace('updated just now', '刚刚更新')
-    .replace(/^updated\s+/i, '')
-    .replace(/(\d+)m ago/g, '$1 分钟前')
-    .replace(/(\d+)h ago/g, '$1 小时前');
-}
-
 function parseSessionStatusText(statusText) {
   if (!statusText) {
     return null;
   }
 
+  const versionLine = statusText.match(/^🦞\s*OpenClaw\s+(.+)$/m);
   const modelLine = statusText.match(/🧠 Model:\s*(.+?)(?:\s*·\s*🔑\s*(.+))?$/m);
   const tokensLine = statusText.match(/🧮 Tokens:\s*(.+)$/m);
   const contextLine = statusText.match(/📚 Context:\s*([^\n]+)$/m);
@@ -496,18 +823,26 @@ function parseSessionStatusText(statusText) {
     }
   }
 
+  const parsedTokens = parseTokenDisplay(tokensLine?.[1] || '');
+  const runtimeDisplay = runtimeLine?.[1] || '';
+  const parsedThinkMode = normalizeThinkMode(runtimeDisplay.match(/(?:^|·)\s*Think:\s*([a-z]+)\s*(?:·|$)/i)?.[1] || '');
+
   return {
     text: statusText,
+    versionDisplay: versionLine?.[1]?.trim() || '',
     time: timeLine?.[1] || '',
     modelDisplay: modelLine?.[1] || '',
     authDisplay: modelLine?.[2] || '',
     tokensDisplay: tokensLine?.[1] || '',
+    tokensInput: parsedTokens?.input || 0,
+    tokensOutput: parsedTokens?.output || 0,
     contextDisplay: contextRaw,
     contextUsed,
     contextMax,
     sessionKey: sessionLine?.[1]?.trim() || '',
     updatedLabel: sessionLine?.[2]?.trim() || '',
-    runtimeDisplay: runtimeLine?.[1] || '',
+    runtimeDisplay,
+    thinkMode: parsedThinkMode || '',
     queueDisplay: queueLine?.[1] || '',
   };
 }
@@ -754,10 +1089,13 @@ function collectConversationMessages(entries) {
           return null;
         }
 
+        const tokenBadge = formatTokenBadge(payload.usage);
+
         return {
           role: 'assistant',
           content,
           timestamp: payload.timestamp || Date.parse(entry.timestamp) || Date.now(),
+          ...(tokenBadge ? { tokenBadge } : {}),
         };
       }
 
@@ -1065,6 +1403,58 @@ async function invokeOpenClawTool(tool, args = {}, sessionKey = 'main', action) 
   return data.result || null;
 }
 
+function getGatewayWebSocketUrl() {
+  if (!config.baseUrl) {
+    return '';
+  }
+
+  const url = new URL(config.baseUrl);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.pathname = '/';
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+async function callOpenClawGateway(method, params = {}, timeoutMs = 10000) {
+  const gatewayUrl = getGatewayWebSocketUrl();
+  if (!gatewayUrl) {
+    throw new Error('Gateway WebSocket URL is not configured');
+  }
+
+  const args = [
+    '--no-color',
+    '--log-level',
+    'silent',
+    'gateway',
+    'call',
+    method,
+    '--json',
+    '--url',
+    gatewayUrl,
+    '--params',
+    JSON.stringify(params),
+    '--timeout',
+    String(timeoutMs),
+  ];
+
+  if (config.apiKey) {
+    args.push('--token', config.apiKey);
+  }
+
+  const { stdout } = await execFileAsync(OPENCLAW_BIN, args, {
+    cwd: PROJECT_ROOT,
+    env: process.env,
+    maxBuffer: 1024 * 1024,
+  });
+
+  try {
+    return JSON.parse(String(stdout || '').trim() || '{}');
+  } catch (error) {
+    throw new Error(`Gateway RPC returned invalid JSON: ${error.message}`);
+  }
+}
+
 async function fetchBrowserPeek() {
   if (config.mode !== 'openclaw') {
     return {
@@ -1138,25 +1528,31 @@ function buildTerminalPeek() {
 function buildMockSnapshot(sessionUser = 'command-center') {
   const now = Date.now();
   const agentId = resolveSessionAgentId(sessionUser);
+  const agentLabel = resolveAgentDisplayName(agentId);
   const model = resolveSessionModel(sessionUser, agentId);
   const fastMode = resolveSessionFastMode(sessionUser);
+  const thinkMode = resolveSessionThinkMode(sessionUser);
+  const localConversation = getLocalSessionConversation(sessionUser);
   return {
     session: {
       mode: 'mock',
       model,
       selectedModel: model,
       agentId,
+      agentLabel,
       selectedAgentId: agentId,
       sessionUser: normalizeSessionUser(sessionUser),
       sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
       status: '已完成',
       fastMode: fastMode ? '开启' : '关闭',
+      thinkMode,
       contextUsed: 0,
       contextMax: 16000,
       contextDisplay: '0 / 16000',
       runtime: 'mock',
       queue: 'none',
-      updatedLabel: '刚刚',
+      updatedLabel: '',
+      updatedAt: now,
       availableModels: collectAvailableModels(config.localConfig, [model]),
       availableAgents: collectAvailableAgents(config.localConfig, [agentId]),
     },
@@ -1190,7 +1586,7 @@ function buildMockSnapshot(sessionUser = 'command-center') {
       { name: 'workspace.scan', status: '完成', detail: '已扫描当前项目目录。', timestamp: now },
       { name: fastMode ? 'planner.fast-path' : 'planner.standard-path', status: '完成', detail: '已生成最小可运行原型。', timestamp: now },
     ],
-    conversation: [],
+    conversation: localConversation,
     files: [
       { path: 'server.js', kind: '文件' },
       { path: 'public/index.html', kind: '文件' },
@@ -1214,8 +1610,10 @@ function buildMockSnapshot(sessionUser = 'command-center') {
 
 async function buildOpenClawSnapshot(sessionUser = 'command-center') {
   const agentId = resolveSessionAgentId(sessionUser);
+  const agentLabel = resolveAgentDisplayName(agentId);
   const selectedModel = resolveSessionModel(sessionUser, agentId);
   const fastMode = resolveSessionFastMode(sessionUser);
+  const preferredThinkMode = resolveSessionThinkMode(sessionUser);
   const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
   const sessionRecord = resolveSessionRecord(agentId, sessionKey);
   const transcriptPath = sessionRecord ? getTranscriptPath(agentId, sessionRecord.sessionId) : '';
@@ -1240,6 +1638,17 @@ async function buildOpenClawSnapshot(sessionUser = 'command-center') {
     config.model;
   const availableModels = collectAvailableModels(config.localConfig, [selectedModel, latestModel]);
   const availableAgents = collectAvailableAgents(config.localConfig, [agentId]);
+  const gatewayConversation = collectConversationMessages(entries);
+  const localConversation = getLocalSessionConversation(sessionUser);
+  const latestRunUsage = collectLatestRunUsage(entries);
+  const tokenBadge = formatTokenBadge(
+    latestRunUsage || {
+      input: parsedStatus?.tokensInput || 0,
+      output: parsedStatus?.tokensOutput || 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+  );
 
   return {
     session: {
@@ -1247,11 +1656,13 @@ async function buildOpenClawSnapshot(sessionUser = 'command-center') {
       model: latestModel,
       selectedModel,
       agentId,
+      agentLabel,
       selectedAgentId: agentId,
       sessionUser: normalizeSessionUser(sessionUser),
       sessionKey: parsedStatus?.sessionKey || sessionKey,
       status: '就绪',
       fastMode: fastMode ? '开启' : '关闭',
+      thinkMode: parsedStatus?.thinkMode || preferredThinkMode,
       contextUsed: parsedStatus?.contextUsed || null,
       contextMax: parsedStatus?.contextMax || 272000,
       contextDisplay:
@@ -1261,15 +1672,16 @@ async function buildOpenClawSnapshot(sessionUser = 'command-center') {
       runtime: parsedStatus?.runtimeDisplay || '未知',
       queue: parsedStatus?.queueDisplay || '未知',
       updatedLabel:
-        translateUpdatedLabel(parsedStatus?.updatedLabel) ||
-        (sessionRecord?.updatedAt ? formatTimestamp(sessionRecord.updatedAt) : '未知'),
-      tokens: parsedStatus?.tokensDisplay || '',
+        parsedStatus?.updatedLabel || '',
+      updatedAt: sessionRecord?.updatedAt || null,
+      tokens: tokenBadge || parsedStatus?.tokensDisplay || '',
       auth: parsedStatus?.authDisplay || '',
+      version: parsedStatus?.versionDisplay || '',
       time: parsedStatus?.time || '',
       availableModels,
       availableAgents,
     },
-    conversation: collectConversationMessages(entries),
+    conversation: mergeConversationMessages(gatewayConversation, localConversation),
     taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot]),
     toolHistory: collectToolHistory(entries),
     files: collectFiles(entries, [PROJECT_ROOT, config.workspaceRoot]),
@@ -1291,9 +1703,14 @@ async function buildDashboardSnapshot(sessionUser = 'command-center') {
   return await buildOpenClawSnapshot(sessionUser);
 }
 
-async function callOpenClaw(messages, fastMode, sessionUser = 'command-center') {
+async function callOpenClaw(messages, fastMode, sessionUser = 'command-center', options = {}) {
   const agentId = resolveSessionAgentId(sessionUser);
   const model = resolveSessionModel(sessionUser, agentId);
+  const commandBody = typeof options.commandBody === 'string' ? options.commandBody.trim() : '';
+  const normalizedMessages =
+    commandBody && !messages.some((message) => message?.role === 'user')
+      ? [{ role: 'user', content: '\u200b' }, ...messages]
+      : messages;
   const endpoint = new URL(config.apiPath, config.baseUrl).toString();
   const headers = {
     'Content-Type': 'application/json',
@@ -1316,22 +1733,34 @@ async function callOpenClaw(messages, fastMode, sessionUser = 'command-center') 
     payload = {
       model,
       input: [
-        { role: 'system', content: systemPrompt },
-        ...messages.map((message) => ({
+        { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
+        ...normalizedMessages.map((message) => ({
           role: message.role,
-          content: [{ type: 'text', text: normalizeChatMessage(message) }],
+          content: buildOpenClawMessageContent(message, 'responses'),
         })),
       ],
       reasoning: { effort: fastMode ? 'low' : 'medium' },
     };
+    if (commandBody) {
+      payload.commandBody = commandBody;
+    }
   } else {
     payload = {
       model,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...normalizedMessages.map((message) => ({
+          role: message.role,
+          content: buildOpenClawMessageContent(message, 'chat'),
+        })),
+      ],
       temperature: fastMode ? 0.3 : 0.7,
       stream: false,
       user: normalizeSessionUser(sessionUser),
     };
+    if (commandBody) {
+      payload.commandBody = commandBody;
+    }
   }
 
   const response = await fetch(endpoint, {
@@ -1371,35 +1800,169 @@ async function handleChat(req, res) {
     const fastMode = Boolean(body.fastMode);
     const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
     const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
+    const latestUserContent = normalizeChatMessage(latestUserMessage);
+    const latestUserAttachments = getMessageAttachments(latestUserMessage);
+    const resetCommand = parseSessionResetCommand(latestUserContent);
+    const fastCommand = parseFastCommand(latestUserContent);
+    const commandBody = latestUserContent.startsWith('/') ? latestUserContent : '';
     const slashCommandState = parseSlashCommandState(latestUserMessage?.content);
     const outboundMessages = latestUserMessage
-      ? [{ role: 'user', content: normalizeChatMessage(latestUserMessage) }]
+      ? [{ role: 'user', content: latestUserContent, ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}) }]
       : [];
 
     if (body.agentId || body.model) {
       const nextAgentId = String(body.agentId || resolveSessionAgentId(sessionUser)).trim() || getDefaultAgentId();
       const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
-      const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
+      const requestedModel = typeof body.model === 'string' ? resolveCanonicalModelId(body.model) : '';
       const nextModel = requestedModel || resolveSessionModel(sessionUser, nextAgentId) || defaultModelForNextAgent;
       setSessionPreferences(sessionUser, {
         agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
         model: requestedModel && requestedModel !== defaultModelForNextAgent ? nextModel : undefined,
       });
+
+      if (config.mode === 'openclaw') {
+        const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
+        await callOpenClawGateway('sessions.patch', {
+          key: sessionKey,
+          model: nextModel,
+        });
+        await delay(150);
+      }
+    }
+
+    if (fastCommand) {
+      const responseTimestamp = Date.now();
+      if (fastCommand.action === 'on' || fastCommand.action === 'off') {
+        setSessionPreferences(sessionUser, { fastMode: fastCommand.action === 'on' });
+      }
+
+      const fastEnabled = resolveSessionFastMode(sessionUser);
+      const outputText =
+        fastCommand.action === 'status'
+          ? `Fast 当前${fastEnabled ? '已开启' : '已关闭'}。`
+          : fastCommand.action === 'on'
+            ? '已开启 fast。'
+            : fastCommand.action === 'off'
+              ? '已关闭 fast。'
+              : '用法：/fast status|on|off';
+
+      appendLocalSessionConversation(sessionUser, [
+        {
+          role: 'user',
+          content: latestUserContent,
+          timestamp: responseTimestamp - 1,
+        },
+        {
+          role: 'assistant',
+          content: outputText,
+          timestamp: responseTimestamp,
+        },
+      ]);
+
+      const snapshot = await buildDashboardSnapshot(sessionUser);
+      snapshot.session.status = '已完成 / 标准';
+
+      sendJson(res, 200, {
+        ok: true,
+        mode: config.mode,
+        model: snapshot.session?.model || config.model,
+        outputText,
+        usage: null,
+        tokenBadge: '',
+        commandHandled: 'fast',
+        metadata: {
+          status: snapshot.session.status,
+          summary: `fast: ${fastCommand.action}`,
+        },
+        ...snapshot,
+      });
+      return;
+    }
+
+    if (resetCommand) {
+      const nextSessionUser = normalizeSessionUser(`${sessionUser}-${Date.now()}`);
+      const currentPreferences = getSessionPreferences(sessionUser);
+      setSessionPreferences(nextSessionUser, { ...currentPreferences });
+
+      let outputText = '新会话已开始。直接说你要我干什么。';
+      let usage = null;
+
+      if (resetCommand.tail) {
+        const resetReply =
+          config.mode === 'openclaw'
+            ? await callOpenClaw([{ role: 'user', content: resetCommand.tail }], fastMode, nextSessionUser)
+            : {
+                outputText: [
+                  'OpenClaw command channel is online in mock mode.',
+                  `Current intent: ${clip(resetCommand.tail, 160)}`,
+                ].join('\n'),
+                usage: null,
+              };
+
+        outputText = resetReply.outputText;
+        usage = resetReply.usage;
+      }
+
+      appendLocalSessionConversation(
+        nextSessionUser,
+        resetCommand.tail
+          ? [
+              {
+                role: 'user',
+                content: resetCommand.tail,
+                timestamp: Date.now() - 1,
+              },
+              {
+                role: 'assistant',
+                content: outputText,
+                timestamp: Date.now(),
+                ...(usage ? { tokenBadge: formatTokenBadge(usage) } : {}),
+              },
+            ]
+          : [
+              {
+                role: 'assistant',
+                content: outputText,
+                timestamp: Date.now(),
+              },
+            ],
+      );
+
+      const snapshot = await buildDashboardSnapshot(nextSessionUser);
+      snapshot.session.status = fastMode ? '已完成 / 快速' : '已完成 / 标准';
+
+      sendJson(res, 200, {
+        ok: true,
+        mode: config.mode,
+        model: snapshot.session?.model || config.model,
+        outputText,
+        usage,
+        tokenBadge: formatTokenBadge(usage),
+        resetSessionUser: nextSessionUser,
+        commandHandled: resetCommand.kind,
+        metadata: {
+          status: snapshot.session.status,
+          summary: resetCommand.tail ? `user: ${clip(resetCommand.tail, 72)}` : `${resetCommand.kind}: session reset`,
+        },
+        ...snapshot,
+      });
+      return;
     }
 
     const reply =
       config.mode === 'openclaw'
-        ? await callOpenClaw(outboundMessages, fastMode, sessionUser)
+        ? await callOpenClaw(outboundMessages, fastMode, sessionUser, { commandBody })
         : {
             outputText: [
               'OpenClaw command channel is online in mock mode.',
-              `Current intent: ${clip(latestUserMessage?.content || 'No prompt supplied.', 160)}`,
+              `Current intent: ${clip(latestUserContent || 'No prompt supplied.', 160)}`,
             ].join('\n'),
             usage: null,
           };
 
     const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
-    setSessionPreferences(sessionUser, { fastMode: nextFastMode });
+    const nextThinkMode = slashCommandState?.kind === 'thinkMode' ? slashCommandState.value : resolveSessionThinkMode(sessionUser);
+    setSessionPreferences(sessionUser, { fastMode: nextFastMode, thinkMode: nextThinkMode });
 
     const snapshot = await buildDashboardSnapshot(sessionUser);
     snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
@@ -1411,6 +1974,7 @@ async function handleChat(req, res) {
       model: resolvedModel,
       outputText: reply.outputText,
       usage: reply.usage,
+      tokenBadge: formatTokenBadge(reply.usage),
       metadata: {
         status: snapshot.session.status,
         summary: summarizeMessages(messages),
@@ -1444,11 +2008,15 @@ async function handleRuntime(req, res) {
 function handleSession(req, res) {
   const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
   const agentId = resolveSessionAgentId(sessionUser);
+  const agentLabel = resolveAgentDisplayName(agentId);
   const model = resolveSessionModel(sessionUser, agentId);
+  const thinkMode = resolveSessionThinkMode(sessionUser);
   sendJson(res, 200, {
     mode: config.mode,
     model,
     agentId,
+    agentLabel,
+    thinkMode,
     sessionUser,
     sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
     availableModels: collectAvailableModels(config.localConfig, [model]),
@@ -1464,6 +2032,13 @@ async function handleSessionUpdate(req, res) {
   try {
     const body = await parseRequestBody(req);
     const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+    const nextFastMode = typeof body.fastMode === 'boolean' ? body.fastMode : resolveSessionFastMode(sessionUser);
+    const requestedThinkMode = typeof body.thinkMode === 'string' ? normalizeThinkMode(body.thinkMode) : '';
+    if (typeof body.thinkMode === 'string' && !requestedThinkMode) {
+      sendJson(res, 400, { ok: false, error: 'Invalid think mode' });
+      return;
+    }
+    const nextThinkMode = requestedThinkMode || resolveSessionThinkMode(sessionUser);
     const previousAgentId = resolveSessionAgentId(sessionUser);
     const nextAgentId = body.agentId ? String(body.agentId).trim() || previousAgentId : previousAgentId;
     const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
@@ -1477,7 +2052,7 @@ async function handleSessionUpdate(req, res) {
     }
 
     if (body.model) {
-      const requestedModel = String(body.model).trim();
+      const requestedModel = resolveCanonicalModelId(body.model);
       nextModel = requestedModel || defaultModelForNextAgent;
       shouldPersistModel = Boolean(requestedModel) && requestedModel !== defaultModelForNextAgent;
     }
@@ -1485,12 +2060,25 @@ async function handleSessionUpdate(req, res) {
     setSessionPreferences(sessionUser, {
       agentId: nextAgentId === getDefaultAgentId() ? undefined : nextAgentId,
       model: shouldPersistModel ? nextModel : undefined,
+      fastMode: nextFastMode,
+      thinkMode: nextThinkMode,
     });
 
     if (config.mode === 'openclaw' && (body.model || body.agentId)) {
       const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
-      const toolModel = shouldPersistModel ? nextModel : 'default';
-      await invokeOpenClawTool('session_status', { sessionKey, model: toolModel }, sessionKey).catch(() => null);
+      await callOpenClawGateway('sessions.patch', {
+        key: sessionKey,
+        model: nextModel,
+      });
+      await delay(150);
+    }
+
+    if (config.mode === 'openclaw' && requestedThinkMode) {
+      const sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
+      await callOpenClawGateway('sessions.patch', {
+        key: sessionKey,
+        thinkingLevel: requestedThinkMode,
+      });
       await delay(150);
     }
 

@@ -15,7 +15,7 @@ describe("MarkdownContent", () => {
   it("renders fenced code blocks and supports copying", async () => {
     const { container } = render(<MarkdownContent content={"```js\nconst answer = 42;\n```"} />);
 
-    expect(await screen.findByText("js")).toBeInTheDocument();
+    expect(await screen.findByText(/js/i)).toBeInTheDocument();
     await waitFor(() => {
       expect(container.querySelector("pre pre")?.textContent).toBe("const answer = 42;");
     });
@@ -26,5 +26,20 @@ describe("MarkdownContent", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "代码已复制" })).toBeInTheDocument();
     });
+  });
+
+  it("renders assistant images in large format and supports previewing", async () => {
+    const user = userEvent.setup();
+    render(<MarkdownContent content={"![示例图](https://example.com/demo.png)"} />);
+
+    const image = await screen.findByAltText("示例图");
+    expect(image).toHaveAttribute("src", "https://example.com/demo.png");
+    expect(image.className).toContain("h-[400px]");
+
+    await user.click(image);
+    expect(screen.getByRole("button", { name: "关闭预览" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
   });
 });

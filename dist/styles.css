@@ -372,11 +372,11 @@ body::before {
 }
 
 .message {
-  border: 1px solid var(--line-soft);
+  border: 0;
   border-radius: var(--radius);
   padding: 8px;
-  background: #fbfcfe;
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  background: #f1f2f6;
+  box-shadow: none;
   width: fit-content;
   max-width: min(86%, 920px);
   min-width: 220px;
@@ -385,15 +385,22 @@ body::before {
 }
 
 .message[data-role="user"] {
-  border-color: #d6dee8;
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  background: #007aff;
+  box-shadow: none;
   justify-self: end;
 }
 
 .message[data-role="assistant"] {
-  border-color: #dbe4f0;
-  background: linear-gradient(180deg, #f9fbfd, #f3f7fb);
+  background: #f1f2f6;
   justify-self: start;
+}
+
+.message[data-role="user"] header {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.message[data-role="user"] .message-body {
+  color: #ffffff;
 }
 
 .message header {
