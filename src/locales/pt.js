@@ -228,6 +228,7 @@ const pt = {
       imageRotateLeft: "Girar à esquerda",
       imageRotateRight: "Girar à direita",
       imageZoomIn: "Ampliar imagem",
+      frontMatter: "Front Matter",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorador",

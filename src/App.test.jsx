@@ -7,6 +7,7 @@ import { localeStorageKey } from "@/lib/i18n";
 
 const storageKey = "command-center-ui-state-v2";
 const pendingChatStorageKey = "command-center-pending-chat-v1";
+const chatScrollStorageKey = "command-center-chat-scroll-v1";
 
 function createSnapshot(overrides = {}) {
   return {
@@ -88,21 +89,21 @@ function createInteractiveFetchMock({
   const sessionUpdates = [];
   const chatBodies = [];
 
-  const buildSnapshot = (overrides = {}) =>
+  const buildSnapshot = (overrides = {}, runtimeState = {}) =>
     createSnapshot({
-      model: state.model,
+      model: runtimeState.model || state.model,
       session: {
         ...createSnapshot().session,
-        agentId: state.agentId,
-        selectedAgentId: state.agentId,
+        agentId: runtimeState.agentId || state.agentId,
+        selectedAgentId: runtimeState.agentId || state.agentId,
         availableAgents: state.availableAgents,
         availableModels: state.availableModels,
-        fastMode: state.fastMode ? "已开启" : "已关闭",
-        model: state.model,
-        selectedModel: state.model,
-        sessionKey: `agent:${state.agentId}:openai-user:${state.sessionUser}`,
-        sessionUser: state.sessionUser,
-        thinkMode: state.thinkMode,
+        fastMode: (typeof runtimeState.fastMode === "boolean" ? runtimeState.fastMode : state.fastMode) ? "已开启" : "已关闭",
+        model: runtimeState.model || state.model,
+        selectedModel: runtimeState.model || state.model,
+        sessionKey: `agent:${runtimeState.agentId || state.agentId}:openai-user:${runtimeState.sessionUser || state.sessionUser}`,
+        sessionUser: runtimeState.sessionUser || state.sessionUser,
+        thinkMode: runtimeState.thinkMode || state.thinkMode,
       },
       ...overrides,
     });
@@ -110,12 +111,30 @@ function createInteractiveFetchMock({
   const fetchMock = vi.fn(async (input, init) => {
     const url = String(input);
     if (url.startsWith("/api/runtime")) {
-      return mockJsonResponse(buildSnapshot());
+      const params = new URL(url, "http://localhost").searchParams;
+      const runtimeAgentId = params.get("agentId") || state.agentId;
+      const runtimeModel = params.get("model") || agentModels[runtimeAgentId] || state.model;
+      const runtimeFastMode = params.has("fastMode") ? params.get("fastMode") === "1" : state.fastMode;
+      const runtimeThinkMode = params.get("thinkMode") || state.thinkMode;
+      const runtimeSessionUser = params.get("sessionUser") || state.sessionUser;
+      return mockJsonResponse(
+        buildSnapshot({}, {
+          agentId: runtimeAgentId,
+          fastMode: runtimeFastMode,
+          model: runtimeModel,
+          sessionUser: runtimeSessionUser,
+          thinkMode: runtimeThinkMode,
+        }),
+      );
     }
 
     if (url === "/api/session" && init?.method === "POST") {
       const body = JSON.parse(init.body);
       sessionUpdates.push(body);
+
+      if (body.sessionUser) {
+        state.sessionUser = body.sessionUser;
+      }
 
       if (body.agentId) {
         state.agentId = body.agentId;
@@ -140,6 +159,23 @@ function createInteractiveFetchMock({
     if (url === "/api/chat" && init?.method === "POST") {
       const body = JSON.parse(init.body);
       chatBodies.push(body);
+
+       if (body.sessionUser) {
+        state.sessionUser = body.sessionUser;
+      }
+
+      if (body.agentId) {
+        state.agentId = body.agentId;
+        state.model = agentModels[body.agentId] || body.model || state.model;
+      }
+
+      if (body.model) {
+        state.model = body.model;
+      }
+
+      if (typeof body.fastMode === "boolean") {
+        state.fastMode = body.fastMode;
+      }
 
       return mockJsonResponse({
         ...buildSnapshot(),
@@ -1128,6 +1164,66 @@ describe("App", () => {
     expect(await screen.findByText("正在思考…")).toBeInTheDocument();
   });
 
+  it("does not reinsert the latest user message between assistant replies after refresh", async () => {
+    const promptText = "最后一句";
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          userMessage: {
+            role: "user",
+            content: promptText,
+            timestamp: 100,
+          },
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              conversation: [
+                {
+                  role: "user",
+                  content: promptText,
+                  timestamp: 100,
+                },
+                {
+                  role: "assistant",
+                  content: "刚查完了，结果如上：",
+                  timestamp: 90,
+                },
+                {
+                  role: "assistant",
+                  content: "已修复 3 个问题：",
+                  timestamp: 95,
+                },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      const bodyText = getNormalizedBodyText();
+      const occurrences = bodyText.split(promptText).length - 1;
+      expect(occurrences).toBe(1);
+    });
+    expect(getNormalizedBodyText()).not.toContain("正在思考…");
+  });
+
   it("hydrates prompt history from the current session conversation", async () => {
     vi.stubGlobal(
       "fetch",
@@ -1454,18 +1550,131 @@ describe("App", () => {
 
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+    await screen.findByText("worker - 当前会话");
 
     await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "继续处理 worker 任务");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("已处理：继续处理 worker 任务")).toBeInTheDocument();
-    expect(harness.sessionUpdates).toEqual([
-      { sessionUser: "command-center", agentId: "worker" },
+    expect(harness.sessionUpdates).toMatchObject([
+      {
+        agentId: "worker",
+      },
     ]);
+    expect(harness.sessionUpdates[0]?.sessionUser).toMatch(/^command-center-worker-/);
     expect(harness.chatBodies[0]).toMatchObject({
       agentId: "worker",
       model: "anthropic/claude-sonnet-4.5",
-      sessionUser: "command-center",
+    });
+    expect(harness.chatBodies[0]?.sessionUser).toMatch(/^command-center-worker-/);
+  });
+
+  it("restores the previous chat scroll position when switching away and back to a conversation", async () => {
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const agentId = params.get("agentId") || "main";
+        const sessionUser =
+          params.get("sessionUser")
+          || (agentId === "worker" ? "command-center-worker-1" : "command-center");
+
+        return mockJsonResponse(
+          createSnapshot({
+            conversation:
+              agentId === "worker"
+                ? [
+                    { role: "assistant", content: "worker 回复一", timestamp: 11 },
+                    { role: "assistant", content: "worker 回复二", timestamp: 12 },
+                  ]
+                : [
+                    { role: "assistant", content: "main 回复一", timestamp: 1 },
+                    { role: "assistant", content: "main 回复二", timestamp: 2 },
+                  ],
+            session: {
+              ...createSnapshot().session,
+              agentId,
+              selectedAgentId: agentId,
+              availableAgents: ["main", "worker"],
+              sessionUser,
+              sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+            },
+          }),
+        );
+      }
+
+      if (url === "/api/session" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        const agentId = body.agentId || "main";
+        const sessionUser =
+          body.sessionUser
+          || (agentId === "worker" ? "command-center-worker-1" : "command-center");
+
+        return mockJsonResponse(
+          createSnapshot({
+            conversation:
+              agentId === "worker"
+                ? [
+                    { role: "assistant", content: "worker 回复一", timestamp: 11 },
+                    { role: "assistant", content: "worker 回复二", timestamp: 12 },
+                  ]
+                : [
+                    { role: "assistant", content: "main 回复一", timestamp: 1 },
+                    { role: "assistant", content: "main 回复二", timestamp: 2 },
+                  ],
+            session: {
+              ...createSnapshot().session,
+              agentId,
+              selectedAgentId: agentId,
+              availableAgents: ["main", "worker"],
+              sessionUser,
+              sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+            },
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    const mainMessage = await screen.findByText("main 回复二");
+    const viewport = [...document.querySelectorAll("[data-radix-scroll-area-viewport]")]
+      .find((element) => element.contains(mainMessage));
+
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 1600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+
+    viewport.scrollTop = 365;
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+    await screen.findByText("worker - 当前会话");
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toMatchObject({
+        "command-center:main": { scrollTop: 365 },
+      });
+    });
+
+    viewport.scrollTop = 48;
+
+    await user.click(screen.getByRole("button", { name: "main" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("main - 当前会话")).toBeInTheDocument();
+      expect(viewport.scrollTop).toBe(365);
+      expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toMatchObject({
+        "command-center:main": { scrollTop: 365 },
+      });
     });
   });
 });

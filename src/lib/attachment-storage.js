@@ -128,19 +128,34 @@ async function pruneAttachmentStorage(keepKeys) {
 }
 
 export async function serializeAttachmentStateForStorage(messages = [], pendingChatTurns = {}) {
+  const serializedState = await serializeAttachmentStateByKeyForStorage({ active: messages }, pendingChatTurns);
+  return {
+    messages: serializedState.messagesByKey.active || [],
+    pendingChatTurns: serializedState.pendingChatTurns,
+  };
+}
+
+export async function serializeAttachmentStateByKeyForStorage(messagesByKey = {}, pendingChatTurns = {}) {
   const keepKeys = new Set();
 
-  const serializedMessages = await Promise.all(
-    messages.map(async (message) => {
-      if (!message?.attachments?.length) {
-        return message;
-      }
+  const serializedMessagesByKey = Object.fromEntries(
+    await Promise.all(
+      Object.entries(messagesByKey || {}).map(async ([key, messages]) => [
+        key,
+        await Promise.all(
+          (messages || []).map(async (message) => {
+            if (!message?.attachments?.length) {
+              return message;
+            }
 
-      return {
-        ...message,
-        attachments: await persistAttachmentReferences(message.attachments, keepKeys),
-      };
-    }),
+            return {
+              ...message,
+              attachments: await persistAttachmentReferences(message.attachments, keepKeys),
+            };
+          }),
+        ),
+      ]),
+    ),
   );
 
   const serializedPendingChatTurns = Object.fromEntries(
@@ -168,7 +183,7 @@ export async function serializeAttachmentStateForStorage(messages = [], pendingC
   await pruneAttachmentStorage(keepKeys);
 
   return {
-    messages: serializedMessages,
+    messagesByKey: serializedMessagesByKey,
     pendingChatTurns: serializedPendingChatTurns,
   };
 }
@@ -201,24 +216,39 @@ async function hydrateAttachmentReferences(attachments = []) {
 }
 
 export async function hydrateAttachmentStateFromStorage(messages = [], pendingChatTurns = {}) {
+  const hydratedState = await hydrateAttachmentStateByKeyFromStorage({ active: messages }, pendingChatTurns);
+  return {
+    messages: hydratedState.messagesByKey.active || [],
+    pendingChatTurns: hydratedState.pendingChatTurns,
+  };
+}
+
+export async function hydrateAttachmentStateByKeyFromStorage(messagesByKey = {}, pendingChatTurns = {}) {
   if (!isIndexedDbAvailable()) {
     return {
-      messages,
+      messagesByKey,
       pendingChatTurns,
     };
   }
 
-  const hydratedMessages = await Promise.all(
-    messages.map(async (message) => {
-      if (!message?.attachments?.length) {
-        return message;
-      }
+  const hydratedMessagesByKey = Object.fromEntries(
+    await Promise.all(
+      Object.entries(messagesByKey || {}).map(async ([key, messages]) => [
+        key,
+        await Promise.all(
+          (messages || []).map(async (message) => {
+            if (!message?.attachments?.length) {
+              return message;
+            }
 
-      return {
-        ...message,
-        attachments: await hydrateAttachmentReferences(message.attachments),
-      };
-    }),
+            return {
+              ...message,
+              attachments: await hydrateAttachmentReferences(message.attachments),
+            };
+          }),
+        ),
+      ]),
+    ),
   );
 
   const hydratedPendingChatTurns = Object.fromEntries(
@@ -244,7 +274,7 @@ export async function hydrateAttachmentStateFromStorage(messages = [], pendingCh
   );
 
   return {
-    messages: hydratedMessages,
+    messagesByKey: hydratedMessagesByKey,
     pendingChatTurns: hydratedPendingChatTurns,
   };
 }

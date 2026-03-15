@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionOverview } from "@/components/command-center/session-overview";
@@ -215,5 +215,43 @@ describe("SessionOverview", () => {
     const user = userEvent.setup();
     await user.hover(screen.getByRole("button", { name: "跟随系统" }));
     expect((await screen.findAllByText("快捷键：Shift + Ctrl + F")).length).toBeGreaterThan(0);
+  });
+
+  it("closes the agent tooltip after switching agents", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    const onAgentChange = vi.fn();
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main", "expert"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={onAgentChange}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "切换 Agent" });
+
+    await user.hover(trigger);
+    expect(await screen.findByText("切换 Agent 会话", { selector: "div" })).toBeInTheDocument();
+
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "expert" }));
+
+    expect(onAgentChange).toHaveBeenCalledWith("expert");
+    await waitFor(() => {
+      expect(screen.queryByText("切换 Agent 会话", { selector: "div" })).not.toBeInTheDocument();
+    });
   });
 });

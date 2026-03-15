@@ -235,6 +235,92 @@ describe("createOpenClawClient", () => {
     });
   });
 
+  it("falls back to polling the same run instead of starting a duplicate run", async () => {
+    const deltas = [];
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "流式" }],
+              },
+            },
+          });
+          this.opts.onClose?.(1011, "stream interrupted");
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ status: "completed" }) })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          messages: [
+            {
+              role: "assistant",
+              timestamp: 125,
+              content: [{ type: "text", text: "流式输出" }],
+              usage: { output_tokens: 7 },
+            },
+          ],
+        }),
+      });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const result = await client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    expect(deltas).toEqual(["流式", "输出"]);
+    expect(result).toEqual({
+      outputText: "流式输出",
+      usage: { output_tokens: 7 },
+    });
+    expect(execFileAsync).toHaveBeenCalledTimes(2);
+    expect(execFileAsync.mock.calls[0][1]).toContain("agent.wait");
+    expect(execFileAsync.mock.calls[1][1]).toContain("chat.history");
+    expect(execFileAsync.mock.calls.flatMap((call) => call[1])).not.toContain("agent");
+  });
+
   it("returns mock browser peek details when running outside openclaw mode", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

@@ -1,8 +1,81 @@
+const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
+const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
+const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
+
+function normalizeConversationContent(content = '') {
+  return String(content || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function collapseDuplicateConversationTurns(entries = []) {
+  const collapsed = [];
+  let lastUserFingerprint = '';
+  let lastUserTimestamp = 0;
+  let lastAssistantTimestamp = 0;
+  let assistantSeenForCurrentTurn = false;
+  let suppressAssistantReplay = false;
+
+  for (const entry of entries) {
+    if (!entry?.role || !entry?.content) {
+      continue;
+    }
+
+    if (entry.role === 'user') {
+      const fingerprint = normalizeConversationContent(entry.content);
+      const timestamp = Number(entry.timestamp || 0);
+      const withinShortReplayWindow =
+        timestamp > 0
+        && lastUserTimestamp > 0
+        && timestamp - lastUserTimestamp <= DUPLICATE_CONVERSATION_TURN_WINDOW_MS;
+      const immediateAssistantReplay =
+        timestamp > 0
+        && lastAssistantTimestamp > 0
+        && lastUserTimestamp > 0
+        && timestamp - lastAssistantTimestamp <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS
+        && timestamp - lastUserTimestamp <= DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS;
+      const isReplay =
+        Boolean(fingerprint)
+        && fingerprint === lastUserFingerprint
+        && assistantSeenForCurrentTurn
+        && (withinShortReplayWindow || immediateAssistantReplay);
+
+      if (isReplay) {
+        suppressAssistantReplay = true;
+        continue;
+      }
+
+      collapsed.push(entry);
+      lastUserFingerprint = fingerprint;
+      lastUserTimestamp = timestamp;
+      assistantSeenForCurrentTurn = false;
+      suppressAssistantReplay = false;
+      continue;
+    }
+
+    if (entry.role === 'assistant') {
+      if (suppressAssistantReplay) {
+        continue;
+      }
+
+      collapsed.push(entry);
+      assistantSeenForCurrentTurn = true;
+      lastAssistantTimestamp = Number(entry.timestamp || 0);
+      continue;
+    }
+
+    collapsed.push(entry);
+  }
+
+  return collapsed;
+}
+
 function mergeConversationMessages(primary = [], secondary = []) {
-  return [...primary, ...secondary]
-    .filter((entry) => entry?.role && entry?.content)
-    .sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0))
-    .slice(-80);
+  return collapseDuplicateConversationTurns(
+    [...primary, ...secondary]
+      .filter((entry) => entry?.role && entry?.content)
+      .sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0)),
+  ).slice(-80);
 }
 
 function mergeProjectedFiles(primary = [], secondary = []) {
@@ -107,6 +180,7 @@ function createDashboardService({
   invokeOpenClawTool,
   listDirectoryPreview,
   normalizeSessionUser,
+  findLatestSessionForAgent,
   parseSessionStatusText,
   readJsonLines,
   readTextIfExists,
@@ -237,14 +311,17 @@ function createDashboardService({
     };
   }
 
-  function buildMockSnapshot(sessionUser = 'command-center') {
+  function buildMockSnapshot(sessionUser = 'command-center', overrides = {}) {
     const now = Date.now();
-    const agentId = resolveSessionAgentId(sessionUser);
+    const forcedAgentId = String(overrides?.agentId || '').trim();
+    const forcedModel = String(overrides?.model || '').trim();
+    const forcedThinkMode = String(overrides?.thinkMode || '').trim();
+    const agentId = forcedAgentId || resolveSessionAgentId(sessionUser);
     const agentLabel = resolveAgentDisplayName(agentId);
     const workspaceRoot = typeof resolveAgentWorkspace === 'function' ? resolveAgentWorkspace(agentId) : config.workspaceRoot;
-    const model = resolveSessionModel(sessionUser, agentId);
-    const fastMode = resolveSessionFastMode(sessionUser);
-    const thinkMode = resolveSessionThinkMode(sessionUser);
+    const model = forcedModel || resolveSessionModel(sessionUser, agentId);
+    const fastMode = typeof overrides?.fastMode === 'boolean' ? overrides.fastMode : resolveSessionFastMode(sessionUser);
+    const thinkMode = forcedThinkMode || resolveSessionThinkMode(sessionUser);
     const localConversation = getLocalSessionConversation(sessionUser);
     const localFileEntries = getLocalSessionFileEntries(sessionUser);
     const localFiles = collectFiles(localFileEntries, [PROJECT_ROOT, workspaceRoot], { injectedFiles: [] });
@@ -355,15 +432,39 @@ function createDashboardService({
     };
   }
 
-  async function buildOpenClawSnapshot(sessionUser = 'command-center') {
-    const agentId = resolveSessionAgentId(sessionUser);
+  async function buildOpenClawSnapshot(sessionUser = 'command-center', overrides = {}) {
+    const forcedAgentId = String(overrides?.agentId || '').trim();
+    const forcedModel = String(overrides?.model || '').trim();
+    const forcedThinkMode = String(overrides?.thinkMode || '').trim();
+    const agentId = forcedAgentId || resolveSessionAgentId(sessionUser);
+    let effectiveSessionUser = sessionUser;
+    let sessionKey = getCommandCenterSessionKey(agentId, effectiveSessionUser);
+    let sessionRecord = resolveSessionRecord(agentId, sessionKey);
+    let localConversation = getLocalSessionConversation(effectiveSessionUser);
+    let localFileEntries = getLocalSessionFileEntries(effectiveSessionUser);
+
+    if (
+      forcedAgentId &&
+      agentId !== 'main' &&
+      !sessionRecord &&
+      normalizeSessionUser(effectiveSessionUser) === 'command-center' &&
+      typeof findLatestSessionForAgent === 'function'
+    ) {
+      const latestSession = findLatestSessionForAgent(agentId);
+      if (latestSession?.sessionUser) {
+        effectiveSessionUser = latestSession.sessionUser;
+        sessionKey = latestSession.sessionKey || getCommandCenterSessionKey(agentId, effectiveSessionUser);
+        sessionRecord = latestSession.sessionRecord || resolveSessionRecord(agentId, sessionKey);
+        localConversation = getLocalSessionConversation(effectiveSessionUser);
+        localFileEntries = getLocalSessionFileEntries(effectiveSessionUser);
+      }
+    }
+
     const agentLabel = resolveAgentDisplayName(agentId);
     const workspaceRoot = typeof resolveAgentWorkspace === 'function' ? resolveAgentWorkspace(agentId) : config.workspaceRoot;
-    const selectedModel = resolveSessionModel(sessionUser, agentId);
-    const fastMode = resolveSessionFastMode(sessionUser);
-    const preferredThinkMode = resolveSessionThinkMode(sessionUser);
-    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
-    const sessionRecord = resolveSessionRecord(agentId, sessionKey);
+    const selectedModel = forcedModel || resolveSessionModel(effectiveSessionUser, agentId);
+    const fastMode = typeof overrides?.fastMode === 'boolean' ? overrides.fastMode : resolveSessionFastMode(effectiveSessionUser);
+    const preferredThinkMode = forcedThinkMode || resolveSessionThinkMode(effectiveSessionUser);
     const transcriptPath = sessionRecord ? getTranscriptPath(agentId, sessionRecord.sessionId) : '';
     const entries = transcriptPath ? readJsonLines(transcriptPath).slice(-240) : [];
     const injectedFiles = sessionRecord?.systemPromptReport?.injectedWorkspaceFiles || [];
@@ -391,8 +492,6 @@ function createDashboardService({
     const availableMentionAgents = collectAllowedSubagents(config.localConfig, agentId);
     const availableSkills = collectAvailableSkills(liveConfig || config.localConfig, agentId);
     const gatewayConversation = collectConversationMessages(entries);
-    const localConversation = getLocalSessionConversation(sessionUser);
-    const localFileEntries = getLocalSessionFileEntries(sessionUser);
     const latestRunUsage = collectLatestRunUsage(entries);
     const tokenBadge = formatTokenBadge(
       latestRunUsage || {
@@ -416,7 +515,7 @@ function createDashboardService({
         agentId,
         agentLabel,
         selectedAgentId: agentId,
-        sessionUser: normalizeSessionUser(sessionUser),
+        sessionUser: normalizeSessionUser(effectiveSessionUser),
         sessionKey: parsedStatus?.sessionKey || sessionKey,
         workspaceRoot,
         status: '就绪',
@@ -472,11 +571,11 @@ function createDashboardService({
     };
   }
 
-  async function buildDashboardSnapshot(sessionUser = 'command-center') {
+  async function buildDashboardSnapshot(sessionUser = 'command-center', overrides = {}) {
     if (config.mode !== 'openclaw') {
-      return buildMockSnapshot(sessionUser);
+      return buildMockSnapshot(sessionUser, overrides);
     }
-    return await buildOpenClawSnapshot(sessionUser);
+    return await buildOpenClawSnapshot(sessionUser, overrides);
   }
 
   return {
@@ -490,4 +589,6 @@ function createDashboardService({
 
 module.exports = {
   createDashboardService,
+  collapseDuplicateConversationTurns,
+  mergeConversationMessages,
 };

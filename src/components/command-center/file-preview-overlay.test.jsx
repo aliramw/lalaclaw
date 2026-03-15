@@ -78,4 +78,26 @@ describe("FilePreviewOverlay", () => {
     expect(iframe.parentElement).toHaveClass("bg-[#111318]", "border-white/8");
     expect(container).toBeTruthy();
   });
+
+  it("renders markdown front matter as a separate yaml block", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: `---\nname: publish-lalaclaw-ai\ndescription: 构建并发布 lalaclaw.ai 网站到服务器\nuser-invocable: true\n---\n\n# 发布 lalaclaw.ai\n\n一键构建并部署 lalaclaw.ai 网站。`,
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Front Matter")).toBeInTheDocument();
+    expect(screen.getByText("yaml")).toBeInTheDocument();
+    expect(document.querySelector("pre")?.textContent).toContain("name: publish-lalaclaw-ai");
+    expect(document.querySelector("pre")?.textContent).toContain("description: 构建并发布 lalaclaw.ai 网站到服务器");
+    expect(screen.getAllByText(/发布 lalaclaw\.ai/).length).toBeGreaterThan(0);
+  });
 });

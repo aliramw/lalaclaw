@@ -102,7 +102,7 @@ describe("useRuntimeSnapshot", () => {
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center");
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main");
       expect(result.current.availableModels).toEqual(["gpt-5"]);
       expect(result.current.files).toEqual([{ path: "src/App.jsx" }]);
     });
@@ -110,16 +110,9 @@ describe("useRuntimeSnapshot", () => {
     expect(setFastMode).toHaveBeenCalledWith(true);
     expect(setBusy).toHaveBeenCalledWith(true);
     expect(setModel).toHaveBeenCalledWith("gpt-5");
-
-    expect(setMessagesSynced).toHaveBeenCalledWith([
-      { role: "user", content: "旧消息", timestamp: 100 },
-      { role: "assistant", content: "正在思考…", timestamp: 60, pending: true },
-    ]);
-
-    const promptHistoryUpdater = setPromptHistoryByConversation.mock.calls[0][0];
-    expect(promptHistoryUpdater({})).toEqual({
-      "command-center:main": ["旧消息"],
-    });
+    expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "运行中" }));
+    expect(setMessagesSynced).not.toHaveBeenCalled();
+    expect(setPromptHistoryByConversation).not.toHaveBeenCalled();
   });
 
   it("posts session updates with the active session user and applies the returned snapshot", async () => {
@@ -260,10 +253,142 @@ describe("useRuntimeSnapshot", () => {
     );
 
     await waitFor(() => {
-      expect(setMessagesSynced).toHaveBeenCalledWith([
-        { role: "user", content: "旧消息", timestamp: 100 },
-        { role: "assistant", content: "考えています…", timestamp: 60, pending: true },
-      ]);
+      expect(setBusy).toHaveBeenCalledWith(true);
     });
+    expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "运行中" }));
+    expect(setMessagesSynced).not.toHaveBeenCalled();
+  });
+
+  it("keeps the session in running state when the snapshot has an assistant reply but is still missing the current pending user message", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [{ role: "assistant", content: "先给你几条新闻", timestamp: 220 }],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingChatTurns = {
+      "command-center:main": {
+        startedAt: 200,
+        pendingTimestamp: 220,
+        userMessage: {
+          role: "user",
+          content: "给我看点新闻",
+          timestamp: 200,
+        },
+      },
+    };
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingChatTurns["command-center:main"],
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [{ role: "user", content: "给我看点新闻", timestamp: 200 }] },
+        pendingChatTurns,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setBusy).toHaveBeenCalledWith(true);
+    });
+
+    expect(setBusy).toHaveBeenCalledWith(true);
+    expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "运行中" }));
+    expect(setMessagesSynced).not.toHaveBeenCalled();
+  });
+
+  it("preserves locally streamed assistant text while the runtime snapshot still lags behind", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "就绪",
+        },
+        conversation: [{ role: "user", content: "给我 Things", timestamp: 100 }],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingChatTurns = {
+      "command-center:main": {
+        startedAt: 100,
+        pendingTimestamp: 120,
+        userMessage: {
+          role: "user",
+          content: "给我 Things",
+          timestamp: 100,
+        },
+      },
+    };
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingChatTurns["command-center:main"],
+        busy: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { role: "user", content: "给我 Things", timestamp: 100 },
+            { role: "assistant", content: "Things\n\n- 第一条", timestamp: 120 },
+          ],
+        },
+        pendingChatTurns,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setBusy).toHaveBeenCalledWith(true);
+    });
+
+    expect(setBusy).toHaveBeenCalledWith(true);
+    expect(setPendingChatTurns).not.toHaveBeenCalled();
+    expect(setMessagesSynced).not.toHaveBeenCalled();
   });
 });

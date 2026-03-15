@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent } from "react";
 import { isEditableElement } from "@/features/chat/utils";
 
 export function useAppHotkeys({
+  handleActivateChatTabByIndex,
   handlePromptChange,
   handleReset,
   prompt,
@@ -35,6 +36,22 @@ export function useAppHotkeys({
     event.preventDefault();
     event.stopPropagation();
     setTheme(nextTheme);
+  });
+
+  const onChatTabHotkey = useEffectEvent((event) => {
+    const hasModifier = (event.metaKey || event.ctrlKey) && !(event.metaKey && event.ctrlKey);
+    if (!hasModifier || event.shiftKey || event.altKey || event.repeat || event.isComposing) {
+      return;
+    }
+
+    const normalizedKey = String(event.key || "").trim();
+    if (!/^[1-9]$/.test(normalizedKey)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    handleActivateChatTabByIndex?.(Number.parseInt(normalizedKey, 10));
   });
 
   const onPromptCharacterHotkey = useEffectEvent((event) => {
@@ -76,6 +93,7 @@ export function useAppHotkeys({
     const listener = (event) => {
       onResetHotkey(event);
       onThemeHotkey(event);
+      onChatTabHotkey(event);
       onPromptCharacterHotkey(event);
     };
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { SessionOverview } from "@/components/command-center/session-overview";
 import { ChatPanel } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
@@ -262,12 +262,12 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
   return (
     <>
       <Card className="flex max-h-[50vh] flex-col overflow-hidden">
-        <CardHeader className="flex h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
-          <div className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left">
-            <CardTitle className="truncate text-sm leading-none">{messages.inspector.relationships.title}</CardTitle>
-            <CardDescription className="truncate text-[11px] leading-none">{messages.inspector.relationships.subtitle}</CardDescription>
+        <div className="flex h-12 items-center border-b border-border/70 bg-card/80 px-3 backdrop-blur">
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+            <div className="truncate text-sm font-semibold leading-none tracking-tight">{messages.inspector.relationships.title}</div>
+            <div className="truncate text-[11px] leading-none text-muted-foreground">{messages.inspector.relationships.subtitle}</div>
           </div>
-        </CardHeader>
+        </div>
         <CardContent className="grid gap-2.5 overflow-y-auto px-3 py-3">
           {visibleRelationships.map((relationship) => {
             const { primaryLabel, secondaryLabel } = getRelationshipDisplay(relationship, messages);
@@ -345,6 +345,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
 function AppContent() {
   const { messages: i18nMessages } = useI18n();
   const {
+    activeChatTabId,
     activeQueuedMessages,
     activeTab,
     agents,
@@ -353,15 +354,18 @@ function AppContent() {
     availableModels,
     busy,
     chatFontSize,
+    chatTabs,
     composerAttachments,
     files,
     fastMode,
     focusMessageRequest,
     formatCompactK,
+    handleActivateChatTab,
     handleAddAttachments,
     handleAgentChange,
     handleArtifactSelect,
     handleChatFontSizeChange,
+    handleCloseChatTab,
     handleFastModeChange,
     handleInspectorPanelWidthChange,
     handleModelChange,
@@ -382,6 +386,8 @@ function AppContent() {
     promptRef,
     renderPeek,
     resolvedTheme,
+    restoredChatScrollKey,
+    restoredChatScrollState,
     session,
     setActiveTab,
     setTheme,
@@ -568,16 +574,21 @@ function AppContent() {
             <div className="xl:min-h-0 xl:pr-0.5">
               <ChatPanel
                 agentLabel={session.agentLabel || session.agentId || "main"}
+                activeChatTabId={activeChatTabId}
                 busy={busy}
                 chatFontSize={chatFontSize}
+                chatTabs={chatTabs}
                 composerAttachments={composerAttachments}
                 files={files}
                 focusMessageRequest={focusMessageRequest}
                 formatTime={localizedFormatTime}
                 messageViewportRef={messageViewportRef}
                 messages={messages}
+                onActivateChatTab={handleActivateChatTab}
                 onAddAttachments={handleAddAttachments}
                 onChatFontSizeChange={handleChatFontSizeChange}
+                onCloseChatTab={handleCloseChatTab}
+                interactionLocked={Boolean(switchingAgentLabel)}
                 queuedMessages={activeQueuedMessages}
                 onRemoveAttachment={handleRemoveAttachment}
                 onPromptChange={handlePromptChange}
@@ -587,6 +598,8 @@ function AppContent() {
                 prompt={prompt}
                 promptRef={promptRef}
                 resolvedTheme={resolvedTheme}
+                restoredScrollKey={restoredChatScrollKey}
+                restoredScrollState={restoredChatScrollState}
                 session={session}
                 userLabel="marila"
               />

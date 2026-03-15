@@ -242,13 +242,51 @@ function LinkRenderer({ href, children, files, onOpenFilePreview, ...props }) {
   );
 }
 
+async function copyTextToClipboard(text = "") {
+  const content = String(text || "");
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(content);
+      return true;
+    } catch {}
+  }
+
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = content;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    return typeof document.execCommand === "function" ? document.execCommand("copy") : false;
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
 function CopyButton({ code }) {
   const { messages } = useI18n();
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async () => {
+  const handleCopy = async (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
     try {
-      await navigator.clipboard?.writeText?.(code);
+      const didCopy = await copyTextToClipboard(code);
+      if (!didCopy) {
+        return;
+      }
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {}
@@ -257,8 +295,12 @@ function CopyButton({ code }) {
   return (
     <button
       type="button"
+      onMouseDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onClick={handleCopy}
-      className="inline-flex h-5 cursor-pointer items-center gap-1 rounded border border-white/10 bg-white/5 px-1.5 text-[9px] font-medium text-zinc-300 transition hover:bg-white/10"
+      className="relative z-10 inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded border border-white/10 bg-white/5 px-1.5 text-[9px] font-medium text-zinc-300 transition hover:border-white/15 hover:bg-white/10"
       aria-label={copied ? messages.markdown.copiedCode : messages.markdown.copyCode}
     >
       {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
@@ -267,7 +309,7 @@ function CopyButton({ code }) {
   );
 }
 
-function CodeBlock({ code, language }) {
+function CodeBlock({ code, language, scrollAnchorId = "" }) {
   const normalizedLanguage = String(language || "text").toLowerCase();
   const languageLabel = normalizedLanguage
     .split("-")
@@ -275,7 +317,7 @@ function CodeBlock({ code, language }) {
     .join("-");
 
   return (
-    <div className="my-2 overflow-hidden rounded-[5px] border border-zinc-700 bg-zinc-900">
+    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 overflow-hidden rounded-[5px] border border-zinc-700 bg-zinc-900">
       <div className="flex items-center justify-between border-b border-white/10 bg-zinc-800/90 px-2 py-1">
         <span className="text-[9px] font-medium tracking-[0.06em] text-zinc-100">
           {languageLabel}
@@ -303,7 +345,7 @@ function CodeBlock({ code, language }) {
   );
 }
 
-function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedTheme = "light", ...props }) {
+function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedTheme = "light", scrollAnchorId = "", ...props }) {
   const match = /language-([\w-]+)/.exec(className || "");
   const code = String(children || "").replace(/\n$/, "");
   const isBlock = Boolean(match) || code.includes("\n");
@@ -346,12 +388,12 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedT
     );
   }
 
-  return <CodeBlock code={code} language={match?.[1] || "text"} />;
+  return <CodeBlock code={code} language={match?.[1] || "text"} scrollAnchorId={scrollAnchorId} />;
 }
 
-function TableRenderer({ children }) {
+function TableRenderer({ children, scrollAnchorId = "" }) {
   return (
-    <div className="my-2 overflow-hidden rounded-[5px] border border-border bg-background">
+    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 overflow-hidden rounded-[5px] border border-border bg-background">
       <table className="my-0 w-full border-collapse">{children}</table>
     </div>
   );
@@ -363,6 +405,7 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
   const normalizedContent = normalizeMathDelimiters(promoteStandaloneImageLinks(content));
   const outlineItems = extractHeadingOutline(normalizedContent);
   let headingRenderIndex = 0;
+  let blockRenderIndex = 0;
 
   useEffect(() => {
     if (!previewImage?.src) {
@@ -382,11 +425,23 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [previewImage]);
 
+  const nextScrollAnchorId = () => `${headingScopeId}-block-${blockRenderIndex++}`;
+
+  const renderBlock = (Tag, classNameValue = "") => ({ children, className: blockClassName, ...props }) => (
+    <Tag
+      data-scroll-anchor-id={nextScrollAnchorId()}
+      className={cn(classNameValue, blockClassName)}
+      {...props}
+    >
+      {children}
+    </Tag>
+  );
+
   const renderHeading = (Tag) => ({ children, ...props }) => {
     const current = outlineItems[headingRenderIndex++];
     const anchorId = current?.id ? `${headingScopeId}-${current.id}` : undefined;
     return (
-      <Tag id={anchorId} data-heading-anchor={anchorId} className="scroll-mt-3" {...props}>
+      <Tag id={anchorId} data-heading-anchor={anchorId} data-scroll-anchor-id={nextScrollAnchorId()} className="scroll-mt-3" {...props}>
         {children}
       </Tag>
     );
@@ -401,14 +456,27 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
           urlTransform={markdownUrlTransform}
           components={{
             a: (props) => <LinkRenderer {...props} files={files} onOpenFilePreview={onOpenFilePreview} />,
-            code: (props) => <CodeRenderer {...props} files={files} resolvedTheme={resolvedTheme} onOpenFilePreview={onOpenFilePreview} />,
-            table: TableRenderer,
+            blockquote: renderBlock("blockquote"),
+            code: (props) => (
+              <CodeRenderer
+                {...props}
+                files={files}
+                resolvedTheme={resolvedTheme}
+                onOpenFilePreview={onOpenFilePreview}
+                scrollAnchorId={nextScrollAnchorId()}
+              />
+            ),
+            li: renderBlock("li"),
+            ol: renderBlock("ol"),
+            p: renderBlock("p"),
+            table: (props) => <TableRenderer {...props} scrollAnchorId={nextScrollAnchorId()} />,
             img: ({ alt, src = "" }) => {
               const resolvedSrc = resolveMarkdownImageSource(src);
               const resolvedPath = resolveMarkdownImagePath(src);
               return (
                 <button
                   type="button"
+                  data-scroll-anchor-id={nextScrollAnchorId()}
                   className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/40"
                   onClick={() => {
                     if (onOpenImagePreview) {
@@ -438,6 +506,7 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
             h4: renderHeading("h4"),
             h5: renderHeading("h5"),
             h6: renderHeading("h6"),
+            ul: renderBlock("ul"),
           }}
         >
           {normalizedContent}

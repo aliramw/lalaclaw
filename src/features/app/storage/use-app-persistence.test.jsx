@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppPersistence } from "@/features/app/storage";
 
 const attachmentStorageMocks = vi.hoisted(() => ({
-  hydrateAttachmentStateFromStorage: vi.fn(),
-  serializeAttachmentStateForStorage: vi.fn(),
+  hydrateAttachmentStateByKeyFromStorage: vi.fn(),
+  serializeAttachmentStateByKeyForStorage: vi.fn(),
 }));
 
 vi.mock("@/lib/attachment-storage", () => ({
-  hydrateAttachmentStateFromStorage: attachmentStorageMocks.hydrateAttachmentStateFromStorage,
-  serializeAttachmentStateForStorage: attachmentStorageMocks.serializeAttachmentStateForStorage,
+  hydrateAttachmentStateByKeyFromStorage: attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage,
+  serializeAttachmentStateByKeyForStorage: attachmentStorageMocks.serializeAttachmentStateByKeyForStorage,
 }));
 
 function createSession(overrides = {}) {
@@ -24,8 +24,8 @@ function createSession(overrides = {}) {
 describe("useAppPersistence", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    attachmentStorageMocks.serializeAttachmentStateForStorage.mockReset();
-    attachmentStorageMocks.hydrateAttachmentStateFromStorage.mockReset();
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockReset();
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockReset();
   });
 
   afterEach(() => {
@@ -33,36 +33,43 @@ describe("useAppPersistence", () => {
   });
 
   it("persists sanitized UI state and prompt history", async () => {
-    attachmentStorageMocks.serializeAttachmentStateForStorage.mockResolvedValue({
-      messages: [
-        { role: "user", content: "你好", timestamp: 1 },
-        { role: "assistant", content: "收到", timestamp: 2, tokenBadge: "↑1" },
-      ],
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [
+          { role: "user", content: "你好", timestamp: 1 },
+          { role: "assistant", content: "收到", timestamp: 2, tokenBadge: "↑1" },
+        ],
+      },
       pendingChatTurns: {
         "command-center:main": {
           key: "command-center:main",
         },
       },
     });
-    attachmentStorageMocks.hydrateAttachmentStateFromStorage.mockResolvedValue({
-      messages: [],
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {},
       pendingChatTurns: {},
     });
 
     renderHook(() =>
       useAppPersistence({
+        activeChatTabId: "agent:main",
         activeTab: "timeline",
         chatFontSizeBySessionUser: {
           "command-center": "medium",
         },
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
         },
         fastMode: true,
-        initialStoredMessagesRef: { current: [] },
+        initialStoredMessagesByTabIdRef: { current: {} },
         initialStoredPendingRef: { current: {} },
         inspectorPanelWidth: 432,
         messages: [{ role: "user", content: "你好", timestamp: 1, pending: false }],
+        messagesByTabId: {
+          "agent:main": [{ role: "user", content: "你好", timestamp: 1, pending: false }],
+        },
         messagesRef: { current: [] },
         model: "gpt-5",
         pendingChatTurns: {
@@ -77,18 +84,39 @@ describe("useAppPersistence", () => {
           "command-center:main": ["你好"],
         },
         session: createSession(),
+        setMessagesByTabId: vi.fn(),
         setMessagesSynced: vi.fn(),
         setPendingChatTurns: vi.fn(),
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: true,
+            model: "gpt-5",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
       }),
     );
 
     await waitFor(() => {
-      expect(attachmentStorageMocks.serializeAttachmentStateForStorage).toHaveBeenCalled();
+      expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledWith(
+        {
+          "agent:main": [{ role: "user", content: "你好", timestamp: 1, pending: false }],
+        },
+        {
+          "command-center:main": {
+            key: "command-center:main",
+          },
+        },
+      );
       expect(JSON.parse(window.localStorage.getItem("command-center-ui-state-v2") || "{}")).toMatchObject({
+        activeChatTabId: "agent:main",
         activeTab: "timeline",
         chatFontSizeBySessionUser: {
           "command-center": "medium",
         },
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
         },
@@ -117,13 +145,16 @@ describe("useAppPersistence", () => {
 
   it("hydrates stored attachments back into app state on mount", async () => {
     const initialMessages = [{ role: "user", content: "恢复", timestamp: 1 }];
+    const initialMessagesByTabId = { "agent:main": initialMessages };
     const initialPending = {
       "command-center:main": {
         key: "command-center:main",
       },
     };
     const hydratedState = {
-      messages: [{ role: "user", content: "恢复", timestamp: 1, attachments: [{ id: "a1" }] }],
+      messagesByKey: {
+        "agent:main": [{ role: "user", content: "恢复", timestamp: 1, attachments: [{ id: "a1" }] }],
+      },
       pendingChatTurns: {
         "command-center:main": {
           key: "command-center:main",
@@ -132,40 +163,58 @@ describe("useAppPersistence", () => {
       },
     };
 
-    attachmentStorageMocks.serializeAttachmentStateForStorage.mockResolvedValue({
-      messages: initialMessages,
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: initialMessagesByTabId,
       pendingChatTurns: initialPending,
     });
-    attachmentStorageMocks.hydrateAttachmentStateFromStorage.mockResolvedValue(hydratedState);
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue(hydratedState);
 
     const setMessagesSynced = vi.fn();
+    const setMessagesByTabId = vi.fn();
     const setPendingChatTurns = vi.fn();
 
     renderHook(() =>
       useAppPersistence({
+        activeChatTabId: "agent:main",
         activeTab: "timeline",
         chatFontSizeBySessionUser: {},
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {},
         fastMode: false,
-        initialStoredMessagesRef: { current: initialMessages },
+        initialStoredMessagesByTabIdRef: { current: initialMessagesByTabId },
         initialStoredPendingRef: { current: initialPending },
         inspectorPanelWidth: 380,
         messages: initialMessages,
+        messagesByTabId: initialMessagesByTabId,
         messagesRef: { current: initialMessages },
         model: "",
         pendingChatTurns: initialPending,
         promptDraftsByConversation: {},
         promptHistoryByConversation: {},
         session: createSession(),
+        setMessagesByTabId,
         setMessagesSynced,
         setPendingChatTurns,
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
       }),
     );
 
     await waitFor(() => {
-      expect(attachmentStorageMocks.hydrateAttachmentStateFromStorage).toHaveBeenCalledWith(initialMessages, initialPending);
-      expect(setMessagesSynced).toHaveBeenCalledWith(hydratedState.messages);
+      expect(attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage).toHaveBeenCalledWith(initialMessagesByTabId, initialPending);
+      expect(setMessagesByTabId).toHaveBeenCalled();
+      expect(setMessagesSynced).toHaveBeenCalledWith(hydratedState.messagesByKey["agent:main"]);
     });
+
+    const messagesByTabUpdater = setMessagesByTabId.mock.calls[0][0];
+    expect(messagesByTabUpdater(initialMessagesByTabId)).toEqual(hydratedState.messagesByKey);
 
     const pendingUpdater = setPendingChatTurns.mock.calls[0][0];
     expect(pendingUpdater(initialPending)).toEqual(hydratedState.pendingChatTurns);

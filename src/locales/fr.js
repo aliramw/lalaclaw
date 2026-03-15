@@ -230,6 +230,7 @@ const fr = {
       imageRotateLeft: "Tourner à gauche",
       imageRotateRight: "Tourner à droite",
       imageZoomIn: "Zoom avant",
+      frontMatter: "Front Matter",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorateur",

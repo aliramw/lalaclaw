@@ -230,6 +230,7 @@ const zh = {
       imageRotateLeft: "向左旋转",
       imageRotateRight: "向右旋转",
       imageZoomIn: "放大图片",
+      frontMatter: "Front Matter",
       fileManagers: {
         finder: "访达",
         explorer: "资源管理器",

@@ -603,7 +603,13 @@ function createOpenClawClient({
   async function callOpenClawSessionStream(messages, sessionUser = 'command-center', timeoutMs = 30000, options = {}) {
     try {
       return await callOpenClawSessionEventStream(messages, sessionUser, timeoutMs, options);
-    } catch {
+    } catch (error) {
+      if (error?.runState) {
+        return await pollOpenClawSessionRun(error.runState, timeoutMs, {
+          ...options,
+          initialText: error.latestText || '',
+        });
+      }
       return await callOpenClawSessionStreamPolling(messages, sessionUser, timeoutMs, options);
     }
   }
@@ -635,6 +641,7 @@ function createOpenClawClient({
     const { promise: finalPromise, resolve: resolveFinal, reject: rejectFinal } = Promise.withResolvers();
     let settled = false;
     let latestText = '';
+    let activeRunState = null;
 
     const client = new GatewayClient({
       url: gatewayUrl,
@@ -711,7 +718,7 @@ function createOpenClawClient({
         new Promise((_, reject) => setTimeout(() => reject(new Error('Gateway chat stream connect timeout')), 5000)),
       ]);
 
-      await client.request(
+      const requestResult = await client.request(
         'chat.send',
         {
           sessionKey,
@@ -722,6 +729,11 @@ function createOpenClawClient({
         },
         { timeoutMs: 10000 },
       );
+      activeRunState = {
+        acceptedAt: Number(requestResult?.acceptedAt) || Date.now(),
+        runId: typeof requestResult?.runId === 'string' && requestResult.runId.trim() ? requestResult.runId.trim() : runId,
+        sessionKey,
+      };
 
       const finalPayload = await Promise.race([
         finalPromise,
@@ -746,22 +758,20 @@ function createOpenClawClient({
         outputText: finalText || 'OpenClaw returned an empty response.',
         usage: finalAssistant?.usage || null,
       };
+    } catch (error) {
+      if (activeRunState) {
+        error.runState = activeRunState;
+        error.latestText = latestText;
+      }
+      throw error;
     } finally {
       closeClient();
     }
   }
 
-  async function callOpenClawSessionStreamPolling(messages, sessionUser = 'command-center', timeoutMs = 30000, options = {}) {
+  async function pollOpenClawSessionRun(runState, timeoutMs = 30000, options = {}) {
     const onDelta = typeof options.onDelta === 'function' ? options.onDelta : () => {};
-    const runState = await startOpenClawSessionRun(messages, sessionUser);
-    if (!runState) {
-      return {
-        outputText: 'OpenClaw returned an empty response.',
-        usage: null,
-      };
-    }
-
-    let latestText = '';
+    let latestText = typeof options.initialText === 'string' ? options.initialText : '';
 
     while (true) {
       const waitResult = await callOpenClawGateway(
@@ -804,6 +814,18 @@ function createOpenClawClient({
         usage: finalAssistant?.usage || null,
       };
     }
+  }
+
+  async function callOpenClawSessionStreamPolling(messages, sessionUser = 'command-center', timeoutMs = 30000, options = {}) {
+    const runState = await startOpenClawSessionRun(messages, sessionUser);
+    if (!runState) {
+      return {
+        outputText: 'OpenClaw returned an empty response.',
+        usage: null,
+      };
+    }
+
+    return await pollOpenClawSessionRun(runState, timeoutMs, options);
   }
 
   async function dispatchOpenClaw(messages, fastMode, sessionUser = 'command-center', options = {}) {

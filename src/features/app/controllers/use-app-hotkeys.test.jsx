@@ -27,6 +27,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange: vi.fn(),
         handleReset,
         prompt: "",
@@ -55,6 +56,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
         prompt: "",
@@ -104,6 +106,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
         prompt: "",
@@ -158,6 +161,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange,
         handleReset: vi.fn().mockResolvedValue(undefined),
         prompt: "已有",
@@ -181,5 +185,80 @@ describe("useAppHotkeys", () => {
     expect(document.activeElement).toBe(textarea);
     expect(textarea.selectionStart).toBe(3);
     expect(textarea.selectionEnd).toBe(3);
+  });
+
+  it("activates the indexed chat tab on cmd/ctrl+number", () => {
+    const handleActivateChatTabByIndex = vi.fn();
+
+    renderHook(() =>
+      useAppHotkeys({
+        handleActivateChatTabByIndex,
+        handlePromptChange: vi.fn(),
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        prompt: "",
+        promptRef: { current: textarea },
+        setTheme: vi.fn(),
+      }),
+    );
+
+    const macEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "2",
+      code: "Digit2",
+      metaKey: true,
+    });
+    window.dispatchEvent(macEvent);
+
+    const windowsEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "3",
+      code: "Digit3",
+      ctrlKey: true,
+    });
+    window.dispatchEvent(windowsEvent);
+
+    expect(handleActivateChatTabByIndex).toHaveBeenNthCalledWith(1, 2);
+    expect(handleActivateChatTabByIndex).toHaveBeenNthCalledWith(2, 3);
+    expect(macEvent.defaultPrevented).toBe(true);
+    expect(windowsEvent.defaultPrevented).toBe(true);
+  });
+
+  it("ignores unsupported chat tab hotkeys", () => {
+    const handleActivateChatTabByIndex = vi.fn();
+
+    renderHook(() =>
+      useAppHotkeys({
+        handleActivateChatTabByIndex,
+        handlePromptChange: vi.fn(),
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        prompt: "",
+        promptRef: { current: textarea },
+        setTheme: vi.fn(),
+      }),
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "0",
+        code: "Digit0",
+        metaKey: true,
+      }),
+    );
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "1",
+        code: "Digit1",
+        metaKey: true,
+        shiftKey: true,
+      }),
+    );
+
+    expect(handleActivateChatTabByIndex).not.toHaveBeenCalled();
   });
 });

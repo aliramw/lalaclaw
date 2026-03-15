@@ -81,16 +81,26 @@ function createTranscriptProjector({
   }
 
   function cleanAssistantReply(text) {
-    return String(text || '')
+    const cleaned = String(text || '')
       .replace(/\*\*<small>.*?<\/small>\*\*/g, '')
       .replace(/\[\[reply_to_current\]\]/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+
+    if (/^NO_REPLY$/i.test(cleaned)) {
+      return '';
+    }
+
+    return cleaned;
   }
 
   function cleanUserMessage(text) {
     let cleaned = String(text || '').trim();
 
+    cleaned = cleaned.replace(
+      /^System:\s*\[[^\]]+\]\s*Exec completed\s*\([^)]+\)\s*::\s*[\s\S]*?(?=(?:Sender \(untrusted metadata\):|\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*))/i,
+      '',
+    );
     cleaned = cleaned.replace(
       /^Sender \(untrusted metadata\):\s*(?:```json\s*[\s\S]*?```\s*)?/i,
       '',
@@ -817,6 +827,61 @@ function createTranscriptProjector({
     const found = new Map();
     const pendingByToolCallId = new Map();
     const childStatusCache = new Map();
+    const relationshipTurnById = new Map();
+    let currentTaskTurnId = 0;
+
+    function isInternalTaskEventMessage(payload = {}) {
+      return Boolean(parseInternalTaskCompletionEvent(payload));
+    }
+
+    function getRelationshipRetryKey(relationship = {}) {
+      if (!relationship?.type) {
+        return '';
+      }
+
+      return [
+        relationship.type,
+        relationship.sourceAgentId || '',
+        relationship.targetAgentId || '',
+        relationship.detail || '',
+        relationship.spawnMode || '',
+        relationship.runtime || '',
+      ].join('::');
+    }
+
+    function findRetryableRelationshipId(nextRelationship = {}, turnId = 0) {
+      const retryKey = getRelationshipRetryKey(nextRelationship);
+      if (!retryKey || !turnId) {
+        return '';
+      }
+
+      const relationships = [...found.values()];
+      for (let index = relationships.length - 1; index >= 0; index -= 1) {
+        const relationship = relationships[index];
+        if (!relationship?.id) {
+          continue;
+        }
+
+        if (relationshipTurnById.get(relationship.id) !== turnId) {
+          continue;
+        }
+
+        if (getRelationshipRetryKey(relationship) !== retryKey) {
+          continue;
+        }
+
+        if (
+          relationship.childSessionKey ||
+          normalizeTaskRelationshipStatus(relationship.status, { fallback: '' }) === 'completed'
+        ) {
+          continue;
+        }
+
+        return relationship.id;
+      }
+
+      return '';
+    }
 
     function updateRelationshipStatusFromEvent(event = {}) {
       if (!event?.status) {
@@ -899,6 +964,9 @@ function createTranscriptProjector({
       }
 
       const payload = entry.message || {};
+      if (payload.role === 'user' && !isInternalTaskEventMessage(payload)) {
+        currentTaskTurnId += 1;
+      }
       const content = Array.isArray(payload.content) ? payload.content : [];
       const observedAt = Number(payload.timestamp || entry.timestamp) || 0;
 
@@ -909,13 +977,17 @@ function createTranscriptProjector({
             continue;
           }
 
-          const relationshipId = `${relationship.id}:${relationship.timestamp || observedAt}:${itemIndex}`;
+          const retryRelationshipId = findRetryableRelationshipId(relationship, currentTaskTurnId);
+          const relationshipId = retryRelationshipId || `${relationship.id}:${relationship.timestamp || observedAt}:${itemIndex}`;
+          const existing = retryRelationshipId ? found.get(retryRelationshipId) : null;
           found.set(relationshipId, {
+            ...(existing || {}),
             ...relationship,
             id: relationshipId,
-            timestamp: relationship.timestamp || observedAt,
+            timestamp: existing?.timestamp || relationship.timestamp || observedAt,
             status: 'dispatching',
           });
+          relationshipTurnById.set(relationshipId, currentTaskTurnId);
 
           if (relationship.toolCallId) {
             pendingByToolCallId.set(relationship.toolCallId, relationshipId);
@@ -1174,6 +1246,43 @@ function createTranscriptProjector({
     };
   }
 
+  function findLatestSessionForAgent(agentId) {
+    const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
+    const sessions = loadSessionsIndex(normalizedAgentId);
+    const prefix = `agent:${normalizedAgentId}:openai-user:`;
+    const candidates = Object.entries(sessions)
+      .map(([sessionKey, sessionRecord]) => ({
+        sessionKey,
+        sessionRecord,
+        sessionUser: String(sessionKey).slice(prefix.length).trim(),
+        updatedAt: Number(sessionRecord?.updatedAt || 0),
+      }))
+      .filter((entry) => entry.updatedAt && String(entry.sessionKey || '').startsWith(prefix))
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+
+    let latestEntry = null;
+
+    for (const entry of candidates) {
+      if (!latestEntry) {
+        latestEntry = entry;
+      }
+
+      const transcriptPath = entry.sessionRecord?.sessionId
+        ? getTranscriptPath(normalizedAgentId, entry.sessionRecord.sessionId)
+        : '';
+      const transcriptEntries = transcriptPath ? readJsonLines(transcriptPath) : [];
+      const hasConversation = transcriptEntries.some(
+        (item) => item?.type === 'message' && (item?.message?.role === 'user' || item?.message?.role === 'assistant'),
+      );
+
+      if (hasConversation) {
+        return entry;
+      }
+    }
+
+    return latestEntry;
+  }
+
   function buildAgentGraph() {
     const localConfig = config.localConfig;
     if (!localConfig?.agents?.list?.length) {
@@ -1219,6 +1328,7 @@ function createTranscriptProjector({
     listDirectoryPreview,
     parseSessionStatusText,
     readJsonLines,
+    findLatestSessionForAgent,
     resolveSessionRecord,
   };
 }

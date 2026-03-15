@@ -228,6 +228,7 @@ const es = {
       imageRotateLeft: "Girar a la izquierda",
       imageRotateRight: "Girar a la derecha",
       imageZoomIn: "Acercar imagen",
+      frontMatter: "Front Matter",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorador",

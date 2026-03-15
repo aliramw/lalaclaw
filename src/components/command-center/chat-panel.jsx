@@ -1,14 +1,15 @@
 import { ArrowDown, ArrowUpToLine, Check, Copy, Paperclip, RotateCcw, Send, X } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { FilePreviewOverlay, ImagePreviewOverlay } from "@/components/command-center/file-preview-overlay";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { isOfflineStatus } from "@/features/session/status-display";
+import { createConversationKey } from "@/features/app/storage";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useI18n } from "@/lib/i18n";
@@ -95,7 +96,7 @@ function messageHasVisualMedia(message = {}) {
   return /(^|\n)\s*https?:\/\/\S+\.(png|jpe?g|gif|webp|svg)(\?\S+)?\s*($|\n)/i.test(content);
 }
 
-function MessageAttachments({ attachments, mode = "message", onPreviewImage }) {
+function MessageAttachments({ attachments, mode = "message", onPreviewImage, scrollAnchorBaseId = "" }) {
   if (!attachments?.length) {
     return null;
   }
@@ -112,6 +113,7 @@ function MessageAttachments({ attachments, mode = "message", onPreviewImage }) {
             <button
               key={attachment.id}
               type="button"
+              data-scroll-anchor-id={scrollAnchorBaseId ? `${scrollAnchorBaseId}-image-${attachment.id}` : undefined}
               className="overflow-hidden rounded-md border border-border/70 bg-background/80"
               onClick={() => onPreviewImage?.(attachment)}
             >
@@ -127,7 +129,11 @@ function MessageAttachments({ attachments, mode = "message", onPreviewImage }) {
       {fileAttachments.length ? (
         <div className="grid gap-2">
           {fileAttachments.map((attachment) => (
-            <div key={attachment.id} className="flex items-center gap-2 rounded-md border border-border/70 bg-background/75 px-2.5 py-2 text-[11px] leading-4">
+            <div
+              key={attachment.id}
+              data-scroll-anchor-id={scrollAnchorBaseId ? `${scrollAnchorBaseId}-file-${attachment.id}` : undefined}
+              className="flex items-center gap-2 rounded-md border border-border/70 bg-background/75 px-2.5 py-2 text-[11px] leading-4"
+            >
               <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <div className="truncate font-medium">{attachment.name}</div>
@@ -528,6 +534,7 @@ const MessageBubble = memo(function MessageBubble({
   handleOpenFilePreview,
   handleOpenImagePreview,
   isLatestAssistant,
+  isStreamingAssistant,
   message,
   messageId,
   messageViewportRef,
@@ -551,6 +558,7 @@ const MessageBubble = memo(function MessageBubble({
   const userBubbleWidthClassName = "w-fit min-w-[3.75rem] max-w-[min(86vw,40rem)]";
   const compactAssistantWidthClassName = "inline-block max-w-[min(80vw,42rem)] shrink-0";
   const longAssistantWidthClassName = "w-[700px] max-w-[calc(100vw-12rem)] shrink-0";
+  const streamingAssistantBubbleClassName = isStreamingAssistant ? "cc-streaming-bubble motion-reduce:animate-none" : "";
   const messageBubbleAttributes = {
     "data-message-anchor": isLatestAssistant ? "latest-assistant" : undefined,
     "data-message-id": messageId,
@@ -646,9 +654,17 @@ const MessageBubble = memo(function MessageBubble({
               <Card data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName)}>
                 {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
                 <CardContent className={cn(bubbleContentClassName, message.attachments?.length && "space-y-2")}>
-                  <MessageAttachments attachments={message.attachments} onPreviewImage={handleOpenImagePreview} />
+                  <MessageAttachments
+                    attachments={message.attachments}
+                    onPreviewImage={handleOpenImagePreview}
+                    scrollAnchorBaseId={`${headingScopeId}-attachment`}
+                  />
                   {message.content ? (
-                    <div className={cn("whitespace-pre-wrap", fontSizeStyles.userText)} style={{ color: "#ffffff" }}>
+                    <div
+                      data-scroll-anchor-id={`${headingScopeId}-text`}
+                      className={cn("whitespace-pre-wrap", fontSizeStyles.userText)}
+                      style={{ color: "#ffffff" }}
+                    >
                       {message.content}
                     </div>
                   ) : null}
@@ -711,7 +727,16 @@ const MessageBubble = memo(function MessageBubble({
           <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-start gap-1.5">
             <div className="inline-flex min-w-0 max-w-full items-start gap-3">
-              <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, "w-[700px] max-w-[calc(100vw-20rem)] shrink-0", "cc-assistant-bubble", assistantBubbleClassName)}>
+              <Card
+                data-bubble-layout="full"
+                className={cn(
+                  bubbleBaseClassName,
+                  "w-[700px] max-w-[calc(100vw-20rem)] shrink-0",
+                  "cc-assistant-bubble",
+                  streamingAssistantBubbleClassName,
+                  assistantBubbleClassName,
+                )}
+              >
                 {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
                 <CardContent className={bubbleContentClassName}>
                   <MarkdownContent
@@ -744,7 +769,16 @@ const MessageBubble = memo(function MessageBubble({
         <div className="flex max-w-full flex-col items-start">
           <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-center gap-2">
-            <Card data-bubble-layout="compact" className={cn(bubbleBaseClassName, compactAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
+            <Card
+              data-bubble-layout="compact"
+              className={cn(
+                bubbleBaseClassName,
+                compactAssistantWidthClassName,
+                "cc-assistant-bubble",
+                streamingAssistantBubbleClassName,
+                assistantBubbleClassName,
+              )}
+            >
               {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
               <CardContent className={bubbleContentClassName}>
                 <MarkdownContent
@@ -774,7 +808,16 @@ const MessageBubble = memo(function MessageBubble({
       <div className="flex max-w-full flex-col items-start">
         <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
         <div className="inline-flex max-w-full items-start gap-2">
-          <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, longAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
+          <Card
+            data-bubble-layout="full"
+            className={cn(
+              bubbleBaseClassName,
+              longAssistantWidthClassName,
+              "cc-assistant-bubble",
+              streamingAssistantBubbleClassName,
+              assistantBubbleClassName,
+            )}
+          >
             {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
             <CardContent className={bubbleContentClassName}>
               <MarkdownContent
@@ -796,6 +839,7 @@ const MessageBubble = memo(function MessageBubble({
 }, (prevProps, nextProps) => {
   return prevProps.agentLabel === nextProps.agentLabel
     && prevProps.isLatestAssistant === nextProps.isLatestAssistant
+    && prevProps.isStreamingAssistant === nextProps.isStreamingAssistant
     && prevProps.formatTime === nextProps.formatTime
     && prevProps.messageId === nextProps.messageId
     && prevProps.messageViewportRef === nextProps.messageViewportRef
@@ -856,18 +900,83 @@ function QueuedMessages({ items, textClassName }) {
   );
 }
 
+function ChatTabsStrip({ items = [], onActivate, onClose, resolvedTheme = "light" }) {
+  if (!items.length) {
+    return null;
+  }
+
+  const closable = items.length > 1;
+
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 px-3 py-2">
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className={cn(
+            "group inline-flex max-w-[13rem] items-center rounded-md border transition",
+            item.active
+              ? resolvedTheme === "dark"
+                ? "border-transparent bg-[#0f3e6a] text-white shadow-sm hover:bg-[#0f3e6a]"
+                : "border-transparent bg-[#1677eb] text-white shadow-sm hover:bg-[#0f6fe0]"
+              : "border-transparent bg-muted/35 text-foreground hover:border-border/60 hover:bg-muted/55",
+          )}
+        >
+          <button
+            type="button"
+            className="inline-flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-sm"
+            onClick={() => onActivate?.(item.id)}
+          >
+            <span
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                item.busy
+                  ? "bg-emerald-500"
+                  : item.active ? "bg-white/65" : "bg-muted-foreground/35",
+              )}
+            />
+            <span className={cn("truncate font-medium", item.active ? "text-white" : "text-inherit")}>{item.agentId}</span>
+          </button>
+          {closable && item.active ? (
+            <button
+              type="button"
+              className={cn(
+                "mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition",
+                item.active
+                  ? "text-white/85 hover:bg-white/15 hover:text-white"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+              )}
+              onClick={(event) => {
+                event.stopPropagation();
+                onClose?.(item.id);
+              }}
+              aria-label={`Close ${item.agentId}`}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ChatPanel({
   agentLabel = "main",
+  activeChatTabId,
   busy,
   chatFontSize = "small",
+  chatTabs = [],
   composerAttachments,
   files,
   focusMessageRequest,
   formatTime,
+  interactionLocked = false,
   messageViewportRef,
   messages,
   onAddAttachments,
+  onActivateChatTab,
   onChatFontSizeChange,
+  onCloseChatTab,
   onRemoveAttachment,
   onPromptChange,
   onPromptKeyDown,
@@ -877,6 +986,8 @@ export function ChatPanel({
   promptRef,
   queuedMessages,
   resolvedTheme,
+  restoredScrollKey = "",
+  restoredScrollState = null,
   session,
   userLabel = "marila",
 }) {
@@ -897,6 +1008,10 @@ export function ChatPanel({
   const autoScrollSuppressedRef = useRef(false);
   const programmaticScrollRef = useRef(false);
   const programmaticScrollResetRef = useRef(0);
+  const restoredScrollKeyRef = useRef("");
+  const restoredScrollRetryRef = useRef(0);
+  const restoredScrollStabilizerRefs = useRef([]);
+  const restoreStabilizingRef = useRef(false);
   const currentAgentName = session.agentId || agentLabel || "main";
   const latestMessageCardKey = useMemo(() => {
     const lastMessage = messages[messages.length - 1];
@@ -1003,10 +1118,17 @@ export function ChatPanel({
   }, [focusComposer, onAddAttachments]);
 
   const markUserScrollTakeover = useCallback(() => {
+    window.clearTimeout(restoredScrollRetryRef.current);
+    restoredScrollStabilizerRefs.current.forEach((timerId) => window.clearTimeout(timerId));
+    restoredScrollStabilizerRefs.current = [];
+    restoreStabilizingRef.current = false;
     if (!programmaticScrollRef.current) {
       autoScrollSuppressedRef.current = true;
+      if (restoredScrollKey) {
+        restoredScrollKeyRef.current = restoredScrollKey;
+      }
     }
-  }, []);
+  }, [restoredScrollKey]);
 
   const scrollViewport = useCallback((viewport, top, behavior = "auto") => {
     if (!viewport) {
@@ -1056,8 +1178,155 @@ export function ChatPanel({
   }, [agentMention, mentionOptions.length]);
 
   useEffect(() => {
-    autoScrollSuppressedRef.current = false;
+    if (wasNearBottomRef.current) {
+      autoScrollSuppressedRef.current = false;
+    }
   }, [latestMessageCardKey]);
+
+  useLayoutEffect(() => {
+    const viewport = messageViewportRef?.current;
+    const restoreToBottom = Boolean(restoredScrollState?.atBottom);
+    const fallbackTop = Number(restoredScrollState?.scrollTop);
+    const anchorNodeId = String(restoredScrollState?.anchorNodeId || "").trim();
+    const anchorMessageId = String(restoredScrollState?.anchorMessageId || "").trim();
+    const anchorOffset = Number(restoredScrollState?.anchorOffset || 0);
+    const visibleConversationKey = session?.sessionUser
+      ? createConversationKey(session.sessionUser, session.agentId)
+      : restoredScrollKey;
+
+    if (
+      !viewport
+      || !messages.length
+      || !restoredScrollKey
+      || visibleConversationKey !== restoredScrollKey
+      || restoredScrollKeyRef.current === restoredScrollKey
+    ) {
+      return;
+    }
+
+    const applyRestoredScroll = () => {
+      const latestViewport = messageViewportRef?.current;
+      if (!latestViewport) {
+        return false;
+      }
+
+      let nextTop = restoreToBottom
+        ? Math.max(0, latestViewport.scrollHeight - latestViewport.clientHeight)
+        : Number.isFinite(fallbackTop) ? fallbackTop : latestViewport.scrollTop;
+      let usedAnchor = false;
+
+      const anchorSelector = restoreToBottom
+        ? ""
+        : anchorNodeId
+          ? `[data-scroll-anchor-id="${anchorNodeId}"]`
+          : anchorMessageId
+            ? `[data-message-id="${anchorMessageId}"]`
+            : "";
+
+      if (anchorSelector) {
+        const anchorNode = latestViewport.querySelector(anchorSelector);
+        if (anchorNode) {
+          const viewportRect = latestViewport.getBoundingClientRect();
+          const anchorRect = anchorNode.getBoundingClientRect();
+          nextTop = latestViewport.scrollTop + (anchorRect.top - viewportRect.top) - (Number.isFinite(anchorOffset) ? anchorOffset : 0);
+          usedAnchor = true;
+        }
+      }
+
+      const maxTop = Math.max(0, latestViewport.scrollHeight - latestViewport.clientHeight);
+      const resolvedTop = Math.max(0, Math.min(nextTop, maxTop));
+      latestViewport.scrollTop = resolvedTop;
+      const isNearBottom = maxTop - resolvedTop <= 48;
+      wasNearBottomRef.current = isNearBottom;
+      autoScrollSuppressedRef.current = restoreToBottom ? false : !isNearBottom;
+      return usedAnchor;
+    };
+
+    window.clearTimeout(restoredScrollRetryRef.current);
+    restoredScrollStabilizerRefs.current.forEach((timerId) => window.clearTimeout(timerId));
+    restoredScrollStabilizerRefs.current = [];
+    const usedAnchor = applyRestoredScroll();
+    restoredScrollKeyRef.current = restoredScrollKey;
+    restoreStabilizingRef.current = true;
+    const cleanupImageListeners = [];
+    let resizeObserver = null;
+    let resizeFrameId = 0;
+
+    if (!restoreToBottom && (anchorNodeId || anchorMessageId) && !usedAnchor) {
+      restoredScrollRetryRef.current = window.setTimeout(() => {
+        if (restoredScrollKeyRef.current !== restoredScrollKey) {
+          return;
+        }
+        applyRestoredScroll();
+      }, 80);
+    }
+
+    const scheduleRestoreStabilizer = (delay) =>
+      window.setTimeout(() => {
+        if (restoredScrollKeyRef.current !== restoredScrollKey || !restoreStabilizingRef.current) {
+          return;
+        }
+        applyRestoredScroll();
+      }, delay);
+
+    restoredScrollStabilizerRefs.current = [40, 120, 240, 480].map(scheduleRestoreStabilizer);
+
+    const latestViewport = messageViewportRef?.current;
+    if (latestViewport) {
+      latestViewport.querySelectorAll("img").forEach((imageNode) => {
+        if (imageNode.complete) {
+          return;
+        }
+
+        const handleImageLoad = () => {
+          if (restoredScrollKeyRef.current !== restoredScrollKey || !restoreStabilizingRef.current) {
+            return;
+          }
+          applyRestoredScroll();
+        };
+
+        imageNode.addEventListener("load", handleImageLoad, { once: true });
+        cleanupImageListeners.push(() => imageNode.removeEventListener("load", handleImageLoad));
+      });
+
+      const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
+      const anchorSelector = restoreToBottom
+        ? ""
+        : anchorNodeId
+          ? `[data-scroll-anchor-id="${anchorNodeId}"]`
+          : anchorMessageId
+            ? `[data-message-id="${anchorMessageId}"]`
+            : "";
+      const observedNodes = [
+        latestViewport.firstElementChild,
+        anchorSelector ? latestViewport.querySelector(anchorSelector) : null,
+      ].filter(Boolean);
+
+      if (ResizeObserverCtor && observedNodes.length) {
+        resizeObserver = new ResizeObserverCtor(() => {
+          if (restoredScrollKeyRef.current !== restoredScrollKey || !restoreStabilizingRef.current) {
+            return;
+          }
+          window.cancelAnimationFrame(resizeFrameId);
+          resizeFrameId = window.requestAnimationFrame(() => {
+            applyRestoredScroll();
+          });
+        });
+
+        observedNodes.forEach((node) => resizeObserver.observe(node));
+      }
+    }
+
+    return () => {
+      window.clearTimeout(restoredScrollRetryRef.current);
+      restoredScrollStabilizerRefs.current.forEach((timerId) => window.clearTimeout(timerId));
+      restoredScrollStabilizerRefs.current = [];
+      restoreStabilizingRef.current = false;
+      window.cancelAnimationFrame(resizeFrameId);
+      resizeObserver?.disconnect?.();
+      cleanupImageListeners.forEach((cleanup) => cleanup());
+    };
+  }, [messageViewportRef, messages, restoredScrollKey, restoredScrollState, session?.agentId, session?.sessionUser]);
 
   useEffect(() => {
     const viewport = messageViewportRef?.current;
@@ -1092,22 +1361,32 @@ export function ChatPanel({
   useEffect(() => {
     const viewport = messageViewportRef?.current;
     const latestBubble = latestAssistantBubbleRef.current;
-    if (!viewport || !latestBubble || !latestMessageIsAssistant || !wasNearBottomRef.current || autoScrollSuppressedRef.current) {
-      return undefined;
-    }
-
-    const bubbleHeight = latestBubble.getBoundingClientRect().height || 0;
-    if (bubbleHeight < viewport.clientHeight * 0.8) {
+    if (
+      !viewport
+      || !latestBubble
+      || !latestMessageIsAssistant
+      || !wasNearBottomRef.current
+      || autoScrollSuppressedRef.current
+    ) {
       return undefined;
     }
 
     const frameId = window.requestAnimationFrame(() => {
-      const top = calculateTallLatestBubbleScrollTop(viewport, latestBubble);
+      const bubbleHeight = latestBubble.getBoundingClientRect().height || 0;
+      const top = bubbleHeight >= viewport.clientHeight * 0.8
+        ? calculateTallLatestBubbleScrollTop(viewport, latestBubble)
+        : Math.max(0, viewport.scrollHeight - viewport.clientHeight);
       scrollViewport(viewport, top, "auto");
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [latestAssistantMessageId, latestAssistantRenderKey, latestMessageIsAssistant, messageViewportRef, scrollViewport]);
+  }, [
+    latestAssistantMessageId,
+    latestAssistantRenderKey,
+    latestMessageIsAssistant,
+    messageViewportRef,
+    scrollViewport,
+  ]);
 
   useEffect(() => {
     const viewport = messageViewportRef?.current;
@@ -1189,8 +1468,9 @@ export function ChatPanel({
   return (
     <>
       <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
-        <CardHeader className="flex h-12 flex-row items-center justify-between gap-3 border-b border-border/70 bg-card/80 px-3 py-0 backdrop-blur">
-          <div className="flex h-full min-w-0 translate-y-[2px] flex-col justify-center gap-1 self-center">
+        <div className="grid gap-0 border-b border-border/70 bg-card/80 backdrop-blur">
+          <ChatTabsStrip items={chatTabs} activeChatTabId={activeChatTabId} onActivate={onActivateChatTab} onClose={onCloseChatTab} resolvedTheme={resolvedTheme} />
+          <div className="flex h-11 flex-row items-center justify-between gap-3 px-3">
             <div className="flex min-w-0 items-center gap-2">
               <div className="truncate text-sm font-semibold leading-none tracking-tight">{`${currentAgentName} - ${i18n.chat.title}`}</div>
               <Tooltip>
@@ -1202,47 +1482,49 @@ export function ChatPanel({
                 <TooltipContent>{busy ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
               </Tooltip>
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 self-center">
-            <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1 py-1">
-              {chatFontSizeOptions.map((item) => {
-                const active = item.value === chatFontSize;
-                return (
-                  <Tooltip key={item.value}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className={cn(
-                          "inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                          active && "bg-muted text-foreground",
-                        )}
-                        aria-label={i18n.chat.fontSizeOptionTooltip(item.label)}
-                        onClick={() => onChatFontSizeChange?.(item.value)}
-                      >
-                        <span className={cn("font-semibold leading-none", item.glyphClassName)}>A</span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>{i18n.chat.fontSizeOptionTooltip(item.label)}</TooltipContent>
-                  </Tooltip>
-                );
-              })}
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1 py-1">
+                {chatFontSizeOptions.map((item) => {
+                  const active = item.value === chatFontSize;
+                  return (
+                    <Tooltip key={item.value}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            "inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                            active && "bg-muted text-foreground",
+                          )}
+                          aria-label={i18n.chat.fontSizeOptionTooltip(item.label)}
+                          disabled={interactionLocked}
+                          onClick={() => onChatFontSizeChange?.(item.value)}
+                        >
+                          <span className={cn("font-semibold leading-none", item.glyphClassName)}>A</span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{i18n.chat.fontSizeOptionTooltip(item.label)}</TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleResetWithConfirm}
+                    className="h-6 w-6 rounded-md"
+                    aria-label={i18n.chat.resetConversation}
+                    disabled={interactionLocked}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{formatShortcutForPlatform(i18n.chat.resetConversationHotkey)}</TooltipContent>
+              </Tooltip>
             </div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleResetWithConfirm}
-                  className="h-6 w-6 rounded-md"
-                  aria-label={i18n.chat.resetConversation}
-                >
-                  <RotateCcw className="h-3 w-3" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{formatShortcutForPlatform(i18n.chat.resetConversationHotkey)}</TooltipContent>
-            </Tooltip>
           </div>
-        </CardHeader>
+        </div>
 
         <CardContent className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] p-0">
           <QueuedMessages items={queuedMessages || []} textClassName={fontSizeStyles.queued} />
@@ -1258,6 +1540,14 @@ export function ChatPanel({
                   ? messages.map((message, index) => {
                       const messageId = `${message.timestamp}-${index}`;
                       const isLatestAssistant = latestAssistantMessageId === messageId;
+                      const isStreamingAssistant = Boolean(
+                        isLatestAssistant
+                          && latestMessageIsAssistant
+                          && message.role === "assistant"
+                          && !message.pending
+                          && message.streaming
+                          && String(message.content || "").trim(),
+                      );
 
                       return (
                         <MessageBubble
@@ -1266,6 +1556,7 @@ export function ChatPanel({
                           handleOpenFilePreview={handleOpenPreview}
                           handleOpenImagePreview={openImagePreview}
                           isLatestAssistant={isLatestAssistant}
+                          isStreamingAssistant={isStreamingAssistant}
                           key={messageId}
                           message={message}
                           messageId={messageId}
@@ -1439,6 +1730,7 @@ export function ChatPanel({
                 }}
                 onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
                 placeholder={i18n.chat.promptPlaceholder}
+                disabled={interactionLocked}
                 className="min-h-[3.75rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
               />
             </div>
@@ -1455,6 +1747,7 @@ export function ChatPanel({
                     type="button"
                     variant="outline"
                     className="h-10 w-10 rounded-xl border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground"
+                    disabled={interactionLocked}
                     onClick={() => attachmentInputRef.current?.click()}
                   >
                     <Paperclip className="h-4.5 w-4.5" />
@@ -1464,6 +1757,7 @@ export function ChatPanel({
               </Tooltip>
               <Button
                 onClick={onSend}
+                disabled={interactionLocked}
                 className="cc-send-button h-10 min-w-[7.5rem] rounded-md px-4 text-sm font-medium"
               >
                 <span className="inline-flex w-full -translate-x-[3px] items-center justify-center gap-2 leading-none">

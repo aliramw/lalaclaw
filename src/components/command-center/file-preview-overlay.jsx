@@ -11,6 +11,54 @@ import { cn } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
 const filePreviewCodeTheme = themes.dracula;
+const frontMatterDarkTheme = {
+  plain: {
+    color: "#f5f7ff",
+    backgroundColor: "#14161a",
+  },
+  styles: [
+    {
+      types: ["atrule", "key", "property", "keyword"],
+      style: { color: "#82aaff" },
+    },
+    {
+      types: ["punctuation", "operator"],
+      style: { color: "#89ddff" },
+    },
+    {
+      types: ["boolean", "number", "important"],
+      style: { color: "#ffcb6b", fontWeight: "600" },
+    },
+    {
+      types: ["string", "scalar", "plain"],
+      style: { color: "#c3e88d" },
+    },
+  ],
+};
+const frontMatterLightTheme = {
+  plain: {
+    color: "#1f2937",
+    backgroundColor: "#f8fafc",
+  },
+  styles: [
+    {
+      types: ["atrule", "key", "property", "keyword"],
+      style: { color: "#2563eb" },
+    },
+    {
+      types: ["punctuation", "operator"],
+      style: { color: "#0891b2" },
+    },
+    {
+      types: ["boolean", "number", "important"],
+      style: { color: "#b45309", fontWeight: "600" },
+    },
+    {
+      types: ["string", "scalar", "plain"],
+      style: { color: "#166534" },
+    },
+  ],
+};
 const previewLanguageByExtension = {
   js: "javascript",
   jsx: "jsx",
@@ -137,17 +185,58 @@ function resolveFileManagerLocaleLabel(messages, rawLabel = "") {
   return messages.inspector.previewActions.fileManagers.folder;
 }
 
-function FilePreviewCodeBlock({ content = "", language = "text" }) {
+function splitMarkdownFrontMatter(content = "") {
+  const source = String(content || "");
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/.exec(source);
+
+  if (!match) {
+    return {
+      frontMatter: "",
+      body: source,
+    };
+  }
+
+  return {
+    frontMatter: String(match[1] || "").trim(),
+    body: String(match[2] || ""),
+  };
+}
+
+function FilePreviewCodeBlock({ content = "", language = "text", resolvedTheme = "dark", syntaxTheme, variant = "default" }) {
+  const isSubtle = variant === "subtle";
+  const theme = syntaxTheme || filePreviewCodeTheme;
+
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950">
-      <div className="border-b border-zinc-800 bg-zinc-900/90 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-400">
+    <div
+      className={cn(
+        "overflow-hidden border",
+        isSubtle
+          ? "rounded-2xl border-zinc-800 bg-[#14161a]"
+          : "rounded-xl border-zinc-700 bg-zinc-950",
+      )}
+    >
+      <div
+        className={cn(
+          "px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-400",
+          isSubtle ? "border-b border-white/6 bg-transparent" : "border-b border-zinc-800 bg-zinc-900/90",
+        )}
+      >
         {language}
       </div>
-      <Highlight prism={Prism} theme={filePreviewCodeTheme} code={String(content || "")} language={language}>
+      <Highlight prism={Prism} theme={theme} code={String(content || "")} language={language}>
         {({ tokens, getLineProps, getTokenProps }) => (
-          <pre className="overflow-auto px-0 py-3 text-[13px] leading-6 text-zinc-50">
+          <pre
+            className={cn(
+              "overflow-auto px-0 text-[13px] leading-6",
+              isSubtle
+                ? resolvedTheme === "dark"
+                  ? "py-2.5 text-zinc-50"
+                  : "py-2.5 text-slate-900"
+                : "py-3 text-zinc-50",
+            )}
+          >
             {tokens.map((line, lineIndex) => (
-              <div key={lineIndex} {...getLineProps({ line })} className="min-h-6 px-4 font-mono">
+              <div key={lineIndex} {...getLineProps({ line })} className={cn("min-h-6 px-4 font-mono", isSubtle && "text-[12.5px]")}>
                 {line.length ? line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />) : <span>&nbsp;</span>}
               </div>
             ))}
@@ -408,15 +497,32 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   } else if (preview.error) {
     body = <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-200">{preview.error}</div>;
   } else if (preview.kind === "markdown") {
+    const { frontMatter, body: markdownBody } = splitMarkdownFrontMatter(preview.content);
     body = (
-      <div className="mx-auto max-w-4xl">
-        <MarkdownContent
-          content={preview.content}
-          files={files}
-          headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
-          resolvedTheme={resolvedTheme}
-          onOpenFilePreview={onOpenFilePreview}
-        />
+      <div className="mx-auto flex max-w-4xl flex-col gap-4">
+        {frontMatter ? (
+          <div className="space-y-2">
+            <div className={cn("text-[11px] font-medium uppercase tracking-[0.08em]", isDark ? "text-zinc-400" : "text-slate-500")}>
+              {messages.inspector.previewActions.frontMatter}
+            </div>
+            <FilePreviewCodeBlock
+              content={frontMatter}
+              language="yaml"
+              resolvedTheme={resolvedTheme}
+              syntaxTheme={resolvedTheme === "dark" ? frontMatterDarkTheme : frontMatterLightTheme}
+              variant="subtle"
+            />
+          </div>
+        ) : null}
+        {markdownBody.trim() ? (
+          <MarkdownContent
+            content={markdownBody}
+            files={files}
+            headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
+            resolvedTheme={resolvedTheme}
+            onOpenFilePreview={onOpenFilePreview}
+          />
+        ) : null}
       </div>
     );
   } else if (preview.kind === "json") {

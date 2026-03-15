@@ -226,6 +226,98 @@ describe("server helpers", () => {
     const [run] = __test.collectTaskTimeline(entries, [process.cwd()]);
     expect(run.prompt).toBe("hi");
   });
+
+  it("collapses replayed duplicate user turns and their repeated assistant reply", () => {
+    const merged = __test.mergeConversationMessages(
+      [
+        {
+          role: "user",
+          content: "给我看一点新闻",
+          timestamp: 1000,
+        },
+        {
+          role: "assistant",
+          content: "第一版新闻简报",
+          timestamp: 2000,
+        },
+        {
+          role: "user",
+          content: "给我看一点新闻",
+          timestamp: 80_000,
+        },
+        {
+          role: "assistant",
+          content: "重复触发的第二版简报",
+          timestamp: 81_000,
+        },
+      ],
+      [],
+    );
+
+    expect(merged).toEqual([
+      {
+        role: "user",
+        content: "给我看一点新闻",
+        timestamp: 1000,
+      },
+      {
+        role: "assistant",
+        content: "第一版新闻简报",
+        timestamp: 2000,
+      },
+    ]);
+  });
+
+  it("collapses duplicate user replays that land immediately after a long assistant run", () => {
+    const merged = __test.mergeConversationMessages(
+      [
+        {
+          role: "user",
+          content: "给我看一点新闻",
+          timestamp: 1_000,
+        },
+        {
+          role: "assistant",
+          content: "我去抓一版综合新闻，给你一个能直接看的简报。",
+          timestamp: 10_000,
+        },
+        {
+          role: "assistant",
+          content: "第一版长新闻简报",
+          timestamp: 99_000,
+        },
+        {
+          role: "user",
+          content: "给我看一点新闻",
+          timestamp: 99_100,
+        },
+        {
+          role: "assistant",
+          content: "重复触发的第二版简报",
+          timestamp: 120_000,
+        },
+      ],
+      [],
+    );
+
+    expect(merged).toEqual([
+      {
+        role: "user",
+        content: "给我看一点新闻",
+        timestamp: 1_000,
+      },
+      {
+        role: "assistant",
+        content: "我去抓一版综合新闻，给你一个能直接看的简报。",
+        timestamp: 10_000,
+      },
+      {
+        role: "assistant",
+        content: "第一版长新闻简报",
+        timestamp: 99_000,
+      },
+    ]);
+  });
 });
 
 describe("server routes", () => {

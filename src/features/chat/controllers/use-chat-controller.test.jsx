@@ -157,6 +157,7 @@ describe("useChatController", () => {
   it("streams assistant output incrementally when the chat API returns ndjson", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();
+    const appliedMessageSnapshots = [];
     const setPendingChatTurns = vi.fn();
     const setSession = vi.fn();
     const applySnapshot = vi.fn();
@@ -197,6 +198,13 @@ describe("useChatController", () => {
       fastMode: false,
     };
 
+    let currentMessagesState = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      currentMessagesState = typeof value === "function" ? value(currentMessagesState) : value;
+      appliedMessageSnapshots.push(currentMessagesState);
+      setMessagesSynced(value);
+    });
+
     const { result } = renderHook(() =>
       useChatController({
         activeConversationKey: "command-center:main",
@@ -206,6 +214,7 @@ describe("useChatController", () => {
         i18n: createI18n(),
         messagesRef,
         setBusy,
+        setMessagesForTab,
         setMessagesSynced,
         setPendingChatTurns,
         setSession,
@@ -229,18 +238,16 @@ describe("useChatController", () => {
       { syncConversation: false },
     );
 
-    const initialMessages = setMessagesSynced.mock.calls[0]?.[0];
+    const initialMessages = appliedMessageSnapshots[0];
     const pendingTimestamp = initialMessages?.find((message) => message?.pending)?.timestamp;
     expect(typeof pendingTimestamp).toBe("number");
-
-    const finalMessagesUpdater = setMessagesSynced.mock.calls.at(-1)?.[0];
-    expect(typeof finalMessagesUpdater).toBe("function");
     expect(
-      finalMessagesUpdater([
-        { role: "user", content: "请流式输出", timestamp: 200 },
-        { role: "assistant", content: "第一段第二段", timestamp: pendingTimestamp, tokenBadge: "↑1 ↓2" },
-      ]),
-    ).toEqual([
+      appliedMessageSnapshots.some((snapshot) =>
+        snapshot?.some((message) => message?.role === "assistant" && message?.streaming === true && message?.content === "第一段"),
+      ),
+    ).toBe(true);
+
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
       { role: "user", content: "请流式输出", timestamp: 200 },
       { role: "assistant", content: "第一段第二段", timestamp: pendingTimestamp, tokenBadge: "↑1 ↓2" },
     ]);

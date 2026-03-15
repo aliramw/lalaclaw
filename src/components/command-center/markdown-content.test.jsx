@@ -32,13 +32,14 @@ describe("MarkdownContent", () => {
 
   it("renders assistant images in large format and supports previewing", async () => {
     const user = userEvent.setup();
-    render(<MarkdownContent content={"![示例图](https://example.com/demo.png)"} />);
+    const { container } = render(<MarkdownContent content={"![示例图](https://example.com/demo.png)"} />);
 
     const image = await screen.findByAltText("示例图");
     expect(image).toHaveAttribute("src", "https://example.com/demo.png");
     expect(image).toHaveAttribute("loading", "eager");
     expect(image).toHaveAttribute("decoding", "async");
     expect(image.className).toContain("max-h-[28rem]");
+    expect(container.querySelector("[data-scroll-anchor-id]")).toBeTruthy();
 
     await user.click(image);
     expect(screen.getByRole("button", { name: "关闭预览" })).toBeInTheDocument();
@@ -93,5 +94,12 @@ describe("MarkdownContent", () => {
 
     const fileButton = await screen.findByRole("button", { name: "sample.py" });
     expect(fileButton).toHaveClass("file-link", "appearance-none", "border-0", "bg-transparent", "p-0", "leading-inherit");
+  });
+
+  it("adds stable block-level scroll anchors for headings and paragraphs", async () => {
+    const { container } = render(<MarkdownContent content={`# 标题\n\n第一段\n\n第二段`} />);
+
+    expect(await screen.findByRole("heading", { name: "标题" })).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-scroll-anchor-id]").length).toBeGreaterThanOrEqual(3);
   });
 });

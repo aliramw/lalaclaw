@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createConversationKey,
   extractUserPromptHistory,
+  hasAuthoritativePendingAssistantReply,
   mergeConversationAttachments,
   mergePendingConversation,
 } from "@/features/app/storage";
@@ -50,6 +51,7 @@ export function mergeTaskRelationships(previousRelationships, nextRelationships)
 export function useRuntimeSnapshot({
   activePendingChat,
   busy,
+  fastMode,
   i18n,
   messagesRef,
   pendingChatTurns,
@@ -73,6 +75,19 @@ export function useRuntimeSnapshot({
   const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null, environment: null });
   const runtimeRequestRef = useRef(0);
 
+  const hydrateRuntimeState = useCallback((state = null) => {
+    const nextState = state || {};
+    setAvailableModels(nextState.availableModels || []);
+    setAvailableAgents(nextState.availableAgents || []);
+    setTaskRelationships(nextState.taskRelationships || []);
+    setTaskTimeline(nextState.taskTimeline || []);
+    setFiles(nextState.files || []);
+    setArtifacts(nextState.artifacts || []);
+    setSnapshots(nextState.snapshots || []);
+    setAgents(nextState.agents || []);
+    setPeeks(nextState.peeks || { workspace: null, terminal: null, browser: null, environment: null });
+  }, []);
+
   const applySnapshot = useCallback((snapshot, options = {}) => {
     if (!snapshot) return;
 
@@ -88,6 +103,7 @@ export function useRuntimeSnapshot({
     );
     const pendingEntry = pendingChatTurns[nextConversationKey] || null;
     const snapshotPromptHistory = extractUserPromptHistory(snapshot.conversation);
+    const shouldDeferConversationSync = Boolean(pendingEntry);
     const nextFastMode =
       snapshot.session?.fastMode === i18n.sessionOverview.fastMode.on ||
       snapshot.session?.fastMode === "开启" ||
@@ -96,15 +112,23 @@ export function useRuntimeSnapshot({
 
     setFastMode(nextFastMode);
 
-    if (options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
+    if (!shouldDeferConversationSync && options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
       const mergedConversation = mergeConversationAttachments(snapshot.conversation, messagesRef.current);
-      const hydratedConversation = mergePendingConversation(mergedConversation, pendingEntry, i18n.chat.thinkingPlaceholder);
-      const hasPendingBubble = hydratedConversation.some((message) => message.pending);
-      setSession({ ...nextSession, status: hasPendingBubble ? i18n.common.running : nextSession.status });
+      const snapshotHasAssistantReply = pendingEntry
+        ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
+        : false;
+      const hydratedConversation = mergePendingConversation(
+        mergedConversation,
+        pendingEntry,
+        i18n.chat.thinkingPlaceholder,
+        messagesRef.current,
+      );
+      const hasActivePendingTurn = Boolean(pendingEntry) && !snapshotHasAssistantReply;
+      setSession({ ...nextSession, status: hasActivePendingTurn ? i18n.common.running : nextSession.status });
       setMessagesSynced(hydratedConversation);
-      setBusy(hasPendingBubble);
+      setBusy(hasActivePendingTurn);
 
-      if (pendingEntry && !hasPendingBubble) {
+      if (pendingEntry && !hasActivePendingTurn) {
         setPendingChatTurns((current) => {
           if (!current[nextConversationKey]) {
             return current;
@@ -115,7 +139,8 @@ export function useRuntimeSnapshot({
         });
       }
     } else {
-      setSession(nextSession);
+      setSession({ ...nextSession, status: shouldDeferConversationSync ? i18n.common.running : nextSession.status });
+      setBusy(Boolean(shouldDeferConversationSync));
     }
 
     setAvailableModels(snapshot.session?.availableModels || snapshot.availableModels || []);
@@ -133,7 +158,7 @@ export function useRuntimeSnapshot({
     setPeeks(snapshot.peeks || { workspace: null, terminal: null, browser: null, environment: null });
     setModel(snapshot.session?.selectedModel || snapshot.model || nextSession.model || "");
 
-    if (snapshotPromptHistory.length) {
+    if (!shouldDeferConversationSync && snapshotPromptHistory.length) {
       setPromptHistoryByConversation((current) => {
         const previous = current[nextConversationKey] || [];
         if (JSON.stringify(previous) === JSON.stringify(snapshotPromptHistory)) {
@@ -169,10 +194,19 @@ export function useRuntimeSnapshot({
     setTaskTimeline,
   ]);
 
-  const loadRuntime = useCallback(async (sessionUser = session.sessionUser) => {
+  const loadRuntime = useCallback(async (sessionUser = session.sessionUser, overrides = {}) => {
     const requestId = runtimeRequestRef.current + 1;
     runtimeRequestRef.current = requestId;
-    const response = await fetch(`/api/runtime?sessionUser=${encodeURIComponent(sessionUser)}`);
+    const params = new URLSearchParams({
+      sessionUser: String(sessionUser || session.sessionUser || "").trim(),
+    });
+    const resolvedAgentId = String(overrides.agentId || session.agentId || "").trim();
+
+    if (resolvedAgentId) {
+      params.set("agentId", resolvedAgentId);
+    }
+
+    const response = await fetch(`/api/runtime?${params.toString()}`);
     const payload = await response.json();
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error || "Runtime snapshot failed");
@@ -182,20 +216,24 @@ export function useRuntimeSnapshot({
     }
     applySnapshot(payload);
     return payload;
-  }, [applySnapshot, session.sessionUser]);
+  }, [applySnapshot, session.agentId, session.sessionUser]);
 
   useEffect(() => {
-    loadRuntime(session.sessionUser).catch(() => {
+    const runtimeOverrides = {
+      agentId: session.agentId,
+    };
+
+    loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {
       setSession((current) => ({ ...current, status: i18n.common.offline }));
     });
 
     const pollInterval = busy || activePendingChat ? 4000 : 15000;
     const id = window.setInterval(() => {
-      loadRuntime(session.sessionUser).catch(() => {});
+      loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {});
     }, pollInterval);
 
     return () => window.clearInterval(id);
-  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, session.sessionUser, setSession]);
+  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, session.agentId, session.sessionUser, setSession]);
 
   const updateSessionSettings = async (payload) => {
     const response = await fetch("/api/session", {
@@ -233,6 +271,7 @@ export function useRuntimeSnapshot({
     availableModels,
     clearSnapshotData,
     files,
+    hydrateRuntimeState,
     loadRuntime,
     peeks,
     snapshots,

@@ -61,6 +61,48 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("strips injected system exec summaries from user messages and drops NO_REPLY assistant messages", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [
+            {
+              type: "text",
+              text: [
+                "System: [2026-03-15 17:48:14 GMT+8] Exec completed (grand-re, code 0) :: uploaded files...",
+                "",
+                "Sender (untrusted metadata):",
+                "```json",
+                '{"label":"command-center-backend (gateway-client)","id":"gateway-client"}',
+                "```",
+                "",
+                "[Sun 2026-03-15 17:49 GMT+8] 好",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [{ type: "text", text: "NO_REPLY" }],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "user", content: "好", timestamp: 1 },
+    ]);
+  });
+
   it("builds tool history and marks failed tool results", () => {
     const projector = createProjector({
       clip: (value, length = 999) => String(value || "").slice(0, length),
@@ -593,6 +635,261 @@ describe("createTranscriptProjector", () => {
         runtime: "subagent",
         timestamp: 4,
         status: "dispatching",
+      },
+    ]);
+  });
+
+  it("reuses the same relationship entry when a failed spawn is retried in the same task turn", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [{ type: "text", text: "并行写三篇文章" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [
+            {
+              id: "tool-writer-initial",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+                label: "write-human-future",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2.1,
+        message: {
+          role: "toolResult",
+          timestamp: 2.1,
+          toolCallId: "tool-writer-initial",
+          toolName: "sessions_spawn",
+          details: {
+            status: "error",
+            error: "streamTo is only supported for runtime=acp; got runtime=subagent",
+          },
+          content: [{ type: "text", text: "{\"status\":\"error\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "assistant",
+          timestamp: 3,
+          content: [
+            {
+              id: "tool-writer-retry",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+                label: "write-human-future",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3.1,
+        message: {
+          role: "toolResult",
+          timestamp: 3.1,
+          toolCallId: "tool-writer-retry",
+          toolName: "sessions_spawn",
+          details: {
+            status: "accepted",
+            childSessionKey: "agent:writer:subagent:child-retry",
+          },
+          content: [{ type: "text", text: "{\"status\":\"accepted\",\"childSessionKey\":\"agent:writer:subagent:child-retry\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4,
+        message: {
+          role: "user",
+          timestamp: 4,
+          provenance: {
+            kind: "inter_session",
+            sourceSessionKey: "agent:writer:subagent:child-retry",
+            sourceTool: "subagent_announce",
+          },
+          content: [
+            {
+              type: "text",
+              text: `[Sun 2026-03-15 08:36 GMT+8] OpenClaw runtime context (internal):
+This context is runtime-generated, not user-authored. Keep internal details private.
+
+[Internal task completion event]
+source: subagent
+session_key: agent:writer:subagent:child-retry
+session_id: child-session-retry
+type: subagent task
+task: write-human-future
+status: completed successfully`,
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:writer:2:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "write-human-future",
+        toolCallId: "tool-writer-retry",
+        childSessionKey: "agent:writer:subagent:child-retry",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 2,
+        status: "completed",
+      },
+    ]);
+  });
+
+  it("keeps separate relationship entries when the user retries the same task in a later turn", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [{ type: "text", text: "第一次写《人类的未来》" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [
+            {
+              id: "tool-writer-initial",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+                label: "write-human-future",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2.1,
+        message: {
+          role: "toolResult",
+          timestamp: 2.1,
+          toolCallId: "tool-writer-initial",
+          toolName: "sessions_spawn",
+          details: {
+            status: "error",
+            error: "spawn failed",
+          },
+          content: [{ type: "text", text: "{\"status\":\"error\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "user",
+          timestamp: 3,
+          content: [{ type: "text", text: "再试一次《人类的未来》" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4,
+        message: {
+          role: "assistant",
+          timestamp: 4,
+          content: [
+            {
+              id: "tool-writer-retry",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+                label: "write-human-future",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4.1,
+        message: {
+          role: "toolResult",
+          timestamp: 4.1,
+          toolCallId: "tool-writer-retry",
+          toolName: "sessions_spawn",
+          details: {
+            status: "accepted",
+          },
+          content: [{ type: "text", text: "{\"status\":\"accepted\"}" }],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:writer:2:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "write-human-future",
+        toolCallId: "tool-writer-initial",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 2,
+        status: "failed",
+      },
+      {
+        id: "agent:writer:4:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "write-human-future",
+        toolCallId: "tool-writer-retry",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 4,
+        status: "running",
       },
     ]);
   });

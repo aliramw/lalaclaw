@@ -142,6 +142,69 @@ describe("ChatPanel", () => {
     expect(onChatFontSizeChange).toHaveBeenCalledWith("large");
   });
 
+  it("shows the close button only on the active chat tab", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          activeChatTabId="agent:expert"
+          busy={false}
+          chatTabs={[
+            { id: "agent:main", agentId: "main", active: false, busy: false },
+            { id: "agent:expert", agentId: "expert", active: true, busy: false },
+          ]}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onActivateChatTab={() => {}}
+          onChatFontSizeChange={() => {}}
+          onCloseChatTab={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByLabelText("Close main")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Close expert")).toBeInTheDocument();
+  });
+
+  it("uses the same active blue tab treatment as the inspector tabs", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          activeChatTabId="agent:main"
+          busy={false}
+          chatTabs={[
+            { id: "agent:main", agentId: "main", active: true, busy: false },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false },
+          ]}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onActivateChatTab={() => {}}
+          onChatFontSizeChange={() => {}}
+          onCloseChatTab={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          resolvedTheme="light"
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const activeTab = screen.getByRole("button", { name: "main" }).closest("div");
+    expect(activeTab).toHaveClass("bg-[#1677eb]", "text-white");
+  });
+
   it("uses a two-line default height for the composer", () => {
     render(
       <TooltipProvider>
@@ -201,6 +264,61 @@ describe("ChatPanel", () => {
     expect(screen.getByText("ops - 当前会话")).toBeInTheDocument();
     expect(screen.getByText("思考中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
+  });
+
+  it("adds a breathing class to the latest streaming assistant bubble without reusing the pending card style", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "给我看一点新闻", timestamp: 1 },
+            { role: "assistant", content: "我", timestamp: 2, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const streamingBubble = screen.getByText("我").closest('[data-bubble-layout="compact"]');
+    expect(streamingBubble).toHaveClass("cc-streaming-bubble");
+    expect(streamingBubble).not.toHaveClass("cc-thinking-bubble");
+  });
+
+  it("does not keep the breathing class once the assistant message is no longer streaming", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "给我看一点新闻", timestamp: 1 },
+            { role: "assistant", content: "我去抓一版综合新闻，给你做个短报。", timestamp: 2 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const settledBubble = screen.getByText("我去抓一版综合新闻，给你做个短报。").closest('[data-bubble-layout="compact"]');
+    expect(settledBubble).not.toHaveClass("cc-streaming-bubble");
   });
 
   it("uses adaptive width for short assistant replies and full width for longer ones", () => {
@@ -334,6 +452,10 @@ describe("ChatPanel", () => {
     expect(screen.getByAltText("shot.png")).toBeInTheDocument();
     expect(screen.getByAltText("draft.png")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "移除 draft.png" })).toBeInTheDocument();
+    expect(screen.getByAltText("shot.png").closest("[data-scroll-anchor-id]")).toHaveAttribute(
+      "data-scroll-anchor-id",
+      "message-1-0-attachment-image-msg-image",
+    );
 
     const user = userEvent.setup();
     await user.click(screen.getByAltText("shot.png"));
@@ -580,6 +702,332 @@ describe("ChatPanel", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "回到这条消息顶部" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("follows short streaming assistant replies by staying at the bottom", async () => {
+    const viewportRef = { current: null };
+    vi.stubGlobal("requestAnimationFrame", (callback) => {
+      callback();
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段", timestamp: 2, pending: true },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 520 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 280 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+    });
+
+    let latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: 90,
+      left: 0,
+      right: 560,
+      bottom: 250,
+      width: 560,
+      height: 160,
+      x: 0,
+      y: 90,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.scroll(viewport);
+    viewport.scrollTo.mockClear();
+
+    viewport.scrollHeight = 560;
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段\n第二段", timestamp: 2, pending: true },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: 70,
+      left: 0,
+      right: 560,
+      bottom: 250,
+      width: 560,
+      height: 180,
+      x: 0,
+      y: 70,
+      toJSON: () => ({}),
+    });
+
+    await waitFor(() => {
+      expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 320, behavior: "auto" });
+    });
+  });
+
+  it("does not reapply restored scroll after manual scrolling within the same conversation", async () => {
+    const viewportRef = { current: null };
+
+    const baseProps = {
+      busy: false,
+      formatTime: () => "10:00:00",
+      messageViewportRef: viewportRef,
+      onPromptChange: () => {},
+      onPromptKeyDown: () => {},
+      onReset: () => {},
+      onSend: () => {},
+      prompt: "",
+      promptRef: null,
+      session: createSession(),
+    };
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          {...baseProps}
+          restoredScrollKey=""
+          restoredScrollState={null}
+          messages={[
+            { role: "assistant", content: "第一条消息", timestamp: 1 },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          {...baseProps}
+          restoredScrollKey="command-center:main"
+          restoredScrollState={{ scrollTop: 180 }}
+          messages={[
+            { role: "assistant", content: "第一条消息", timestamp: 1 },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(180);
+    });
+
+    fireEvent.wheel(viewport);
+    viewport.scrollTop = 420;
+    fireEvent.scroll(viewport);
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          {...baseProps}
+          restoredScrollKey="command-center:main"
+          restoredScrollState={{ scrollTop: 180 }}
+          messages={[
+            { role: "assistant", content: "第一条消息", timestamp: 1 },
+            { role: "assistant", content: "第二条消息", timestamp: 2 },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(viewport.scrollTop).toBe(420);
+  });
+
+  it("re-aligns restored scroll after an image finishes loading", async () => {
+    const viewportRef = { current: null };
+    let documentTop = 220;
+
+    const baseProps = {
+      busy: false,
+      formatTime: () => "10:00:00",
+      messageViewportRef: viewportRef,
+      onPromptChange: () => {},
+      onPromptKeyDown: () => {},
+      onReset: () => {},
+      onSend: () => {},
+      prompt: "",
+      promptRef: null,
+      session: createSession({ sessionUser: "command-center" }),
+    };
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          {...baseProps}
+          restoredScrollKey=""
+          restoredScrollState={null}
+          messages={[
+            { role: "assistant", content: "![图](https://example.com/demo.png)\n\n图片回复", timestamp: 2 },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    await screen.findByAltText("图");
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const anchorNode = document.querySelector('[data-scroll-anchor-id="message-2-0-block-0"]');
+    expect(anchorNode).toBeTruthy();
+    anchorNode.getBoundingClientRect = () => ({
+      top: documentTop - viewport.scrollTop,
+      left: 0,
+      right: 560,
+      bottom: documentTop - viewport.scrollTop + 260,
+      width: 560,
+      height: 260,
+      x: 0,
+      y: documentTop - viewport.scrollTop,
+      toJSON: () => ({}),
+    });
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          {...baseProps}
+          restoredScrollKey="command-center:main"
+          restoredScrollState={{ scrollTop: 180, anchorNodeId: "message-2-0-block-0", anchorOffset: 20 }}
+          messages={[
+            { role: "assistant", content: "![图](https://example.com/demo.png)\n\n图片回复", timestamp: 2 },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(200);
+    });
+
+    const image = screen.getByAltText("图");
+    Object.defineProperty(image, "complete", { configurable: true, value: false });
+    documentTop = 310;
+    fireEvent.load(image);
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(290);
+    });
+  });
+
+  it("restores all the way to the bottom when the saved state was bottom-pinned", async () => {
+    const viewportRef = { current: null };
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "assistant", content: "第一段", timestamp: 1 },
+            { role: "assistant", content: "第二段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          restoredScrollKey="command-center:main"
+          restoredScrollState={{ scrollTop: 640, atBottom: true, anchorMessageId: "2-1", anchorOffset: 20 }}
+          session={createSession({ sessionUser: "command-center" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 960 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(720);
+    });
+
+    viewport.scrollHeight = 1040;
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(800);
     });
   });
 

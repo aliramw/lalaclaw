@@ -12,13 +12,14 @@ function isNdjsonStreamResponse(response) {
   return Boolean(response?.body) && contentType.includes("application/x-ndjson");
 }
 
-function replacePendingAssistantMessage(current = [], pendingTimestamp, content, tokenBadge = "") {
+function replacePendingAssistantMessage(current = [], pendingTimestamp, content, tokenBadge = "", streaming = false) {
   const next = Array.isArray(current) ? [...current] : [];
   const assistantMessage = {
     role: "assistant",
     content,
     timestamp: pendingTimestamp,
     ...(tokenBadge ? { tokenBadge } : {}),
+    ...(streaming ? { streaming: true } : {}),
   };
 
   const pendingIndex = next.findIndex((item) => item?.pending && item.timestamp === pendingTimestamp);
@@ -37,7 +38,7 @@ function replacePendingAssistantMessage(current = [], pendingTimestamp, content,
   return next;
 }
 
-async function consumeChatStream(response, { entry, pendingTimestamp, activeTargetRef, setMessagesSynced }) {
+async function consumeChatStream(response, { entry, pendingTimestamp, setMessagesForTab }) {
   const reader = response.body?.getReader?.();
   if (!reader) {
     return null;
@@ -49,15 +50,8 @@ async function consumeChatStream(response, { entry, pendingTimestamp, activeTarg
   let streamedText = "";
   let tokenBadge = "";
 
-  const shouldApply = () =>
-    activeTargetRef.current.sessionUser === entry.sessionUser &&
-    activeTargetRef.current.agentId === entry.agentId;
-
   const pushStreamUpdate = () => {
-    if (!shouldApply()) {
-      return;
-    }
-    setMessagesSynced((current) => replacePendingAssistantMessage(current, pendingTimestamp, streamedText, tokenBadge));
+    setMessagesForTab(entry.tabId, (current) => replacePendingAssistantMessage(current, pendingTimestamp, streamedText, tokenBadge, true));
   };
 
   const processLine = (line) => {
@@ -125,25 +119,93 @@ async function consumeChatStream(response, { entry, pendingTimestamp, activeTarg
 
 export function useChatController({
   activeConversationKey,
-  activeTargetRef,
+  activeChatTabId = "",
   applySnapshot,
-  busy,
+  busy = false,
+  busyByTabId = {},
+  getMessagesForTab: getMessagesForTabProp,
   i18n,
+  isTabActive: isTabActiveProp,
   messagesRef,
   setBusy,
+  setBusyForTab: setBusyForTabProp,
   setMessagesSynced,
+  setMessagesForTab: setMessagesForTabProp,
   setPendingChatTurns,
   setSession,
+  updateTabIdentity = () => {},
+  updateTabMeta = () => {},
+  updateTabSession: updateTabSessionProp,
 }) {
   const [queuedMessages, setQueuedMessages] = useState([]);
   const [composerAttachments, setComposerAttachments] = useState([]);
+  const resolvedActiveTabId = activeChatTabId || activeConversationKey || "active";
+  const getMessagesForTab = useCallback(
+    (tabId) => {
+      if (typeof getMessagesForTabProp === "function") {
+        return getMessagesForTabProp(tabId);
+      }
+      return messagesRef?.current || [];
+    },
+    [getMessagesForTabProp, messagesRef],
+  );
+  const setMessagesForTab = useCallback(
+    (tabId, value) => {
+      if (typeof setMessagesForTabProp === "function") {
+        setMessagesForTabProp(tabId, value);
+        return;
+      }
+      setMessagesSynced?.(value);
+    },
+    [setMessagesForTabProp, setMessagesSynced],
+  );
+  const setBusyForTab = useCallback(
+    (tabId, value) => {
+      if (typeof setBusyForTabProp === "function") {
+        setBusyForTabProp(tabId, value);
+        return;
+      }
+      if (typeof setBusy === "function") {
+        setBusy(value);
+      }
+    },
+    [setBusy, setBusyForTabProp],
+  );
+  const updateTabSession = useCallback(
+    (tabId, value) => {
+      if (typeof updateTabSessionProp === "function") {
+        updateTabSessionProp(tabId, value);
+        return;
+      }
+      if (typeof setSession !== "function") {
+        return;
+      }
+      setSession(value);
+    },
+    [setSession, updateTabSessionProp],
+  );
+  const isTabActive = useCallback(
+    (tabId) => {
+      if (typeof isTabActiveProp === "function") {
+        return isTabActiveProp(tabId);
+      }
+      return tabId === resolvedActiveTabId;
+    },
+    [isTabActiveProp, resolvedActiveTabId],
+  );
 
   const activeQueuedMessages = useMemo(
-    () => queuedMessages.filter((item) => item.key === activeConversationKey),
-    [activeConversationKey, queuedMessages],
+    () =>
+      queuedMessages.filter((item) => {
+        const itemTabId = item.tabId || resolvedActiveTabId;
+        return itemTabId === resolvedActiveTabId;
+      }),
+    [queuedMessages, resolvedActiveTabId],
   );
 
   const runChatTurn = useCallback(async (entry) => {
+    const targetTabId = entry.tabId || resolvedActiveTabId;
+    const currentMessages = getMessagesForTab(targetTabId);
     const userMessage = {
       role: "user",
       content: entry.content || (entry.attachments?.length ? `已发送 ${entry.attachments.length} 个附件` : ""),
@@ -151,17 +213,11 @@ export function useChatController({
       ...(entry.attachments?.length ? { attachments: entry.attachments } : {}),
     };
     const pendingMessage = { role: "assistant", content: i18n.chat.thinkingPlaceholder, timestamp: Date.now(), pending: true };
-    const nextMessages = [...messagesRef.current, userMessage, pendingMessage];
-    const isStillActive =
-      activeTargetRef.current.sessionUser === entry.sessionUser &&
-      activeTargetRef.current.agentId === entry.agentId;
+    const nextMessages = [...currentMessages, userMessage, pendingMessage];
 
-    if (isStillActive) {
-      setMessagesSynced(nextMessages);
-      setSession((current) => ({ ...current, status: i18n.common.running }));
-    }
-
-    setBusy(true);
+    setMessagesForTab(targetTabId, nextMessages);
+    updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.running }));
+    setBusyForTab(targetTabId, true);
     setPendingChatTurns((current) => ({
       ...current,
       [entry.key]: {
@@ -196,91 +252,102 @@ export function useChatController({
           stream: true,
         }),
       });
+      const streamEntry = { ...entry, tabId: targetTabId };
       const payload = isNdjsonStreamResponse(response)
         ? await consumeChatStream(response, {
-            entry,
+            entry: streamEntry,
             pendingTimestamp: pendingMessage.timestamp,
-            activeTargetRef,
-            setMessagesSynced,
+            setMessagesForTab,
           })
         : await response.json();
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Request failed");
       }
 
-      const shouldApply =
-        activeTargetRef.current.sessionUser === entry.sessionUser &&
-        activeTargetRef.current.agentId === entry.agentId;
+      if (payload.resetSessionUser) {
+        const nextSessionUser = payload.resetSessionUser;
+        const nextAgentId = payload.session?.agentId || entry.agentId;
+        const nextModel = payload.session?.selectedModel || payload.session?.model || entry.model;
+        const nextFastMode =
+          payload.session?.fastMode === i18n.sessionOverview.fastMode.on ||
+          payload.session?.fastMode === "开启" ||
+          payload.session?.fastMode === true ||
+          payload.fastMode === true;
+        const nextThinkMode = payload.session?.thinkMode || entry.thinkMode || "off";
 
-      if (shouldApply) {
-        if (payload.resetSessionUser) {
-          const nextSessionUser = payload.resetSessionUser;
-          const nextAgentId = payload.session?.agentId || entry.agentId;
-          const nextModel = payload.session?.selectedModel || payload.session?.model || entry.model;
-          const nextFastMode =
-            payload.session?.fastMode === i18n.sessionOverview.fastMode.on ||
-            payload.session?.fastMode === "开启" ||
-            payload.session?.fastMode === true ||
-            payload.fastMode === true;
+        updateTabIdentity(targetTabId, {
+          agentId: nextAgentId,
+          sessionUser: nextSessionUser,
+        });
+        updateTabMeta(targetTabId, {
+          agentId: nextAgentId,
+          fastMode: nextFastMode,
+          model: nextModel,
+          sessionUser: nextSessionUser,
+          thinkMode: nextThinkMode,
+        });
 
-          entry.onSessionStateChange?.({
-            agentId: nextAgentId,
-            fastMode: nextFastMode,
-            model: nextModel,
-            sessionUser: nextSessionUser,
-          });
+        const displayConversation =
+          Array.isArray(payload.conversation) && payload.conversation.length
+            ? payload.conversation
+            : [
+                {
+                  role: "assistant",
+                  content: payload.outputText,
+                  timestamp: Date.now(),
+                  ...(payload.tokenBadge ? { tokenBadge: payload.tokenBadge } : {}),
+                },
+              ];
 
-          setQueuedMessages((current) =>
-            current.filter((item) => item.key !== `${entry.sessionUser}:${entry.agentId}`),
-          );
+        setMessagesForTab(targetTabId, displayConversation);
+        updateTabSession(targetTabId, (current) => ({
+          ...current,
+          ...(payload.session || {}),
+          agentId: nextAgentId,
+          selectedAgentId: nextAgentId,
+          model: nextModel || current.model,
+          selectedModel: nextModel || current.selectedModel,
+          sessionUser: nextSessionUser,
+          status: getLocalizedStatusLabel(payload.metadata?.status, i18n) || i18n.common.idle,
+          thinkMode: nextThinkMode,
+        }));
 
-          const displayConversation =
-            Array.isArray(payload.conversation) && payload.conversation.length
-              ? payload.conversation
-              : [
-                  {
-                    role: "assistant",
-                    content: payload.outputText,
-                    timestamp: Date.now(),
-                    ...(payload.tokenBadge ? { tokenBadge: payload.tokenBadge } : {}),
-                  },
-                ];
-
-          setMessagesSynced(displayConversation);
+        if (isTabActive(targetTabId)) {
           applySnapshot(payload, { syncConversation: false });
-          setSession((current) => ({
-            ...current,
-            status: getLocalizedStatusLabel(payload.metadata?.status, i18n) || i18n.common.idle,
-          }));
-          return;
         }
+        return;
+      }
 
-        setMessagesSynced((current) =>
-          replacePendingAssistantMessage(current, pendingMessage.timestamp, payload.outputText, payload.tokenBadge),
-        );
+      setMessagesForTab(targetTabId, (current) =>
+        replacePendingAssistantMessage(current, pendingMessage.timestamp, payload.outputText, payload.tokenBadge),
+      );
+      updateTabSession(targetTabId, (current) => ({
+        ...current,
+        ...(payload.session || {}),
+        status: getLocalizedStatusLabel(payload.metadata?.status, i18n) || i18n.common.idle,
+      }));
+      updateTabMeta(targetTabId, (current) => ({
+        ...current,
+        agentId: payload.session?.agentId || current.agentId || entry.agentId,
+        model: payload.session?.selectedModel || payload.session?.model || current.model || entry.model || "",
+        sessionUser: payload.session?.sessionUser || current.sessionUser || entry.sessionUser,
+        thinkMode: payload.session?.thinkMode || current.thinkMode || entry.thinkMode || "off",
+      }));
+
+      if (isTabActive(targetTabId)) {
         applySnapshot(payload, { syncConversation: false });
       }
-      if (shouldApply) {
-        setSession((current) => ({
-          ...current,
-          status: getLocalizedStatusLabel(payload.metadata?.status, i18n) || i18n.common.idle,
-        }));
-      }
     } catch (error) {
-      const shouldApply =
-        activeTargetRef.current.sessionUser === entry.sessionUser &&
-        activeTargetRef.current.agentId === entry.agentId;
-
-      if (shouldApply) {
-        setMessagesSynced((current) =>
-          replacePendingAssistantMessage(
-            current,
-            pendingMessage.timestamp,
-            `${i18n.common.requestFailed}\n${error.message}`,
-          ),
-        );
-        setSession((current) => ({ ...current, status: i18n.common.failed }));
-      }
+      setMessagesForTab(targetTabId, (current) =>
+        replacePendingAssistantMessage(
+          current,
+          pendingMessage.timestamp,
+          `${i18n.common.requestFailed}\n${error.message}`,
+          "",
+          false,
+        ),
+      );
+      updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.failed }));
     } finally {
       setPendingChatTurns((current) => {
         if (!current[entry.key]) {
@@ -290,19 +357,37 @@ export function useChatController({
         delete next[entry.key];
         return next;
       });
-      setBusy(false);
+      setBusyForTab(targetTabId, false);
     }
-  }, [activeTargetRef, applySnapshot, i18n, messagesRef, setBusy, setMessagesSynced, setPendingChatTurns, setSession]);
+  }, [
+    applySnapshot,
+    getMessagesForTab,
+    i18n,
+    isTabActive,
+    resolvedActiveTabId,
+    setBusyForTab,
+    setMessagesForTab,
+    setPendingChatTurns,
+    updateTabIdentity,
+    updateTabMeta,
+    updateTabSession,
+  ]);
 
   useEffect(() => {
-    if (busy || !activeQueuedMessages.length) {
+    const nextEntry = queuedMessages.find((item) => {
+      const targetTabId = item.tabId || resolvedActiveTabId;
+      if (Object.prototype.hasOwnProperty.call(busyByTabId, targetTabId)) {
+        return !busyByTabId[targetTabId];
+      }
+      return !busy;
+    });
+    if (!nextEntry) {
       return;
     }
 
-    const [nextEntry] = activeQueuedMessages;
     setQueuedMessages((current) => current.filter((item) => item.id !== nextEntry.id));
     runChatTurn(nextEntry).catch(() => {});
-  }, [activeQueuedMessages, busy, runChatTurn]);
+  }, [busy, busyByTabId, queuedMessages, resolvedActiveTabId, runChatTurn]);
 
   const handleAddAttachments = async (fileList) => {
     const selectedFiles = Array.from(fileList || []).filter(Boolean);
@@ -361,7 +446,10 @@ export function useChatController({
   };
 
   const enqueueOrRunEntry = async (entry) => {
-    if (busy || activeQueuedMessages.length) {
+    const targetTabId = entry.tabId || resolvedActiveTabId;
+    const hasQueuedForTab = queuedMessages.some((item) => (item.tabId || targetTabId) === targetTabId);
+    const isBusyForTarget = Object.prototype.hasOwnProperty.call(busyByTabId, targetTabId) ? busyByTabId[targetTabId] : busy;
+    if (isBusyForTarget || hasQueuedForTab) {
       setQueuedMessages((current) => [...current, entry]);
       return;
     }
@@ -371,7 +459,6 @@ export function useChatController({
 
   return {
     activeQueuedMessages,
-    busy,
     composerAttachments,
     enqueueOrRunEntry,
     handleAddAttachments,

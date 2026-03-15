@@ -32,6 +32,7 @@ const {
   parseSlashCommandState,
 } = require('../formatters/chat-commands');
 const { createDashboardService } = require('../services/dashboard');
+const { collapseDuplicateConversationTurns, mergeConversationMessages } = require('../services/dashboard');
 const { createOpenClawClient } = require('../services/openclaw-client');
 const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler } = require('../routes/chat');
@@ -161,6 +162,7 @@ function createAppContext() {
     collectTaskTimeline,
     collectToolHistory,
     extractTextSegments,
+    findLatestSessionForAgent,
     getTranscriptPath,
     listDirectoryPreview,
     parseSessionStatusText,
@@ -242,6 +244,7 @@ function createAppContext() {
     readTextIfExists,
     resolveAgentDisplayName,
     resolveAgentWorkspace: getAgentWorkspace,
+    findLatestSessionForAgent,
     resolveSessionAgentId,
     resolveSessionFastMode,
     resolveSessionModel,
@@ -343,8 +346,10 @@ function createAppContext() {
       cleanUserMessage,
       clip,
       collectTaskTimeline,
+      collapseDuplicateConversationTurns,
       getCommandCenterSessionKey,
       isWebAppBuilt,
+      mergeConversationMessages,
       normalizeChatMessage,
       normalizeSessionUser,
       parseCompactNumber,

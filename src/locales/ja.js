@@ -230,6 +230,7 @@ const ja = {
       imageRotateLeft: "左に回転",
       imageRotateRight: "右に回転",
       imageZoomIn: "画像を拡大",
+      frontMatter: "Front Matter",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorer",
