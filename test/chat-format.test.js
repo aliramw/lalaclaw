@@ -30,6 +30,8 @@ describe("chat-format", () => {
         id: "",
         kind: "text",
         name: "plan.md",
+        path: "",
+        fullPath: "",
         mimeType: "",
         size: 0,
         dataUrl: "",

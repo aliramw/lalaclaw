@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Check, ChevronDown, Copy, FileText, FolderOpen, Hammer, History } from "lucide-react";
+import { ArrowRight, Boxes, Check, ChevronDown, Copy, FileText, FolderOpen, Hammer, History } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import { FilePreviewOverlay as SharedFilePreviewOverlay, ImagePreviewOverlay as 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { Prism } from "@/lib/prism-languages";
 import { cn } from "@/lib/utils";
@@ -210,7 +209,7 @@ function FilesTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview })
 
   return (
     <>
-      <ScrollArea className="h-full">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 py-1">
           <p className="pr-6 text-[11px] leading-5 text-muted-foreground/80">
             {messages.inspector.filesHint}
@@ -267,7 +266,9 @@ function FilesTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview })
 function PanelEmpty({ compact = false, text }) {
   return (
     <Card className={cn("border-dashed bg-muted/20", compact && "rounded-[16px]")}>
-      <CardContent className={cn("text-sm text-muted-foreground", compact ? "px-5 py-5" : "py-8")}>{text}</CardContent>
+      <CardContent className={cn("flex items-center justify-center text-center text-sm text-muted-foreground", compact ? "px-5 py-5" : "py-8")}>
+        {text}
+      </CardContent>
     </Card>
   );
 }
@@ -290,14 +291,25 @@ function TabCountBadge({ count, active = false }) {
   );
 }
 
-function DataList({ items, empty, render }) {
+function DataList({ items, empty, getItemActionLabel, onSelect, render }) {
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="min-h-0 flex-1">
       <div className="grid gap-3 pr-4">
         {items.length ? (
           items.map((item, index) => (
             <Card key={getItemKey(item, index)}>
-              <CardContent className="py-4">{render(item)}</CardContent>
+              <CardContent className={cn(onSelect ? "p-0" : "py-4")}>
+                {onSelect ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(item)}
+                    aria-label={getItemActionLabel?.(item) || item.title || item.label || "item"}
+                    className="block w-full rounded-[inherit] px-6 py-4 text-left transition hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
+                    {render(item)}
+                  </button>
+                ) : render(item)}
+              </CardContent>
             </Card>
           ))
         ) : (
@@ -459,6 +471,80 @@ function ToolCallTimeline({ messages, resolvedTheme = "light", tools }) {
   );
 }
 
+function getRelationshipStatusLabel(status, messages) {
+  return messages.inspector.relationships.statuses?.[status] || status || "";
+}
+
+function getRelationshipDisplay(relationship, messages) {
+  const fallbackLabel =
+    relationship?.type === "session_spawn"
+      ? messages.inspector.relationships.sessionSpawn
+      : relationship?.targetAgentId || messages.inspector.relationships.childAgent;
+  const primaryLabel = relationship?.detail || fallbackLabel;
+  const secondaryLabel = relationship?.detail && relationship?.detail !== fallbackLabel ? fallbackLabel : "";
+
+  return {
+    primaryLabel,
+    secondaryLabel,
+  };
+}
+
+function getRelationshipStatusBadgeProps(status) {
+  if (status === "completed" || status === "established") {
+    return { variant: "success", className: "" };
+  }
+
+  if (status === "running") {
+    return { variant: "active", className: "" };
+  }
+
+  if (status === "failed") {
+    return {
+      variant: "default",
+      className: "border-transparent bg-destructive/10 text-destructive",
+    };
+  }
+
+  return { variant: "default", className: "border-transparent bg-muted text-muted-foreground" };
+}
+
+function RelationshipCard({ relationship, sessionAgentId = "main", messages }) {
+  const { primaryLabel, secondaryLabel } = getRelationshipDisplay(relationship, messages);
+  const statusLabel = getRelationshipStatusLabel(relationship.status, messages);
+  const statusBadgeProps = getRelationshipStatusBadgeProps(relationship.status);
+
+  return (
+    <Card className="border-border/70 bg-muted/15">
+      <CardContent className="py-4">
+        <div className="grid grid-cols-[auto_minmax(2.5rem,1fr)_auto] items-center gap-3">
+          <Badge variant="secondary" className="h-7 justify-center rounded-full px-2.5 text-[11px] font-medium">
+            {relationship.sourceAgentId || sessionAgentId}
+          </Badge>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <div className="h-px flex-1 bg-border/70" />
+            <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+            <div className="h-px flex-1 bg-border/70" />
+          </div>
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+            <div className="min-w-0 text-left">
+              <div className="truncate text-sm font-medium text-foreground">{primaryLabel}</div>
+              {secondaryLabel ? <div className="truncate text-[11px] text-muted-foreground">{secondaryLabel}</div> : null}
+            </div>
+            {statusLabel ? (
+              <Badge
+                variant={statusBadgeProps.variant}
+                className={`shrink-0 self-center whitespace-nowrap px-2 py-0.5 text-[11px] leading-5 ${statusBadgeProps.className}`}
+              >
+                {statusLabel}
+              </Badge>
+            ) : null}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item, messages, onOpenPreview, resolvedTheme = "light" }) {
   const { intlLocale } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
@@ -521,6 +607,14 @@ function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item
                 {item.tools?.length ? <ToolCallTimeline tools={item.tools} messages={messages} resolvedTheme={resolvedTheme} /> : null}
               </TimelineDetailCard>
 
+              <TimelineDetailCard title={messages.inspector.relationships.title} emptyText={messages.inspector.empty.agents}>
+                {item.relationships?.length
+                  ? item.relationships.map((relationship) => (
+                      <RelationshipCard key={relationship.id} relationship={relationship} sessionAgentId={item.sessionAgentId || "main"} messages={messages} />
+                    ))
+                  : null}
+              </TimelineDetailCard>
+
               <TimelineDetailCard title={messages.inspector.timeline.fileChanges} emptyText={messages.inspector.empty.noFiles}>
                 {item.files?.length
                   ? item.files.map((file) => (
@@ -555,8 +649,11 @@ function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item
 
 function TimelineTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview, resolvedTheme }) {
   return (
-    <ScrollArea className="h-full">
-      <div className="grid gap-3 pr-2">
+    <div
+      data-testid="timeline-scroll-region"
+      className="cc-scroll-region min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pr-2"
+    >
+      <div className="grid gap-3">
         {items.length
           ? items.map((item, index) => (
               <TimelineItemCard
@@ -571,11 +668,11 @@ function TimelineTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview
             ))
           : <PanelEmpty text={messages.inspector.empty.timeline} />}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
 
-export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceRoot = "", files, peeks, renderPeek, resolvedTheme = "light", setActiveTab, snapshots, taskTimeline }) {
+export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceRoot = "", files, onSelectArtifact, resolvedTheme = "light", setActiveTab, snapshots, taskTimeline }) {
   const { messages } = useI18n();
   const { filePreview, imagePreview, handleOpenPreview, closeFilePreview, closeImagePreview } = useFilePreview();
   const tabDefinitions = [
@@ -588,7 +685,7 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
 
   return (
     <>
-      <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden">
+      <Card className="flex h-full min-h-0 flex-col overflow-hidden">
         <CardHeader className="flex h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
           <div className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left">
             <CardTitle className="truncate text-sm leading-none">{messages.inspector.title}</CardTitle>
@@ -596,9 +693,9 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
           </div>
         </CardHeader>
 
-        <CardContent className="min-h-0 p-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1 xl:grid-cols-5">
+        <CardContent className="flex min-h-0 flex-1 flex-col p-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
+            <TabsList className="grid h-auto w-full shrink-0 grid-cols-3 gap-1 p-1 xl:grid-cols-5">
               {tabDefinitions.map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -622,14 +719,16 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
               })}
             </TabsList>
 
-            <TabsContent value="files" className="mt-1 min-h-0">
+            <TabsContent value="files" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <FilesTab items={files} messages={messages} onOpenPreview={handleOpenPreview} currentWorkspaceRoot={currentWorkspaceRoot} />
             </TabsContent>
 
-            <TabsContent value="artifacts" className="min-h-0">
+            <TabsContent value="artifacts" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <DataList
                 items={artifacts}
                 empty={messages.inspector.empty.artifacts}
+                getItemActionLabel={(item) => `定位到 ${item.title || messages.inspector.tabs.artifacts}`}
+                onSelect={onSelectArtifact}
                 render={(item) => (
                   <>
                     <div className="text-sm font-medium">{item.title}</div>
@@ -639,11 +738,11 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
               />
             </TabsContent>
 
-            <TabsContent value="timeline" className="min-h-0">
+            <TabsContent value="timeline" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
             </TabsContent>
 
-            <TabsContent value="snapshots" className="min-h-0">
+            <TabsContent value="snapshots" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <DataList
                 items={snapshots}
                 empty={messages.inspector.empty.snapshots}
@@ -656,7 +755,7 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
               />
             </TabsContent>
 
-            <TabsContent value="agents" className="min-h-0">
+            <TabsContent value="agents" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <DataList
                 items={agents}
                 empty={messages.inspector.empty.agents}

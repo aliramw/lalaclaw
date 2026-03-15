@@ -8,6 +8,7 @@ A better way to co-create with agents.
 ## Highlights
 
 - React + Vite command center UI with chat, timeline, inspector, theme, locale, and attachment flows
+- Built-in locale support for 中文, English, 日本語, Français, Español, and Português
 - Node.js backend that can run in `mock` mode or connect to a local OpenClaw gateway
 - Modular frontend and backend boundaries with focused hook- and module-level tests
 - CI, linting, coverage thresholds, contribution docs, security policy, and issue templates

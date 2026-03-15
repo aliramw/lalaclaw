@@ -200,4 +200,70 @@ describe("useRuntimeSnapshot", () => {
 
     expect(setModel).toHaveBeenCalledWith("gpt-5.1");
   });
+
+  it("rehydrates pending bubbles with the latest locale placeholder", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "就绪",
+        },
+        conversation: [{ role: "user", content: "旧消息", timestamp: 100 }],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingChatTurns = {
+      "command-center:main": {
+        startedAt: 50,
+        pendingTimestamp: 60,
+        userMessage: {
+          role: "user",
+          content: "旧消息",
+          timestamp: 55,
+        },
+      },
+    };
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingChatTurns["command-center:main"],
+        busy: false,
+        i18n: {
+          ...createI18n(),
+          chat: { thinkingPlaceholder: "考えています…" },
+        },
+        messagesRef: { current: [] },
+        pendingChatTurns,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalledWith([
+        { role: "user", content: "旧消息", timestamp: 100 },
+        { role: "assistant", content: "考えています…", timestamp: 60, pending: true },
+      ]);
+    });
+  });
 });

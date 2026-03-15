@@ -5,6 +5,21 @@ export function useFilePreview() {
   const [imagePreview, setImagePreview] = useState(null);
   const previewRequestRef = useRef(0);
 
+  const openImagePreview = (image) => {
+    const src = String(image?.src || image?.previewUrl || image?.dataUrl || "").trim();
+    if (!src) {
+      return;
+    }
+
+    setFilePreview(null);
+    setImagePreview({
+      src,
+      alt: image?.alt || image?.name || "",
+      path: image?.path || image?.fullPath || image?.localPath || "",
+      fileManagerLabel: image?.fileManagerLabel || "Folder",
+    });
+  };
+
   const handleOpenPreview = async (item) => {
     const targetPath = String(item?.fullPath || item?.path || "").trim();
     if (!targetPath) {
@@ -31,8 +46,7 @@ export function useFilePreview() {
         return;
       }
       if (payload.kind === "image" && payload.contentUrl) {
-        setFilePreview(null);
-        setImagePreview({
+        openImagePreview({
           src: payload.contentUrl,
           alt: payload.name || item?.name || "",
           path: payload.path || targetPath,
@@ -64,6 +78,7 @@ export function useFilePreview() {
     filePreview,
     imagePreview,
     handleOpenPreview,
+    openImagePreview,
     closeFilePreview: () => setFilePreview(null),
     closeImagePreview: () => setImagePreview(null),
   };

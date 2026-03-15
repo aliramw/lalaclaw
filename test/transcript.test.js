@@ -319,4 +319,542 @@ describe("createTranscriptProjector", () => {
       },
     ]);
   });
+
+  it("collects task relationships across multiple task windows with derived statuses", () => {
+    const projector = createProjector({
+      config: {
+        agentId: "main",
+        model: "gpt-5",
+        localConfig: null,
+      },
+    });
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [{ type: "text", text: "上一轮任务" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [
+            {
+              id: "tool-writer",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2.5,
+        message: {
+          role: "toolResult",
+          timestamp: 2.5,
+          toolCallId: "tool-writer",
+          toolName: "sessions_spawn",
+          details: { status: "accepted" },
+          content: [{ type: "text", text: "{\"status\":\"accepted\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "user",
+          timestamp: 3,
+          content: [{ type: "text", text: "当前任务" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4,
+        message: {
+          role: "assistant",
+          timestamp: 4,
+          content: [
+            {
+              id: "tool-session",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                mode: "session",
+                label: "fresh-session",
+              },
+            },
+            {
+              id: "tool-paint",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "paint",
+                mode: "run",
+                label: "image-worker",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4.2,
+        message: {
+          role: "toolResult",
+          timestamp: 4.2,
+          toolCallId: "tool-session",
+          toolName: "sessions_spawn",
+          details: { status: "accepted" },
+          content: [{ type: "text", text: "{\"status\":\"accepted\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4.3,
+        message: {
+          role: "toolResult",
+          timestamp: 4.3,
+          toolCallId: "tool-paint",
+          toolName: "sessions_spawn",
+          details: { status: "error", error: "spawn failed" },
+          content: [{ type: "text", text: "{\"status\":\"error\",\"error\":\"spawn failed\"}" }],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:writer:2:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "",
+        toolCallId: "tool-writer",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 2,
+        status: "running",
+      },
+      {
+        id: "session:fresh-session:4:0",
+        type: "session_spawn",
+        sourceAgentId: "main",
+        targetAgentId: "",
+        detail: "fresh-session",
+        toolCallId: "tool-session",
+        childSessionKey: "",
+        spawnMode: "session",
+        runtime: "",
+        timestamp: 4,
+        status: "established",
+      },
+      {
+        id: "agent:paint:4:1",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "paint",
+        detail: "image-worker",
+        toolCallId: "tool-paint",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 4,
+        status: "failed",
+      },
+    ]);
+  });
+
+  it("keeps multiple child-task relationships instead of collapsing later ones over earlier ones", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [{ type: "text", text: "主任务一" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [
+            {
+              id: "tool-paint-initial",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "paint",
+                mode: "run",
+                label: "image-worker",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "user",
+          timestamp: 3,
+          content: [{ type: "text", text: "主任务二" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4,
+        message: {
+          role: "assistant",
+          timestamp: 4,
+          content: [
+            {
+              id: "tool-writer-later",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+                label: "draft-worker",
+              },
+            },
+            {
+              id: "tool-paint-later",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "paint",
+                mode: "run",
+                label: "review-worker",
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:paint:2:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "paint",
+        detail: "image-worker",
+        toolCallId: "tool-paint-initial",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 2,
+        status: "dispatching",
+      },
+      {
+        id: "agent:writer:4:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "draft-worker",
+        toolCallId: "tool-writer-later",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 4,
+        status: "dispatching",
+      },
+      {
+        id: "agent:paint:4:1",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "paint",
+        detail: "review-worker",
+        toolCallId: "tool-paint-later",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 4,
+        status: "dispatching",
+      },
+    ]);
+  });
+
+  it("marks child-agent relationships completed when the spawned session has already replied", () => {
+    const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
+    const childSessionKey = "agent:writer:subagent:child-1";
+    const childSessionId = "child-session-1";
+    const childSessionsDir = path.join(tmpRoot, "agents", "writer", "sessions");
+    fs.mkdirSync(childSessionsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(childSessionsDir, "sessions.json"),
+      JSON.stringify({
+        [childSessionKey]: { sessionId: childSessionId },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(childSessionsDir, `${childSessionId}.jsonl`),
+      [
+        JSON.stringify({
+          type: "message",
+          timestamp: 11,
+          message: {
+            role: "user",
+            timestamp: 11,
+            content: [{ type: "text", text: "写一段文案" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          timestamp: 12,
+          message: {
+            role: "assistant",
+            timestamp: 12,
+            content: [{ type: "text", text: "文案已完成" }],
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const projector = createProjector({
+      LOCAL_OPENCLAW_DIR: tmpRoot,
+      readJsonIfExists: (filePath) => (fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, "utf8")) : null),
+      readTextIfExists: (filePath) => (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""),
+    });
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "assistant",
+          timestamp: 1,
+          content: [
+            {
+              id: "tool-writer-complete",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+                label: "draft-worker",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "toolResult",
+          timestamp: 2,
+          toolCallId: "tool-writer-complete",
+          toolName: "sessions_spawn",
+          details: {
+            status: "accepted",
+            childSessionKey,
+          },
+          content: [{ type: "text", text: `{"status":"accepted","childSessionKey":"${childSessionKey}"}` }],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:writer:1:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "draft-worker",
+        toolCallId: "tool-writer-complete",
+        childSessionKey,
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 1,
+        status: "completed",
+      },
+    ]);
+  });
+
+  it("marks child-agent relationships completed from internal task completion events in the parent transcript", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "assistant",
+          timestamp: 1,
+          content: [
+            {
+              id: "tool-writer-complete-event",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+                label: "writer-poem-3",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "toolResult",
+          timestamp: 2,
+          toolCallId: "tool-writer-complete-event",
+          toolName: "sessions_spawn",
+          details: { status: "accepted" },
+          content: [{ type: "text", text: "{\"status\":\"accepted\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "user",
+          timestamp: 3,
+          provenance: {
+            kind: "inter_session",
+            sourceSessionKey: "agent:writer:subagent:child-3",
+            sourceTool: "subagent_announce",
+          },
+          content: [
+            {
+              type: "text",
+              text: `[Sun 2026-03-15 08:36 GMT+8] OpenClaw runtime context (internal):
+This context is runtime-generated, not user-authored. Keep internal details private.
+
+[Internal task completion event]
+source: subagent
+session_key: agent:writer:subagent:child-3
+session_id: child-session-3
+type: subagent task
+task: writer-poem-3
+status: completed successfully`,
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:writer:1:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "writer-poem-3",
+        toolCallId: "tool-writer-complete-event",
+        childSessionKey: "agent:writer:subagent:child-3",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 1,
+        status: "completed",
+      },
+    ]);
+  });
+
+  it("backfills the task label from an internal completion event when the spawn had no label", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "assistant",
+          timestamp: 1,
+          content: [
+            {
+              id: "tool-writer-unlabeled",
+              type: "toolCall",
+              name: "subagents",
+              arguments: {
+                action: "spawn",
+                agentId: "writer",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "toolResult",
+          timestamp: 2,
+          toolCallId: "tool-writer-unlabeled",
+          toolName: "subagents",
+          details: { status: "accepted" },
+          content: [{ type: "text", text: "{\"status\":\"accepted\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "user",
+          timestamp: 3,
+          provenance: {
+            kind: "inter_session",
+            sourceSessionKey: "agent:writer:subagent:child-unlabeled",
+            sourceTool: "subagent_announce",
+          },
+          content: [
+            {
+              type: "text",
+              text: `[Sun 2026-03-15 08:36 GMT+8] OpenClaw runtime context (internal):
+This context is runtime-generated, not user-authored. Keep internal details private.
+
+[Internal task completion event]
+source: subagent
+session_key: agent:writer:subagent:child-unlabeled
+session_id: child-session-unlabeled
+type: subagent task
+task: draft-worker
+status: completed successfully`,
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:writer:1:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "draft-worker",
+        toolCallId: "tool-writer-unlabeled",
+        childSessionKey: "agent:writer:subagent:child-unlabeled",
+        spawnMode: "spawn",
+        runtime: "subagent",
+        timestamp: 1,
+        status: "completed",
+      },
+    ]);
+  });
 });

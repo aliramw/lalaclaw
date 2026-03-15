@@ -17,6 +17,7 @@ function createResponseRecorder() {
 function createHandler(overrides = {}) {
   const responseRecorder = createResponseRecorder();
   const dependencies = {
+    appendLocalSessionFileEntries: vi.fn(),
     appendLocalSessionConversation: vi.fn(),
     buildDashboardSnapshot: vi.fn(async (sessionUser) => ({
       session: {

@@ -6,6 +6,46 @@ import {
   mergePendingConversation,
 } from "@/features/app/storage";
 
+export function mergeTaskRelationships(previousRelationships, nextRelationships) {
+  const previousById = new Map(
+    (previousRelationships || [])
+      .filter((relationship) => relationship?.id)
+      .map((relationship) => [relationship.id, relationship]),
+  );
+  const merged = new Map();
+
+  for (const relationship of nextRelationships || []) {
+    if (!relationship?.id) {
+      continue;
+    }
+
+    const existing = merged.get(relationship.id);
+    if (!existing || (relationship.timestamp || 0) >= (existing.timestamp || 0)) {
+      const previous = previousById.get(relationship.id);
+      let nextRelationship = relationship;
+
+      if (relationship.status === "completed") {
+        if (relationship.completedAt) {
+          nextRelationship = relationship;
+        } else if (existing?.completedAt) {
+          nextRelationship = { ...relationship, completedAt: existing.completedAt };
+        } else if (previous?.completedAt) {
+          nextRelationship = { ...relationship, completedAt: previous.completedAt };
+        } else if (
+          (existing?.status && existing.status !== "completed") ||
+          (previous?.status && previous.status !== "completed")
+        ) {
+          nextRelationship = { ...relationship, completedAt: Date.now() };
+        }
+      }
+
+      merged.set(relationship.id, nextRelationship);
+    }
+  }
+
+  return [...merged.values()].sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0));
+}
+
 export function useRuntimeSnapshot({
   activePendingChat,
   busy,
@@ -24,6 +64,7 @@ export function useRuntimeSnapshot({
   const [availableModels, setAvailableModels] = useState([]);
   const [availableAgents, setAvailableAgents] = useState([]);
   const [taskTimeline, setTaskTimeline] = useState([]);
+  const [taskRelationships, setTaskRelationships] = useState([]);
   const [files, setFiles] = useState([]);
   const [artifacts, setArtifacts] = useState([]);
   const [snapshots, setSnapshots] = useState([]);
@@ -34,6 +75,7 @@ export function useRuntimeSnapshot({
   const applySnapshot = useCallback((snapshot, options = {}) => {
     if (!snapshot) return;
 
+    const currentConversationKey = createConversationKey(session.sessionUser, session.agentId);
     const nextSession = {
       ...session,
       ...(snapshot.session || {}),
@@ -77,6 +119,11 @@ export function useRuntimeSnapshot({
 
     setAvailableModels(snapshot.session?.availableModels || snapshot.availableModels || []);
     setAvailableAgents(snapshot.session?.availableAgents || snapshot.availableAgents || []);
+    if (Object.prototype.hasOwnProperty.call(snapshot, "taskRelationships")) {
+      setTaskRelationships((current) => mergeTaskRelationships(current, snapshot.taskRelationships || []));
+    } else if (nextConversationKey !== currentConversationKey) {
+      setTaskRelationships([]);
+    }
     setTaskTimeline(snapshot.taskTimeline || []);
     setFiles(snapshot.files || []);
     setArtifacts(snapshot.artifacts || []);
@@ -168,6 +215,7 @@ export function useRuntimeSnapshot({
   const clearSnapshotData = () => {
     setAvailableModels([]);
     setAvailableAgents([]);
+    setTaskRelationships([]);
     setTaskTimeline([]);
     setFiles([]);
     setArtifacts([]);
@@ -187,6 +235,7 @@ export function useRuntimeSnapshot({
     loadRuntime,
     peeks,
     snapshots,
+    taskRelationships,
     taskTimeline,
     updateSessionSettings,
   };

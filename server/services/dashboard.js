@@ -34,6 +34,7 @@ function createDashboardService({
   collectFiles,
   collectLatestRunUsage,
   collectSnapshots,
+  collectTaskRelationships,
   collectTaskTimeline,
   collectToolHistory,
   config,
@@ -135,6 +136,7 @@ function createDashboardService({
     const localConversation = getLocalSessionConversation(sessionUser);
     const localFileEntries = getLocalSessionFileEntries(sessionUser);
     const localFiles = collectFiles(localFileEntries, [PROJECT_ROOT, workspaceRoot], { injectedFiles: [] });
+    const latestAssistantMessage = [...localConversation].reverse().find((entry) => entry?.role === 'assistant');
     const availableMentionAgents = collectAllowedSubagents(config.localConfig, agentId);
     const availableSkills = collectAvailableSkills(config.localConfig, agentId);
     return {
@@ -189,6 +191,7 @@ function createDashboardService({
           outcome: 'mock 模式下的演示执行。',
         },
       ],
+      taskRelationships: [],
       toolHistory: [
         { name: 'workspace.scan', status: '完成', detail: '已扫描当前项目目录。', timestamp: now },
         { name: fastMode ? 'planner.fast-path' : 'planner.standard-path', status: '完成', detail: '已生成最小可运行原型。', timestamp: now },
@@ -199,7 +202,14 @@ function createDashboardService({
         { path: 'src/App.jsx', kind: '文件' },
       ]),
       artifacts: [
-        { title: '当前回复', type: 'assistant_output', detail: 'mock 模式下的演示输出。', timestamp: now },
+        {
+          title: '当前回复',
+          type: 'assistant_output',
+          detail: 'mock 模式下的演示输出。',
+          messageRole: 'assistant',
+          messageTimestamp: latestAssistantMessage?.timestamp || now,
+          timestamp: now,
+        },
       ],
       snapshots: [
         { id: `snapshot-${now}`, title: `快照 ${formatTimestamp(now)}`, detail: 'mock 会话快照', timestamp: now },
@@ -297,6 +307,7 @@ function createDashboardService({
         availableSkills,
       },
       conversation: mergeConversationMessages(gatewayConversation, localConversation),
+      taskRelationships: collectTaskRelationships(entries, agentId),
       taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }),
       toolHistory: collectToolHistory(entries),
       files: mergeProjectedFiles(

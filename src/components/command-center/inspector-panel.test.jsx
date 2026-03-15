@@ -37,6 +37,7 @@ function TestHarness() {
           status: "已完成",
           toolsSummary: "edit_file(完成)",
           tools: [{ id: "tool-1", name: "edit_file", status: "完成", input: "{}", output: "ok" }],
+          relationships: [{ id: "rel-1", type: "child_agent", sourceAgentId: "main", targetAgentId: "writer", detail: "draft-worker", status: "running" }],
           files: [{ path: "src/App.jsx", kind: "文件", updatedLabel: "刚刚" }],
           snapshots: [{ id: "snap-1", title: "快照 1", detail: "完成" }],
           outcome: "处理完成",
@@ -58,6 +59,9 @@ describe("InspectorPanel", () => {
     expect(screen.getByText("修复错误")).toBeInTheDocument();
     expect(screen.getByText("输入")).toBeInTheDocument();
     expect(screen.getByText("输出")).toBeInTheDocument();
+    expect(screen.getByText("协同任务")).toBeInTheDocument();
+    expect(screen.getByText("writer")).toBeInTheDocument();
+    expect(screen.getByText("draft-worker")).toBeInTheDocument();
     expect(screen.getAllByText((_, element) => element?.textContent === "{}").length).toBeGreaterThan(0);
     expect(screen.getAllByText((_, element) => element?.textContent === "ok").length).toBeGreaterThan(0);
     expect(screen.getAllByTitle("src/App.jsx").length).toBeGreaterThan(0);
@@ -71,6 +75,39 @@ describe("InspectorPanel", () => {
 
     await user.click(screen.getByRole("tab", { name: "快照" }));
     expect(screen.getByText("快照 1")).toBeInTheDocument();
+  });
+
+  it("routes artifact clicks back to the parent controller", async () => {
+    const onSelectArtifact = vi.fn();
+    const [activeTab, setActiveTab] = ["artifacts", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[{ title: "交付结果", type: "assistant_output", detail: "生成完成", messageTimestamp: 123 }]}
+        files={[]}
+        onSelectArtifact={onSelectArtifact}
+        peeks={{ workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        snapshots={[]}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "定位到 交付结果" }));
+
+    expect(onSelectArtifact).toHaveBeenCalledWith(expect.objectContaining({ title: "交付结果", messageTimestamp: 123 }));
+  });
+
+  it("keeps the timeline tab inside its own scroll container", () => {
+    renderWithTooltip(<TestHarness />);
+
+    const timelinePanel = screen.getByText("修复错误").closest('[role="tabpanel"]');
+    expect(timelinePanel).toHaveClass("flex-1", "min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("timeline-scroll-region")).toHaveClass("flex-1", "overflow-y-auto", "overscroll-contain");
   });
 
   it("collapses timeline detail blocks on demand", async () => {

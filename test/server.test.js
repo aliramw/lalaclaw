@@ -101,6 +101,71 @@ describe("server helpers", () => {
     expect(run.outcome).toContain("修改已完成");
   });
 
+  it("attaches collaborative task relationships to the matching run", () => {
+    const entries = [
+      {
+        id: "user-1",
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [{ type: "text", text: "让子 Agent 处理图片任务" }],
+        },
+      },
+      {
+        id: "assistant-1",
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [
+            {
+              type: "toolCall",
+              id: "tool-subagent",
+              name: "sessions_spawn",
+              arguments: '{"agentId":"paint","runtime":"subagent","mode":"task","label":"image-worker","childSessionKey":"agent:paint:subagent:child-1"}',
+            },
+          ],
+        },
+      },
+      {
+        id: "tool-result-1",
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "toolResult",
+          toolCallId: "tool-subagent",
+          toolName: "sessions_spawn",
+          timestamp: 3,
+          content: [{ type: "text", text: '{"status":"running","childSessionKey":"agent:paint:subagent:child-1"}' }],
+        },
+      },
+      {
+        id: "assistant-2",
+        type: "message",
+        timestamp: 4,
+        message: {
+          role: "assistant",
+          timestamp: 4,
+          content: [{ type: "text", text: "已派发给 paint。" }],
+        },
+      },
+    ];
+
+    const [run] = __test.collectTaskTimeline(entries, [process.cwd()]);
+
+    expect(run.relationships).toEqual([
+      expect.objectContaining({
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "paint",
+        detail: "image-worker",
+      }),
+    ]);
+  });
+
   it("normalizes OpenClaw responses from responses and chat styles", () => {
     expect(__test.parseOpenClawResponse({ output_text: "直接输出" })).toMatchObject({ outputText: "直接输出" });
     expect(

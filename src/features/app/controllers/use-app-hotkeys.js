@@ -21,7 +21,7 @@ export function useAppHotkeys({
 
   const onThemeHotkey = useEffectEvent((event) => {
     const normalizedKey = event.key?.toLowerCase();
-    const isThemeCombo = event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey;
+    const isThemeCombo = (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && !(event.metaKey && event.ctrlKey);
     if (!isThemeCombo || event.repeat || event.isComposing) {
       return;
     }

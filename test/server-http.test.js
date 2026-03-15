@@ -91,6 +91,7 @@ function createServerHarness() {
   });
 
   const chatDependencies = {
+    appendLocalSessionFileEntries: vi.fn(),
     appendLocalSessionConversation: vi.fn(),
     buildDashboardSnapshot,
     callOpenClawGateway: vi.fn(async () => ({})),

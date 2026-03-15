@@ -10,6 +10,7 @@ const HOME_DIR = process.env.HOME || '';
 const LOCAL_OPENCLAW_CONFIG = path.join(HOME_DIR, '.openclaw', 'openclaw.json');
 const LOCAL_OPENCLAW_DIR = path.join(HOME_DIR, '.openclaw');
 const OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw';
+const NPM_GLOBAL_DIR = path.join(HOME_DIR, '.npm-global');
 
 function readJsonIfExists(filePath) {
   try {
@@ -142,20 +143,59 @@ function collectAvailableSkills(localConfig, agentId) {
   const seen = new Set();
   const ordered = [];
 
+  function addSkill(name, ownerAgentId = '') {
+    const normalizedName = String(name || '').trim();
+    if (!normalizedName || seen.has(normalizedName)) {
+      return;
+    }
+
+    seen.add(normalizedName);
+    ordered.push({
+      name: normalizedName,
+      ownerAgentId: String(ownerAgentId || '').trim(),
+    });
+  }
+
   allowedAgents.forEach((agent) => {
     const ownerAgentId = String(agent?.id || '').trim();
     const skills = Array.isArray(agent?.skills) ? agent.skills : [];
     skills.forEach((value) => {
-      const name = String(value || '').trim();
-      if (!name || seen.has(name)) {
+      addSkill(value, ownerAgentId);
+    });
+  });
+
+  const workspaceRoot = localConfig?.agents?.defaults?.workspace || path.join(LOCAL_OPENCLAW_DIR, 'workspace');
+  const skillDirectories = [
+    path.join(workspaceRoot, 'skills'),
+    path.join(LOCAL_OPENCLAW_DIR, 'skills'),
+    path.join(NPM_GLOBAL_DIR, 'lib', 'node_modules', 'openclaw', 'skills'),
+  ];
+
+  skillDirectories.forEach((directoryPath) => {
+    try {
+      if (!directoryPath || !fs.existsSync(directoryPath)) {
         return;
       }
-      seen.add(name);
-      ordered.push({
-        name,
-        ownerAgentId,
-      });
-    });
+
+      fs.readdirSync(directoryPath, { withFileTypes: true })
+        .filter((entry) => entry?.isDirectory?.())
+        .forEach((entry) => {
+          const skillPath = path.join(directoryPath, entry.name, 'SKILL.md');
+          if (fs.existsSync(skillPath)) {
+            addSkill(entry.name);
+          }
+        });
+    } catch {}
+  });
+
+  const skillLockFiles = [
+    path.join(workspaceRoot, 'skills-lock.json'),
+    path.join(workspaceRoot, '.clawhub', 'lock.json'),
+  ];
+
+  skillLockFiles.forEach((filePath) => {
+    const payload = readJsonIfExists(filePath);
+    Object.keys(payload?.skills || {}).forEach((name) => addSkill(name));
   });
 
   return ordered;

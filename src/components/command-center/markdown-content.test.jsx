@@ -34,7 +34,9 @@ describe("MarkdownContent", () => {
 
     const image = await screen.findByAltText("示例图");
     expect(image).toHaveAttribute("src", "https://example.com/demo.png");
-    expect(image.className).toContain("h-[400px]");
+    expect(image).toHaveAttribute("loading", "eager");
+    expect(image).toHaveAttribute("decoding", "async");
+    expect(image.className).toContain("max-h-[28rem]");
 
     await user.click(image);
     expect(screen.getByRole("button", { name: "关闭预览" })).toBeInTheDocument();

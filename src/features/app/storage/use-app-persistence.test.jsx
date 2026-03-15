@@ -52,6 +52,9 @@ describe("useAppPersistence", () => {
     renderHook(() =>
       useAppPersistence({
         activeTab: "timeline",
+        dismissedTaskRelationshipIdsByConversation: {
+          "command-center:main": ["rel-agent-1"],
+        },
         fastMode: true,
         initialStoredMessagesRef: { current: [] },
         initialStoredPendingRef: { current: {} },
@@ -76,6 +79,9 @@ describe("useAppPersistence", () => {
       expect(attachmentStorageMocks.serializeAttachmentStateForStorage).toHaveBeenCalled();
       expect(JSON.parse(window.localStorage.getItem("command-center-ui-state-v2") || "{}")).toMatchObject({
         activeTab: "timeline",
+        dismissedTaskRelationshipIdsByConversation: {
+          "command-center:main": ["rel-agent-1"],
+        },
         fastMode: true,
         model: "gpt-5",
         sessionUser: "command-center",
@@ -121,6 +127,7 @@ describe("useAppPersistence", () => {
     renderHook(() =>
       useAppPersistence({
         activeTab: "timeline",
+        dismissedTaskRelationshipIdsByConversation: {},
         fastMode: false,
         initialStoredMessagesRef: { current: initialMessages },
         initialStoredPendingRef: { current: initialPending },

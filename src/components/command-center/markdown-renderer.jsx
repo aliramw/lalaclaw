@@ -387,7 +387,8 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
                     src={resolvedSrc}
                     alt={alt || ""}
                     className="block max-h-[28rem] w-auto max-w-full object-contain"
-                    loading="lazy"
+                    loading="eager"
+                    decoding="async"
                   />
                 </button>
               );

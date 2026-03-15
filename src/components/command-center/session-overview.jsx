@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { SelectionMenu } from "@/components/command-center/selection-menu";
 import { useI18n } from "@/lib/i18n";
 
@@ -24,6 +24,24 @@ function splitModeLabel(rawLabel = "") {
   };
 }
 
+function formatModelLabel(modelId = "") {
+  const normalized = String(modelId || "").trim();
+  if (!normalized) return "";
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.at(-1) || normalized;
+}
+
+function BlockTooltipContent({ label, value }) {
+  return (
+    <TooltipContent side="bottom" className="px-2.5 py-2">
+      <div className="space-y-0.5">
+        <div className="text-[10px] uppercase text-background/70">{label}</div>
+        <div className="max-w-[28rem] break-words">{value}</div>
+      </div>
+    </TooltipContent>
+  );
+}
+
 function SelectStatusPill({
   emptyText,
   getItemDescription,
@@ -34,6 +52,7 @@ function SelectStatusPill({
   onSelect,
   selectedValue,
   triggerLabel,
+  tooltipContent,
   value,
   valueClassName,
   valueStyle,
@@ -48,11 +67,12 @@ function SelectStatusPill({
       emptyText={emptyText}
       getItemLabel={getItemLabel}
       getItemDescription={getItemDescription}
+      tooltipContent={tooltipContent}
     >
       <button
         type="button"
         aria-label={triggerLabel || menuLabel || label}
-        className="inline-flex h-14 min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-left transition-[background-color,border-color,box-shadow] hover:bg-accent/40 focus-visible:outline-none focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-1 focus-visible:ring-border/70"
+        className="inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-left transition-[background-color,border-color,box-shadow] hover:bg-accent/40 focus-visible:outline-none focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-1 focus-visible:ring-border/70"
       >
         <div className="min-w-0 flex-1">
           <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
@@ -68,29 +88,23 @@ function SelectStatusPill({
   );
 }
 
-function StatusPill({ label, value, action, valueClassName, valueStyle, children }) {
+function StatusPill({ label, value, action, tooltipContent, valueClassName, valueStyle, children }) {
   return (
-    <div className="inline-flex h-14 min-w-0 items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
-        <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
-          {value}
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="inline-flex h-14 min-w-[88px] items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
+            <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
+              {value}
+            </div>
+          </div>
+          {children ? <div className="shrink-0">{children}</div> : null}
+          {action ? <div className="shrink-0">{action}</div> : null}
         </div>
-      </div>
-      {children ? <div className="shrink-0">{children}</div> : null}
-      {action ? <div className="shrink-0">{action}</div> : null}
-    </div>
-  );
-}
-
-function MetaChip({ label, value }) {
-  if (!value) return null;
-
-  return (
-    <div className="inline-flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground">
-      <span className="uppercase">{label}</span>
-      <span className="max-w-[28rem] truncate text-foreground/80">{value}</span>
-    </div>
+      </TooltipTrigger>
+      {tooltipContent ? <TooltipContent side="bottom">{tooltipContent}</TooltipContent> : <BlockTooltipContent label={label} value={value} />}
+    </Tooltip>
   );
 }
 
@@ -158,9 +172,27 @@ function formatUpdatedBadge(updatedLabel, updatedAt, intlLocale, messages) {
 function ThemeToggle({ onChange, resolvedTheme, value }) {
   const { messages } = useI18n();
   const options = [
-    { id: "system", icon: Monitor, label: messages.theme.system, shortcutLabel: messages.theme.shortcuts.system },
-    { id: "light", icon: Sun, label: messages.theme.light, shortcutLabel: messages.theme.shortcuts.light },
-    { id: "dark", icon: Moon, label: messages.theme.dark, shortcutLabel: messages.theme.shortcuts.dark },
+    {
+      id: "system",
+      icon: Monitor,
+      label: messages.theme.system,
+      description: messages.theme.descriptions.system,
+      shortcutLabel: formatShortcutForPlatform(messages.theme.shortcuts.system),
+    },
+    {
+      id: "light",
+      icon: Sun,
+      label: messages.theme.light,
+      description: messages.theme.descriptions.light,
+      shortcutLabel: formatShortcutForPlatform(messages.theme.shortcuts.light),
+    },
+    {
+      id: "dark",
+      icon: Moon,
+      label: messages.theme.dark,
+      description: messages.theme.descriptions.dark,
+      shortcutLabel: formatShortcutForPlatform(messages.theme.shortcuts.dark),
+    },
   ];
 
   return (
@@ -168,7 +200,7 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
       className={cn(
         "inline-flex h-8 items-center rounded-full border p-0.5",
         resolvedTheme === "light"
-          ? "border-slate-200 bg-slate-50/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+          ? "border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
           : "border-border/70 bg-background/90",
       )}
     >
@@ -183,14 +215,14 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
                 onClick={() => onChange(option.id)}
                 aria-label={option.label}
                 className={cn(
-                  "inline-flex h-7 w-7 items-center justify-center rounded-full border transition-[background-color,color,box-shadow,border-color] duration-200",
+                  "inline-flex h-7 min-w-[2.5rem] items-center justify-center rounded-full border px-2 transition-[background-color,color,box-shadow,border-color] duration-200",
                   active
                     ? resolvedTheme === "light"
-                      ? "border-transparent bg-white text-[#0f6fd6] shadow-[0_1px_2px_rgba(15,23,42,0.06),0_6px_16px_rgba(15,111,214,0.12)]"
-                      : "border-sky-400/30 bg-sky-400/10 text-sky-300"
+                      ? "border-transparent bg-slate-200 text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
+                      : "border-transparent bg-slate-700 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
                     : resolvedTheme === "light"
-                      ? "border-transparent text-slate-500 hover:bg-white/80 hover:text-slate-700"
-                      : "border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                      ? "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                      : "border-transparent bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -199,7 +231,8 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
             <TooltipContent side="bottom" className="px-2.5 py-2">
               <div className="space-y-0.5">
                 <div>{option.label}</div>
-                <div className="text-[11px] text-background/70">{option.shortcutLabel}</div>
+                <div className="text-[11px] text-background/70">{option.description}</div>
+                <div className="text-[11px] text-background/70">{messages.theme.shortcutHint(option.shortcutLabel)}</div>
               </div>
             </TooltipContent>
           </Tooltip>
@@ -219,7 +252,7 @@ function LanguageToggle() {
         <button
           type="button"
           aria-label={messages.locale.switchLabel}
-          className="inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+          className="inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
         >
           <Languages className="h-4 w-4" />
           <span className="text-xs font-medium text-foreground">{activeLocale?.label || locale.toUpperCase()}</span>
@@ -259,11 +292,10 @@ export function SessionOverview({
   const getThinkModeLabel = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).value;
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
   const isThinkModeEnabled = (session.thinkMode || "off") !== "off";
-  const displayedModel = model || session.selectedModel || session.model || messages.common.unknown;
-  const runtimeDisplay = session.runtime || messages.common.unknown;
-
+  const selectedModel = model || session.selectedModel || session.model || "";
+  const displayedModel = formatModelLabel(selectedModel) || messages.common.unknown;
   return (
-    <section className="py-2.5">
+    <section className="pt-2.5 pb-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 overflow-x-auto pb-1">
               <div className="flex min-w-max items-center gap-2">
@@ -283,6 +315,7 @@ export function SessionOverview({
                   selectedValue={session.agentId}
                   emptyText={messages.sessionOverview.menus.noAgents}
                   menuLabel={messages.sessionOverview.menus.switchAgent}
+                  tooltipContent={messages.sessionOverview.tooltips.switchAgentSession}
                 />
 
                 <SelectStatusPill
@@ -290,28 +323,34 @@ export function SessionOverview({
                   value={displayedModel}
                   items={availableModels}
                   onSelect={onModelChange}
-                  selectedValue={displayedModel}
+                  selectedValue={selectedModel}
                   emptyText={messages.sessionOverview.menus.noModels}
                   menuLabel={messages.sessionOverview.menus.switchModel}
+                  tooltipContent={messages.sessionOverview.tooltips.switchModel}
                 />
 
-                <button
-                  type="button"
-                  aria-pressed={fastMode}
-                  title={fastMode ? messages.sessionOverview.fastMode.disableTitle : messages.sessionOverview.fastMode.enableTitle}
-                  onClick={() => onFastModeChange(!fastMode)}
-                  className="inline-flex h-14 min-w-[7.5rem] cursor-pointer items-center gap-3 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/40"
-                >
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{messages.sessionOverview.labels.fastMode}</div>
-                    <div
-                      className={cn("text-sm font-semibold", fastMode && "dark:text-emerald-400")}
-                      style={fastMode && resolvedTheme === "light" ? { color: "#009559" } : undefined}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-pressed={fastMode}
+                      title={fastMode ? messages.sessionOverview.fastMode.disableTitle : messages.sessionOverview.fastMode.enableTitle}
+                      onClick={() => onFastModeChange(!fastMode)}
+                      className="inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-3 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/40"
                     >
-                      {fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off}
-                    </div>
-                  </div>
-                </button>
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.fastMode}</div>
+                        <div
+                          className={cn("text-sm font-semibold", fastMode && "dark:text-emerald-400")}
+                          style={fastMode && resolvedTheme === "light" ? { color: "#009559" } : undefined}
+                        >
+                          {fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off}
+                        </div>
+                      </div>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{messages.sessionOverview.tooltips.fastMode}</TooltipContent>
+                </Tooltip>
 
                 <SelectStatusPill
                   label={messages.sessionOverview.labels.thinkMode}
@@ -325,11 +364,20 @@ export function SessionOverview({
                   getItemLabel={getThinkModeLabel}
                   getItemDescription={getThinkModeDescription}
                   menuLabel={messages.sessionOverview.menus.switchThinkMode}
+                  tooltipContent={messages.sessionOverview.tooltips.thinkMode}
                 />
 
-                <StatusPill label={messages.sessionOverview.labels.context} value={`${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`} />
+                <StatusPill
+                  label={messages.sessionOverview.labels.context}
+                  value={`${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`}
+                  tooltipContent={messages.sessionOverview.tooltips.context}
+                />
 
-                <StatusPill label={messages.sessionOverview.labels.queue} value={session.queue || messages.common.none}>
+                <StatusPill
+                  label={messages.sessionOverview.labels.queue}
+                  value={session.queue || messages.common.none}
+                  tooltipContent={messages.sessionOverview.tooltips.queue}
+                >
                   <Badge variant="default">{updatedBadgeLabel}</Badge>
                 </StatusPill>
               </div>

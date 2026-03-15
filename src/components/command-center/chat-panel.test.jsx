@@ -50,6 +50,7 @@ describe("ChatPanel", () => {
     const onReset = vi.fn();
     const onSend = vi.fn();
     const onPromptChange = vi.fn();
+    vi.stubGlobal("confirm", vi.fn(() => true));
 
     render(
       <TooltipProvider>
@@ -82,6 +83,32 @@ describe("ChatPanel", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
+  it("formats reset tooltip shortcuts for the current platform", async () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Win32");
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByLabelText("重置对话"));
+    expect((await screen.findAllByText("重置对话 (Ctrl + N)")).length).toBeGreaterThan(0);
+  });
+
   it("renders messages and busy/openclaw status", () => {
     render(
       <TooltipProvider>
@@ -112,7 +139,7 @@ describe("ChatPanel", () => {
 
     expect(screen.getByText("你好")).toBeInTheDocument();
     expect(screen.getByText(/\*?\*?已收到\*?\*?/)).toBeInTheDocument();
-    expect(screen.getByText("OpenClaw 在线")).toBeInTheDocument();
+    expect(screen.getByText("OpenClaw")).toBeInTheDocument();
     expect(screen.getByText("2026.3.13 (61d171a)")).toBeInTheDocument();
     expect(screen.getByText("ops - 当前会话")).toBeInTheDocument();
     expect(screen.getByText("elevated")).toBeInTheDocument();
@@ -199,7 +226,7 @@ describe("ChatPanel", () => {
     expect(document.querySelector("pre")?.textContent).toContain("print('preview works')");
   });
 
-  it("renders user image attachments and composer attachments", async () => {
+  it("routes message and composer images through the shared image preview overlay", async () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -252,10 +279,14 @@ describe("ChatPanel", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByAltText("shot.png"));
+    expect(screen.getByRole("button", { name: "放大图片" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭预览" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByAltText("draft.png"));
+    expect(screen.getByRole("button", { name: "向左旋转" })).toBeInTheDocument();
   });
 
   it("routes pasted files from anywhere on the page through the attachment flow and refocuses the composer", async () => {
@@ -322,7 +353,7 @@ describe("ChatPanel", () => {
     await user.type(textarea, "@");
 
     const writerOption = screen.getByRole("button", { name: /writer/i });
-    expect(writerOption).toHaveClass("bg-muted");
+    expect(writerOption).toHaveClass("bg-foreground/10");
 
     await user.keyboard("{ArrowDown}{Enter}");
 
@@ -420,6 +451,75 @@ describe("ChatPanel", () => {
 
     const jumpButton = await screen.findByRole("button", { name: "回到最新回复" });
     expect(jumpButton).toBeInTheDocument();
+  });
+
+  it("does not show the message-top jump button for assistant messages with images", async () => {
+    const viewportRef = { current: null };
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            {
+              role: "assistant",
+              content: "![山水图](https://example.com/demo.png)\n\n这是一张图片。",
+              timestamp: 2,
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    await screen.findByAltText("山水图");
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 80 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: -24,
+      left: 0,
+      right: 560,
+      bottom: 196,
+      width: 560,
+      height: 220,
+      x: 0,
+      y: -24,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.scroll(viewport);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "回到这条消息顶部" })).not.toBeInTheDocument();
+    });
   });
 
   it("does not open the agent menu when the current agent cannot use sub agents", async () => {

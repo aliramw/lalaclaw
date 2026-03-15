@@ -37,6 +37,10 @@ export function useCommandCenter() {
   const [switchingAgentLabel, setSwitchingAgentLabel] = useState("");
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [fastMode, setFastMode] = useState(Boolean(stored?.fastMode));
+  const [dismissedTaskRelationshipIdsByConversation, setDismissedTaskRelationshipIdsByConversation] = useState(
+    stored?.dismissedTaskRelationshipIdsByConversation || {},
+  );
+  const [focusMessageRequest, setFocusMessageRequest] = useState(null);
   const [model, setModel] = useState(stored?.model || "");
   const { resolvedTheme, setTheme, theme } = useTheme();
   const [prompt, setPrompt] = useState("");
@@ -61,6 +65,7 @@ export function useCommandCenter() {
 
   const activeConversationKey = createConversationKey(session.sessionUser, session.agentId);
   const activePendingChat = pendingChatTurns[activeConversationKey] || null;
+  const dismissedTaskRelationshipIds = dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [];
 
   const setMessagesSynced = (value) => {
     setMessages((current) => {
@@ -85,6 +90,7 @@ export function useCommandCenter() {
     loadRuntime,
     peeks,
     snapshots,
+    taskRelationships,
     taskTimeline,
     updateSessionSettings,
   } = useRuntimeSnapshot({
@@ -159,6 +165,19 @@ export function useCommandCenter() {
   }, []);
 
   useEffect(() => {
+    setMessagesSynced((current) =>
+      (current || []).map((message) =>
+        message?.pending
+          ? {
+              ...message,
+              content: i18n.chat.thinkingPlaceholder,
+            }
+          : message,
+      ),
+    );
+  }, [i18n.chat.thinkingPlaceholder]);
+
+  useEffect(() => {
     sessionStateRef.current = {
       sessionUser: session.sessionUser,
       agentId: session.agentId,
@@ -231,6 +250,7 @@ export function useCommandCenter() {
 
   useAppPersistence({
     activeTab,
+    dismissedTaskRelationshipIdsByConversation,
     fastMode,
     initialStoredMessagesRef,
     initialStoredPendingRef,
@@ -243,6 +263,30 @@ export function useCommandCenter() {
     setMessagesSynced,
     setPendingChatTurns,
   });
+
+  const dismissTaskRelationship = (relationshipId) => {
+    const normalizedId = String(relationshipId || "").trim();
+    if (!normalizedId) {
+      return;
+    }
+
+    setDismissedTaskRelationshipIdsByConversation((current) => {
+      const existing = current[activeConversationKey] || [];
+      if (existing.includes(normalizedId)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [activeConversationKey]: [...existing, normalizedId],
+      };
+    });
+  };
+
+  const visibleTaskRelationships = useMemo(
+    () => taskRelationships.filter((relationship) => !dismissedTaskRelationshipIds.includes(relationship?.id)),
+    [dismissedTaskRelationshipIds, taskRelationships],
+  );
 
   useEffect(() => {
     const viewport = messageViewportRef.current;
@@ -360,6 +404,40 @@ export function useCommandCenter() {
     return [section.summary, ...(section.items || []).map((item) => `${item.label}: ${item.value}`)].filter(Boolean).join("\n");
   };
 
+  const handleArtifactSelect = (artifact) => {
+    const normalizedDetail = String(artifact?.detail || "")
+      .replace(/\.\.\.$/, "")
+      .replace(/…$/, "")
+      .trim();
+    const assistantMessages = messagesRef.current.filter((message) => message?.role === "assistant");
+
+    if (!assistantMessages.length) {
+      return;
+    }
+
+    const matchedMessage =
+      (artifact?.messageTimestamp
+        ? assistantMessages.find((message) => Number(message?.timestamp || 0) === Number(artifact.messageTimestamp))
+        : null)
+      || (artifact?.timestamp
+        ? assistantMessages.find((message) => Number(message?.timestamp || 0) === Number(artifact.timestamp))
+        : null)
+      || (normalizedDetail
+        ? assistantMessages.find((message) => String(message?.content || "").includes(normalizedDetail))
+        : null)
+      || assistantMessages.at(-1);
+
+    if (!matchedMessage?.timestamp) {
+      return;
+    }
+
+    setFocusMessageRequest({
+      id: `${matchedMessage.timestamp}-${Date.now()}`,
+      role: matchedMessage.role || artifact?.messageRole || "assistant",
+      timestamp: matchedMessage.timestamp,
+    });
+  };
+
   return {
     activeQueuedMessages,
     activeTab,
@@ -371,9 +449,11 @@ export function useCommandCenter() {
     composerAttachments,
     files,
     fastMode,
+    focusMessageRequest,
     formatCompactK,
     handleAddAttachments,
     handleAgentChange,
+    handleArtifactSelect,
     handleFastModeChange,
     handleModelChange,
     handlePromptChange,
@@ -393,9 +473,11 @@ export function useCommandCenter() {
     resolvedTheme,
     session,
     setActiveTab,
+    dismissTaskRelationship,
     setTheme,
     snapshots,
     switchingAgentLabel,
+    taskRelationships: visibleTaskRelationships,
     taskTimeline,
     theme,
   };

@@ -8,19 +8,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-export function SelectionMenu({ children, label, triggerLabel, items, value, onSelect, emptyText, getItemDescription, getItemLabel }) {
+export function SelectionMenu({ children, emptyText, getItemDescription, getItemLabel, items, label, onSelect, tooltipContent, triggerLabel, value }) {
   return (
     <DropdownMenu>
-      {children ? (
-        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      ) : (
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label={triggerLabel || label} className="h-7 w-7">
-            <DropdownIcon />
-          </Button>
-        </DropdownMenuTrigger>
-      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {children ? (
+            <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+          ) : (
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label={triggerLabel || label} className="h-7 w-7">
+                <DropdownIcon />
+              </Button>
+            </DropdownMenuTrigger>
+          )}
+        </TooltipTrigger>
+        {tooltipContent ? <TooltipContent side="bottom">{tooltipContent}</TooltipContent> : null}
+      </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />

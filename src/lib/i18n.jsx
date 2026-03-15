@@ -1,17 +1,21 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import en from "@/locales/en";
+import es from "@/locales/es";
 import fr from "@/locales/fr";
 import ja from "@/locales/ja";
+import pt from "@/locales/pt";
 import zh from "@/locales/zh";
 
 const localeStorageKey = "command-center-locale";
-const dictionaries = { zh, en, ja, fr };
-const supportedLocales = ["zh", "en", "ja", "fr"];
+const dictionaries = { zh, en, ja, fr, es, pt };
+const supportedLocales = ["zh", "en", "ja", "fr", "es", "pt"];
 const intlLocaleMap = {
   zh: "zh-CN",
   en: "en-US",
   ja: "ja-JP",
   fr: "fr-FR",
+  es: "es-ES",
+  pt: "pt-BR",
 };
 const localeOptions = supportedLocales.map((locale) => ({
   value: locale,
@@ -23,6 +27,8 @@ function normalizeLocale(rawLocale = "") {
   if (normalized.startsWith("zh")) return "zh";
   if (normalized.startsWith("ja")) return "ja";
   if (normalized.startsWith("fr")) return "fr";
+  if (normalized.startsWith("es")) return "es";
+  if (normalized.startsWith("pt")) return "pt";
   if (normalized.startsWith("en")) return "en";
   return null;
 }

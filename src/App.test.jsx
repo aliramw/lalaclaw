@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "@/App";
+import App, { TaskRelationshipsPanel } from "@/App";
+import { I18nProvider } from "@/lib/i18n";
 import { localeStorageKey } from "@/lib/i18n";
 
 const storageKey = "command-center-ui-state-v2";
@@ -36,6 +37,7 @@ function createSnapshot(overrides = {}) {
       availableAgents: ["main"],
     },
     taskTimeline: [],
+    taskRelationships: [],
     files: [],
     artifacts: [],
     snapshots: [],
@@ -164,9 +166,11 @@ describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.localStorage.setItem(localeStorageKey, "zh");
+    vi.stubGlobal("confirm", vi.fn(() => true));
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -192,7 +196,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect((await screen.findAllByText("10:00:00")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "帮我检查状态");
@@ -203,6 +207,84 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
+    });
+  });
+
+  it("scrolls the chat viewport to the matching assistant bubble when an artifact summary is clicked", async () => {
+    const assistantTimestamp = 1700000000000;
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            conversation: [
+              { role: "user", content: "先看摘要", timestamp: assistantTimestamp - 1 },
+              { role: "assistant", content: "这是最终回复，用来测试摘要联动定位。", timestamp: assistantTimestamp },
+            ],
+            artifacts: [
+              {
+                title: "回复 10:00",
+                type: "assistant_output",
+                detail: "这是最终回复，用来测试摘要联动定位。",
+                messageRole: "assistant",
+                messageTimestamp: assistantTimestamp,
+                timestamp: assistantTimestamp,
+              },
+            ],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const assistantMessage = await screen.findByText("这是最终回复，用来测试摘要联动定位。");
+    const assistantBubble = assistantMessage.closest('[data-message-role="assistant"]');
+    const viewport = [...document.querySelectorAll("[data-radix-scroll-area-viewport]")]
+      .find((element) => element.contains(assistantMessage));
+
+    expect(viewport).toBeTruthy();
+    expect(assistantBubble).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 2400 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 900,
+      bottom: 400,
+      width: 900,
+      height: 400,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    assistantBubble.getBoundingClientRect = () => ({
+      top: 820 - viewport.scrollTop,
+      left: 0,
+      right: 700,
+      bottom: 1000 - viewport.scrollTop,
+      width: 700,
+      height: 180,
+      x: 0,
+      y: 820 - viewport.scrollTop,
+      toJSON: () => ({}),
+    });
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "回复摘要" }));
+    await user.click(screen.getByRole("button", { name: "定位到 回复 10:00" }));
+
+    await waitFor(() => {
+      expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 700, behavior: "smooth" });
     });
   });
 
@@ -244,7 +326,236 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("OpenClaw 离线")).toBeInTheDocument();
+    expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
+    expect(screen.getByLabelText("OpenClaw的状态")).toBeInTheDocument();
+  });
+
+  it("shows task relationships above trace and observe while the current task is still running", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              conversation: [{ role: "assistant", content: "处理中", timestamp: 1, pending: true }],
+              taskRelationships: [
+                { id: "rel-session", type: "session_spawn", sourceAgentId: "main", targetAgentId: "", detail: "fresh-session", status: "established" },
+                { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "running" },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("协同任务")).toBeInTheDocument();
+    expect(screen.getByText("已建立")).toBeInTheDocument();
+    expect(screen.getByText("执行中")).toBeInTheDocument();
+    expect(screen.getByText("Session Spawn")).toBeInTheDocument();
+    expect(screen.getByText("fresh-session")).toBeInTheDocument();
+    expect(screen.getByText("paint")).toBeInTheDocument();
+    expect(screen.getByText("image-worker")).toBeInTheDocument();
+  });
+
+  it("allows dismissing failed task relationships from the context menu", async () => {
+    const onDismissRelationship = vi.fn();
+
+    render(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          onDismissRelationship={onDismissRelationship}
+          relationships={[
+            { id: "rel-failed", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "failed" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    fireEvent.contextMenu(screen.getByText("image-worker").closest("div[class*='grid-cols-[auto_minmax(2.5rem,1fr)_auto]']") || screen.getByText("image-worker"));
+
+    const closeMenuItem = await screen.findByRole("menuitem", { name: "关闭" });
+    fireEvent.click(closeMenuItem);
+
+    expect(onDismissRelationship).toHaveBeenCalledWith("rel-failed");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+  });
+
+  it("hides completed task relationships by default when they were already completed on first render", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              conversation: [{ role: "assistant", content: "已完成", timestamp: 1 }],
+              taskRelationships: [
+                { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "completed" },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    expect(screen.queryByText("协同任务")).not.toBeInTheDocument();
+    expect(screen.queryByText("paint")).not.toBeInTheDocument();
+  });
+
+  it("shows a 60-second hide countdown only when a visible task transitions into completed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-15T09:10:00Z"));
+
+    const { rerender } = render(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "running" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByText("60 秒后关闭")).not.toBeInTheDocument();
+    expect(screen.getByText("paint")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(27000);
+    });
+
+    rerender(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "completed" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("60 秒后关闭")).toBeInTheDocument();
+    expect(screen.getByText("paint")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByText("59 秒后关闭")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(59000);
+    });
+
+    expect(screen.queryByText("paint")).not.toBeInTheDocument();
+  });
+
+  it("updates the completed-task countdown every second", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-15T09:20:00Z"));
+
+    const { rerender } = render(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "running" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    rerender(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "completed" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("60 秒后关闭")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByText("59 秒后关闭")).toBeInTheDocument();
+  });
+
+  it("keeps the completed-task countdown moving across runtime refreshes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-15T09:30:00Z"));
+
+    const { rerender } = render(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "running" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    rerender(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "completed" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("60 秒后关闭")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(screen.getByText("58 秒后关闭")).toBeInTheDocument();
+
+    rerender(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-agent", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "completed" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByText("57 秒后关闭")).toBeInTheDocument();
   });
 
   it("shows an assistant error message when chat request fails", async () => {
@@ -840,9 +1151,9 @@ describe("App", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText("openai-codex/gpt-5.4").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("gpt-5.4").length).toBeGreaterThan(0);
     });
-    expect(screen.queryByText("openrouter/google/gemini-3-flash-preview")).not.toBeInTheDocument();
+    expect(screen.queryByText("gemini-3-flash-preview")).not.toBeInTheDocument();
   });
 
   it("keeps prompt history isolated after resetting into a new session", async () => {

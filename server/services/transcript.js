@@ -426,6 +426,8 @@ function createTranscriptProjector({
           title: `回复 ${formatTimestamp(entry.message.timestamp || entry.timestamp)}`,
           type: 'assistant_output',
           detail: clip(reply, 180),
+          messageRole: 'assistant',
+          messageTimestamp: entry.message.timestamp || entry.timestamp,
           timestamp: entry.message.timestamp || entry.timestamp,
         };
       })
@@ -548,6 +550,420 @@ function createTranscriptProjector({
     return history.slice(-12).reverse();
   }
 
+  function normalizeToolArguments(argumentsValue, partialJson = '') {
+    if (argumentsValue && typeof argumentsValue === 'object') {
+      return argumentsValue;
+    }
+
+    const raw = typeof argumentsValue === 'string' && argumentsValue.trim()
+      ? argumentsValue
+      : String(partialJson || '').trim();
+
+    if (!raw) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function extractAgentIdFromSessionKey(sessionKey = '') {
+    const match = /^agent:([^:]+)/i.exec(String(sessionKey || '').trim());
+    return match?.[1] || '';
+  }
+
+  function parseToolResultDetails(payload = {}) {
+    if (payload?.details && typeof payload.details === 'object') {
+      return payload.details;
+    }
+
+    const raw = extractTextSegments(payload.content).join('\n').trim();
+    if (!raw) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function normalizeTaskRelationshipStatus(status = '', { isError = false, fallback = 'dispatching' } = {}) {
+    const normalized = String(status || '').trim().toLowerCase();
+
+    if (
+      isError ||
+      /(error|failed|failure|denied|rejected|timeout|timed_out|aborted|cancelled|canceled)/.test(normalized)
+    ) {
+      return 'failed';
+    }
+
+    if (/(completed|complete|success|succeeded|done|finished)/.test(normalized)) {
+      return 'completed';
+    }
+
+    if (/(accepted|queued|started|running|in_progress|in-progress|processing)/.test(normalized)) {
+      return 'running';
+    }
+
+    return fallback;
+  }
+
+  function parseInternalTaskCompletionEvent(payload = {}) {
+    if (payload?.role !== 'user') {
+      return null;
+    }
+
+    const rawText = extractPlainTextSegments(Array.isArray(payload.content) ? payload.content : []).join('\n').trim();
+    if (!/\[Internal task completion event\]/i.test(rawText)) {
+      return null;
+    }
+
+    const sessionKey =
+      rawText.match(/^\s*session_key:\s*(.+)$/im)?.[1]?.trim() ||
+      String(payload?.provenance?.sourceSessionKey || '').trim();
+    const task = rawText.match(/^\s*task:\s*(.+)$/im)?.[1]?.trim() || '';
+    const statusText = rawText.match(/^\s*status:\s*(.+)$/im)?.[1]?.trim() || '';
+    const source = rawText.match(/^\s*source:\s*(.+)$/im)?.[1]?.trim() || '';
+
+    if (!sessionKey && !task && !statusText) {
+      return null;
+    }
+
+    return {
+      sessionKey,
+      task,
+      source,
+      status: normalizeTaskRelationshipStatus(statusText, {
+        isError: /failed|error|timeout|aborted|cancelled/i.test(statusText),
+        fallback: '',
+      }),
+    };
+  }
+
+  function inferChildSessionTaskStatus(entries = []) {
+    if (!entries.length) {
+      return '';
+    }
+
+    let latestAssistantReplyAt = 0;
+    let latestFailureAt = 0;
+    let hasActivity = false;
+    const unresolvedCalls = new Set();
+
+    for (const entry of entries) {
+      if (entry?.type !== 'message') {
+        continue;
+      }
+
+      const payload = entry.message || {};
+      const timestamp = Number(payload.timestamp || entry.timestamp) || 0;
+      const content = Array.isArray(payload.content) ? payload.content : [];
+
+      if (payload.role === 'user') {
+        hasActivity = true;
+        continue;
+      }
+
+      if (payload.role === 'assistant') {
+        hasActivity = true;
+        const reply = cleanAssistantReply(extractPlainTextSegments(content).join('\n\n'));
+        if (reply) {
+          latestAssistantReplyAt = Math.max(latestAssistantReplyAt, timestamp);
+        }
+
+        for (const item of content) {
+          if (item?.type === 'toolCall' && item.id) {
+            unresolvedCalls.add(item.id);
+          }
+        }
+      }
+
+      if (payload.role === 'toolResult') {
+        hasActivity = true;
+        if (payload.toolCallId) {
+          unresolvedCalls.delete(payload.toolCallId);
+        }
+
+        const details = parseToolResultDetails(payload);
+        const status = normalizeTaskRelationshipStatus(details?.status, {
+          isError: Boolean(payload.details?.isError || payload.isError),
+          fallback: 'running',
+        });
+        if (status === 'failed') {
+          latestFailureAt = Math.max(latestFailureAt, timestamp);
+        }
+      }
+    }
+
+    if (latestFailureAt && latestFailureAt >= latestAssistantReplyAt) {
+      return 'failed';
+    }
+
+    if (latestAssistantReplyAt) {
+      return 'completed';
+    }
+
+    if (unresolvedCalls.size || hasActivity) {
+      return 'running';
+    }
+
+    return '';
+  }
+
+  function inferTaskRelationshipFromToolCall(toolCall, sourceAgentId = '') {
+    if (toolCall?.type !== 'toolCall') {
+      return null;
+    }
+
+    const normalizedName = String(toolCall.name || '').trim().toLowerCase();
+    const args = normalizeToolArguments(toolCall.arguments, toolCall.partialJson);
+    const timestamp = Number(toolCall.timestamp) || 0;
+
+    if (normalizedName === 'sessions_spawn') {
+      const mode = String(args.mode || '').trim().toLowerCase();
+      const runtime = String(args.runtime || '').trim().toLowerCase();
+      const targetAgentId = String(args.agentId || '').trim() || extractAgentIdFromSessionKey(args.childSessionKey);
+      const detail = String(args.label || '').trim();
+
+      if (mode === 'session') {
+        return {
+          id: `session:${detail || 'spawn'}`,
+          type: 'session_spawn',
+          sourceAgentId: sourceAgentId || config.agentId || 'main',
+          targetAgentId: '',
+          detail,
+          toolCallId: toolCall.id || '',
+          childSessionKey: String(args.childSessionKey || '').trim(),
+          spawnMode: mode,
+          runtime,
+          timestamp,
+        };
+      }
+
+      if (runtime === 'subagent' || targetAgentId) {
+        return {
+          id: `agent:${targetAgentId || detail || 'subagent'}`,
+          type: 'child_agent',
+          sourceAgentId: sourceAgentId || config.agentId || 'main',
+          targetAgentId: targetAgentId || detail || 'subagent',
+          detail,
+          toolCallId: toolCall.id || '',
+          childSessionKey: String(args.childSessionKey || '').trim(),
+          spawnMode: mode,
+          runtime,
+          timestamp,
+        };
+      }
+
+      return {
+        id: `session:${detail || 'spawn'}`,
+        type: 'session_spawn',
+        sourceAgentId: sourceAgentId || config.agentId || 'main',
+        targetAgentId: '',
+        detail,
+        toolCallId: toolCall.id || '',
+        childSessionKey: String(args.childSessionKey || '').trim(),
+        spawnMode: mode,
+        runtime,
+        timestamp,
+      };
+    }
+
+    if (normalizedName === 'subagents') {
+      const action = String(args.action || args.command || args.mode || '').trim().toLowerCase();
+      if (!/(spawn|run|start|create)/.test(action)) {
+        return null;
+      }
+
+      const targetAgentId = String(args.agentId || args.id || args.target || '').trim();
+      if (!targetAgentId) {
+        return null;
+      }
+
+      return {
+        id: `agent:${targetAgentId}`,
+        type: 'child_agent',
+        sourceAgentId: sourceAgentId || config.agentId || 'main',
+        targetAgentId,
+        detail: '',
+        toolCallId: toolCall.id || '',
+        childSessionKey: String(args.childSessionKey || '').trim(),
+        spawnMode: action,
+        runtime: 'subagent',
+        timestamp,
+      };
+    }
+
+    return null;
+  }
+
+  function collectTaskRelationships(entries, sourceAgentId = config.agentId) {
+    const found = new Map();
+    const pendingByToolCallId = new Map();
+    const childStatusCache = new Map();
+
+    function updateRelationshipStatusFromEvent(event = {}) {
+      if (!event?.status) {
+        return;
+      }
+
+      const targetAgentId = extractAgentIdFromSessionKey(event.sessionKey) || '';
+      const relationships = [...found.values()];
+
+      for (let index = relationships.length - 1; index >= 0; index -= 1) {
+        const relationship = relationships[index];
+        if (!relationship || relationship.type !== 'child_agent') {
+          continue;
+        }
+
+        const matchesSessionKey =
+          event.sessionKey &&
+          relationship.childSessionKey &&
+          String(relationship.childSessionKey).trim() === event.sessionKey;
+        const matchesTaskLabel =
+          event.task &&
+          relationship.detail &&
+          String(relationship.detail).trim() === event.task &&
+          (!targetAgentId || relationship.targetAgentId === targetAgentId);
+        const matchesUnlabeledAgent =
+          event.task &&
+          !relationship.detail &&
+          targetAgentId &&
+          relationship.targetAgentId === targetAgentId &&
+          !relationship.childSessionKey &&
+          relationship.status !== 'completed' &&
+          relationship.status !== 'failed';
+
+        if (!matchesSessionKey && !matchesTaskLabel && !matchesUnlabeledAgent) {
+          continue;
+        }
+
+        found.set(relationship.id, {
+          ...relationship,
+          childSessionKey: event.sessionKey || relationship.childSessionKey,
+          detail: relationship.detail || event.task || '',
+          status: event.status,
+        });
+        return;
+      }
+    }
+
+    function resolveRelationshipStatusFromChildSession(childSessionKey = '', fallbackAgentId = '') {
+      if (!childSessionKey) {
+        return '';
+      }
+
+      const cacheKey = `${fallbackAgentId}:${childSessionKey}`;
+      if (childStatusCache.has(cacheKey)) {
+        return childStatusCache.get(cacheKey);
+      }
+
+      const childAgentId = extractAgentIdFromSessionKey(childSessionKey) || String(fallbackAgentId || '').trim();
+      if (!childAgentId) {
+        childStatusCache.set(cacheKey, '');
+        return '';
+      }
+
+      const childSessionRecord = resolveSessionRecord(childAgentId, childSessionKey);
+      if (!childSessionRecord?.sessionId) {
+        childStatusCache.set(cacheKey, '');
+        return '';
+      }
+
+      const childEntries = readJsonLines(getTranscriptPath(childAgentId, childSessionRecord.sessionId)).slice(-120);
+      const childStatus = inferChildSessionTaskStatus(childEntries);
+      childStatusCache.set(cacheKey, childStatus);
+      return childStatus;
+    }
+
+    for (const entry of entries) {
+      if (entry?.type !== 'message') {
+        continue;
+      }
+
+      const payload = entry.message || {};
+      const content = Array.isArray(payload.content) ? payload.content : [];
+      const observedAt = Number(payload.timestamp || entry.timestamp) || 0;
+
+      if (payload.role === 'assistant') {
+        for (const [itemIndex, item] of content.entries()) {
+          const relationship = inferTaskRelationshipFromToolCall(item, sourceAgentId);
+          if (!relationship) {
+            continue;
+          }
+
+          const relationshipId = `${relationship.id}:${relationship.timestamp || observedAt}:${itemIndex}`;
+          found.set(relationshipId, {
+            ...relationship,
+            id: relationshipId,
+            timestamp: relationship.timestamp || observedAt,
+            status: 'dispatching',
+          });
+
+          if (relationship.toolCallId) {
+            pendingByToolCallId.set(relationship.toolCallId, relationshipId);
+          }
+        }
+      }
+
+      if (payload.role !== 'toolResult' || !payload.toolCallId) {
+        const internalCompletion = parseInternalTaskCompletionEvent(payload);
+        if (internalCompletion) {
+          updateRelationshipStatusFromEvent(internalCompletion);
+        }
+        continue;
+      }
+
+      const relationshipId = pendingByToolCallId.get(payload.toolCallId);
+      if (!relationshipId) {
+        continue;
+      }
+
+      const existing = found.get(relationshipId);
+      if (!existing) {
+        continue;
+      }
+
+      const details = parseToolResultDetails(payload);
+      const rawStatus = normalizeTaskRelationshipStatus(details?.status, {
+        isError: Boolean(payload.details?.isError || payload.isError),
+        fallback: existing.status || 'dispatching',
+      });
+      const childSessionKey = String(details?.childSessionKey || existing.childSessionKey || '').trim();
+      const childStatus = resolveRelationshipStatusFromChildSession(childSessionKey, existing.targetAgentId);
+
+      let nextStatus = rawStatus;
+      if (existing.type === 'session_spawn' && nextStatus === 'running') {
+        nextStatus = existing.spawnMode === 'session' ? 'established' : 'running';
+      }
+
+      if (childStatus === 'failed') {
+        nextStatus = 'failed';
+      } else if (existing.type === 'child_agent') {
+        if (childStatus === 'completed') {
+          nextStatus = 'completed';
+        } else if (childStatus === 'running' && nextStatus !== 'failed') {
+          nextStatus = 'running';
+        }
+      }
+
+      found.set(relationshipId, {
+        ...existing,
+        childSessionKey,
+        status: nextStatus,
+      });
+    }
+
+    return [...found.values()].sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0));
+  }
+
   function summarizeToolsForRun(tools) {
     if (!tools.length) {
       return '本轮未调用工具';
@@ -558,10 +974,47 @@ function createTranscriptProjector({
       .join(' · ');
   }
 
+  function attachRelationshipsToRuns(runs, relationships) {
+    const normalizedRuns = Array.isArray(runs) ? runs : [];
+    const normalizedRelationships = Array.isArray(relationships) ? relationships : [];
+
+    if (!normalizedRuns.length) {
+      return normalizedRuns;
+    }
+
+    return normalizedRuns.map((run, index) => {
+      const start = Number(run.timestamp) || 0;
+      const nextRun = normalizedRuns[index + 1];
+      const nextStart = Number(nextRun?.timestamp) || 0;
+      const runRelationships = normalizedRelationships.filter((relationship) => {
+        const relationshipTimestamp = Number(relationship?.timestamp) || 0;
+        if (!relationshipTimestamp) {
+          return false;
+        }
+
+        if (relationshipTimestamp < start) {
+          return false;
+        }
+
+        if (nextStart && relationshipTimestamp >= nextStart) {
+          return false;
+        }
+
+        return true;
+      });
+
+      return {
+        ...run,
+        relationships: runRelationships,
+      };
+    });
+  }
+
   function collectTaskTimeline(entries, roots, options = {}) {
     const runs = [];
     let currentRun = null;
     const unresolvedCalls = new Map();
+    const relationships = collectTaskRelationships(entries, config.agentId);
 
     function ensureRun(timestamp) {
       if (currentRun) {
@@ -676,7 +1129,8 @@ function createTranscriptProjector({
       }
     }
 
-    return runs
+    return attachRelationshipsToRuns(
+      runs
       .map((run) => ({
         id: run.id,
         title: run.title,
@@ -691,7 +1145,9 @@ function createTranscriptProjector({
       }))
       .filter((run) => run.prompt || run.tools.length || run.outcome)
       .slice(-8)
-      .reverse();
+      .reverse(),
+      relationships,
+    );
   }
 
   function collectAgentActivity(agentId) {
@@ -743,6 +1199,7 @@ function createTranscriptProjector({
     collectConversationMessages,
     collectFiles,
     collectSnapshots,
+    collectTaskRelationships,
     collectTaskTimeline,
     collectToolHistory,
     extractTextSegments,

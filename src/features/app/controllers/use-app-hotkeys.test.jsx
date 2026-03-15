@@ -50,7 +50,7 @@ describe("useAppHotkeys", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("switches theme for cmd+shift shortcuts", () => {
+  it("switches theme for cmd+shift shortcuts on macOS", () => {
     const setTheme = vi.fn();
 
     renderHook(() =>
@@ -88,6 +88,55 @@ describe("useAppHotkeys", () => {
         bubbles: true,
         cancelable: true,
         metaKey: true,
+        shiftKey: true,
+        key: "f",
+        code: "KeyF",
+      }),
+    );
+
+    expect(setTheme).toHaveBeenNthCalledWith(1, "dark");
+    expect(setTheme).toHaveBeenNthCalledWith(2, "light");
+    expect(setTheme).toHaveBeenNthCalledWith(3, "system");
+  });
+
+  it("switches theme for ctrl+shift shortcuts on Windows", () => {
+    const setTheme = vi.fn();
+
+    renderHook(() =>
+      useAppHotkeys({
+        handlePromptChange: vi.fn(),
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        prompt: "",
+        promptRef: { current: textarea },
+        setTheme,
+      }),
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        shiftKey: true,
+        key: "d",
+        code: "KeyD",
+      }),
+    );
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        shiftKey: true,
+        key: "l",
+        code: "KeyL",
+      }),
+    );
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
         shiftKey: true,
         key: "f",
         code: "KeyF",

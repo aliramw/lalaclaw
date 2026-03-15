@@ -118,9 +118,12 @@ describe("config", () => {
     expect(collectAllowedSubagents(localConfig, "expert")).toEqual([]);
   });
 
-  it("collects skills from the current agent and its allowed sub agents", () => {
+  it("collects skills from the current agent, allowed sub agents, and installed skill inventories", () => {
     const localConfig = {
       agents: {
+        defaults: {
+          workspace: "/tmp/workspace",
+        },
         list: [
           {
             id: "main",
@@ -136,12 +139,51 @@ describe("config", () => {
       },
     };
 
+    vi.spyOn(fs, "existsSync").mockImplementation((filePath) => {
+      const normalized = String(filePath);
+      return [
+        "/tmp/workspace/skills",
+        "/tmp/workspace/skills/agent-browser/SKILL.md",
+        "/tmp/workspace/.clawhub/lock.json",
+        "/Users/marila/.npm-global/lib/node_modules/openclaw/skills",
+        "/Users/marila/.npm-global/lib/node_modules/openclaw/skills/summarize/SKILL.md",
+      ].includes(normalized);
+    });
+    vi.spyOn(fs, "readdirSync").mockImplementation((filePath) => {
+      const normalized = String(filePath);
+      if (normalized === "/tmp/workspace/skills") {
+        return [{ name: "agent-browser", isDirectory: () => true }];
+      }
+      if (normalized === "/Users/marila/.npm-global/lib/node_modules/openclaw/skills") {
+        return [{ name: "summarize", isDirectory: () => true }];
+      }
+      return [];
+    });
+    vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
+      if (String(filePath) === "/tmp/workspace/.clawhub/lock.json") {
+        return JSON.stringify({
+          skills: {
+            "chat-with-anyone": {},
+          },
+        });
+      }
+      return "";
+    });
+
     expect(collectAvailableSkills(localConfig, "main")).toEqual([
       { name: "planning", ownerAgentId: "main" },
       { name: "drafting", ownerAgentId: "writer" },
       { name: "checks", ownerAgentId: "reviewer" },
+      { name: "agent-browser", ownerAgentId: "" },
+      { name: "summarize", ownerAgentId: "" },
+      { name: "chat-with-anyone", ownerAgentId: "" },
     ]);
-    expect(collectAvailableSkills(localConfig, "expert")).toEqual([{ name: "coding", ownerAgentId: "expert" }]);
+    expect(collectAvailableSkills(localConfig, "expert")).toEqual([
+      { name: "coding", ownerAgentId: "expert" },
+      { name: "agent-browser", ownerAgentId: "" },
+      { name: "summarize", ownerAgentId: "" },
+      { name: "chat-with-anyone", ownerAgentId: "" },
+    ]);
   });
 
   it("builds runtime config from local openclaw config and respects force mock mode", () => {

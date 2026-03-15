@@ -15,6 +15,12 @@ function LocaleProbe() {
       <button type="button" onClick={() => setLocale("zh")}>
         Chinese
       </button>
+      <button type="button" onClick={() => setLocale("es")}>
+        Spanish
+      </button>
+      <button type="button" onClick={() => setLocale("pt")}>
+        Portuguese
+      </button>
     </div>
   );
 }
@@ -57,5 +63,47 @@ describe("I18nProvider", () => {
 
     expect(document.title).toBe("LalaClaw.ai | 龙虾指挥中心");
     expect(document.documentElement.lang).toBe("zh-CN");
+  });
+
+  it("supports spanish as a stored and interactive locale", async () => {
+    window.localStorage.setItem(localeStorageKey, "es");
+
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("locale")).toHaveTextContent("es");
+    expect(document.title).toBe("LalaClaw.ai | Centro de Comando OpenClaw");
+    expect(document.documentElement.lang).toBe("es-ES");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "Spanish" }));
+
+    expect(document.title).toBe("LalaClaw.ai | Centro de Comando OpenClaw");
+    expect(document.documentElement.lang).toBe("es-ES");
+  });
+
+  it("supports portuguese as a stored and interactive locale", async () => {
+    window.localStorage.setItem(localeStorageKey, "pt");
+
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("locale")).toHaveTextContent("pt");
+    expect(document.title).toBe("LalaClaw.ai | Central de Comando OpenClaw");
+    expect(document.documentElement.lang).toBe("pt-BR");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "Portuguese" }));
+
+    expect(document.title).toBe("LalaClaw.ai | Central de Comando OpenClaw");
+    expect(document.documentElement.lang).toBe("pt-BR");
   });
 });

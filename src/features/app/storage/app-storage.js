@@ -6,6 +6,22 @@ export const defaultTab = "timeline";
 export const defaultSessionUser = "command-center";
 export const promptHistoryLimit = 50;
 
+function sanitizeDismissedTaskRelationshipsMap(value) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, ids]) => Array.isArray(ids))
+      .map(([key, ids]) => [
+        key,
+        ids.map((id) => String(id || "").trim()).filter(Boolean),
+      ])
+      .filter(([, ids]) => ids.length),
+  );
+}
+
 export function loadStoredState() {
   try {
     const raw = window.localStorage.getItem(storageKey);
@@ -19,6 +35,7 @@ export function loadStoredState() {
       model: parsed?.model || "",
       agentId: parsed?.agentId || "main",
       sessionUser: parsed?.sessionUser || defaultSessionUser,
+      dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(parsed?.dismissedTaskRelationshipIdsByConversation),
     };
   } catch {
     return null;

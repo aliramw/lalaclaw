@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionOverview } from "@/components/command-center/session-overview";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
@@ -25,8 +25,15 @@ function createSession(overrides = {}) {
 }
 
 describe("SessionOverview", () => {
+  let platformSpy;
+
   beforeEach(() => {
     window.localStorage.clear();
+    platformSpy = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders session metadata and toggles fast mode", async () => {
@@ -54,12 +61,12 @@ describe("SessionOverview", () => {
 
     expect(screen.getByText("LalaClaw.ai")).toBeInTheDocument();
     expect(screen.getByText("已开启")).toBeInTheDocument();
-    expect(screen.getByText("agent:main:openai-user:demo")).toBeInTheDocument();
-    expect(screen.getByText("模拟模式")).toBeInTheDocument();
+    expect(screen.getByText("empty")).toBeInTheDocument();
+    expect(screen.getByText("1200 / 16000")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.hover(screen.getByRole("button", { name: "跟随系统" }));
-    expect((await screen.findAllByText("Shift + Cmd + F")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("快捷键：Shift + Cmd + F")).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "快速模式 已开启" }));
 
@@ -144,7 +151,7 @@ describe("SessionOverview", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("openrouter/qwen/qwen3.5-397b-a17b")).toBeInTheDocument();
+    expect(screen.getByText("qwen3.5-397b-a17b")).toBeInTheDocument();
   });
 
   it("keeps the theme toggle as compact as the language switcher", () => {
@@ -174,8 +181,39 @@ describe("SessionOverview", () => {
 
     expect(screen.getByRole("button", { name: "Switch language" })).toHaveClass("h-8");
     expect(screen.getByRole("button", { name: "Follow system" }).parentElement).toHaveClass("h-8");
-    expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-7", "w-7");
-    expect(screen.getByRole("button", { name: "Light" })).toHaveClass("h-7", "w-7");
-    expect(screen.getByRole("button", { name: "Dark" })).toHaveClass("h-7", "w-7");
+    expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-7", "min-w-[2.5rem]");
+    expect(screen.getByRole("button", { name: "Light mode" })).toHaveClass("h-7", "min-w-[2.5rem]");
+    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveClass("h-7", "min-w-[2.5rem]");
+  });
+
+  it("shows ctrl shortcuts in theme tooltips on Windows", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    platformSpy.mockReturnValue("Win32");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="system"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("button", { name: "跟随系统" }));
+    expect((await screen.findAllByText("快捷键：Shift + Ctrl + F")).length).toBeGreaterThan(0);
   });
 });

@@ -20,7 +20,7 @@
   --input: oklch(0.905 0.008 255.4);
   --ring: oklch(0.623 0.03 254.5);
   --radius: 0.72rem;
-  --file-link: #2563c9;
+  --file-link: #0e6cd2;
   --file-link-hover: #1849a9;
   --badge-success-bg: #e7f6ef;
   --badge-success-fg: #0f6b49;
@@ -110,7 +110,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    overflow: hidden;
+    overflow-x: hidden;
     background-image:
       radial-gradient(circle at top left, color-mix(in oklab, var(--accent) 28%, transparent) 0, transparent 36%),
       linear-gradient(180deg, color-mix(in oklab, var(--background) 84%, white) 0%, var(--background) 100%);
@@ -190,6 +190,30 @@
     line-height: 1.65;
     font-variant-ligatures: none;
     font-feature-settings: normal;
+  }
+
+  .cc-scroll-region {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--border) 88%, transparent) transparent;
+  }
+
+  .cc-scroll-region::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .cc-scroll-region::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .cc-scroll-region::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+    background-color: color-mix(in oklab, var(--border) 92%, transparent);
+  }
+
+  .cc-scroll-region:hover::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--muted-foreground) 52%, transparent);
   }
 
   html[data-theme="dark"] .cc-inline-code,

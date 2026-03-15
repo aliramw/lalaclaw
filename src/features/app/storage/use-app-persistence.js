@@ -4,6 +4,7 @@ import { hydrateAttachmentStateFromStorage, serializeAttachmentStateForStorage }
 
 export function useAppPersistence({
   activeTab,
+  dismissedTaskRelationshipIdsByConversation,
   fastMode,
   initialStoredMessagesRef,
   initialStoredPendingRef,
@@ -24,6 +25,7 @@ export function useAppPersistence({
 
     const nextStorageState = {
       activeTab,
+      dismissedTaskRelationshipIdsByConversation,
       fastMode,
       thinkMode: session.thinkMode,
       model,
@@ -58,7 +60,7 @@ export function useAppPersistence({
           window.localStorage.setItem(pendingChatStorageKey, JSON.stringify(pendingChatTurns));
         } catch {}
       });
-  }, [activeTab, fastMode, messages, model, pendingChatTurns, session.agentId, session.sessionUser, session.thinkMode]);
+  }, [activeTab, dismissedTaskRelationshipIdsByConversation, fastMode, messages, model, pendingChatTurns, session.agentId, session.sessionUser, session.thinkMode]);
 
   useEffect(() => {
     try {

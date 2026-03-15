@@ -20,6 +20,7 @@ function createService(overrides = {}) {
     collectFiles: vi.fn(() => [{ path: "src/App.jsx" }]),
     collectLatestRunUsage: vi.fn(() => null),
     collectSnapshots: vi.fn(() => [{ id: "snapshot-1" }]),
+    collectTaskRelationships: vi.fn(() => []),
     collectTaskTimeline: vi.fn(() => [{ id: "run-1" }]),
     collectToolHistory: vi.fn(() => [{ name: "tool" }]),
     config: {
@@ -175,6 +176,7 @@ describe("createDashboardService", () => {
         const currentAgent = runtimeConfig?.agents?.list?.find((agent) => agent.id === agentId);
         return (currentAgent?.subagents?.allowAgents || []).map((value) => ({ name: "coding", ownerAgentId: value }));
       }),
+      collectTaskRelationships: vi.fn(() => [{ id: "rel-1", type: "child_agent", sourceAgentId: "main", targetAgentId: "expert" }]),
     });
 
     const snapshot = await service.buildDashboardSnapshot("demo-user");
@@ -204,6 +206,7 @@ describe("createDashboardService", () => {
       items: [{ label: "状态", value: "读取失败" }],
     });
     expect(snapshot.taskTimeline).toEqual([{ id: "run-1" }]);
+    expect(snapshot.taskRelationships).toEqual([{ id: "rel-1", type: "child_agent", sourceAgentId: "main", targetAgentId: "expert" }]);
     expect(snapshot.agents).toEqual([{ id: "main" }]);
   });
 

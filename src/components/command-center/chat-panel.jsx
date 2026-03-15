@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUpToLine, Check, Copy, Paperclip, RotateCcw, Send, X } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
-import { cn } from "@/lib/utils";
+import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useI18n } from "@/lib/i18n";
 
@@ -34,49 +34,22 @@ function isImageAttachment(attachment) {
   return attachment?.kind === "image" || /^image\//i.test(attachment?.mimeType || "");
 }
 
-function ImageLightbox({ image, onClose }) {
-  const { messages } = useI18n();
-
-  useEffect(() => {
-    if (!image?.src) {
-      return undefined;
-    }
-
-    const handleKeyDown = (event) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      event.preventDefault();
-      onClose?.();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [image?.src, onClose]);
-
-  if (!image?.src) {
-    return null;
+function messageHasVisualMedia(message = {}) {
+  const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
+  if (attachments.some(isImageAttachment)) {
+    return true;
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/82 p-6" onClick={onClose}>
-      <button
-        type="button"
-        className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/45 text-white/90"
-        aria-label={messages.common.closePreview}
-        onClick={onClose}
-      >
-        <X className="h-4 w-4" />
-      </button>
-      <img
-        src={image.src}
-        alt={image.alt || ""}
-        className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      />
-    </div>
-  );
+  const content = String(message?.content || "");
+  if (!content) {
+    return false;
+  }
+
+  if (/!\[[^\]]*]\([^)]+\)/.test(content)) {
+    return true;
+  }
+
+  return /(^|\n)\s*https?:\/\/\S+\.(png|jpe?g|gif|webp|svg)(\?\S+)?\s*($|\n)/i.test(content);
 }
 
 function MessageAttachments({ attachments, mode = "message", onPreviewImage }) {
@@ -502,7 +475,7 @@ function MessageOutline({ headingScopeId, items, onSelect }) {
             className={cn(
               "cursor-pointer rounded-[4px] px-2 py-0.5 text-left text-[11px] leading-[1.05rem] text-muted-foreground transition hover:bg-accent/45 hover:text-foreground",
               item.level === 1 ? "font-medium text-foreground/90" : "",
-              item.level === 2 ? "pl-3" : "",
+              item.level === 2 ? "pl-3 font-semibold text-foreground/95" : "",
               item.level >= 3 ? "pl-4 text-[10px]" : "",
             )}
           >
@@ -563,6 +536,7 @@ const MessageBubble = memo(function MessageBubble({
   files,
   formatTime,
   handleOpenFilePreview,
+  handleOpenImagePreview,
   isLatestAssistant,
   message,
   messageId,
@@ -571,11 +545,11 @@ const MessageBubble = memo(function MessageBubble({
   separated,
   userLabel,
 }) {
-  const [previewImage, setPreviewImage] = useState(null);
   const [showBubbleTopJump, setShowBubbleTopJump] = useState(false);
   const bubbleRef = useRef(null);
   const isUser = message.role === "user";
   const isPending = Boolean(message.pending);
+  const supportsBubbleTopJump = !messageHasVisualMedia(message);
   const useCompactAssistantBubble = !isUser && !isPending && shouldUseCompactAssistantBubble(message.content);
   const visualLineCount = estimateVisualLineCount(message.content);
   const compactMeta = visualLineCount <= 1;
@@ -585,6 +559,12 @@ const MessageBubble = memo(function MessageBubble({
   const userBubbleWidthClassName = "w-fit min-w-[3.75rem] max-w-[min(86vw,40rem)]";
   const compactAssistantWidthClassName = "inline-block max-w-[min(80vw,42rem)] shrink-0";
   const longAssistantWidthClassName = "w-[700px] max-w-[calc(100vw-12rem)] shrink-0";
+  const messageBubbleAttributes = {
+    "data-message-anchor": isLatestAssistant ? "latest-assistant" : undefined,
+    "data-message-id": messageId,
+    "data-message-role": message.role,
+    "data-message-timestamp": String(message.timestamp || ""),
+  };
 
   const handleSelectHeading = (anchorId) => {
     const element = document.getElementById(anchorId);
@@ -628,6 +608,11 @@ const MessageBubble = memo(function MessageBubble({
   };
 
   useEffect(() => {
+    if (!supportsBubbleTopJump) {
+      setShowBubbleTopJump(false);
+      return undefined;
+    }
+
     const viewport = messageViewportRef?.current;
     const bubble = bubbleRef.current;
     if (!viewport || !bubble) {
@@ -652,14 +637,14 @@ const MessageBubble = memo(function MessageBubble({
       viewport.removeEventListener("scroll", updateBubbleTopJump);
       window.removeEventListener("resize", updateBubbleTopJump);
     };
-  }, [messageViewportRef, message.content, message.pending, message.timestamp]);
+  }, [messageViewportRef, message.content, message.pending, message.timestamp, supportsBubbleTopJump]);
 
   if (isUser) {
     return (
       <>
         <div
           ref={setBubbleNode}
-          data-message-anchor={isLatestAssistant ? "latest-assistant" : undefined}
+          {...messageBubbleAttributes}
           className={cn("group/message flex w-full justify-end", separated && "mt-2")}
         >
           <div className="flex max-w-full flex-col items-end">
@@ -667,9 +652,9 @@ const MessageBubble = memo(function MessageBubble({
             <div className="flex max-w-full items-center gap-2">
               <MessageMeta align="left" content={message.content} formatTime={formatTime} pending={false} compact timestamp={message.timestamp} />
               <Card data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName)}>
-                {showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
+                {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
                 <CardContent className={cn(bubbleContentClassName, message.attachments?.length && "space-y-2")}>
-                  <MessageAttachments attachments={message.attachments} onPreviewImage={(attachment) => setPreviewImage({ src: attachment.dataUrl || attachment.previewUrl, alt: attachment.name })} />
+                  <MessageAttachments attachments={message.attachments} onPreviewImage={handleOpenImagePreview} />
                   {message.content ? (
                     <div className="whitespace-pre-wrap text-[12px] font-medium leading-5" style={{ color: "#ffffff" }}>
                       {message.content}
@@ -680,7 +665,6 @@ const MessageBubble = memo(function MessageBubble({
             </div>
           </div>
         </div>
-        <ImageLightbox image={previewImage} onClose={() => setPreviewImage(null)} />
       </>
     );
   }
@@ -689,7 +673,7 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <div
         ref={setBubbleNode}
-        data-message-anchor={isLatestAssistant ? "latest-assistant" : undefined}
+        {...messageBubbleAttributes}
         className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
       >
         <div className="flex max-w-full flex-col items-start">
@@ -704,7 +688,7 @@ const MessageBubble = memo(function MessageBubble({
                 assistantBubbleClassName,
               )}
             >
-              {showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
+              {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
               <CardContent className={bubbleContentClassName}>
                 <MarkdownContent
                   content={message.content}
@@ -712,7 +696,7 @@ const MessageBubble = memo(function MessageBubble({
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   onOpenFilePreview={handleOpenFilePreview}
-                  className="text-[12px] leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap"
+                  className="text-[12px] font-semibold leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap"
                 />
               </CardContent>
             </Card>
@@ -727,7 +711,7 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <div
         ref={setBubbleNode}
-        data-message-anchor={isLatestAssistant ? "latest-assistant" : undefined}
+        {...messageBubbleAttributes}
         className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
       >
         <div className="flex max-w-full flex-col items-start">
@@ -735,7 +719,7 @@ const MessageBubble = memo(function MessageBubble({
           <div className="inline-flex max-w-full items-start gap-1.5">
             <div className="inline-flex min-w-0 max-w-full items-start gap-3">
               <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, "w-[700px] max-w-[calc(100vw-20rem)] shrink-0", "cc-assistant-bubble", assistantBubbleClassName)}>
-                {showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
+                {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
                 <CardContent className={bubbleContentClassName}>
                   <MarkdownContent
                     content={message.content}
@@ -760,14 +744,14 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <div
         ref={setBubbleNode}
-        data-message-anchor={isLatestAssistant ? "latest-assistant" : undefined}
+        {...messageBubbleAttributes}
         className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
       >
         <div className="flex max-w-full flex-col items-start">
           <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} />
           <div className="inline-flex max-w-full items-center gap-2">
             <Card data-bubble-layout="compact" className={cn(bubbleBaseClassName, compactAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
-              {showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
+              {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
               <CardContent className={bubbleContentClassName}>
                 <MarkdownContent
                   content={message.content}
@@ -789,14 +773,14 @@ const MessageBubble = memo(function MessageBubble({
   return (
     <div
       ref={setBubbleNode}
-      data-message-anchor={isLatestAssistant ? "latest-assistant" : undefined}
+      {...messageBubbleAttributes}
       className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
     >
       <div className="flex max-w-full flex-col items-start">
         <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} />
         <div className="inline-flex max-w-full items-start gap-2">
           <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, longAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
-            {showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
+            {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
             <CardContent className={bubbleContentClassName}>
               <MarkdownContent
                 content={message.content}
@@ -835,11 +819,16 @@ function ConnectionStatus({ session }) {
   const isOffline = session.status === messages.common.offline || session.status === "离线";
   const isOpenClaw = session.mode === "openclaw";
   const toneClassName = isOffline ? "bg-rose-500" : isOpenClaw ? "bg-emerald-500" : "bg-slate-400";
-  const label = isOffline ? messages.common.offline : isOpenClaw ? messages.common.online : messages.common.mockMode;
+  const label = isOffline || isOpenClaw ? messages.common.openClaw : messages.common.mockMode;
 
   return (
     <span className="inline-flex items-center gap-2">
-      <span className={cn("h-2 w-2 rounded-full", toneClassName)} aria-hidden="true" />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={cn("h-2 w-2 rounded-full", toneClassName)} aria-label={messages.chat.openClawStatusTooltip} />
+        </TooltipTrigger>
+        <TooltipContent>{messages.chat.openClawStatusTooltip}</TooltipContent>
+      </Tooltip>
       <span>{label}</span>
       {session.version ? <span className="text-[11px] text-muted-foreground">{session.version}</span> : null}
     </span>
@@ -878,6 +867,7 @@ export function ChatPanel({
   busy,
   composerAttachments,
   files,
+  focusMessageRequest,
   formatTime,
   messageViewportRef,
   messages,
@@ -896,8 +886,7 @@ export function ChatPanel({
 }) {
   const { messages: i18n } = useI18n();
   const attachmentInputRef = useRef(null);
-  const [composerPreviewImage, setComposerPreviewImage] = useState(null);
-  const { filePreview, imagePreview, handleOpenPreview, closeFilePreview, closeImagePreview } = useFilePreview();
+  const { filePreview, imagePreview, handleOpenPreview, openImagePreview, closeFilePreview, closeImagePreview } = useFilePreview();
   const [agentMention, setAgentMention] = useState(null);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
@@ -980,7 +969,7 @@ export function ChatPanel({
     });
   };
 
-  const focusComposer = () => {
+  const focusComposer = useCallback(() => {
     window.requestAnimationFrame(() => {
       const textarea = promptRef?.current;
       if (!textarea) {
@@ -991,16 +980,16 @@ export function ChatPanel({
       const end = textarea.value.length;
       textarea.setSelectionRange?.(end, end);
     });
-  };
+  }, [promptRef]);
 
-  const addAttachmentsAndFocus = async (fileList) => {
+  const addAttachmentsAndFocus = useCallback(async (fileList) => {
     if (!fileList) {
       return;
     }
 
     await onAddAttachments?.(fileList);
     focusComposer();
-  };
+  }, [focusComposer, onAddAttachments]);
 
   useEffect(() => {
     const handleGlobalPaste = (event) => {
@@ -1020,7 +1009,7 @@ export function ChatPanel({
 
     window.addEventListener("paste", handleGlobalPaste);
     return () => window.removeEventListener("paste", handleGlobalPaste);
-  }, [onAddAttachments, promptRef]);
+  }, [addAttachmentsAndFocus]);
 
   useEffect(() => {
     if (!agentMention) {
@@ -1103,6 +1092,36 @@ export function ChatPanel({
     return () => viewport.removeEventListener("scroll", updateLatestReplyButton);
   }, [latestAssistantMessageId, latestMessageIsAssistant, messageViewportRef, messages.length]);
 
+  useEffect(() => {
+    if (!focusMessageRequest?.id) {
+      return undefined;
+    }
+
+    const viewport = messageViewportRef?.current;
+    if (!viewport) {
+      return undefined;
+    }
+
+    const selector = focusMessageRequest.messageId
+      ? `[data-message-id="${focusMessageRequest.messageId}"]`
+      : `[data-message-role="${focusMessageRequest.role || "assistant"}"][data-message-timestamp="${String(focusMessageRequest.timestamp || "")}"]`;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const targetBubble = viewport.querySelector(selector);
+      if (!targetBubble) {
+        return;
+      }
+
+      const top = calculateBubbleTopFocusScrollTop(viewport, targetBubble);
+      viewport.scrollTo?.({ top, behavior: "smooth" });
+      if (typeof viewport.scrollTo !== "function") {
+        viewport.scrollTop = top;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [focusMessageRequest, messageViewportRef]);
+
   const handleJumpToLatestReply = () => {
     const viewport = messageViewportRef?.current;
     const latestBubble = latestAssistantBubbleRef.current;
@@ -1117,9 +1136,17 @@ export function ChatPanel({
     }
   };
 
+  const handleResetWithConfirm = () => {
+    const confirmed = window.confirm(i18n.chat.resetConversationConfirm);
+    if (!confirmed) {
+      return;
+    }
+    onReset?.();
+  };
+
   return (
     <>
-      <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
+      <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
         <CardHeader className="flex h-12 flex-row items-center justify-between gap-3 border-b border-border/70 bg-card/80 px-3 py-0 backdrop-blur">
           <div className="flex h-full min-w-0 translate-y-[2px] flex-col justify-center gap-1 self-center">
             <div className="flex min-w-0 items-center gap-2">
@@ -1130,7 +1157,7 @@ export function ChatPanel({
                     <TooltipTrigger asChild>
                       <Badge
                         variant="secondary"
-                        className="h-5 shrink-0 cursor-default rounded-full px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
+                        className="h-5 shrink-0 cursor-help rounded-full px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
                       >
                         {runtimeBadge}
                       </Badge>
@@ -1164,11 +1191,17 @@ export function ChatPanel({
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={onReset} className="h-6 w-6 rounded-md" aria-label={i18n.chat.resetConversation}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleResetWithConfirm}
+                  className="h-6 w-6 rounded-md"
+                  aria-label={i18n.chat.resetConversation}
+                >
                   <RotateCcw className="h-3 w-3" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{i18n.chat.resetConversationHotkey}</TooltipContent>
+              <TooltipContent>{formatShortcutForPlatform(i18n.chat.resetConversationHotkey)}</TooltipContent>
             </Tooltip>
           </div>
         </CardHeader>
@@ -1188,6 +1221,7 @@ export function ChatPanel({
                           agentLabel={agentLabel}
                           bubbleAnchorRef={isLatestAssistant ? latestAssistantBubbleRef : undefined}
                           handleOpenFilePreview={handleOpenPreview}
+                          handleOpenImagePreview={openImagePreview}
                           isLatestAssistant={isLatestAssistant}
                           key={messageId}
                           message={message}
@@ -1239,12 +1273,12 @@ export function ChatPanel({
           />
           <div className="relative">
             {agentMention && mentionOptions.length ? (
-              <div className="absolute inset-x-0 bottom-full z-20 mb-2">
-                <div className="overflow-hidden rounded-xl border border-border/70 bg-background/95 p-2 shadow-lg backdrop-blur">
+              <div className="absolute bottom-full left-0 z-20 mb-2 w-[min(28rem,calc(100vw-4rem))]">
+                <div className="max-h-[31rem] overflow-y-auto rounded-xl border border-border/70 bg-background/95 p-2 shadow-lg backdrop-blur">
                   {filteredMentionAgents.length ? (
                     <>
-                      <div className="mb-1 px-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{i18n.chat.mentionAgents}</div>
-                      <div className="grid gap-1">
+                      <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-muted-foreground">{i18n.chat.mentionAgents}</div>
+                      <div className="grid gap-0.5">
                         {filteredMentionAgents.map((agent) => {
                           const optionIndex = mentionOptions.findIndex((option) => option.id === `agent:${agent}`);
                           return (
@@ -1252,8 +1286,8 @@ export function ChatPanel({
                               key={agent}
                               type="button"
                               className={cn(
-                                "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm transition",
-                                optionIndex === highlightedAgentIndex ? "bg-muted text-foreground" : "text-foreground hover:bg-muted/70",
+                                "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
+                                optionIndex === highlightedAgentIndex ? "bg-foreground/10 text-foreground" : "text-foreground hover:bg-muted/70",
                               )}
                               onMouseDown={(event) => event.preventDefault()}
                               onClick={() => applyMention(agent)}
@@ -1268,10 +1302,10 @@ export function ChatPanel({
                   ) : null}
                   {filteredMentionSkills.length ? (
                     <>
-                      <div className={cn("px-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground", filteredMentionAgents.length ? "mb-1 mt-2" : "mb-1")}>
+                      <div className={cn("px-1 text-[10px] font-semibold uppercase text-muted-foreground", filteredMentionAgents.length ? "mb-1 mt-2" : "mb-1")}>
                         {i18n.chat.mentionSkills}
                       </div>
-                      <div className="grid gap-1">
+                      <div className="grid gap-0.5">
                         {filteredMentionSkills.map((skill) => {
                           const optionIndex = mentionOptions.findIndex((option) => option.id === `skill:${skill.name}`);
                           return (
@@ -1279,8 +1313,8 @@ export function ChatPanel({
                               key={skill.name}
                               type="button"
                               className={cn(
-                                "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm transition",
-                                optionIndex === highlightedAgentIndex ? "bg-muted text-foreground" : "text-foreground hover:bg-muted/70",
+                                "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
+                                optionIndex === highlightedAgentIndex ? "bg-foreground/10 text-foreground" : "text-foreground hover:bg-muted/70",
                               )}
                               onMouseDown={(event) => event.preventDefault()}
                               onClick={() => applyMention(skill.name)}
@@ -1304,7 +1338,7 @@ export function ChatPanel({
                 <>
                   <ComposerAttachments
                     attachments={composerAttachments}
-                    onPreviewImage={(attachment) => setComposerPreviewImage({ src: attachment.dataUrl || attachment.previewUrl, alt: attachment.name })}
+                    onPreviewImage={openImagePreview}
                     onRemoveAttachment={onRemoveAttachment}
                   />
                   <div className="border-t border-border/60" />
@@ -1390,7 +1424,6 @@ export function ChatPanel({
           </div>
         </CardContent>
       </Card>
-      <ImageLightbox image={composerPreviewImage} onClose={() => setComposerPreviewImage(null)} />
       <FilePreviewOverlay files={files} preview={filePreview} resolvedTheme={resolvedTheme} onClose={closeFilePreview} onOpenFilePreview={handleOpenPreview} />
       <ImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
     </>
