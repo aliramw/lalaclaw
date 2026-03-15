@@ -18,7 +18,7 @@ function sendFile(res, filePath) {
       return;
     }
 
-    const ext = path.extname(filePath);
+    const ext = path.extname(filePath).toLowerCase();
     const contentTypes = {
       '.html': 'text/html; charset=utf-8',
       '.css': 'text/css; charset=utf-8',
@@ -26,6 +26,7 @@ function sendFile(res, filePath) {
       '.json': 'application/json; charset=utf-8',
       '.txt': 'text/plain; charset=utf-8',
       '.md': 'text/markdown; charset=utf-8',
+      '.pdf': 'application/pdf',
       '.svg': 'image/svg+xml',
       '.png': 'image/png',
       '.jpg': 'image/jpeg',

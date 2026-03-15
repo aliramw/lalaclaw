@@ -1,17 +1,20 @@
 import { useEffect, useRef } from "react";
-import { pendingChatStorageKey, promptHistoryStorageKey, sanitizeMessagesForStorage, storageKey } from "@/features/app/storage/app-storage";
+import { pendingChatStorageKey, promptDraftStorageKey, promptHistoryStorageKey, sanitizeMessagesForStorage, storageKey } from "@/features/app/storage/app-storage";
 import { hydrateAttachmentStateFromStorage, serializeAttachmentStateForStorage } from "@/lib/attachment-storage";
 
 export function useAppPersistence({
   activeTab,
+  chatFontSizeBySessionUser,
   dismissedTaskRelationshipIdsByConversation,
   fastMode,
   initialStoredMessagesRef,
   initialStoredPendingRef,
+  inspectorPanelWidth,
   messages,
   messagesRef,
   model,
   pendingChatTurns,
+  promptDraftsByConversation,
   promptHistoryByConversation,
   session,
   setMessagesSynced,
@@ -25,8 +28,10 @@ export function useAppPersistence({
 
     const nextStorageState = {
       activeTab,
+      chatFontSizeBySessionUser,
       dismissedTaskRelationshipIdsByConversation,
       fastMode,
+      inspectorPanelWidth,
       thinkMode: session.thinkMode,
       model,
       agentId: session.agentId,
@@ -43,6 +48,7 @@ export function useAppPersistence({
           storageKey,
           JSON.stringify({
             ...nextStorageState,
+            promptDraftsByConversation,
             messages: sanitizeMessagesForStorage(serializedState.messages),
           }),
         );
@@ -54,19 +60,26 @@ export function useAppPersistence({
             storageKey,
             JSON.stringify({
               ...nextStorageState,
+              promptDraftsByConversation,
               messages: sanitizeMessagesForStorage(messages),
             }),
           );
           window.localStorage.setItem(pendingChatStorageKey, JSON.stringify(pendingChatTurns));
         } catch {}
       });
-  }, [activeTab, dismissedTaskRelationshipIdsByConversation, fastMode, messages, model, pendingChatTurns, session.agentId, session.sessionUser, session.thinkMode]);
+  }, [activeTab, chatFontSizeBySessionUser, dismissedTaskRelationshipIdsByConversation, fastMode, inspectorPanelWidth, messages, model, pendingChatTurns, promptDraftsByConversation, session.agentId, session.sessionUser, session.thinkMode]);
 
   useEffect(() => {
     try {
       window.localStorage.setItem(promptHistoryStorageKey, JSON.stringify(promptHistoryByConversation));
     } catch {}
   }, [promptHistoryByConversation]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(promptDraftStorageKey, JSON.stringify(promptDraftsByConversation));
+    } catch {}
+  }, [promptDraftsByConversation]);
 
   useEffect(() => {
     const initialMessages = initialStoredMessagesRef.current;

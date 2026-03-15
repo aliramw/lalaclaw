@@ -162,6 +162,37 @@ function getNormalizedBodyText() {
   return document.body.textContent?.replace(/\s+/g, "") || "";
 }
 
+function mockDesktopLayout(width = 1200) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation(() => ({
+      matches: true,
+      media: "(min-width: 1280px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+
+  class ResizeObserverMock {
+    constructor(callback) {
+      this.callback = callback;
+    }
+
+    observe() {
+      this.callback([{ contentRect: { width } }]);
+    }
+
+    unobserve() {}
+
+    disconnect() {}
+  }
+
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -360,6 +391,39 @@ describe("App", () => {
     expect(screen.getByText("fresh-session")).toBeInTheDocument();
     expect(screen.getByText("paint")).toBeInTheDocument();
     expect(screen.getByText("image-worker")).toBeInTheDocument();
+  });
+
+  it("localizes task relationship statuses for english UI", () => {
+    window.localStorage.setItem(localeStorageKey, "en");
+
+    const { rerender } = render(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-complete", type: "child_agent", sourceAgentId: "main", targetAgentId: "writer", detail: "draft-worker", status: "执行中" },
+            { id: "rel-failed", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "失败" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    rerender(
+      <I18nProvider>
+        <TaskRelationshipsPanel
+          visible
+          sessionAgentId="main"
+          relationships={[
+            { id: "rel-complete", type: "child_agent", sourceAgentId: "main", targetAgentId: "writer", detail: "draft-worker", status: "已完成" },
+            { id: "rel-failed", type: "child_agent", sourceAgentId: "main", targetAgentId: "paint", detail: "image-worker", status: "失败" },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 
   it("allows dismissing failed task relationships from the context menu", async () => {
@@ -690,6 +754,82 @@ describe("App", () => {
 
     await user.keyboard("{ArrowDown}");
     expect(textarea).toHaveValue("");
+  });
+
+  it("restores the current prompt draft after remount", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+    const firstTextarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+
+    await user.type(firstTextarea, "刷新后也要保留");
+    expect(firstTextarea).toHaveValue("刷新后也要保留");
+
+    firstRender.unmount();
+
+    render(<App />);
+
+    const secondTextarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    await waitFor(() => {
+      expect(secondTextarea).toHaveValue("刷新后也要保留");
+    });
+  });
+
+  it("stores the resized inspector width globally after dragging the handle", async () => {
+    mockDesktopLayout(1200);
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+
+    const resizeHandle = screen.getByRole("button", { name: "拖动调整聊天区与追踪区宽度" });
+    const mainLayout = resizeHandle.closest("main");
+
+    expect(mainLayout).toBeTruthy();
+    mainLayout.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      bottom: 800,
+      right: 1200,
+      width: 1200,
+      height: 800,
+      toJSON: () => ({}),
+    });
+
+    act(() => {
+      fireEvent.pointerDown(resizeHandle, { clientX: 820 });
+      fireEvent.pointerMove(window, { clientX: 760 });
+      fireEvent.pointerUp(window);
+    });
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(storageKey) || "{}")).toMatchObject({
+        inspectorPanelWidth: 440,
+      });
+    });
   });
 
   it("sends when plain enter is pressed twice quickly", async () => {

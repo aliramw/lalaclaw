@@ -597,6 +597,71 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("uses the task text as the relationship label when sessions_spawn has no explicit label", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "assistant",
+          timestamp: 1,
+          content: [
+            {
+              id: "tool-paint-task-only",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "paint",
+                mode: "run",
+                task: "生成封面草图",
+              },
+            },
+            {
+              id: "tool-session-task-only",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                mode: "session",
+                task: "切换到作家会话",
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:paint:1:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "paint",
+        detail: "生成封面草图",
+        toolCallId: "tool-paint-task-only",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 1,
+        status: "dispatching",
+      },
+      {
+        id: "session:spawn:1:1",
+        type: "session_spawn",
+        sourceAgentId: "main",
+        targetAgentId: "",
+        detail: "切换到作家会话",
+        toolCallId: "tool-session-task-only",
+        childSessionKey: "",
+        spawnMode: "session",
+        runtime: "",
+        timestamp: 1,
+        status: "dispatching",
+      },
+    ]);
+  });
+
   it("marks child-agent relationships completed when the spawned session has already replied", () => {
     const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
     const childSessionKey = "agent:writer:subagent:child-1";
@@ -694,6 +759,63 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("backfills a missing task label from sessions_spawn tool results", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "assistant",
+          timestamp: 1,
+          content: [
+            {
+              id: "tool-writer-result-label",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                runtime: "subagent",
+                agentId: "writer",
+                mode: "run",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "toolResult",
+          timestamp: 2,
+          toolCallId: "tool-writer-result-label",
+          toolName: "sessions_spawn",
+          details: {
+            status: "accepted",
+            task: "写产品总结",
+          },
+          content: [{ type: "text", text: "{\"status\":\"accepted\",\"task\":\"写产品总结\"}" }],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "agent:writer:1:0",
+        type: "child_agent",
+        sourceAgentId: "main",
+        targetAgentId: "writer",
+        detail: "写产品总结",
+        toolCallId: "tool-writer-result-label",
+        childSessionKey: "",
+        spawnMode: "run",
+        runtime: "subagent",
+        timestamp: 1,
+        status: "running",
+      },
+    ]);
+  });
+
   it("marks child-agent relationships completed from internal task completion events in the parent transcript", () => {
     const projector = createProjector();
     const entries = [
@@ -771,6 +893,89 @@ status: completed successfully`,
         childSessionKey: "agent:writer:subagent:child-3",
         spawnMode: "run",
         runtime: "subagent",
+        timestamp: 1,
+        status: "completed",
+      },
+    ]);
+  });
+
+  it("backfills session-spawn task labels from internal completion events", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "assistant",
+          timestamp: 1,
+          content: [
+            {
+              id: "tool-session-complete-event",
+              type: "toolCall",
+              name: "sessions_spawn",
+              arguments: {
+                mode: "session",
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "toolResult",
+          timestamp: 2,
+          toolCallId: "tool-session-complete-event",
+          toolName: "sessions_spawn",
+          details: {
+            status: "accepted",
+            childSessionKey: "agent:writer:session:child-4",
+          },
+          content: [{ type: "text", text: "{\"status\":\"accepted\",\"childSessionKey\":\"agent:writer:session:child-4\"}" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "user",
+          timestamp: 3,
+          provenance: {
+            kind: "inter_session",
+            sourceSessionKey: "agent:writer:session:child-4",
+            sourceTool: "session_announce",
+          },
+          content: [
+            {
+              type: "text",
+              text: `[Sun 2026-03-15 08:36 GMT+8] OpenClaw runtime context (internal):
+This context is runtime-generated, not user-authored. Keep internal details private.
+
+[Internal task completion event]
+source: session
+session_key: agent:writer:session:child-4
+session_id: child-session-4
+type: session task
+task: 切换到作家会话
+status: completed successfully`,
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectTaskRelationships(entries, "main")).toEqual([
+      {
+        id: "session:spawn:1:0",
+        type: "session_spawn",
+        sourceAgentId: "main",
+        targetAgentId: "",
+        detail: "切换到作家会话",
+        toolCallId: "tool-session-complete-event",
+        childSessionKey: "agent:writer:session:child-4",
+        spawnMode: "session",
+        runtime: "",
         timestamp: 1,
         status: "completed",
       },

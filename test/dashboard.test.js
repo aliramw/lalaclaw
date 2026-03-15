@@ -197,6 +197,10 @@ describe("createDashboardService", () => {
       time: "2026-03-15 18:00",
       availableSkills: [{ name: "coding", ownerAgentId: "expert" }],
     });
+    expect(snapshot.peeks.environment.items[0]).toEqual({
+      label: "OPENCLAW.VERSION",
+      value: "1.2.3",
+    });
     expect(snapshot.conversation).toEqual([
       { role: "user", content: "local", timestamp: 10 },
       { role: "assistant", content: "gateway", timestamp: 20 },
@@ -208,6 +212,40 @@ describe("createDashboardService", () => {
     expect(snapshot.taskTimeline).toEqual([{ id: "run-1" }]);
     expect(snapshot.taskRelationships).toEqual([{ id: "rel-1", type: "child_agent", sourceAgentId: "main", targetAgentId: "expert" }]);
     expect(snapshot.agents).toEqual([{ id: "main" }]);
+  });
+
+  it("falls back to gateway config version for OPENCLAW.VERSION", async () => {
+    const service = createService({
+      config: {
+        mode: "openclaw",
+        model: "gpt-5",
+        baseUrl: "http://127.0.0.1:18789",
+        workspaceRoot: "/workspace/openclaw",
+        logsDir: "/workspace/logs",
+        localConfig: null,
+      },
+      resolveSessionRecord: vi.fn(() => ({ sessionId: "session-1", updatedAt: 123 })),
+      parseSessionStatusText: vi.fn(() => ({
+        sessionKey: "parsed-key",
+        modelDisplay: "gpt-5.1",
+      })),
+      callOpenClawGateway: vi.fn(async () => ({
+        config: {
+          version: "9.9.9",
+          agents: {
+            list: [],
+          },
+        },
+      })),
+    });
+
+    const snapshot = await service.buildDashboardSnapshot("demo-user");
+
+    expect(snapshot.session.version).toBe("9.9.9");
+    expect(snapshot.peeks.environment.items[0]).toEqual({
+      label: "OPENCLAW.VERSION",
+      value: "9.9.9",
+    });
   });
 
   it("passes injected workspace files into file and timeline projection", async () => {

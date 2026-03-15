@@ -14,8 +14,13 @@ const codeTheme = themes.dracula;
 const homePrefix = "/Users/marila";
 const trackedFileLinkButtonClassName =
   "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
-const inlineTrackedFileClassName =
-  "cc-inline-code cc-inline-code-link inline cursor-pointer appearance-none rounded-[5px] border bg-transparent px-1.5 py-0.5 text-left align-baseline font-mono text-[0.9em] font-normal leading-tight no-underline";
+
+function getInlineCodeClassName(resolvedTheme = "light", interactive = false) {
+  return cn(
+    "cc-inline-code inline border-0 align-baseline font-mono font-normal",
+    interactive && "cc-inline-code-link cursor-pointer appearance-none text-left no-underline",
+  );
+}
 
 function compactHomePath(filePath = "") {
   if (!filePath) {
@@ -154,6 +159,29 @@ function resolveMarkdownImageSource(src = "") {
   return normalizedSrc;
 }
 
+function resolveMarkdownImagePath(src = "") {
+  const normalizedSrc = String(src || "").trim();
+  if (!normalizedSrc) {
+    return "";
+  }
+
+  if (/^file:\/\//i.test(normalizedSrc)) {
+    try {
+      const fileUrl = new URL(normalizedSrc);
+      const filePath = decodeURIComponent(fileUrl.pathname || "");
+      return /^\/[A-Za-z]:\//.test(filePath) ? filePath.slice(1) : filePath;
+    } catch {
+      return "";
+    }
+  }
+
+  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedSrc)) {
+    return normalizedSrc;
+  }
+
+  return "";
+}
+
 function markdownUrlTransform(url = "") {
   const normalizedUrl = String(url || "").trim();
   if (!normalizedUrl) {
@@ -275,7 +303,7 @@ function CodeBlock({ code, language }) {
   );
 }
 
-function CodeRenderer({ className, children, files, onOpenFilePreview, ...props }) {
+function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedTheme = "light", ...props }) {
   const match = /language-([\w-]+)/.exec(className || "");
   const code = String(children || "").replace(/\n$/, "");
   const isBlock = Boolean(match) || code.includes("\n");
@@ -289,7 +317,7 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, ...props 
           <button
             type="button"
             title={matchedFile.fullPath || matchedFile.path}
-            className={inlineTrackedFileClassName}
+            className={getInlineCodeClassName(resolvedTheme, true)}
             onClick={() => onOpenFilePreview(matchedFile)}
           >
             {children}
@@ -301,7 +329,7 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, ...props 
         <a
           href={getVsCodeHref(matchedFile.fullPath || matchedFile.path)}
           title={matchedFile.fullPath || matchedFile.path}
-          className={inlineTrackedFileClassName}
+          className={getInlineCodeClassName(resolvedTheme, true)}
         >
           {children}
         </a>
@@ -310,7 +338,7 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, ...props 
 
     return (
       <code
-        className="cc-inline-code rounded-[5px] border px-1.5 py-0.5 font-mono text-[0.9em] leading-tight"
+        className={getInlineCodeClassName(resolvedTheme)}
         {...props}
       >
         {children}
@@ -329,7 +357,7 @@ function TableRenderer({ children }) {
   );
 }
 
-export default function MarkdownRenderer({ content, files, headingScopeId = "message", resolvedTheme = "light", className, shellClassName, onOpenFilePreview }) {
+export default function MarkdownRenderer({ content, files, headingScopeId = "message", resolvedTheme = "light", className, shellClassName, onOpenFilePreview, onOpenImagePreview }) {
   const { messages } = useI18n();
   const [previewImage, setPreviewImage] = useState(null);
   const normalizedContent = normalizeMathDelimiters(promoteStandaloneImageLinks(content));
@@ -377,11 +405,22 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
             table: TableRenderer,
             img: ({ alt, src = "" }) => {
               const resolvedSrc = resolveMarkdownImageSource(src);
+              const resolvedPath = resolveMarkdownImagePath(src);
               return (
                 <button
                   type="button"
                   className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/40"
-                  onClick={() => setPreviewImage({ src: resolvedSrc, alt: alt || "" })}
+                  onClick={() => {
+                    if (onOpenImagePreview) {
+                      onOpenImagePreview({
+                        src: resolvedSrc,
+                        alt: alt || "",
+                        path: resolvedPath,
+                      });
+                      return;
+                    }
+                    setPreviewImage({ src: resolvedSrc, alt: alt || "" });
+                  }}
                 >
                   <img
                     src={resolvedSrc}

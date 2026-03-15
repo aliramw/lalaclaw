@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   appendPromptHistory,
   createConversationKey,
+  defaultChatFontSize,
+  defaultInspectorPanelWidth,
   defaultSessionUser,
   defaultTab,
   loadPendingChatTurns,
+  loadStoredPromptDrafts,
   loadStoredPromptHistory,
   loadStoredState,
+  sanitizeInspectorPanelWidth,
 } from "@/features/app/storage";
 import { createBaseSession } from "@/features/app/state";
 import { useAppHotkeys } from "@/features/app/controllers/use-app-hotkeys";
@@ -21,7 +25,9 @@ export function useCommandCenter() {
   const { intlLocale, messages: i18n } = useI18n();
   const stored = useMemo(() => loadStoredState(), []);
   const storedPromptHistory = useMemo(() => loadStoredPromptHistory(), []);
+  const storedPromptDrafts = useMemo(() => stored?.promptDraftsByConversation || loadStoredPromptDrafts(), [stored]);
   const storedPendingChatTurns = useMemo(() => loadPendingChatTurns(), []);
+  const initialConversationKey = createConversationKey(stored?.sessionUser || defaultSessionUser, stored?.agentId || "main");
   const [session, setSession] = useState(
     createBaseSession(i18n, {
       agentId: stored?.agentId || "main",
@@ -32,18 +38,21 @@ export function useCommandCenter() {
   );
   const [messages, setMessages] = useState(stored?.messages || []);
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
+  const [promptDraftsByConversation, setPromptDraftsByConversation] = useState(storedPromptDrafts);
   const [pendingChatTurns, setPendingChatTurns] = useState(storedPendingChatTurns);
   const [busy, setBusy] = useState(false);
   const [switchingAgentLabel, setSwitchingAgentLabel] = useState("");
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [fastMode, setFastMode] = useState(Boolean(stored?.fastMode));
+  const [inspectorPanelWidth, setInspectorPanelWidth] = useState(stored?.inspectorPanelWidth || defaultInspectorPanelWidth);
+  const [chatFontSizeBySessionUser, setChatFontSizeBySessionUser] = useState(stored?.chatFontSizeBySessionUser || {});
   const [dismissedTaskRelationshipIdsByConversation, setDismissedTaskRelationshipIdsByConversation] = useState(
     stored?.dismissedTaskRelationshipIdsByConversation || {},
   );
   const [focusMessageRequest, setFocusMessageRequest] = useState(null);
   const [model, setModel] = useState(stored?.model || "");
   const { resolvedTheme, setTheme, theme } = useTheme();
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(storedPromptDrafts[initialConversationKey] || "");
   const promptRef = useRef(null);
   const messageViewportRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
@@ -65,7 +74,37 @@ export function useCommandCenter() {
 
   const activeConversationKey = createConversationKey(session.sessionUser, session.agentId);
   const activePendingChat = pendingChatTurns[activeConversationKey] || null;
+  const activeChatFontSize = chatFontSizeBySessionUser[session.sessionUser] || defaultChatFontSize;
   const dismissedTaskRelationshipIds = dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [];
+
+  const setPromptForConversation = (value, conversationKey = activeConversationKey) => {
+    setPrompt((current) => {
+      const next = typeof value === "function" ? value(current) : value;
+      const normalized = typeof next === "string" ? next : String(next || "");
+
+      setPromptDraftsByConversation((drafts) => {
+        if (!normalized) {
+          if (!Object.prototype.hasOwnProperty.call(drafts, conversationKey)) {
+            return drafts;
+          }
+          const nextDrafts = { ...drafts };
+          delete nextDrafts[conversationKey];
+          return nextDrafts;
+        }
+
+        if (drafts[conversationKey] === normalized) {
+          return drafts;
+        }
+
+        return {
+          ...drafts,
+          [conversationKey]: normalized,
+        };
+      });
+
+      return next;
+    });
+  };
 
   const setMessagesSynced = (value) => {
     setMessages((current) => {
@@ -165,6 +204,10 @@ export function useCommandCenter() {
   }, []);
 
   useEffect(() => {
+    setPrompt(promptDraftsByConversation[activeConversationKey] || "");
+  }, [activeConversationKey, promptDraftsByConversation]);
+
+  useEffect(() => {
     setMessagesSynced((current) =>
       (current || []).map((message) =>
         message?.pending
@@ -219,7 +262,7 @@ export function useCommandCenter() {
       },
     };
 
-    setPrompt("");
+    setPromptForConversation("");
     setComposerAttachments([]);
     setPromptHistoryNavigation(null);
     resetRapidEnterState();
@@ -240,7 +283,7 @@ export function useCommandCenter() {
     prompt,
     promptHistoryByConversation,
     promptRef,
-    setPrompt,
+    setPrompt: setPromptForConversation,
   });
 
   useEffect(() => {
@@ -250,19 +293,44 @@ export function useCommandCenter() {
 
   useAppPersistence({
     activeTab,
+    chatFontSizeBySessionUser,
     dismissedTaskRelationshipIdsByConversation,
     fastMode,
     initialStoredMessagesRef,
     initialStoredPendingRef,
+    inspectorPanelWidth,
     messages,
     messagesRef,
     model,
     pendingChatTurns,
+    promptDraftsByConversation,
     promptHistoryByConversation,
     session,
     setMessagesSynced,
     setPendingChatTurns,
   });
+
+  const handleChatFontSizeChange = (nextSize) => {
+    if (!["small", "medium", "large"].includes(nextSize)) {
+      return;
+    }
+
+    setChatFontSizeBySessionUser((current) => {
+      if ((current[session.sessionUser] || defaultChatFontSize) === nextSize) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [session.sessionUser]: nextSize,
+      };
+    });
+  };
+
+  const handleInspectorPanelWidthChange = (nextWidth) => {
+    const normalizedWidth = sanitizeInspectorPanelWidth(nextWidth);
+    setInspectorPanelWidth((current) => (current === normalizedWidth ? current : normalizedWidth));
+  };
 
   const dismissTaskRelationship = (relationshipId) => {
     const normalizedId = String(relationshipId || "").trim();
@@ -350,7 +418,7 @@ export function useCommandCenter() {
         updatedLabel: i18n.common.justReset,
       }),
     );
-    setPrompt("");
+    setPromptForConversation("");
     focusPrompt();
     await loadRuntime(nextSessionUser).catch(() => {});
     focusPrompt();
@@ -446,6 +514,7 @@ export function useCommandCenter() {
     availableAgents,
     availableModels,
     busy,
+    chatFontSize: activeChatFontSize,
     composerAttachments,
     files,
     fastMode,
@@ -454,7 +523,9 @@ export function useCommandCenter() {
     handleAddAttachments,
     handleAgentChange,
     handleArtifactSelect,
+    handleChatFontSizeChange,
     handleFastModeChange,
+    handleInspectorPanelWidthChange,
     handleModelChange,
     handlePromptChange,
     handlePromptKeyDown,
@@ -466,6 +537,7 @@ export function useCommandCenter() {
     messageViewportRef,
     messages,
     model,
+    inspectorPanelWidth,
     peeks,
     prompt,
     promptRef,

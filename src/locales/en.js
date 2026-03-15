@@ -66,6 +66,7 @@ const en = {
     requestFailed: "Request failed.",
     attachment: "Attachments",
     removeAttachment: "Remove",
+    resizePanels: "Drag to resize the chat and trace panels",
   },
   sessionOverview: {
     labels: {
@@ -107,6 +108,14 @@ const en = {
   chat: {
     title: "Current session",
     subtitle: "Collaborate with the active Agent",
+    fontSize: "Font size",
+    fontSizeTooltip: "Adjust the message font size for this session",
+    fontSizeOptionTooltip: (label) => `Font size: ${label}`,
+    fontSizes: {
+      small: "Small",
+      medium: "Medium",
+      large: "Large",
+    },
     resetConversation: "Reset conversation",
     resetConversationHotkey: "Reset conversation (Cmd + N)",
     resetConversationConfirm: "Start a new session? Conversation history and context will be cleared.",
@@ -140,7 +149,7 @@ const en = {
   },
   inspector: {
     title: "Trace & Observe",
-    subtitle: "Run logs, files, reply summaries, and snapshots",
+    subtitle: "Run logs, files, reply summaries, and environment",
     relationships: {
       title: "Collaborative Tasks",
       subtitle: "Sessions and child agents dispatched by the main Agent",
@@ -162,7 +171,7 @@ const en = {
       timeline: "Run Log",
       files: "Files",
       artifacts: "Summaries",
-      snapshots: "Snapshots",
+      environment: "Environment",
       agents: "Collab",
       peek: "Preview",
     },
@@ -175,18 +184,20 @@ const en = {
       label: "File menu",
       copyPath: "Copy path",
     },
+    artifactReplyPrefix: "Reply",
+    artifactJumpTo: "Jump to",
     empty: {
       files: "Detected files for the current session will appear here.",
       timeline: "Each run will be grouped here as an execution timeline.",
       artifacts: "Assistant reply summaries will appear here.",
-      snapshots: "A snapshot will be generated after each completed reply.",
+      environment: "Gateway and session environment details are listed here for quick inspection.",
       agents: "Agent collaboration appears after the first execution.",
       workspace: "Waiting for workspace preview…",
       terminal: "Waiting for terminal preview…",
       browser: "Waiting for browser preview…",
       noTools: "No tools were called in this turn",
       noFiles: "No file changes detected",
-      noSnapshots: "No snapshots in this turn",
+      noEnvironment: "No environment details available",
     },
     timeline: {
       runTitle: "Run",

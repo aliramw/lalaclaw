@@ -1,10 +1,40 @@
 export const storageKey = "command-center-ui-state-v2";
 export const themeStorageKey = "command-center-theme";
 export const promptHistoryStorageKey = "command-center-prompt-history-v1";
+export const promptDraftStorageKey = "command-center-prompt-drafts-v1";
 export const pendingChatStorageKey = "command-center-pending-chat-v1";
 export const defaultTab = "timeline";
 export const defaultSessionUser = "command-center";
 export const promptHistoryLimit = 50;
+export const defaultChatFontSize = "small";
+export const minInspectorPanelWidth = 300;
+export const maxInspectorPanelWidth = 720;
+export const defaultInspectorPanelWidth = 380;
+
+function sanitizeChatFontSize(value) {
+  return value === "medium" || value === "large" ? value : defaultChatFontSize;
+}
+
+export function sanitizeInspectorPanelWidth(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return defaultInspectorPanelWidth;
+  }
+
+  return Math.min(maxInspectorPanelWidth, Math.max(minInspectorPanelWidth, Math.round(numericValue)));
+}
+
+function sanitizeChatFontSizeMap(value) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, size]) => [String(key || "").trim(), sanitizeChatFontSize(size)])
+      .filter(([key]) => Boolean(key)),
+  );
+}
 
 function sanitizeDismissedTaskRelationshipsMap(value) {
   if (!value || typeof value !== "object") {
@@ -22,6 +52,18 @@ function sanitizeDismissedTaskRelationshipsMap(value) {
   );
 }
 
+function sanitizePromptDraftsMap(value) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, draft]) => [key, typeof draft === "string" ? draft : String(draft || "")])
+      .filter(([, draft]) => draft.length > 0),
+  );
+}
+
 export function loadStoredState() {
   try {
     const raw = window.localStorage.getItem(storageKey);
@@ -35,7 +77,10 @@ export function loadStoredState() {
       model: parsed?.model || "",
       agentId: parsed?.agentId || "main",
       sessionUser: parsed?.sessionUser || defaultSessionUser,
+      inspectorPanelWidth: sanitizeInspectorPanelWidth(parsed?.inspectorPanelWidth),
+      chatFontSizeBySessionUser: sanitizeChatFontSizeMap(parsed?.chatFontSizeBySessionUser),
       dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(parsed?.dismissedTaskRelationshipIdsByConversation),
+      promptDraftsByConversation: sanitizePromptDraftsMap(parsed?.promptDraftsByConversation),
     };
   } catch {
     return null;
@@ -71,6 +116,17 @@ export function loadStoredPromptHistory() {
             .slice(-promptHistoryLimit),
         ]),
     );
+  } catch {
+    return {};
+  }
+}
+
+export function loadStoredPromptDrafts() {
+  try {
+    const raw = window.localStorage.getItem(promptDraftStorageKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return sanitizePromptDraftsMap(parsed);
   } catch {
     return {};
   }

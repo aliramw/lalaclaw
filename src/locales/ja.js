@@ -66,6 +66,7 @@ const ja = {
     requestFailed: "リクエストに失敗しました。",
     attachment: "添付",
     removeAttachment: "削除",
+    resizePanels: "ドラッグしてチャットと追跡パネルの幅を調整",
   },
   sessionOverview: {
     labels: {
@@ -107,6 +108,14 @@ const ja = {
   chat: {
     title: "現在のセッション",
     subtitle: "現在の Agent と協業",
+    fontSize: "文字サイズ",
+    fontSizeTooltip: "このセッションのメッセージ文字サイズを調整",
+    fontSizeOptionTooltip: (label) => `文字サイズ：${label}`,
+    fontSizes: {
+      small: "小",
+      medium: "中",
+      large: "大",
+    },
     resetConversation: "会話をリセット",
     resetConversationHotkey: "会話をリセット (Cmd + N)",
     resetConversationConfirm: "新しいセッションを開始しますか？ 会話履歴とコンテキストは消去されます。",
@@ -140,7 +149,7 @@ const ja = {
   },
   inspector: {
     title: "トレースと観測",
-    subtitle: "実行記録、ファイル、返信要約、スナップショット",
+    subtitle: "実行記録、ファイル、返信要約、環境",
     relationships: {
       title: "協調タスク",
       subtitle: "主 Agent が派生させたセッションと子 Agent",
@@ -162,7 +171,7 @@ const ja = {
       timeline: "実行記録",
       files: "ファイル",
       artifacts: "返信要約",
-      snapshots: "スナップショット",
+      environment: "環境",
       agents: "協業",
       peek: "プレビュー",
     },
@@ -175,18 +184,20 @@ const ja = {
       label: "ファイルメニュー",
       copyPath: "パスをコピー",
     },
+    artifactReplyPrefix: "返信",
+    artifactJumpTo: "移動",
     empty: {
       files: "現在のセッションで検出されたファイルがここに表示されます。",
       timeline: "各実行はここでタイムラインとしてまとめて表示されます。",
       artifacts: "Assistant の返信要約がここに表示されます。",
-      snapshots: "各返信完了後にスナップショットが生成されます。",
+      environment: "Gateway と現在のセッション環境情報をここに一覧表示します。",
       agents: "最初の実行後に Agent 協業構造が表示されます。",
       workspace: "workspace プレビュー待機中…",
       terminal: "terminal プレビュー待機中…",
       browser: "browser プレビュー待機中…",
       noTools: "このターンではツールは呼び出されませんでした",
       noFiles: "ファイル変更は検出されませんでした",
-      noSnapshots: "このターンのスナップショットはありません",
+      noEnvironment: "表示できる環境情報はありません",
     },
     timeline: {
       runTitle: "実行",

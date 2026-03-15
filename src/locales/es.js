@@ -66,6 +66,7 @@ const es = {
     requestFailed: "La solicitud falló.",
     attachment: "Adjuntos",
     removeAttachment: "Quitar",
+    resizePanels: "Arrastra para ajustar el ancho del chat y del panel de seguimiento",
   },
   sessionOverview: {
     labels: {
@@ -107,6 +108,14 @@ const es = {
   chat: {
     title: "Sesión actual",
     subtitle: "Colabora con el Agent activo",
+    fontSize: "Tamano del texto",
+    fontSizeTooltip: "Ajusta el tamano del texto de los mensajes para esta sesion",
+    fontSizeOptionTooltip: (label) => `Tamano del texto: ${label}`,
+    fontSizes: {
+      small: "Pequeno",
+      medium: "Mediano",
+      large: "Grande",
+    },
     resetConversation: "Reiniciar conversación",
     resetConversationHotkey: "Reiniciar conversación (Cmd + N)",
     resetConversationConfirm: "¿Iniciar una nueva sesión? El historial y el contexto se borrarán.",
@@ -140,7 +149,7 @@ const es = {
   },
   inspector: {
     title: "Trazado y Observación",
-    subtitle: "Registros de ejecución, archivos, resúmenes de respuesta y snapshots",
+    subtitle: "Registros de ejecución, archivos, resúmenes de respuesta y entorno",
     relationships: {
       title: "Tareas colaborativas",
       subtitle: "Sesiones y agentes hijos enviados por el Agent principal",
@@ -160,7 +169,7 @@ const es = {
       timeline: "Registro",
       files: "Archivos",
       artifacts: "Resúmenes",
-      snapshots: "Snapshots",
+      environment: "Entorno",
       agents: "Colab",
       peek: "Vista previa",
     },
@@ -173,18 +182,20 @@ const es = {
       label: "Menú de archivo",
       copyPath: "Copiar ruta",
     },
+    artifactReplyPrefix: "Respuesta",
+    artifactJumpTo: "Ir a",
     empty: {
       files: "Los archivos detectados para la sesión actual aparecerán aquí.",
       timeline: "Cada ejecución se agrupará aquí como una línea de tiempo.",
       artifacts: "Aquí aparecerán los resúmenes de las respuestas del assistant.",
-      snapshots: "Se generará un snapshot después de cada respuesta completada.",
+      environment: "Aquí se listan los detalles del entorno del Gateway y de la sesión actual.",
       agents: "La colaboración entre agentes aparecerá después de la primera ejecución.",
       workspace: "Esperando la vista previa del workspace…",
       terminal: "Esperando la vista previa de la terminal…",
       browser: "Esperando la vista previa del navegador…",
       noTools: "No se llamaron herramientas en este turno",
       noFiles: "No se detectaron cambios de archivos",
-      noSnapshots: "No hay snapshots en este turno",
+      environment: "No hay detalles de entorno disponibles",
     },
     timeline: {
       runTitle: "Ejecución",

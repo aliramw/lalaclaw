@@ -66,6 +66,7 @@ const zh = {
     requestFailed: "请求失败。",
     attachment: "附件",
     removeAttachment: "移除",
+    resizePanels: "拖动调整聊天区与追踪区宽度",
   },
   sessionOverview: {
     labels: {
@@ -107,6 +108,14 @@ const zh = {
   chat: {
     title: "当前会话",
     subtitle: "与当前 Agent 协作",
+    fontSize: "字体大小",
+    fontSizeTooltip: "调整当前会话的消息字体大小",
+    fontSizeOptionTooltip: (label) => `字体大小：${label}`,
+    fontSizes: {
+      small: "小",
+      medium: "中",
+      large: "大",
+    },
     resetConversation: "重置对话",
     resetConversationHotkey: "重置对话 (Cmd + N)",
     resetConversationConfirm: "是否要开启新的会话，对话历史和上下文将清空",
@@ -140,7 +149,7 @@ const zh = {
   },
   inspector: {
     title: "追踪与观察",
-    subtitle: "运行记录、文件、回复摘要与快照",
+    subtitle: "运行记录、文件、回复摘要与环境",
     relationships: {
       title: "协同任务",
       subtitle: "主 Agent 派发的会话与子 Agent",
@@ -162,7 +171,7 @@ const zh = {
       timeline: "运行记录",
       files: "文件",
       artifacts: "回复摘要",
-      snapshots: "快照",
+      environment: "环境",
       agents: "协作",
       peek: "预览",
     },
@@ -175,18 +184,20 @@ const zh = {
       label: "文件菜单",
       copyPath: "复制路径",
     },
+    artifactReplyPrefix: "回复",
+    artifactJumpTo: "定位到",
     empty: {
       files: "当前会话中检测到的文件会显示在这里。",
       timeline: "每次任务执行后，这里会按时间线聚合展示工具链路。",
       artifacts: "助手的回复摘要会显示在这里。",
-      snapshots: "每次完成回复后会生成一个可回看快照。",
+      environment: "这里会列出 Gateway 与当前会话的环境信息，便于排查与检阅。",
       agents: "首次执行后显示 Agent 协作结构。",
       workspace: "等待工作区预览…",
       terminal: "等待终端预览…",
       browser: "等待浏览器预览…",
       noTools: "本轮未调用工具",
       noFiles: "未检测到文件变更",
-      noSnapshots: "本轮暂无快照",
+      noEnvironment: "当前没有可展示的环境信息",
     },
     timeline: {
       runTitle: "执行",

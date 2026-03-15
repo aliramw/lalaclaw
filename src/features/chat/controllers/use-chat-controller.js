@@ -5,6 +5,123 @@ import {
   readFileAsDataUrl,
   readFileAsText,
 } from "@/features/chat/utils";
+import { getLocalizedStatusLabel } from "@/features/session/status-display";
+
+function isNdjsonStreamResponse(response) {
+  const contentType = String(response?.headers?.get?.("content-type") || "").toLowerCase();
+  return Boolean(response?.body) && contentType.includes("application/x-ndjson");
+}
+
+function replacePendingAssistantMessage(current = [], pendingTimestamp, content, tokenBadge = "") {
+  const next = Array.isArray(current) ? [...current] : [];
+  const assistantMessage = {
+    role: "assistant",
+    content,
+    timestamp: pendingTimestamp,
+    ...(tokenBadge ? { tokenBadge } : {}),
+  };
+
+  const pendingIndex = next.findIndex((item) => item?.pending && item.timestamp === pendingTimestamp);
+  if (pendingIndex >= 0) {
+    next[pendingIndex] = assistantMessage;
+    return next;
+  }
+
+  const existingIndex = next.findIndex((item) => item?.role === "assistant" && !item?.pending && item.timestamp === pendingTimestamp);
+  if (existingIndex >= 0) {
+    next[existingIndex] = assistantMessage;
+    return next;
+  }
+
+  next.push(assistantMessage);
+  return next;
+}
+
+async function consumeChatStream(response, { entry, pendingTimestamp, activeTargetRef, setMessagesSynced }) {
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    return null;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let payload = null;
+  let streamedText = "";
+  let tokenBadge = "";
+
+  const shouldApply = () =>
+    activeTargetRef.current.sessionUser === entry.sessionUser &&
+    activeTargetRef.current.agentId === entry.agentId;
+
+  const pushStreamUpdate = () => {
+    if (!shouldApply()) {
+      return;
+    }
+    setMessagesSynced((current) => replacePendingAssistantMessage(current, pendingTimestamp, streamedText, tokenBadge));
+  };
+
+  const processLine = (line) => {
+    const trimmed = String(line || "").trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const event = JSON.parse(trimmed);
+    if (event.type === "delta") {
+      const delta = typeof event.delta === "string" ? event.delta : "";
+      if (!delta) {
+        return;
+      }
+      streamedText += delta;
+      pushStreamUpdate();
+      return;
+    }
+
+    if (event.type === "done") {
+      payload = event.payload || null;
+      if (payload?.tokenBadge) {
+        tokenBadge = payload.tokenBadge;
+      }
+      if (typeof payload?.outputText === "string") {
+        streamedText = payload.outputText;
+        pushStreamUpdate();
+      }
+      return;
+    }
+
+    if (event.type === "error") {
+      throw new Error(event.error || "Request failed");
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex);
+      buffer = buffer.slice(newlineIndex + 1);
+      processLine(line);
+      newlineIndex = buffer.indexOf("\n");
+    }
+  }
+
+  if (buffer.trim()) {
+    processLine(buffer);
+  }
+
+  return payload || {
+    ok: true,
+    outputText: streamedText,
+    tokenBadge,
+    metadata: {},
+  };
+}
 
 export function useChatController({
   activeConversationKey,
@@ -76,9 +193,17 @@ export function useChatController({
               content: messageContent,
               ...(attachments?.length ? { attachments } : {}),
             })),
+          stream: true,
         }),
       });
-      const payload = await response.json();
+      const payload = isNdjsonStreamResponse(response)
+        ? await consumeChatStream(response, {
+            entry,
+            pendingTimestamp: pendingMessage.timestamp,
+            activeTargetRef,
+            setMessagesSynced,
+          })
+        : await response.json();
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Request failed");
       }
@@ -125,27 +250,21 @@ export function useChatController({
           applySnapshot(payload, { syncConversation: false });
           setSession((current) => ({
             ...current,
-            status: payload.metadata?.status || i18n.common.idle,
+            status: getLocalizedStatusLabel(payload.metadata?.status, i18n) || i18n.common.idle,
           }));
           return;
         }
 
-        setMessagesSynced((current) => {
-          const withoutPending = current.filter((item) => !item.pending);
-          return [
-            ...withoutPending,
-            {
-              role: "assistant",
-              content: payload.outputText,
-              timestamp: Date.now(),
-              ...(payload.tokenBadge ? { tokenBadge: payload.tokenBadge } : {}),
-            },
-          ];
-        });
+        setMessagesSynced((current) =>
+          replacePendingAssistantMessage(current, pendingMessage.timestamp, payload.outputText, payload.tokenBadge),
+        );
         applySnapshot(payload, { syncConversation: false });
       }
       if (shouldApply) {
-        setSession((current) => ({ ...current, status: payload.metadata?.status || i18n.common.idle }));
+        setSession((current) => ({
+          ...current,
+          status: getLocalizedStatusLabel(payload.metadata?.status, i18n) || i18n.common.idle,
+        }));
       }
     } catch (error) {
       const shouldApply =
@@ -153,17 +272,13 @@ export function useChatController({
         activeTargetRef.current.agentId === entry.agentId;
 
       if (shouldApply) {
-        setMessagesSynced((current) => {
-          const withoutPending = current.filter((item) => !item.pending);
-          return [
-            ...withoutPending,
-            {
-              role: "assistant",
-              content: `${i18n.common.requestFailed}\n${error.message}`,
-              timestamp: Date.now(),
-            },
-          ];
-        });
+        setMessagesSynced((current) =>
+          replacePendingAssistantMessage(
+            current,
+            pendingMessage.timestamp,
+            `${i18n.common.requestFailed}\n${error.message}`,
+          ),
+        );
         setSession((current) => ({ ...current, status: i18n.common.failed }));
       }
     } finally {

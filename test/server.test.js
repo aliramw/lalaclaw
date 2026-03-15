@@ -14,6 +14,16 @@ async function readJson(response) {
   return await response.json();
 }
 
+async function readStreamDonePayload(response) {
+  const text = await response.text();
+  const events = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  return events.find((event) => event?.type === "done")?.payload;
+}
+
 describe("server helpers", () => {
   it("uses dist as the only static app directory", () => {
     expect(__test.getStaticDir()).toBe(DIST_DIR);
@@ -339,7 +349,7 @@ describe("server routes", () => {
         messages: [{ role: "user", content: "/think high" }],
       }),
     });
-    const chatPayload = await readJson(chatResponse);
+    const chatPayload = await readStreamDonePayload(chatResponse);
 
     expect(chatResponse.ok).toBe(true);
     expect(chatPayload.outputText).toContain("Current intent: /think high");
@@ -425,10 +435,12 @@ describe("server routes", () => {
     expect(missingPayload.error).toBe("Not found");
   });
 
-  it("returns markdown preview payloads and serves raw media content", async () => {
+  it("returns markdown/pdf preview payloads and serves raw media content", async () => {
     const markdownPath = path.join(tempDir, "TOOLS.md");
+    const pdfPath = path.join(tempDir, "preview.pdf");
     const imagePath = path.join(tempDir, "preview.png");
     await fs.writeFile(markdownPath, "# Hello\n\nPreview body");
+    await fs.writeFile(pdfPath, Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF", "utf8"));
     await fs.writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 
     const markdownResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(markdownPath)}`);
@@ -442,6 +454,17 @@ describe("server routes", () => {
       content: "# Hello\n\nPreview body",
     });
 
+    const pdfResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(pdfPath)}`);
+    const pdfPayload = await readJson(pdfResponse);
+
+    expect(pdfResponse.ok).toBe(true);
+    expect(pdfPayload).toMatchObject({
+      ok: true,
+      kind: "pdf",
+      name: "preview.pdf",
+    });
+    expect(pdfPayload.contentUrl).toContain("/api/file-preview/content?path=");
+
     const imageResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(imagePath)}`);
     const imagePayload = await readJson(imageResponse);
 
@@ -452,5 +475,9 @@ describe("server routes", () => {
     const mediaResponse = await fetch(`${baseUrl}${imagePayload.contentUrl}`);
     expect(mediaResponse.ok).toBe(true);
     expect(mediaResponse.headers.get("content-type")).toContain("image/png");
+
+    const pdfContentResponse = await fetch(`${baseUrl}${pdfPayload.contentUrl}`);
+    expect(pdfContentResponse.ok).toBe(true);
+    expect(pdfContentResponse.headers.get("content-type")).toContain("application/pdf");
   });
 });

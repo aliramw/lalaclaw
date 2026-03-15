@@ -66,6 +66,7 @@ const fr = {
     requestFailed: "La requête a échoué.",
     attachment: "Pièces jointes",
     removeAttachment: "Retirer",
+    resizePanels: "Faites glisser pour redimensionner le chat et le panneau d'observation",
   },
   sessionOverview: {
     labels: {
@@ -107,6 +108,14 @@ const fr = {
   chat: {
     title: "Session actuelle",
     subtitle: "Collaborer avec l'Agent actif",
+    fontSize: "Taille du texte",
+    fontSizeTooltip: "Ajuster la taille du texte des messages pour cette session",
+    fontSizeOptionTooltip: (label) => `Taille du texte : ${label}`,
+    fontSizes: {
+      small: "Petit",
+      medium: "Moyen",
+      large: "Grand",
+    },
     resetConversation: "Réinitialiser la conversation",
     resetConversationHotkey: "Réinitialiser la conversation (Cmd + N)",
     resetConversationConfirm: "Démarrer une nouvelle session ? L'historique de conversation et le contexte seront effacés.",
@@ -140,7 +149,7 @@ const fr = {
   },
   inspector: {
     title: "Trace et Observation",
-    subtitle: "Journal d'exécution, fichiers, résumés de réponses et instantanés",
+    subtitle: "Journal d'exécution, fichiers, résumés de réponses et environnement",
     relationships: {
       title: "Tâches collaboratives",
       subtitle: "Sessions et sous-agents délégués par l'Agent principal",
@@ -162,7 +171,7 @@ const fr = {
       timeline: "Journal",
       files: "Fichiers",
       artifacts: "Résumés",
-      snapshots: "Instantanés",
+      environment: "Environnement",
       agents: "Collab",
       peek: "Aperçu",
     },
@@ -175,18 +184,20 @@ const fr = {
       label: "Menu du fichier",
       copyPath: "Copier le chemin",
     },
+    artifactReplyPrefix: "Reponse",
+    artifactJumpTo: "Aller a",
     empty: {
       files: "Les fichiers détectés pour la session actuelle apparaîtront ici.",
       timeline: "Chaque exécution sera regroupée ici sous forme de chronologie.",
       artifacts: "Les résumés des réponses de l'assistant apparaîtront ici.",
-      snapshots: "Un instantané sera généré après chaque réponse terminée.",
+      environment: "Les informations d'environnement du Gateway et de la session courante sont listées ici.",
       agents: "La structure de collaboration des agents apparaîtra après la première exécution.",
       workspace: "En attente de l'aperçu workspace…",
       terminal: "En attente de l'aperçu terminal…",
       browser: "En attente de l'aperçu browser…",
       noTools: "Aucun outil n'a été appelé pendant ce tour",
       noFiles: "Aucune modification de fichier détectée",
-      noSnapshots: "Aucun instantané pour ce tour",
+      noEnvironment: "Aucune information d'environnement disponible",
     },
     timeline: {
       runTitle: "Exécution",

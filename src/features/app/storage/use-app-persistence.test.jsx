@@ -52,12 +52,16 @@ describe("useAppPersistence", () => {
     renderHook(() =>
       useAppPersistence({
         activeTab: "timeline",
+        chatFontSizeBySessionUser: {
+          "command-center": "medium",
+        },
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
         },
         fastMode: true,
         initialStoredMessagesRef: { current: [] },
         initialStoredPendingRef: { current: {} },
+        inspectorPanelWidth: 432,
         messages: [{ role: "user", content: "你好", timestamp: 1, pending: false }],
         messagesRef: { current: [] },
         model: "gpt-5",
@@ -65,6 +69,9 @@ describe("useAppPersistence", () => {
           "command-center:main": {
             key: "command-center:main",
           },
+        },
+        promptDraftsByConversation: {
+          "command-center:main": "还没发送",
         },
         promptHistoryByConversation: {
           "command-center:main": ["你好"],
@@ -79,15 +86,25 @@ describe("useAppPersistence", () => {
       expect(attachmentStorageMocks.serializeAttachmentStateForStorage).toHaveBeenCalled();
       expect(JSON.parse(window.localStorage.getItem("command-center-ui-state-v2") || "{}")).toMatchObject({
         activeTab: "timeline",
+        chatFontSizeBySessionUser: {
+          "command-center": "medium",
+        },
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
         },
         fastMode: true,
+        inspectorPanelWidth: 432,
         model: "gpt-5",
+        promptDraftsByConversation: {
+          "command-center:main": "还没发送",
+        },
         sessionUser: "command-center",
       });
     });
 
+    expect(JSON.parse(window.localStorage.getItem("command-center-prompt-drafts-v1") || "{}")).toEqual({
+      "command-center:main": "还没发送",
+    });
     expect(JSON.parse(window.localStorage.getItem("command-center-prompt-history-v1") || "{}")).toEqual({
       "command-center:main": ["你好"],
     });
@@ -127,14 +144,17 @@ describe("useAppPersistence", () => {
     renderHook(() =>
       useAppPersistence({
         activeTab: "timeline",
+        chatFontSizeBySessionUser: {},
         dismissedTaskRelationshipIdsByConversation: {},
         fastMode: false,
         initialStoredMessagesRef: { current: initialMessages },
         initialStoredPendingRef: { current: initialPending },
+        inspectorPanelWidth: 380,
         messages: initialMessages,
         messagesRef: { current: initialMessages },
         model: "",
         pendingChatTurns: initialPending,
+        promptDraftsByConversation: {},
         promptHistoryByConversation: {},
         session: createSession(),
         setMessagesSynced,

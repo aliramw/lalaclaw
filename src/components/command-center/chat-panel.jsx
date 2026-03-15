@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
+import { isOfflineStatus } from "@/features/session/status-display";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useI18n } from "@/lib/i18n";
@@ -22,6 +23,48 @@ const userBubbleClassName = "ring-0";
 const assistantBubbleClassName = "";
 
 const assistantCompactThreshold = 72;
+const chatFontSizeClassNames = {
+  small: {
+    userText: "text-[12px] font-medium leading-5",
+    markdown: "text-[12px] leading-5",
+    compactMarkdown: "text-[12px] leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap",
+    pendingMarkdown: "text-[12px] font-semibold leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap",
+    meta: "text-[11px] leading-5",
+    label: "text-[11px] leading-4",
+    tokenBadge: "text-[10px]",
+    queued: "text-[12px] leading-5",
+  },
+  medium: {
+    userText: "text-[13px] font-medium leading-6",
+    markdown: "text-[13px] leading-6",
+    compactMarkdown: "text-[13px] leading-6 [&_p]:mb-0 [&_p]:whitespace-nowrap",
+    pendingMarkdown: "text-[13px] font-semibold leading-6 [&_p]:mb-0 [&_p]:whitespace-nowrap",
+    meta: "text-[12px] leading-5",
+    label: "text-[12px] leading-5",
+    tokenBadge: "text-[11px]",
+    queued: "text-[13px] leading-6",
+  },
+  large: {
+    userText: "text-[15px] font-medium leading-7",
+    markdown: "text-[15px] leading-7",
+    compactMarkdown: "text-[15px] leading-7 [&_p]:mb-0 [&_p]:whitespace-nowrap",
+    pendingMarkdown: "text-[15px] font-semibold leading-7 [&_p]:mb-0 [&_p]:whitespace-nowrap",
+    meta: "text-[13px] leading-6",
+    label: "text-[13px] leading-5",
+    tokenBadge: "text-[12px]",
+    queued: "text-[14px] leading-6",
+  },
+};
+
+function resolveChatFontSizeStyles(chatFontSize = "small") {
+  return chatFontSizeClassNames[chatFontSize] || chatFontSizeClassNames.small;
+}
+
+const chatFontSizeButtonClassNames = {
+  small: "text-[12px]",
+  medium: "text-[14px]",
+  large: "text-[16px]",
+};
 
 function formatAttachmentSize(size = 0) {
   const numeric = Number(size) || 0;
@@ -292,19 +335,6 @@ function findLatestAssistantMessageId(messages = []) {
   return "";
 }
 
-function extractRuntimeBadge(runtimeLabel = "") {
-  const segments = String(runtimeLabel || "")
-    .split(/·|•/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  if (!segments.length) {
-    return "";
-  }
-
-  return segments.findLast((segment) => !/^think\s*:/i.test(segment) && !/^direct$/i.test(segment)) || "";
-}
-
 function calculateLatestBubbleScrollTop(viewport, bubble) {
   if (!viewport || !bubble) {
     return 0;
@@ -394,51 +424,10 @@ function BubbleTopJumpButton({ onClick }) {
   );
 }
 
-function SessionKeyInlineCopy({ value }) {
-  const { messages } = useI18n();
-  const [copied, setCopied] = useState(false);
-
-  if (!value) {
-    return null;
-  }
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard?.writeText?.(value);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {}
-  };
-
-  return (
-    <div className="group/sessionkey inline-flex min-w-0 max-w-[26rem] items-center gap-1 text-[11px] font-medium text-muted-foreground/90">
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="min-w-0 truncate transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        title={value}
-        aria-label={copied ? messages.common.copied : messages.common.copy}
-      >
-        {value}
-      </button>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className={cn(
-          "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          copied ? "opacity-100" : "opacity-0 group-hover/sessionkey:opacity-100",
-        )}
-        aria-label={copied ? messages.common.copied : messages.common.copy}
-      >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      </button>
-    </div>
-  );
-}
-
-function MessageMeta({ align = "left", content, formatTime, pending, sticky, compact, timestamp }) {
+function MessageMeta({ align = "left", content, formatTime, pending, sticky, compact, timestamp, textClassName }) {
   const baseClassName = cn(
-    "flex items-center gap-1 text-[11px] leading-5 text-muted-foreground tabular-nums",
+    "flex items-center gap-1 text-muted-foreground tabular-nums",
+    textClassName,
     sticky ? "sticky top-0" : "",
     compact ? "self-center" : "self-start pt-2.5",
   );
@@ -487,11 +476,12 @@ function MessageOutline({ headingScopeId, items, onSelect }) {
   );
 }
 
-function MessageLabel({ align = "left", value }) {
+function MessageLabel({ align = "left", value, textClassName }) {
   return (
     <div
       className={cn(
-        "mb-1 max-w-full truncate px-1 text-[11px] leading-4 text-muted-foreground/85",
+        "mb-1 max-w-full truncate px-1 text-muted-foreground/85",
+        textClassName,
         align === "right" ? "text-right" : "text-left",
       )}
       title={value}
@@ -501,13 +491,13 @@ function MessageLabel({ align = "left", value }) {
   );
 }
 
-function AgentLabel({ tokenBadge, value }) {
+function AgentLabel({ tokenBadge, value, textClassName, tokenBadgeClassName }) {
   return (
-    <div className="mb-1 flex max-w-full items-center gap-2 px-1 text-[11px] leading-4 text-muted-foreground/85">
+    <div className={cn("mb-1 flex max-w-full items-center gap-2 px-1 text-muted-foreground/85", textClassName)}>
       <span className="truncate" title={value}>
         {value}
       </span>
-      {tokenBadge ? <span className="shrink-0 text-[10px] text-muted-foreground/70">{tokenBadge}</span> : null}
+      {tokenBadge ? <span className={cn("shrink-0 text-muted-foreground/70", tokenBadgeClassName)}>{tokenBadge}</span> : null}
     </div>
   );
 }
@@ -543,6 +533,7 @@ const MessageBubble = memo(function MessageBubble({
   messageViewportRef,
   resolvedTheme,
   separated,
+  chatFontSize,
   userLabel,
 }) {
   const [showBubbleTopJump, setShowBubbleTopJump] = useState(false);
@@ -556,6 +547,7 @@ const MessageBubble = memo(function MessageBubble({
   const outlineItems = !isUser && !isPending ? extractHeadingOutline(message.content) : [];
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
+  const fontSizeStyles = resolveChatFontSizeStyles(chatFontSize);
   const userBubbleWidthClassName = "w-fit min-w-[3.75rem] max-w-[min(86vw,40rem)]";
   const compactAssistantWidthClassName = "inline-block max-w-[min(80vw,42rem)] shrink-0";
   const longAssistantWidthClassName = "w-[700px] max-w-[calc(100vw-12rem)] shrink-0";
@@ -648,15 +640,15 @@ const MessageBubble = memo(function MessageBubble({
           className={cn("group/message flex w-full justify-end", separated && "mt-2")}
         >
           <div className="flex max-w-full flex-col items-end">
-            <MessageLabel align="right" value={userLabel} />
+            <MessageLabel align="right" value={userLabel} textClassName={fontSizeStyles.label} />
             <div className="flex max-w-full items-center gap-2">
-              <MessageMeta align="left" content={message.content} formatTime={formatTime} pending={false} compact timestamp={message.timestamp} />
+              <MessageMeta align="left" content={message.content} formatTime={formatTime} pending={false} compact textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
               <Card data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName)}>
                 {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
                 <CardContent className={cn(bubbleContentClassName, message.attachments?.length && "space-y-2")}>
                   <MessageAttachments attachments={message.attachments} onPreviewImage={handleOpenImagePreview} />
                   {message.content ? (
-                    <div className="whitespace-pre-wrap text-[12px] font-medium leading-5" style={{ color: "#ffffff" }}>
+                    <div className={cn("whitespace-pre-wrap", fontSizeStyles.userText)} style={{ color: "#ffffff" }}>
                       {message.content}
                     </div>
                   ) : null}
@@ -677,7 +669,7 @@ const MessageBubble = memo(function MessageBubble({
         className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
       >
         <div className="flex max-w-full flex-col items-start">
-          <AgentLabel value={agentLabel} />
+          <AgentLabel value={agentLabel} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-center gap-2">
             <Card
               data-bubble-layout="compact"
@@ -696,11 +688,12 @@ const MessageBubble = memo(function MessageBubble({
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   onOpenFilePreview={handleOpenFilePreview}
-                  className="text-[12px] font-semibold leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap"
+                  onOpenImagePreview={handleOpenImagePreview}
+                  className={fontSizeStyles.pendingMarkdown}
                 />
               </CardContent>
             </Card>
-            <MessageMeta align="right" content={message.content} formatTime={formatTime} pending compact timestamp={message.timestamp} />
+            <MessageMeta align="right" content={message.content} formatTime={formatTime} pending compact textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
           </div>
         </div>
       </div>
@@ -715,7 +708,7 @@ const MessageBubble = memo(function MessageBubble({
         className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
       >
         <div className="flex max-w-full flex-col items-start">
-          <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} />
+          <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-start gap-1.5">
             <div className="inline-flex min-w-0 max-w-full items-start gap-3">
               <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, "w-[700px] max-w-[calc(100vw-20rem)] shrink-0", "cc-assistant-bubble", assistantBubbleClassName)}>
@@ -727,13 +720,14 @@ const MessageBubble = memo(function MessageBubble({
                     headingScopeId={headingScopeId}
                     resolvedTheme={resolvedTheme}
                     onOpenFilePreview={handleOpenFilePreview}
-                    className="text-[12px] leading-5"
+                    onOpenImagePreview={handleOpenImagePreview}
+                    className={fontSizeStyles.markdown}
                   />
                 </CardContent>
               </Card>
               <MessageOutline headingScopeId={headingScopeId} items={outlineItems} onSelect={handleSelectHeading} />
             </div>
-            <MessageMeta align="right" content={message.content} formatTime={formatTime} sticky timestamp={message.timestamp} />
+            <MessageMeta align="right" content={message.content} formatTime={formatTime} sticky textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
           </div>
         </div>
       </div>
@@ -748,7 +742,7 @@ const MessageBubble = memo(function MessageBubble({
         className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
       >
         <div className="flex max-w-full flex-col items-start">
-          <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} />
+          <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-center gap-2">
             <Card data-bubble-layout="compact" className={cn(bubbleBaseClassName, compactAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
               {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
@@ -759,11 +753,12 @@ const MessageBubble = memo(function MessageBubble({
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   onOpenFilePreview={handleOpenFilePreview}
-                  className="text-[12px] leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap"
+                  onOpenImagePreview={handleOpenImagePreview}
+                  className={fontSizeStyles.compactMarkdown}
                 />
               </CardContent>
             </Card>
-            <MessageMeta align="right" content={message.content} formatTime={formatTime} compact={compactMeta} timestamp={message.timestamp} />
+            <MessageMeta align="right" content={message.content} formatTime={formatTime} compact={compactMeta} textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
           </div>
         </div>
       </div>
@@ -777,7 +772,7 @@ const MessageBubble = memo(function MessageBubble({
       className={cn("group/message flex w-fit max-w-full", separated && "mt-2")}
     >
       <div className="flex max-w-full flex-col items-start">
-        <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} />
+        <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
         <div className="inline-flex max-w-full items-start gap-2">
           <Card data-bubble-layout="full" className={cn(bubbleBaseClassName, longAssistantWidthClassName, "cc-assistant-bubble", assistantBubbleClassName)}>
             {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
@@ -788,11 +783,12 @@ const MessageBubble = memo(function MessageBubble({
                 headingScopeId={headingScopeId}
                 resolvedTheme={resolvedTheme}
                 onOpenFilePreview={handleOpenFilePreview}
-                className="text-[12px] leading-5"
+                onOpenImagePreview={handleOpenImagePreview}
+                className={fontSizeStyles.markdown}
               />
             </CardContent>
           </Card>
-          <MessageMeta align="right" content={message.content} formatTime={formatTime} sticky timestamp={message.timestamp} />
+          <MessageMeta align="right" content={message.content} formatTime={formatTime} sticky textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
         </div>
       </div>
     </div>
@@ -805,6 +801,7 @@ const MessageBubble = memo(function MessageBubble({
     && prevProps.messageViewportRef === nextProps.messageViewportRef
     && prevProps.resolvedTheme === nextProps.resolvedTheme
     && prevProps.separated === nextProps.separated
+    && prevProps.chatFontSize === nextProps.chatFontSize
     && prevProps.userLabel === nextProps.userLabel
     && prevProps.message?.role === nextProps.message?.role
     && prevProps.message?.content === nextProps.message?.content
@@ -816,26 +813,23 @@ const MessageBubble = memo(function MessageBubble({
 
 function ConnectionStatus({ session }) {
   const { messages } = useI18n();
-  const isOffline = session.status === messages.common.offline || session.status === "离线";
+  const isOffline = isOfflineStatus(session.status);
   const isOpenClaw = session.mode === "openclaw";
   const toneClassName = isOffline ? "bg-rose-500" : isOpenClaw ? "bg-emerald-500" : "bg-slate-400";
-  const label = isOffline || isOpenClaw ? messages.common.openClaw : messages.common.mockMode;
 
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="inline-flex items-center">
       <Tooltip>
         <TooltipTrigger asChild>
           <span className={cn("h-2 w-2 rounded-full", toneClassName)} aria-label={messages.chat.openClawStatusTooltip} />
         </TooltipTrigger>
         <TooltipContent>{messages.chat.openClawStatusTooltip}</TooltipContent>
       </Tooltip>
-      <span>{label}</span>
-      {session.version ? <span className="text-[11px] text-muted-foreground">{session.version}</span> : null}
     </span>
   );
 }
 
-function QueuedMessages({ items }) {
+function QueuedMessages({ items, textClassName }) {
   const { messages } = useI18n();
 
   if (!items.length) {
@@ -852,7 +846,7 @@ function QueuedMessages({ items }) {
       </div>
       <div className="grid gap-1.5">
         {items.map((item, index) => (
-          <div key={item.id} className="rounded-md border border-border/70 bg-background/80 px-2.5 py-1.5 text-[12px] leading-5">
+          <div key={item.id} className={cn("rounded-md border border-border/70 bg-background/80 px-2.5 py-1.5", textClassName)}>
             <span className="mr-2 text-[10px] text-muted-foreground">#{index + 1}</span>
             <span className="line-clamp-2 whitespace-pre-wrap">{item.content}</span>
           </div>
@@ -865,6 +859,7 @@ function QueuedMessages({ items }) {
 export function ChatPanel({
   agentLabel = "main",
   busy,
+  chatFontSize = "small",
   composerAttachments,
   files,
   focusMessageRequest,
@@ -872,6 +867,7 @@ export function ChatPanel({
   messageViewportRef,
   messages,
   onAddAttachments,
+  onChatFontSizeChange,
   onRemoveAttachment,
   onPromptChange,
   onPromptKeyDown,
@@ -891,10 +887,25 @@ export function ChatPanel({
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
   const latestAssistantBubbleRef = useRef(null);
+  const fontSizeStyles = resolveChatFontSizeStyles(chatFontSize);
+  const chatFontSizeOptions = [
+    { value: "small", label: i18n.chat.fontSizes.small, glyphClassName: chatFontSizeButtonClassNames.small },
+    { value: "medium", label: i18n.chat.fontSizes.medium, glyphClassName: chatFontSizeButtonClassNames.medium },
+    { value: "large", label: i18n.chat.fontSizes.large, glyphClassName: chatFontSizeButtonClassNames.large },
+  ];
   const wasNearBottomRef = useRef(true);
+  const autoScrollSuppressedRef = useRef(false);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollResetRef = useRef(0);
   const currentAgentName = session.agentId || agentLabel || "main";
-  const runtimeBadge = extractRuntimeBadge(session.runtime);
-  const modeLabel = session.mode === "openclaw" ? i18n.common.liveGateway : i18n.common.mockMode;
+  const latestMessageCardKey = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) {
+      return "";
+    }
+
+    return [lastMessage.role || "", lastMessage.timestamp || "", lastMessage.pending ? "pending" : "done"].join("::");
+  }, [messages]);
   const latestAssistantMessageId = useMemo(() => findLatestAssistantMessageId(messages), [messages]);
   const latestAssistantMessage = useMemo(() => {
     if (!latestAssistantMessageId) {
@@ -991,6 +1002,28 @@ export function ChatPanel({
     focusComposer();
   }, [focusComposer, onAddAttachments]);
 
+  const markUserScrollTakeover = useCallback(() => {
+    if (!programmaticScrollRef.current) {
+      autoScrollSuppressedRef.current = true;
+    }
+  }, []);
+
+  const scrollViewport = useCallback((viewport, top, behavior = "auto") => {
+    if (!viewport) {
+      return;
+    }
+
+    programmaticScrollRef.current = true;
+    window.clearTimeout(programmaticScrollResetRef.current);
+    viewport.scrollTo?.({ top, behavior });
+    if (typeof viewport.scrollTo !== "function") {
+      viewport.scrollTop = top;
+    }
+    programmaticScrollResetRef.current = window.setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 0);
+  }, []);
+
   useEffect(() => {
     const handleGlobalPaste = (event) => {
       const clipboardData = event.clipboardData;
@@ -1023,25 +1056,43 @@ export function ChatPanel({
   }, [agentMention, mentionOptions.length]);
 
   useEffect(() => {
+    autoScrollSuppressedRef.current = false;
+  }, [latestMessageCardKey]);
+
+  useEffect(() => {
     const viewport = messageViewportRef?.current;
     if (!viewport) {
       return undefined;
     }
 
-    const updateWasNearBottom = () => {
+    const updateWasNearBottom = (markManual = false) => {
       const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
       wasNearBottomRef.current = distanceFromBottom <= 48;
+      if (markManual && !programmaticScrollRef.current) {
+        autoScrollSuppressedRef.current = true;
+      }
     };
 
-    updateWasNearBottom();
-    viewport.addEventListener("scroll", updateWasNearBottom, { passive: true });
-    return () => viewport.removeEventListener("scroll", updateWasNearBottom);
-  }, [messageViewportRef]);
+    const handleViewportScroll = () => updateWasNearBottom(true);
+    const markManualTakeover = () => {
+      markUserScrollTakeover();
+    };
+
+    updateWasNearBottom(false);
+    viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
+    viewport.addEventListener("wheel", markManualTakeover, { passive: true });
+    viewport.addEventListener("touchmove", markManualTakeover, { passive: true });
+    return () => {
+      viewport.removeEventListener("scroll", handleViewportScroll);
+      viewport.removeEventListener("wheel", markManualTakeover);
+      viewport.removeEventListener("touchmove", markManualTakeover);
+    };
+  }, [markUserScrollTakeover, messageViewportRef]);
 
   useEffect(() => {
     const viewport = messageViewportRef?.current;
     const latestBubble = latestAssistantBubbleRef.current;
-    if (!viewport || !latestBubble || !latestMessageIsAssistant || !wasNearBottomRef.current) {
+    if (!viewport || !latestBubble || !latestMessageIsAssistant || !wasNearBottomRef.current || autoScrollSuppressedRef.current) {
       return undefined;
     }
 
@@ -1052,14 +1103,11 @@ export function ChatPanel({
 
     const frameId = window.requestAnimationFrame(() => {
       const top = calculateTallLatestBubbleScrollTop(viewport, latestBubble);
-      viewport.scrollTo?.({ top, behavior: "auto" });
-      if (typeof viewport.scrollTo !== "function") {
-        viewport.scrollTop = top;
-      }
+      scrollViewport(viewport, top, "auto");
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [latestAssistantMessageId, latestAssistantRenderKey, latestMessageIsAssistant, messageViewportRef]);
+  }, [latestAssistantMessageId, latestAssistantRenderKey, latestMessageIsAssistant, messageViewportRef, scrollViewport]);
 
   useEffect(() => {
     const viewport = messageViewportRef?.current;
@@ -1113,14 +1161,11 @@ export function ChatPanel({
       }
 
       const top = calculateBubbleTopFocusScrollTop(viewport, targetBubble);
-      viewport.scrollTo?.({ top, behavior: "smooth" });
-      if (typeof viewport.scrollTo !== "function") {
-        viewport.scrollTop = top;
-      }
+      scrollViewport(viewport, top, "smooth");
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [focusMessageRequest, messageViewportRef]);
+  }, [focusMessageRequest, messageViewportRef, scrollViewport]);
 
   const handleJumpToLatestReply = () => {
     const viewport = messageViewportRef?.current;
@@ -1130,10 +1175,7 @@ export function ChatPanel({
     }
 
     const top = calculateLatestBubbleScrollTop(viewport, latestBubble);
-    viewport.scrollTo?.({ top, behavior: "smooth" });
-    if (typeof viewport.scrollTo !== "function") {
-      viewport.scrollTop = top;
-    }
+    scrollViewport(viewport, top, "smooth");
   };
 
   const handleResetWithConfirm = () => {
@@ -1151,44 +1193,40 @@ export function ChatPanel({
           <div className="flex h-full min-w-0 translate-y-[2px] flex-col justify-center gap-1 self-center">
             <div className="flex min-w-0 items-center gap-2">
               <div className="truncate text-sm font-semibold leading-none tracking-tight">{`${currentAgentName} - ${i18n.chat.title}`}</div>
-              {runtimeBadge ? (
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Badge
-                        variant="secondary"
-                        className="h-5 shrink-0 cursor-help rounded-full px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
-                      >
-                        {runtimeBadge}
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent>{i18n.chat.runtimeBadgeTooltip}</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Badge
-                        variant="secondary"
-                        className="h-5 shrink-0 cursor-help rounded-full px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
-                      >
-                        {modeLabel}
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent>{session.mode === "openclaw" ? i18n.common.liveGatewayTooltip : i18n.common.mockModeTooltip}</TooltipContent>
-                  </Tooltip>
-                </div>
-              ) : null}
-              <SessionKeyInlineCopy value={session.sessionKey} />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant={busy ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
+                    {busy ? i18n.chat.agentBusy : i18n.chat.agentIdle}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>{busy ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 self-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant={busy ? "success" : "default"} className="h-6 px-2 py-0 text-[10px]">
-                  {busy ? i18n.chat.agentBusy : i18n.chat.agentIdle}
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>{busy ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
-            </Tooltip>
+            <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1 py-1">
+              {chatFontSizeOptions.map((item) => {
+                const active = item.value === chatFontSize;
+                return (
+                  <Tooltip key={item.value}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          "inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                          active && "bg-muted text-foreground",
+                        )}
+                        aria-label={i18n.chat.fontSizeOptionTooltip(item.label)}
+                        onClick={() => onChatFontSizeChange?.(item.value)}
+                      >
+                        <span className={cn("font-semibold leading-none", item.glyphClassName)}>A</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{i18n.chat.fontSizeOptionTooltip(item.label)}</TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1207,9 +1245,14 @@ export function ChatPanel({
         </CardHeader>
 
         <CardContent className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] p-0">
-          <QueuedMessages items={queuedMessages || []} />
+          <QueuedMessages items={queuedMessages || []} textClassName={fontSizeStyles.queued} />
           <div className="relative min-h-0">
-            <ScrollArea className="h-full" viewportRef={messageViewportRef}>
+            <ScrollArea
+              className="h-full"
+              viewportRef={messageViewportRef}
+              onWheelCapture={markUserScrollTakeover}
+              onTouchMoveCapture={markUserScrollTakeover}
+            >
               <div className="grid gap-2.5 p-3">
                 {messages.length
                   ? messages.map((message, index) => {
@@ -1231,6 +1274,7 @@ export function ChatPanel({
                           messageViewportRef={messageViewportRef}
                           resolvedTheme={resolvedTheme}
                           separated={index > 0 && messages[index - 1]?.role !== message.role}
+                          chatFontSize={chatFontSize}
                           userLabel={userLabel}
                         />
                       );
@@ -1333,7 +1377,14 @@ export function ChatPanel({
                 </div>
               </div>
             ) : null}
-            <div className="overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/50">
+            <div
+              className={cn(
+                "overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
+                resolvedTheme === "dark"
+                  ? "focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
+                  : "focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
+              )}
+            >
               {composerAttachments?.length ? (
                 <>
                   <ComposerAttachments
@@ -1346,7 +1397,7 @@ export function ChatPanel({
               ) : null}
               <Textarea
                 ref={promptRef}
-                rows={3}
+                rows={2}
                 value={prompt}
                 onChange={(event) => {
                   const nextPrompt = event.target.value;
@@ -1388,7 +1439,7 @@ export function ChatPanel({
                 }}
                 onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
                 placeholder={i18n.chat.promptPlaceholder}
-                className="min-h-[7.5rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
+                className="min-h-[3.75rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
               />
             </div>
           </div>
@@ -1413,7 +1464,7 @@ export function ChatPanel({
               </Tooltip>
               <Button
                 onClick={onSend}
-                className="cc-send-button h-10 min-w-[7.5rem] rounded-xl px-4 text-sm font-medium"
+                className="cc-send-button h-10 min-w-[7.5rem] rounded-md px-4 text-sm font-medium"
               >
                 <span className="inline-flex w-full -translate-x-[3px] items-center justify-center gap-2 leading-none">
                   <Send className="h-3.5 w-3.5 shrink-0" />

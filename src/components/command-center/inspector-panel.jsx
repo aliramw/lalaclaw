@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Boxes, Check, ChevronDown, Copy, FileText, FolderOpen, Hammer, History } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Copy, FileText, FolderOpen, Hammer, Monitor } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
+import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
 import { Prism } from "@/lib/prism-languages";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -51,6 +52,15 @@ function compareFileItemsByPath(left, right, currentWorkspaceRoot = "") {
 
 function resolveItemPath(item) {
   return String(item?.fullPath || item?.path || "").trim();
+}
+
+function localizeArtifactTitle(title = "", messages) {
+  const value = String(title || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  return value.replace(/^(回复|reply)\s*/i, `${messages.inspector.artifactReplyPrefix} `).trim();
 }
 
 function FileLink({ item, compact = false, currentWorkspaceRoot = "", onOpenPreview, onOpenContextMenu }) {
@@ -405,6 +415,8 @@ function ToolIoCodeBlock({ emptyText, label, resolvedTheme = "light", value }) {
 
 function ToolCallCard({ isFirst = false, isLast = false, messages, resolvedTheme = "light", tool }) {
   const [open, setOpen] = useState(true);
+  const normalizedStatus = normalizeStatusKey(tool.status);
+  const localizedStatus = getLocalizedStatusLabel(tool.status, messages);
 
   return (
     <div className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2">
@@ -414,7 +426,7 @@ function ToolCallCard({ isFirst = false, isLast = false, messages, resolvedTheme
           aria-hidden="true"
           className={cn(
             "relative mt-[0.625rem] h-2.5 w-2.5 rounded-full border",
-            tool.status === "失败"
+            normalizedStatus === "failed"
               ? "border-rose-400/60 bg-rose-400/20"
               : resolvedTheme === "dark"
                 ? "border-emerald-400/50 bg-emerald-400/20"
@@ -434,8 +446,8 @@ function ToolCallCard({ isFirst = false, isLast = false, messages, resolvedTheme
             <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open ? "rotate-0" : "-rotate-90")} />
             <div className="truncate text-sm font-medium">{tool.name}</div>
           </div>
-          <Badge variant={tool.status === "失败" ? "default" : "success"} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">
-            {tool.status}
+          <Badge variant={normalizedStatus === "failed" ? "default" : "success"} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">
+            {localizedStatus}
           </Badge>
         </button>
 
@@ -471,10 +483,6 @@ function ToolCallTimeline({ messages, resolvedTheme = "light", tools }) {
   );
 }
 
-function getRelationshipStatusLabel(status, messages) {
-  return messages.inspector.relationships.statuses?.[status] || status || "";
-}
-
 function getRelationshipDisplay(relationship, messages) {
   const fallbackLabel =
     relationship?.type === "session_spawn"
@@ -489,28 +497,9 @@ function getRelationshipDisplay(relationship, messages) {
   };
 }
 
-function getRelationshipStatusBadgeProps(status) {
-  if (status === "completed" || status === "established") {
-    return { variant: "success", className: "" };
-  }
-
-  if (status === "running") {
-    return { variant: "active", className: "" };
-  }
-
-  if (status === "failed") {
-    return {
-      variant: "default",
-      className: "border-transparent bg-destructive/10 text-destructive",
-    };
-  }
-
-  return { variant: "default", className: "border-transparent bg-muted text-muted-foreground" };
-}
-
 function RelationshipCard({ relationship, sessionAgentId = "main", messages }) {
   const { primaryLabel, secondaryLabel } = getRelationshipDisplay(relationship, messages);
-  const statusLabel = getRelationshipStatusLabel(relationship.status, messages);
+  const statusLabel = getLocalizedStatusLabel(relationship.status, messages);
   const statusBadgeProps = getRelationshipStatusBadgeProps(relationship.status);
 
   return (
@@ -548,6 +537,8 @@ function RelationshipCard({ relationship, sessionAgentId = "main", messages }) {
 function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item, messages, onOpenPreview, resolvedTheme = "light" }) {
   const { intlLocale } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
+  const normalizedStatus = normalizeStatusKey(item.status);
+  const localizedStatus = getLocalizedStatusLabel(item.status, messages);
 
   useEffect(() => {
     if (defaultOpen) {
@@ -555,7 +546,12 @@ function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item
     }
   }, [defaultOpen]);
 
-  const badgeVariant = item.status === "失败" ? "default" : item.status?.includes("进行") ? "success" : "active";
+  const badgeVariant =
+    normalizedStatus === "failed"
+      ? "default"
+      : normalizedStatus === "running" || normalizedStatus === "dispatching"
+        ? "success"
+        : "active";
   const displayTime = item.timestamp
     ? new Intl.DateTimeFormat(intlLocale, {
         month: "2-digit",
@@ -578,13 +574,13 @@ function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item
               <div className="text-sm text-muted-foreground">{item.prompt}</div>
             </div>
             <Badge variant={badgeVariant} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">
-              {item.status}
+              {localizedStatus}
             </Badge>
           </div>
 
           <div className="grid gap-1 text-xs text-muted-foreground">
-            <div>{messages.inspector.timeline.tool}：{item.toolsSummary || messages.inspector.timeline.noToolCalls}</div>
-            <div>{messages.inspector.timeline.result}：{item.outcome}</div>
+            <div>{messages.inspector.timeline.tool}: {localizeStatusSummary(item.toolsSummary, messages) || messages.inspector.timeline.noToolCalls}</div>
+            <div>{messages.inspector.timeline.result}: {item.outcome}</div>
           </div>
         </div>
 
@@ -626,19 +622,6 @@ function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item
                     ))
                   : null}
               </TimelineDetailCard>
-
-              <TimelineDetailCard title={messages.inspector.timeline.snapshotEntries} emptyText={messages.inspector.empty.noSnapshots}>
-                {item.snapshots?.length
-                  ? item.snapshots.map((snapshot) => (
-                      <Card key={snapshot.id} className="border-border/70 bg-muted/15">
-                        <CardContent className="space-y-1 py-4">
-                          <div className="text-sm font-medium">{snapshot.title}</div>
-                          <div className="text-xs text-muted-foreground">{snapshot.detail}</div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  : null}
-              </TimelineDetailCard>
             </div>
           ) : null}
         </div>
@@ -672,48 +655,156 @@ function TimelineTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview
   );
 }
 
-export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceRoot = "", files, onSelectArtifact, resolvedTheme = "light", setActiveTab, snapshots, taskTimeline }) {
+function EnvironmentTab({ section, messages }) {
+  if (!section?.items?.length) {
+    return <PanelEmpty text={messages.inspector.empty.noEnvironment} />;
+  }
+
+  return (
+    <ScrollArea className="min-h-0 flex-1">
+      <div className="grid gap-3 pr-2">
+        {messages.inspector.empty.environment ? (
+          <p className="text-[11px] leading-5 text-muted-foreground/80">{messages.inspector.empty.environment}</p>
+        ) : null}
+        {section.items.map((item, index) => (
+          <Card key={`${item.label}-${index}`}>
+            <CardContent className="space-y-1 py-4">
+              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                {item.label}
+              </div>
+              <div className="break-words font-mono text-[13px] text-foreground">{item.value}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </ScrollArea>
+  );
+}
+
+export function InspectorPanel({ activeTab, artifacts, currentWorkspaceRoot = "", files, onSelectArtifact, peeks, resolvedTheme = "light", setActiveTab, taskTimeline }) {
   const { messages } = useI18n();
   const { filePreview, imagePreview, handleOpenPreview, closeFilePreview, closeImagePreview } = useFilePreview();
+  const tabsListRef = useRef(null);
+  const [showTabLabels, setShowTabLabels] = useState(true);
+  const [tooltipTabKey, setTooltipTabKey] = useState("");
+  const availableTabKeys = ["files", "artifacts", "timeline", "environment"];
   const tabDefinitions = [
     { key: "files", icon: FolderOpen, label: messages.inspector.tabs.files, count: files.length },
     { key: "artifacts", icon: FileText, label: messages.inspector.tabs.artifacts },
     { key: "timeline", icon: Hammer, label: messages.inspector.tabs.timeline },
-    { key: "snapshots", icon: History, label: messages.inspector.tabs.snapshots },
-    { key: "agents", icon: Boxes, label: messages.inspector.tabs.agents },
+    { key: "environment", icon: Monitor, label: messages.inspector.tabs.environment },
   ];
+  const resolvedActiveTab = availableTabKeys.includes(activeTab) ? activeTab : "files";
+
+  useEffect(() => {
+    if (activeTab && !availableTabKeys.includes(activeTab)) {
+      setActiveTab("files");
+    }
+  }, [activeTab, availableTabKeys, setActiveTab]);
+
+  useEffect(() => {
+    const node = tabsListRef.current;
+    if (!node || typeof ResizeObserver !== "function") {
+      return undefined;
+    }
+
+    const updateLayout = (width) => {
+      if (!Number.isFinite(width) || width <= 0) {
+        return;
+      }
+      setShowTabLabels(width >= 430);
+    };
+
+    updateLayout(node.getBoundingClientRect().width);
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      updateLayout(entry.contentRect.width);
+    });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (showTabLabels && tooltipTabKey) {
+      setTooltipTabKey("");
+    }
+  }, [showTabLabels, tooltipTabKey]);
 
   return (
     <>
       <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-        <CardHeader className="flex h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
-          <div className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left">
-            <CardTitle className="truncate text-sm leading-none">{messages.inspector.title}</CardTitle>
-            <CardDescription className="truncate text-[11px] leading-none">{messages.inspector.subtitle}</CardDescription>
+        <CardHeader className="flex min-h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
+          <div className="flex min-w-0 flex-1 items-baseline justify-start gap-2 text-left">
+            <CardTitle className="truncate text-sm leading-[1.15]">{messages.inspector.title}</CardTitle>
+            <CardDescription className="truncate text-[11px] leading-4">{messages.inspector.subtitle}</CardDescription>
           </div>
         </CardHeader>
 
         <CardContent className="flex min-h-0 flex-1 flex-col p-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="grid h-auto w-full shrink-0 grid-cols-3 gap-1 p-1 xl:grid-cols-5">
+          <Tabs value={resolvedActiveTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
+            <TabsList ref={tabsListRef} className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 p-1 md:grid-cols-4">
               {tabDefinitions.map((tab) => {
                 const Icon = tab.icon;
+                const isActive = resolvedActiveTab === tab.key;
                 return (
                   <TabsTrigger
                     key={tab.key}
                     value={tab.key}
+                    aria-label={tab.label}
+                    onPointerEnter={() => {
+                      if (!showTabLabels) {
+                        setTooltipTabKey(tab.key);
+                      }
+                    }}
+                    onPointerLeave={() => {
+                      if (!showTabLabels) {
+                        setTooltipTabKey((current) => (current === tab.key ? "" : current));
+                      }
+                    }}
+                    onFocus={() => {
+                      if (!showTabLabels) {
+                        setTooltipTabKey(tab.key);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!showTabLabels) {
+                        setTooltipTabKey((current) => (current === tab.key ? "" : current));
+                      }
+                    }}
                     className={cn(
-                      "data-[state=active]:text-white data-[state=active]:shadow-sm",
+                      "group/tab relative text-[13px] data-[state=active]:text-white data-[state=active]:shadow-sm",
+                      showTabLabels ? "px-3" : "px-2",
+                      isActive ? "text-white shadow-sm" : "",
                       resolvedTheme === "dark"
-                        ? "data-[state=active]:bg-[#0f3e6a] data-[state=active]:hover:bg-[#0f3e6a]"
-                        : "data-[state=active]:bg-[#1677eb] data-[state=active]:hover:bg-[#0f6fe0]",
+                        ? cn(
+                            "data-[state=active]:bg-[#0f3e6a] data-[state=active]:hover:bg-[#0f3e6a]",
+                            isActive ? "bg-[#0f3e6a] hover:bg-[#0f3e6a]" : "",
+                          )
+                        : cn(
+                            "data-[state=active]:bg-[#1677eb] data-[state=active]:hover:bg-[#0f6fe0]",
+                            isActive ? "bg-[#1677eb] hover:bg-[#0f6fe0]" : "",
+                          ),
                     )}
                   >
                     <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
                       <Icon className="h-3.5 w-3.5 shrink-0 stroke-[1.9]" />
                     </span>
-                    <span className="truncate">{tab.label}</span>
-                    <TabCountBadge count={tab.count} active={activeTab === tab.key} />
+                    {showTabLabels ? <span className="truncate">{tab.label}</span> : null}
+                    {showTabLabels ? <TabCountBadge count={tab.count} active={resolvedActiveTab === tab.key} /> : null}
+                    {!showTabLabels && tooltipTabKey === tab.key ? (
+                      <span
+                        aria-hidden="true"
+                        data-testid={`inspector-tab-tooltip-${tab.key}`}
+                        className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-[calc(100%+0.45rem)] whitespace-nowrap rounded-md bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background shadow-md"
+                      >
+                        {tab.label}
+                      </span>
+                    ) : null}
                   </TabsTrigger>
                 );
               })}
@@ -727,11 +818,11 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
               <DataList
                 items={artifacts}
                 empty={messages.inspector.empty.artifacts}
-                getItemActionLabel={(item) => `定位到 ${item.title || messages.inspector.tabs.artifacts}`}
+                getItemActionLabel={(item) => `${messages.inspector.artifactJumpTo} ${localizeArtifactTitle(item.title || messages.inspector.tabs.artifacts, messages)}`}
                 onSelect={onSelectArtifact}
                 render={(item) => (
                   <>
-                    <div className="text-sm font-medium">{item.title}</div>
+                    <div className="text-sm font-medium">{localizeArtifactTitle(item.title, messages)}</div>
                     <div className="text-xs text-muted-foreground">{item.detail}</div>
                   </>
                 )}
@@ -742,30 +833,8 @@ export function InspectorPanel({ activeTab, agents, artifacts, currentWorkspaceR
               <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
             </TabsContent>
 
-            <TabsContent value="snapshots" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-              <DataList
-                items={snapshots}
-                empty={messages.inspector.empty.snapshots}
-                render={(item) => (
-                  <>
-                    <div className="text-sm font-medium">{item.title}</div>
-                    <div className="text-xs text-muted-foreground">{item.detail}</div>
-                  </>
-                )}
-              />
-            </TabsContent>
-
-            <TabsContent value="agents" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-              <DataList
-                items={agents}
-                empty={messages.inspector.empty.agents}
-                render={(item) => (
-                  <>
-                    <div className="text-sm font-medium">{item.label}</div>
-                    <div className="text-xs text-muted-foreground">{item.detail || item.state}</div>
-                  </>
-                )}
-              />
+            <TabsContent value="environment" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+              <EnvironmentTab section={peeks?.environment} messages={messages} />
             </TabsContent>
           </Tabs>
         </CardContent>

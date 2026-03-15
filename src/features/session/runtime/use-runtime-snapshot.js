@@ -5,6 +5,7 @@ import {
   mergeConversationAttachments,
   mergePendingConversation,
 } from "@/features/app/storage";
+import { normalizeStatusKey } from "@/features/session/status-display";
 
 export function mergeTaskRelationships(previousRelationships, nextRelationships) {
   const previousById = new Map(
@@ -24,7 +25,7 @@ export function mergeTaskRelationships(previousRelationships, nextRelationships)
       const previous = previousById.get(relationship.id);
       let nextRelationship = relationship;
 
-      if (relationship.status === "completed") {
+      if (normalizeStatusKey(relationship.status) === "completed") {
         if (relationship.completedAt) {
           nextRelationship = relationship;
         } else if (existing?.completedAt) {
@@ -32,8 +33,8 @@ export function mergeTaskRelationships(previousRelationships, nextRelationships)
         } else if (previous?.completedAt) {
           nextRelationship = { ...relationship, completedAt: previous.completedAt };
         } else if (
-          (existing?.status && existing.status !== "completed") ||
-          (previous?.status && previous.status !== "completed")
+          (existing?.status && normalizeStatusKey(existing.status) !== "completed") ||
+          (previous?.status && normalizeStatusKey(previous.status) !== "completed")
         ) {
           nextRelationship = { ...relationship, completedAt: Date.now() };
         }
@@ -69,7 +70,7 @@ export function useRuntimeSnapshot({
   const [artifacts, setArtifacts] = useState([]);
   const [snapshots, setSnapshots] = useState([]);
   const [agents, setAgents] = useState([]);
-  const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null });
+  const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null, environment: null });
   const runtimeRequestRef = useRef(0);
 
   const applySnapshot = useCallback((snapshot, options = {}) => {
@@ -129,7 +130,7 @@ export function useRuntimeSnapshot({
     setArtifacts(snapshot.artifacts || []);
     setSnapshots(snapshot.snapshots || []);
     setAgents(snapshot.agents || []);
-    setPeeks(snapshot.peeks || { workspace: null, terminal: null, browser: null });
+    setPeeks(snapshot.peeks || { workspace: null, terminal: null, browser: null, environment: null });
     setModel(snapshot.session?.selectedModel || snapshot.model || nextSession.model || "");
 
     if (snapshotPromptHistory.length) {
@@ -221,7 +222,7 @@ export function useRuntimeSnapshot({
     setArtifacts([]);
     setSnapshots([]);
     setAgents([]);
-    setPeeks({ workspace: null, terminal: null, browser: null });
+    setPeeks({ workspace: null, terminal: null, browser: null, environment: null });
   };
 
   return {

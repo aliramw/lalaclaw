@@ -56,7 +56,9 @@ function SelectStatusPill({
   value,
   valueClassName,
   valueStyle,
+  resolvedTheme,
 }) {
+  const isLightTheme = resolvedTheme === "light";
   return (
     <SelectionMenu
       label={menuLabel || label}
@@ -72,7 +74,12 @@ function SelectStatusPill({
       <button
         type="button"
         aria-label={triggerLabel || menuLabel || label}
-        className="inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-left transition-[background-color,border-color,box-shadow] hover:bg-accent/40 focus-visible:outline-none focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-1 focus-visible:ring-border/70"
+        className={cn(
+          "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1",
+          isLightTheme
+            ? "border-border/70 bg-white hover:bg-accent/40 focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-border/70"
+            : "border-border/70 bg-background/80 hover:bg-accent/40 focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-border/70",
+        )}
       >
         <div className="min-w-0 flex-1">
           <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
@@ -88,11 +95,17 @@ function SelectStatusPill({
   );
 }
 
-function StatusPill({ label, value, action, tooltipContent, valueClassName, valueStyle, children }) {
+function StatusPill({ label, value, action, tooltipContent, valueClassName, valueStyle, children, resolvedTheme }) {
+  const isLightTheme = resolvedTheme === "light";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="inline-flex h-14 min-w-[88px] items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2">
+        <div
+          className={cn(
+            "inline-flex h-14 min-w-[88px] items-center gap-2 rounded-lg border border-border/70 px-3 py-2",
+            isLightTheme ? "bg-white" : "bg-background/80",
+          )}
+        >
           <div className="min-w-0 flex-1">
             <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
             <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
@@ -292,6 +305,7 @@ export function SessionOverview({
   const getThinkModeLabel = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).value;
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
   const isThinkModeEnabled = (session.thinkMode || "off") !== "off";
+  const isLightTheme = resolvedTheme === "light";
   const selectedModel = model || session.selectedModel || session.model || "";
   const displayedModel = formatModelLabel(selectedModel) || messages.common.unknown;
   return (
@@ -302,14 +316,15 @@ export function SessionOverview({
                 <div className="mr-1 inline-flex h-14 min-w-0 items-center gap-2">
                   <span className="flex h-full items-center text-[1.5rem] leading-none" aria-hidden="true">🦞</span>
                   <div className="flex min-w-0 flex-col justify-center">
-                    <h1 className="max-w-full truncate text-sm font-semibold leading-none tracking-tight">LalaClaw.ai</h1>
-                    <span className="mt-1 max-w-full truncate text-[11px] leading-none text-muted-foreground">{messages.app.subtitle}</span>
+                    <h1 className="max-w-full truncate text-sm font-semibold leading-[1.1] tracking-tight">LalaClaw.ai</h1>
+                    <span className="mt-1 max-w-full truncate text-[11px] leading-4 text-muted-foreground">{messages.app.subtitle}</span>
                   </div>
                 </div>
 
                 <SelectStatusPill
                   label={messages.sessionOverview.labels.agent}
                   value={session.agentId || "main"}
+                  resolvedTheme={resolvedTheme}
                   items={availableAgents}
                   onSelect={onAgentChange}
                   selectedValue={session.agentId}
@@ -321,6 +336,7 @@ export function SessionOverview({
                 <SelectStatusPill
                   label={messages.sessionOverview.labels.model}
                   value={displayedModel}
+                  resolvedTheme={resolvedTheme}
                   items={availableModels}
                   onSelect={onModelChange}
                   selectedValue={selectedModel}
@@ -336,7 +352,10 @@ export function SessionOverview({
                       aria-pressed={fastMode}
                       title={fastMode ? messages.sessionOverview.fastMode.disableTitle : messages.sessionOverview.fastMode.enableTitle}
                       onClick={() => onFastModeChange(!fastMode)}
-                      className="inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-3 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-left transition-colors hover:bg-accent/40"
+                      className={cn(
+                        "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors",
+                        isLightTheme ? "border-border/70 bg-white hover:bg-accent/40" : "border-border/70 bg-background/80 hover:bg-accent/40",
+                      )}
                     >
                       <div className="min-w-0">
                         <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.fastMode}</div>
@@ -355,6 +374,7 @@ export function SessionOverview({
                 <SelectStatusPill
                   label={messages.sessionOverview.labels.thinkMode}
                   value={getThinkModeDescription(session.thinkMode || "off")}
+                  resolvedTheme={resolvedTheme}
                   valueClassName={cn(isThinkModeEnabled && "dark:text-emerald-400")}
                   valueStyle={isThinkModeEnabled && resolvedTheme === "light" ? { color: "#009559" } : undefined}
                   items={thinkModeOptions}
@@ -370,12 +390,14 @@ export function SessionOverview({
                 <StatusPill
                   label={messages.sessionOverview.labels.context}
                   value={`${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`}
+                  resolvedTheme={resolvedTheme}
                   tooltipContent={messages.sessionOverview.tooltips.context}
                 />
 
                 <StatusPill
                   label={messages.sessionOverview.labels.queue}
-                  value={session.queue || messages.common.none}
+                  value={session.queue || messages.common.unknown}
+                  resolvedTheme={resolvedTheme}
                   tooltipContent={messages.sessionOverview.tooltips.queue}
                 >
                   <Badge variant="default">{updatedBadgeLabel}</Badge>

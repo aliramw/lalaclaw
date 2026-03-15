@@ -4,9 +4,33 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
-function renderWithTooltip(node) {
-  return render(<TooltipProvider delayDuration={0}>{node}</TooltipProvider>);
+function renderWithTooltip(node, locale = "zh") {
+  window.localStorage.setItem(localeStorageKey, locale);
+  return render(
+    <I18nProvider>
+      <TooltipProvider delayDuration={0}>{node}</TooltipProvider>
+    </I18nProvider>,
+  );
+}
+
+function mockResizeObserver(width) {
+  class ResizeObserverMock {
+    constructor(callback) {
+      this.callback = callback;
+    }
+
+    observe() {
+      this.callback([{ contentRect: { width } }]);
+    }
+
+    unobserve() {}
+
+    disconnect() {}
+  }
+
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 }
 
 function TestHarness() {
@@ -15,11 +39,14 @@ function TestHarness() {
   return (
     <InspectorPanel
       activeTab={activeTab}
-      agents={[{ label: "main", detail: "主 Agent" }]}
       artifacts={[{ title: "交付结果", type: "assistant_output", detail: "生成完成" }]}
       currentWorkspaceRoot="/Users/marila/.openclaw/workspace-writer"
       files={[{ path: "src/App.jsx", kind: "文件" }]}
       peeks={{
+        environment: {
+          summary: "这里列出 Gateway 与会话环境信息。",
+          items: [{ label: "gateway.baseUrl", value: "http://127.0.0.1:18789" }],
+        },
         workspace: { summary: "工作区摘要", items: [{ label: "目录", value: "src" }] },
         terminal: null,
         browser: null,
@@ -28,7 +55,6 @@ function TestHarness() {
         section ? [section.summary, ...(section.items || []).map((item) => `${item.label}：${item.value}`)].join("\n") : fallback
       }
       setActiveTab={setActiveTab}
-      snapshots={[{ title: "快照 1", detail: "完成" }]}
       taskTimeline={[
         {
           id: "run-1",
@@ -39,7 +65,6 @@ function TestHarness() {
           tools: [{ id: "tool-1", name: "edit_file", status: "完成", input: "{}", output: "ok" }],
           relationships: [{ id: "rel-1", type: "child_agent", sourceAgentId: "main", targetAgentId: "writer", detail: "draft-worker", status: "running" }],
           files: [{ path: "src/App.jsx", kind: "文件", updatedLabel: "刚刚" }],
-          snapshots: [{ id: "snap-1", title: "快照 1", detail: "完成" }],
           outcome: "处理完成",
         },
       ]}
@@ -50,6 +75,7 @@ function TestHarness() {
 describe("InspectorPanel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.removeItem(localeStorageKey);
   });
 
   it("renders timeline details and switches tabs", async () => {
@@ -71,10 +97,42 @@ describe("InspectorPanel", () => {
     await user.click(screen.getByRole("tab", { name: "文件" }));
     expect(screen.getByRole("tab", { name: "文件" })).toHaveAttribute("data-state", "active");
 
-    expect(screen.queryByRole("tab", { name: "预览" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "环境" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "协作" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "快照" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "快照" }));
-    expect(screen.getByText("快照 1")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "环境" }));
+    expect(screen.getByText("这里会列出 Gateway 与当前会话的环境信息，便于排查与检阅。")).toBeInTheDocument();
+    expect(screen.getByText("gateway.baseUrl")).toBeInTheDocument();
+    expect(screen.getByText("http://127.0.0.1:18789")).toBeInTheDocument();
+  });
+
+  it("localizes timeline statuses and tool summaries for english UI", () => {
+    renderWithTooltip(<TestHarness />, "en");
+
+    expect(screen.getByRole("tab", { name: "Run Log" })).toBeInTheDocument();
+    expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
+    expect(screen.getByText("Tools: edit_file(Completed)")).toBeInTheDocument();
+  });
+
+  it("localizes summary titles for english UI", () => {
+    const [activeTab, setActiveTab] = ["artifacts", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        artifacts={[{ title: "回复 03/15 15:03", type: "assistant_output", detail: "生成完成", messageTimestamp: 123 }]}
+        files={[]}
+        onSelectArtifact={() => {}}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+      "en",
+    );
+
+    expect(screen.getByText("Reply 03/15 15:03")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Jump to Reply 03/15 15:03" })).toBeInTheDocument();
   });
 
   it("routes artifact clicks back to the parent controller", async () => {
@@ -88,10 +146,9 @@ describe("InspectorPanel", () => {
         artifacts={[{ title: "交付结果", type: "assistant_output", detail: "生成完成", messageTimestamp: 123 }]}
         files={[]}
         onSelectArtifact={onSelectArtifact}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -129,15 +186,89 @@ describe("InspectorPanel", () => {
         agents={[]}
         artifacts={[]}
         files={[]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
 
     expect(screen.getByRole("tab", { name: "文件" })).toHaveTextContent(/^文件$/);
+  });
+
+  it("collapses inspector tab labels down to icons when the panel gets narrow", () => {
+    mockResizeObserver(360);
+    const [activeTab, setActiveTab] = ["timeline", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        files={[{ path: "src/App.jsx", kind: "文件" }]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "文件" })).not.toHaveTextContent("文件");
+    expect(screen.getByRole("tab", { name: "回复摘要" })).not.toHaveTextContent("回复摘要");
+  });
+
+  it("shows tooltips for inspector tabs when only icons are visible", async () => {
+    mockResizeObserver(360);
+    const [activeTab, setActiveTab] = ["timeline", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        files={[{ path: "src/App.jsx", kind: "文件" }]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("tab", { name: "环境" }));
+
+    expect(screen.getByTestId("inspector-tab-tooltip-environment")).toHaveTextContent("环境");
+  });
+
+  it("keeps the active tab highlighted in icon-only mode after click", async () => {
+    mockResizeObserver(360);
+
+    function ClickHarness() {
+      const [activeTab, setActiveTab] = useState("timeline");
+
+      return (
+        <InspectorPanel
+          activeTab={activeTab}
+          agents={[]}
+          artifacts={[]}
+          files={[{ path: "src/App.jsx", kind: "文件" }]}
+          peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+          renderPeek={(_, fallback) => fallback}
+          setActiveTab={setActiveTab}
+          taskTimeline={[]}
+        />
+      );
+    }
+
+    renderWithTooltip(<ClickHarness />);
+
+    const user = userEvent.setup();
+    const environmentTab = screen.getByRole("tab", { name: "环境" });
+
+    await user.click(environmentTab);
+
+    expect(environmentTab).toHaveAttribute("data-state", "active");
+    expect(environmentTab).toHaveClass("bg-[#1677eb]", "text-white");
   });
 
   it("renders copy buttons for tool input and output headers", async () => {
@@ -172,10 +303,9 @@ describe("InspectorPanel", () => {
           { path: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", fullPath: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", kind: "文件", primaryAction: "viewed" },
           { path: "/Users/marila/projects/lalaclaw/src/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/App.jsx", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -198,10 +328,9 @@ describe("InspectorPanel", () => {
           { path: "/Users/marila/projects/lalaclaw/alpha.md", fullPath: "/Users/marila/projects/lalaclaw/alpha.md", kind: "文件", primaryAction: "viewed" },
           { path: "/Users/marila/projects/lalaclaw/folder/beta.md", fullPath: "/Users/marila/projects/lalaclaw/folder/beta.md", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -223,10 +352,9 @@ describe("InspectorPanel", () => {
           { path: "/Users/marila/projects/lalaclaw/alpha.md", fullPath: "/Users/marila/projects/lalaclaw/alpha.md", kind: "文件", primaryAction: "created" },
           { path: "/Users/marila/projects/lalaclaw/beta.md", fullPath: "/Users/marila/projects/lalaclaw/beta.md", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -253,10 +381,9 @@ describe("InspectorPanel", () => {
         files={[
           { path: "/Users/marila/projects/lalaclaw/alpha.md", fullPath: "/Users/marila/projects/lalaclaw/alpha.md", kind: "文件", primaryAction: "created" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -290,10 +417,9 @@ describe("InspectorPanel", () => {
         files={[
           { path: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", fullPath: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -332,10 +458,9 @@ describe("InspectorPanel", () => {
         files={[
           { path: "/Users/marila/projects/lalaclaw/src/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/App.jsx", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -373,10 +498,9 @@ describe("InspectorPanel", () => {
         files={[
           { path: "/Users/marila/projects/lalaclaw/scripts/init.lua", fullPath: "/Users/marila/projects/lalaclaw/scripts/init.lua", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -441,10 +565,9 @@ describe("InspectorPanel", () => {
         artifacts={[]}
         currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
         files={[{ path, fullPath: path, kind: "文件", primaryAction: "viewed" }]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );
@@ -468,10 +591,9 @@ describe("InspectorPanel", () => {
         files={[
           { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null }}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
-        snapshots={[]}
         taskTimeline={[]}
       />,
     );

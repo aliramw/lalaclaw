@@ -7,12 +7,16 @@ import { SessionOverview } from "@/components/command-center/session-overview";
 import { ChatPanel } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { useCommandCenter } from "@/features/app/controllers";
+import { defaultInspectorPanelWidth, maxInspectorPanelWidth, minInspectorPanelWidth } from "@/features/app/storage";
+import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, normalizeStatusKey } from "@/features/session/status-display";
 import { I18nProvider } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
-function getRelationshipStatusLabel(status, messages) {
-  return messages.inspector.relationships.statuses?.[status] || status || "";
-}
+const desktopBreakpointQuery = "(min-width: 1280px)";
+const dragHandleWidth = 8;
+const resizeHandleDots = Array.from({ length: 12 });
+const minChatPanelWidth = 560;
 
 function getRelationshipDisplay(relationship, messages) {
   const fallbackLabel =
@@ -28,24 +32,6 @@ function getRelationshipDisplay(relationship, messages) {
   };
 }
 
-function getRelationshipStatusBadgeProps(status) {
-  if (status === "completed" || status === "established") {
-    return { variant: "success", className: "" };
-  }
-
-  if (status === "running") {
-    return { variant: "active", className: "" };
-  }
-
-  if (status === "failed") {
-    return {
-      variant: "default",
-      className: "border-transparent bg-destructive/10 text-destructive",
-    };
-  }
-
-  return { variant: "default", className: "border-transparent bg-muted text-muted-foreground" };
-}
 
 function isSameCompletedAtMap(current = {}, next = {}) {
   const currentKeys = Object.keys(current);
@@ -177,7 +163,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
 
       for (const relationship of relationships || []) {
         const relationshipId = relationship?.id;
-        const status = relationship?.status || "";
+        const status = normalizeStatusKey(relationship?.status);
         if (!relationshipId) {
           continue;
         }
@@ -199,7 +185,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
             continue;
           }
 
-          const previousStatus = previousStatuses[relationshipId] || "";
+          const previousStatus = normalizeStatusKey(previousStatuses[relationshipId] || "");
           const shouldStartCountdown =
             nextSeenActiveIds.has(relationshipId) || (previousStatus && previousStatus !== "completed");
 
@@ -222,7 +208,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
 
   const hasActiveCountdown = useMemo(
     () =>
-      (relationships || []).some((relationship) => relationship?.status === "completed" && (relationship.completedAt || completedAtById[relationship.id])),
+      (relationships || []).some((relationship) => normalizeStatusKey(relationship?.status) === "completed" && (relationship.completedAt || completedAtById[relationship.id])),
     [completedAtById, relationships],
   );
 
@@ -244,7 +230,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
   const visibleRelationships = useMemo(
     () =>
       (relationships || []).filter((relationship) => {
-        if (relationship?.status !== "completed") {
+        if (normalizeStatusKey(relationship?.status) !== "completed") {
           return true;
         }
 
@@ -263,7 +249,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
       return;
     }
 
-    const stillVisible = visibleRelationships.some((relationship) => relationship.id === contextMenu.relationshipId && relationship.status === "failed");
+    const stillVisible = visibleRelationships.some((relationship) => relationship.id === contextMenu.relationshipId && normalizeStatusKey(relationship.status) === "failed");
     if (!stillVisible) {
       setContextMenu(null);
     }
@@ -285,14 +271,14 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
         <CardContent className="grid gap-2.5 overflow-y-auto px-3 py-3">
           {visibleRelationships.map((relationship) => {
             const { primaryLabel, secondaryLabel } = getRelationshipDisplay(relationship, messages);
-            const statusLabel = getRelationshipStatusLabel(relationship.status, messages);
+            const statusLabel = getLocalizedStatusLabel(relationship.status, messages);
             const statusBadgeProps = getRelationshipStatusBadgeProps(relationship.status);
             const completedAt = relationship.completedAt || completedAtById[relationship.id] || now;
             const hideCountdownSeconds =
-              relationship.status === "completed"
+              normalizeStatusKey(relationship.status) === "completed"
                 ? Math.max(0, Math.ceil((completedAt + 60000 - now) / 1000))
                 : 0;
-            const canDismiss = relationship.status === "failed";
+            const canDismiss = normalizeStatusKey(relationship.status) === "failed";
 
             return (
               <div
@@ -314,7 +300,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
                   {relationship.sourceAgentId || sessionAgentId}
                 </Badge>
                 <div className="flex flex-col items-center gap-1 text-muted-foreground">
-                  {relationship.status === "completed" ? (
+                  {normalizeStatusKey(relationship.status) === "completed" ? (
                     <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
                       {messages.inspector.relationships.hideCountdown(hideCountdownSeconds)}
                     </div>
@@ -357,6 +343,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
 }
 
 function AppContent() {
+  const { messages: i18nMessages } = useI18n();
   const {
     activeQueuedMessages,
     activeTab,
@@ -365,6 +352,7 @@ function AppContent() {
     availableAgents,
     availableModels,
     busy,
+    chatFontSize,
     composerAttachments,
     files,
     fastMode,
@@ -373,7 +361,9 @@ function AppContent() {
     handleAddAttachments,
     handleAgentChange,
     handleArtifactSelect,
+    handleChatFontSizeChange,
     handleFastModeChange,
+    handleInspectorPanelWidthChange,
     handleModelChange,
     handlePromptChange,
     handlePromptKeyDown,
@@ -386,6 +376,7 @@ function AppContent() {
     messageViewportRef,
     messages,
     model,
+    inspectorPanelWidth,
     peeks,
     prompt,
     promptRef,
@@ -400,6 +391,154 @@ function AppContent() {
     taskTimeline,
     theme,
   } = useCommandCenter();
+  const splitLayoutRef = useRef(null);
+  const resizeCleanupRef = useRef(null);
+  const [isWideLayout, setIsWideLayout] = useState(
+    () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(desktopBreakpointQuery).matches : false),
+  );
+  const [isResizingPanels, setIsResizingPanels] = useState(false);
+  const [splitLayoutWidth, setSplitLayoutWidth] = useState(0);
+
+  const getInspectorPanelWidthBounds = (containerWidth = splitLayoutWidth) => {
+    const minimumWidth = minInspectorPanelWidth;
+    if (!isWideLayout || !Number.isFinite(containerWidth) || containerWidth <= 0) {
+      return {
+        minimumWidth,
+        maximumWidth: maxInspectorPanelWidth,
+      };
+    }
+
+    const maximumWidth = Math.max(
+      minimumWidth,
+      Math.min(maxInspectorPanelWidth, containerWidth - dragHandleWidth - minChatPanelWidth),
+    );
+
+    return {
+      minimumWidth,
+      maximumWidth,
+    };
+  };
+
+  const getClampedInspectorPanelWidth = (requestedWidth, containerWidth = splitLayoutWidth) => {
+    const { minimumWidth, maximumWidth } = getInspectorPanelWidthBounds(containerWidth);
+    const numericWidth = Number(requestedWidth);
+    const fallbackWidth = defaultInspectorPanelWidth;
+    const nextWidth = Number.isFinite(numericWidth) ? numericWidth : fallbackWidth;
+    return Math.round(Math.min(maximumWidth, Math.max(minimumWidth, nextWidth)));
+  };
+
+  const stopPanelResize = () => {
+    resizeCleanupRef.current?.();
+    resizeCleanupRef.current = null;
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia(desktopBreakpointQuery);
+    const updateMatches = () => {
+      setIsWideLayout(mediaQuery.matches);
+    };
+
+    updateMatches();
+    mediaQuery.addEventListener?.("change", updateMatches);
+    mediaQuery.addListener?.(updateMatches);
+
+    return () => {
+      mediaQuery.removeEventListener?.("change", updateMatches);
+      mediaQuery.removeListener?.(updateMatches);
+    };
+  }, []);
+
+  useEffect(() => {
+    const node = splitLayoutRef.current;
+    if (!node || typeof ResizeObserver !== "function") {
+      return undefined;
+    }
+
+    const updateWidth = (nextWidth) => {
+      if (!Number.isFinite(nextWidth) || nextWidth <= 0) {
+        return;
+      }
+      setSplitLayoutWidth(nextWidth);
+    };
+
+    updateWidth(node.getBoundingClientRect().width);
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      updateWidth(entry.contentRect.width);
+    });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    handleInspectorPanelWidthChange(getClampedInspectorPanelWidth(inspectorPanelWidth));
+  }, [handleInspectorPanelWidthChange, inspectorPanelWidth, isWideLayout, splitLayoutWidth]);
+
+  useEffect(() => () => stopPanelResize(), []);
+
+  const handleResizeStart = (event) => {
+    if (!isWideLayout || !splitLayoutRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    stopPanelResize();
+    setIsResizingPanels(true);
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const updateWidthFromPointer = (clientX) => {
+      const bounds = splitLayoutRef.current?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+      const nextWidth = getClampedInspectorPanelWidth(bounds.right - clientX, bounds.width);
+      handleInspectorPanelWidthChange(nextWidth);
+    };
+
+    const handlePointerMove = (moveEvent) => {
+      updateWidthFromPointer(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      setIsResizingPanels(false);
+      stopPanelResize();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    resizeCleanupRef.current = () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      setIsResizingPanels(false);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  };
+
+  const resolvedInspectorPanelWidth = getClampedInspectorPanelWidth(inspectorPanelWidth);
+  const desktopLayoutStyle = isWideLayout
+    ? {
+        gridTemplateColumns: `minmax(0, 1fr) ${dragHandleWidth}px ${resolvedInspectorPanelWidth}px`,
+      }
+    : undefined;
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -421,31 +560,70 @@ function AppContent() {
             theme={theme}
           />
 
-          <main className="grid content-start gap-3 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,1fr)] xl:grid-rows-[minmax(0,1fr)] xl:overflow-hidden">
-            <ChatPanel
-              agentLabel={session.agentLabel || session.agentId || "main"}
-              busy={busy}
-              composerAttachments={composerAttachments}
-              files={files}
-              focusMessageRequest={focusMessageRequest}
-              formatTime={localizedFormatTime}
-              messageViewportRef={messageViewportRef}
-              messages={messages}
-              onAddAttachments={handleAddAttachments}
-              queuedMessages={activeQueuedMessages}
-              onRemoveAttachment={handleRemoveAttachment}
-              onPromptChange={handlePromptChange}
-              onPromptKeyDown={handlePromptKeyDown}
-              onReset={() => handleReset().catch(() => {})}
-              onSend={handleSend}
-              prompt={prompt}
-              promptRef={promptRef}
-              resolvedTheme={resolvedTheme}
-              session={session}
-              userLabel="marila"
-            />
+          <main
+            ref={splitLayoutRef}
+            className="grid content-start gap-3 xl:min-h-0 xl:flex-1 xl:grid-rows-[minmax(0,1fr)] xl:gap-0 xl:overflow-hidden"
+            style={desktopLayoutStyle}
+          >
+            <div className="xl:min-h-0 xl:pr-0.5">
+              <ChatPanel
+                agentLabel={session.agentLabel || session.agentId || "main"}
+                busy={busy}
+                chatFontSize={chatFontSize}
+                composerAttachments={composerAttachments}
+                files={files}
+                focusMessageRequest={focusMessageRequest}
+                formatTime={localizedFormatTime}
+                messageViewportRef={messageViewportRef}
+                messages={messages}
+                onAddAttachments={handleAddAttachments}
+                onChatFontSizeChange={handleChatFontSizeChange}
+                queuedMessages={activeQueuedMessages}
+                onRemoveAttachment={handleRemoveAttachment}
+                onPromptChange={handlePromptChange}
+                onPromptKeyDown={handlePromptKeyDown}
+                onReset={() => handleReset().catch(() => {})}
+                onSend={handleSend}
+                prompt={prompt}
+                promptRef={promptRef}
+                resolvedTheme={resolvedTheme}
+                session={session}
+                userLabel="marila"
+              />
+            </div>
 
-            <div className="flex flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
+            <div className="hidden xl:flex xl:min-h-0 xl:items-stretch xl:justify-center">
+              <button
+                type="button"
+                aria-label={i18nMessages.common.resizePanels}
+                title={i18nMessages.common.resizePanels}
+                onPointerDown={handleResizeStart}
+                className="group relative h-full w-full cursor-col-resize touch-none select-none"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "absolute left-1/2 top-1/2 inline-grid h-[22px] w-[6.8px] -translate-x-1/2 -translate-y-1/2 grid-cols-2 grid-rows-6 gap-x-[2px] gap-y-[2px] transition-colors",
+                    isResizingPanels
+                      ? "bg-transparent"
+                      : "bg-transparent",
+                  )}
+                >
+                  {resizeHandleDots.map((_, index) => (
+                    <span
+                      // eslint-disable-next-line react/no-array-index-key
+                      key={index}
+                      className={cn(
+                        "h-[2.4px] w-[2.4px] rounded-full transition-colors",
+                        isResizingPanels ? "bg-primary/80" : "bg-muted-foreground/45 group-hover:bg-foreground/55",
+                      )}
+                    />
+                  ))}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3 xl:h-full xl:min-h-0 xl:min-w-[300px] xl:overflow-hidden xl:pl-0.5">
               <TaskRelationshipsPanel
                 onDismissRelationship={dismissTaskRelationship}
                 relationships={taskRelationships}

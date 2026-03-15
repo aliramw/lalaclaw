@@ -1,16 +1,18 @@
 import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 export const Tabs = TabsPrimitive.Root;
 
-export function TabsList({ className, ...props }) {
+export const TabsList = forwardRef(function TabsList({ className, ...props }, ref) {
   return (
     <TabsPrimitive.List
+      ref={ref}
       className={cn("inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground", className)}
       {...props}
     />
   );
-}
+});
 
 export function TabsTrigger({ className, ...props }) {
   return (

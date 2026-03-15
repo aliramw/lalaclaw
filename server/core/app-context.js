@@ -184,6 +184,7 @@ function createAppContext() {
   const {
     callOpenClawGateway,
     dispatchOpenClaw,
+    dispatchOpenClawStream,
     fetchBrowserPeek,
     invokeOpenClawTool,
     parseOpenClawResponse,
@@ -259,6 +260,7 @@ function createAppContext() {
     config,
     delay,
     dispatchOpenClaw,
+    dispatchOpenClawStream,
     formatTokenBadge,
     getCommandCenterSessionKey,
     getDefaultAgentId,

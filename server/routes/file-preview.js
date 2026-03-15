@@ -11,6 +11,7 @@ const extTypeMap = {
   '.md': { kind: 'markdown', mimeType: 'text/markdown; charset=utf-8' },
   '.markdown': { kind: 'markdown', mimeType: 'text/markdown; charset=utf-8' },
   '.json': { kind: 'json', mimeType: 'application/json; charset=utf-8' },
+  '.pdf': { kind: 'pdf', mimeType: 'application/pdf' },
   '.png': { kind: 'image', mimeType: 'image/png' },
   '.jpg': { kind: 'image', mimeType: 'image/jpeg' },
   '.jpeg': { kind: 'image', mimeType: 'image/jpeg' },
@@ -111,7 +112,7 @@ function createFilePreviewHandlers({
         fileManagerLabel: getFileManagerLabel(platform),
       };
 
-      if (detected.kind === 'image' || detected.kind === 'video' || detected.kind === 'audio') {
+      if (detected.kind === 'image' || detected.kind === 'video' || detected.kind === 'audio' || detected.kind === 'pdf') {
         sendJson(res, 200, {
           ...basePayload,
           contentUrl: buildMediaUrl(validated.path),

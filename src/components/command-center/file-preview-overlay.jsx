@@ -374,6 +374,7 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   const vscodeHref = getVsCodeHref(title);
   const showVsCodeButton = isCodeLikePreviewTarget(title, preview.kind);
   const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || "Folder");
+  const isPdfPreview = preview.kind === "pdf" && Boolean(preview.contentUrl);
 
   const handleRevealInFileManager = async () => {
     if (!title || openingInFileManager) {
@@ -436,6 +437,22 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
     body = (
       <div className="flex min-h-[40vh] items-center justify-center">
         <audio src={preview.contentUrl} controls className="w-full max-w-3xl" />
+      </div>
+    );
+  } else if (isPdfPreview) {
+    body = (
+      <div
+        className={cn(
+          "overflow-hidden border shadow-sm",
+          isFullscreen ? "h-full rounded-none" : "h-[78vh] rounded-xl",
+          isDark ? "border-white/8 bg-[#111318]" : "border-slate-200 bg-white",
+        )}
+      >
+        <iframe
+          src={preview.contentUrl}
+          title={preview.name || preview.item?.name || "PDF preview"}
+          className="block h-full w-full bg-transparent"
+        />
       </div>
     );
   } else {
@@ -546,10 +563,21 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
               </button>
             </div>
           </div>
-          <ScrollArea className="h-full">
-            <div className="min-h-full px-6 py-5">{body}</div>
-            {preview.truncated ? <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>文件过大，当前只显示前 1 MB 内容。</div> : null}
-          </ScrollArea>
+          {isPdfPreview ? (
+            <div
+              className={cn(
+                "min-h-0 flex-1 overflow-hidden",
+                isFullscreen ? "h-full p-0" : "px-6 py-5",
+              )}
+            >
+              {body}
+            </div>
+          ) : (
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="min-h-full px-6 py-5">{body}</div>
+              {preview.truncated ? <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>文件过大，当前只显示前 1 MB 内容。</div> : null}
+            </ScrollArea>
+          )}
         </div>
       </div>
     </div>

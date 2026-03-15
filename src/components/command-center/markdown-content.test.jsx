@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 
 describe("MarkdownContent", () => {
@@ -9,7 +9,9 @@ describe("MarkdownContent", () => {
 
     expect(await screen.findByRole("heading", { name: "控制台" }, { timeout: 4000 })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "OpenAI" }, { timeout: 4000 })).toHaveAttribute("href", "https://openai.com");
-    expect(await screen.findByText("npm test")).toBeInTheDocument();
+    const inlineCode = await screen.findByText("npm test");
+    expect(inlineCode.tagName).toBe("CODE");
+    expect(inlineCode).toHaveClass("cc-inline-code", "border-0", "align-baseline", "font-mono");
   });
 
   it("renders fenced code blocks and supports copying", async () => {
@@ -45,6 +47,23 @@ describe("MarkdownContent", () => {
     expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
   });
 
+  it("routes image clicks to the shared image preview handler when provided", async () => {
+    const user = userEvent.setup();
+    const onOpenImagePreview = vi.fn();
+
+    render(<MarkdownContent content={"![雪山飞狐](file:///tmp/nano-banana-1773525937.png)"} onOpenImagePreview={onOpenImagePreview} />);
+
+    const image = await screen.findByAltText("雪山飞狐");
+    await user.click(image);
+
+    expect(onOpenImagePreview).toHaveBeenCalledWith({
+      src: "/api/file-preview/content?path=%2Ftmp%2Fnano-banana-1773525937.png",
+      alt: "雪山飞狐",
+      path: "/tmp/nano-banana-1773525937.png",
+    });
+    expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
+  });
+
   it("keeps tracked inline file buttons styled like inline code", async () => {
     const onOpenFilePreview = () => {};
 
@@ -57,7 +76,8 @@ describe("MarkdownContent", () => {
     );
 
     const fileButton = await screen.findByRole("button", { name: "sample.py" });
-    expect(fileButton).toHaveClass("cc-inline-code", "cc-inline-code-link", "appearance-none", "bg-transparent", "align-baseline", "leading-tight");
+    expect(fileButton).toHaveClass("cc-inline-code", "cc-inline-code-link", "appearance-none", "align-baseline");
+    expect(fileButton).toHaveClass("border-0", "font-mono");
   });
 
   it("keeps tracked file links reset to link-like button styling", async () => {

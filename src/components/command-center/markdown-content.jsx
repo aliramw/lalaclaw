@@ -13,7 +13,7 @@ const markdownShellClassName =
 
 const LazyMarkdownRenderer = lazy(() => import("@/components/command-center/markdown-renderer"));
 
-export function MarkdownContent({ content, files, headingScopeId, resolvedTheme = "light", className, onOpenFilePreview }) {
+export function MarkdownContent({ content, files, headingScopeId, resolvedTheme = "light", className, onOpenFilePreview, onOpenImagePreview }) {
   const text = String(content || "");
 
   return (
@@ -32,6 +32,7 @@ export function MarkdownContent({ content, files, headingScopeId, resolvedTheme 
         className={className}
         shellClassName={markdownShellClassName}
         onOpenFilePreview={onOpenFilePreview}
+        onOpenImagePreview={onOpenImagePreview}
       />
     </Suspense>
   );

@@ -19,6 +19,63 @@ function mergeProjectedFiles(primary = [], secondary = []) {
   return [...merged.values()];
 }
 
+function serializeEnvironmentValue(value) {
+  if (value == null) {
+    return '';
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => serializeEnvironmentValue(item)).filter(Boolean).join(', ');
+  }
+
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  return String(value);
+}
+
+function flattenEnvironmentObject(value, prefix = '', items = []) {
+  if (value == null) {
+    return items;
+  }
+
+  if (Array.isArray(value)) {
+    if (!value.length && prefix) {
+      items.push({ label: prefix, value: '[]' });
+      return items;
+    }
+
+    value.forEach((item, index) => {
+      flattenEnvironmentObject(item, `${prefix}[${index}]`, items);
+    });
+    return items;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    if (!entries.length && prefix) {
+      items.push({ label: prefix, value: '{}' });
+      return items;
+    }
+
+    entries.forEach(([key, nextValue]) => {
+      flattenEnvironmentObject(nextValue, prefix ? `${prefix}.${key}` : key, items);
+    });
+    return items;
+  }
+
+  if (prefix) {
+    items.push({ label: prefix, value: serializeEnvironmentValue(value) });
+  }
+
+  return items;
+}
+
 function createDashboardService({
   HOST,
   PORT,
@@ -125,6 +182,61 @@ function createDashboardService({
     };
   }
 
+  function buildEnvironmentPeek({
+    agentId,
+    fastMode,
+    latestModel,
+    liveConfig,
+    parsedStatus,
+    selectedModel,
+    sessionKey,
+    sessionVersion,
+    thinkMode,
+    workspaceRoot,
+  }) {
+    const items = [];
+    const openClawVersion =
+      parsedStatus?.versionDisplay ||
+      liveConfig?.version ||
+      liveConfig?.gateway?.version ||
+      sessionVersion ||
+      '';
+    const sessionItems = [
+      { label: 'OPENCLAW.VERSION', value: openClawVersion },
+      { label: 'session.mode', value: config.mode },
+      { label: 'session.agent', value: agentId },
+      { label: 'session.sessionKey', value: sessionKey || parsedStatus?.sessionKey || '' },
+      { label: 'session.workspaceRoot', value: workspaceRoot },
+      { label: 'session.selectedModel', value: selectedModel },
+      { label: 'session.resolvedModel', value: latestModel || parsedStatus?.modelDisplay || '' },
+      { label: 'session.auth', value: parsedStatus?.authDisplay || '' },
+      { label: 'session.runtime', value: parsedStatus?.runtimeDisplay || '' },
+      { label: 'session.thinkMode', value: parsedStatus?.thinkMode || thinkMode || '' },
+      { label: 'session.fastMode', value: fastMode ? 'on' : 'off' },
+      { label: 'session.context', value: parsedStatus?.contextDisplay || '' },
+      { label: 'session.queue', value: parsedStatus?.queueDisplay || '' },
+      { label: 'session.time', value: parsedStatus?.time || '' },
+      { label: 'gateway.baseUrl', value: config.baseUrl || '' },
+      { label: 'gateway.port', value: String(config.gatewayPort || '') },
+      { label: 'gateway.healthPort', value: String(config.healthPort || '') },
+      { label: 'gateway.apiPath', value: config.apiPath || '' },
+      { label: 'gateway.apiStyle', value: config.apiStyle || '' },
+    ];
+
+    sessionItems.forEach((item) => {
+      if (item.value) {
+        items.push(item);
+      }
+    });
+
+    flattenEnvironmentObject(liveConfig?.gateway || {}, 'gateway.config', items);
+
+    return {
+      summary: '这里汇总当前会话与 Gateway 提供的环境信息。',
+      items,
+    };
+  }
+
   function buildMockSnapshot(sessionUser = 'command-center') {
     const now = Date.now();
     const agentId = resolveSessionAgentId(sessionUser);
@@ -221,6 +333,24 @@ function createDashboardService({
         workspace: buildWorkspacePeek(),
         terminal: buildTerminalPeek(),
         browser: { summary: 'mock 模式未接入浏览器控制。', items: [{ label: '状态', value: '未连接 OpenClaw' }] },
+        environment: buildEnvironmentPeek({
+          agentId,
+          fastMode,
+          latestModel: model,
+          liveConfig: config.localConfig,
+          parsedStatus: {
+            contextDisplay: '0 / 16000',
+            queueDisplay: 'none',
+            runtimeDisplay: 'mock',
+            thinkMode,
+            versionDisplay: 'mock',
+          },
+          selectedModel: model,
+          sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
+          sessionVersion: 'mock',
+          thinkMode,
+          workspaceRoot,
+        }),
       },
     };
   }
@@ -272,6 +402,11 @@ function createDashboardService({
         cacheWrite: 0,
       },
     );
+    const resolvedVersion =
+      parsedStatus?.versionDisplay ||
+      liveConfig?.version ||
+      liveConfig?.gateway?.version ||
+      '';
 
     return {
       session: {
@@ -292,14 +427,14 @@ function createDashboardService({
         contextDisplay:
           parsedStatus?.contextUsed && parsedStatus?.contextMax
             ? `${parsedStatus.contextUsed} / ${parsedStatus.contextMax}`
-            : parsedStatus?.contextDisplay || '未知',
-        runtime: parsedStatus?.runtimeDisplay || '未知',
-        queue: parsedStatus?.queueDisplay || '未知',
+            : parsedStatus?.contextDisplay || '',
+        runtime: parsedStatus?.runtimeDisplay || '',
+        queue: parsedStatus?.queueDisplay || '',
         updatedLabel: parsedStatus?.updatedLabel || '',
         updatedAt: sessionRecord?.updatedAt || null,
         tokens: tokenBadge || parsedStatus?.tokensDisplay || '',
         auth: parsedStatus?.authDisplay || '',
-        version: parsedStatus?.versionDisplay || '',
+        version: resolvedVersion,
         time: parsedStatus?.time || '',
         availableModels,
         availableAgents,
@@ -321,6 +456,18 @@ function createDashboardService({
         workspace: buildWorkspacePeek(),
         terminal: buildTerminalPeek(),
         browser: browserPeek,
+        environment: buildEnvironmentPeek({
+          agentId,
+          fastMode,
+          latestModel,
+          liveConfig,
+          parsedStatus,
+          selectedModel,
+          sessionKey,
+          sessionVersion: resolvedVersion,
+          thinkMode: parsedStatus?.thinkMode || preferredThinkMode,
+          workspaceRoot,
+        }),
       },
     };
   }

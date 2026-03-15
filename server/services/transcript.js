@@ -615,6 +615,14 @@ function createTranscriptProjector({
     return fallback;
   }
 
+  function extractTaskRelationshipDetail(payload = {}) {
+    const candidate = [payload?.label, payload?.task, payload?.prompt, payload?.instruction, payload?.title]
+      .map((value) => String(value || '').trim())
+      .find(Boolean);
+
+    return candidate || '';
+  }
+
   function parseInternalTaskCompletionEvent(payload = {}) {
     if (payload?.role !== 'user') {
       return null;
@@ -730,11 +738,12 @@ function createTranscriptProjector({
       const mode = String(args.mode || '').trim().toLowerCase();
       const runtime = String(args.runtime || '').trim().toLowerCase();
       const targetAgentId = String(args.agentId || '').trim() || extractAgentIdFromSessionKey(args.childSessionKey);
-      const detail = String(args.label || '').trim();
+      const explicitLabel = String(args.label || '').trim();
+      const detail = extractTaskRelationshipDetail(args);
 
       if (mode === 'session') {
         return {
-          id: `session:${detail || 'spawn'}`,
+          id: `session:${explicitLabel || 'spawn'}`,
           type: 'session_spawn',
           sourceAgentId: sourceAgentId || config.agentId || 'main',
           targetAgentId: '',
@@ -749,7 +758,7 @@ function createTranscriptProjector({
 
       if (runtime === 'subagent' || targetAgentId) {
         return {
-          id: `agent:${targetAgentId || detail || 'subagent'}`,
+          id: `agent:${targetAgentId || explicitLabel || 'subagent'}`,
           type: 'child_agent',
           sourceAgentId: sourceAgentId || config.agentId || 'main',
           targetAgentId: targetAgentId || detail || 'subagent',
@@ -763,7 +772,7 @@ function createTranscriptProjector({
       }
 
       return {
-        id: `session:${detail || 'spawn'}`,
+        id: `session:${explicitLabel || 'spawn'}`,
         type: 'session_spawn',
         sourceAgentId: sourceAgentId || config.agentId || 'main',
         targetAgentId: '',
@@ -792,7 +801,7 @@ function createTranscriptProjector({
         type: 'child_agent',
         sourceAgentId: sourceAgentId || config.agentId || 'main',
         targetAgentId,
-        detail: '',
+        detail: extractTaskRelationshipDetail(args),
         toolCallId: toolCall.id || '',
         childSessionKey: String(args.childSessionKey || '').trim(),
         spawnMode: action,
@@ -819,7 +828,7 @@ function createTranscriptProjector({
 
       for (let index = relationships.length - 1; index >= 0; index -= 1) {
         const relationship = relationships[index];
-        if (!relationship || relationship.type !== 'child_agent') {
+        if (!relationship || !['child_agent', 'session_spawn'].includes(relationship.type)) {
           continue;
         }
 
@@ -834,6 +843,7 @@ function createTranscriptProjector({
           (!targetAgentId || relationship.targetAgentId === targetAgentId);
         const matchesUnlabeledAgent =
           event.task &&
+          relationship.type === 'child_agent' &&
           !relationship.detail &&
           targetAgentId &&
           relationship.targetAgentId === targetAgentId &&
@@ -932,6 +942,7 @@ function createTranscriptProjector({
       }
 
       const details = parseToolResultDetails(payload);
+      const detail = extractTaskRelationshipDetail(details);
       const rawStatus = normalizeTaskRelationshipStatus(details?.status, {
         isError: Boolean(payload.details?.isError || payload.isError),
         fallback: existing.status || 'dispatching',
@@ -957,6 +968,7 @@ function createTranscriptProjector({
       found.set(relationshipId, {
         ...existing,
         childSessionKey,
+        detail: existing.detail || detail,
         status: nextStatus,
       });
     }

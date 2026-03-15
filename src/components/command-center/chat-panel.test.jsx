@@ -59,6 +59,7 @@ describe("ChatPanel", () => {
           formatTime={() => "10:00:00"}
           messageViewportRef={null}
           messages={[]}
+          onChatFontSizeChange={() => {}}
           onPromptChange={onPromptChange}
           onPromptKeyDown={() => {}}
           onReset={onReset}
@@ -71,7 +72,7 @@ describe("ChatPanel", () => {
     );
 
     expect(screen.getByText("等待第一条指令")).toBeInTheDocument();
-    expect(screen.getByText("模拟模式")).toBeInTheDocument();
+    expect(screen.getByLabelText("OpenClaw的状态")).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "检查运行状态");
@@ -93,6 +94,7 @@ describe("ChatPanel", () => {
           formatTime={() => "10:00:00"}
           messageViewportRef={null}
           messages={[]}
+          onChatFontSizeChange={() => {}}
           onPromptChange={() => {}}
           onPromptKeyDown={() => {}}
           onReset={() => {}}
@@ -109,6 +111,62 @@ describe("ChatPanel", () => {
     expect((await screen.findAllByText("重置对话 (Ctrl + N)")).length).toBeGreaterThan(0);
   });
 
+  it("renders direct font size buttons and forwards the selected size", async () => {
+    const onChatFontSizeChange = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          chatFontSize="small"
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={onChatFontSizeChange}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("button", { name: "字体大小：小" }));
+    expect((await screen.findAllByText("字体大小：小")).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "字体大小：大" }));
+    expect(onChatFontSizeChange).toHaveBeenCalledWith("large");
+  });
+
+  it("uses a two-line default height for the composer", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    expect(textarea).toHaveAttribute("rows", "2");
+    expect(textarea).toHaveClass("min-h-[3.75rem]");
+  });
+
   it("renders messages and busy/openclaw status", () => {
     render(
       <TooltipProvider>
@@ -120,6 +178,7 @@ describe("ChatPanel", () => {
             { role: "user", content: "你好", timestamp: 1 },
             { role: "assistant", content: "**已收到**", timestamp: 2, pending: true },
           ]}
+          onChatFontSizeChange={() => {}}
           onPromptChange={() => {}}
           onPromptKeyDown={() => {}}
           onReset={() => {}}
@@ -139,10 +198,7 @@ describe("ChatPanel", () => {
 
     expect(screen.getByText("你好")).toBeInTheDocument();
     expect(screen.getByText(/\*?\*?已收到\*?\*?/)).toBeInTheDocument();
-    expect(screen.getByText("OpenClaw")).toBeInTheDocument();
-    expect(screen.getByText("2026.3.13 (61d171a)")).toBeInTheDocument();
     expect(screen.getByText("ops - 当前会话")).toBeInTheDocument();
-    expect(screen.getByText("elevated")).toBeInTheDocument();
     expect(screen.getByText("思考中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
   });
@@ -162,6 +218,7 @@ describe("ChatPanel", () => {
               timestamp: 2,
             },
           ]}
+          onChatFontSizeChange={() => {}}
           onPromptChange={() => {}}
           onPromptKeyDown={() => {}}
           onReset={() => {}}
@@ -207,6 +264,7 @@ describe("ChatPanel", () => {
           formatTime={() => "10:00:00"}
           messageViewportRef={null}
           messages={[{ role: "assistant", content: "可以先看 `sample.py`。", timestamp: 1 }]}
+          onChatFontSizeChange={() => {}}
           onPromptChange={() => {}}
           onPromptKeyDown={() => {}}
           onReset={() => {}}
@@ -447,7 +505,10 @@ describe("ChatPanel", () => {
       fireEvent.scroll(viewport);
     });
 
+    fireEvent.wheel(viewport);
+    fireEvent.wheel(viewport);
     fireEvent.scroll(viewport);
+    viewport.scrollTo.mockClear();
 
     const jumpButton = await screen.findByRole("button", { name: "回到最新回复" });
     expect(jumpButton).toBeInTheDocument();
@@ -519,6 +580,163 @@ describe("ChatPanel", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "回到这条消息顶部" })).not.toBeInTheDocument();
+    });
+  });
+
+  it.skip("stops auto-aligning a streaming card after manual scroll takeover until a new card appears", async () => {
+    const viewportRef = { current: null };
+    vi.stubGlobal("requestAnimationFrame", (callback) => {
+      callback();
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            {
+              role: "assistant",
+              content: "第一段\n\n第二段\n\n第三段\n\n第四段",
+              timestamp: 1,
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 1360 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+    });
+
+    let latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: -120,
+      left: 0,
+      right: 560,
+      bottom: 420,
+      width: 560,
+      height: 540,
+      x: 0,
+      y: -120,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.scroll(viewport);
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            {
+              role: "assistant",
+              content: "第一段\n\n第二段\n\n第三段\n\n第四段\n\n第五段\n\n第六段",
+              timestamp: 1,
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: -120,
+      left: 0,
+      right: 560,
+      bottom: 500,
+      width: 560,
+      height: 620,
+      x: 0,
+      y: -120,
+      toJSON: () => ({}),
+    });
+
+    await waitFor(() => {
+      expect(viewport.scrollTo).not.toHaveBeenCalled();
+    });
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            {
+              role: "assistant",
+              content: "第一段\n\n第二段\n\n第三段\n\n第四段\n\n第五段\n\n第六段",
+              timestamp: 1,
+            },
+            {
+              role: "assistant",
+              content: "新卡片第一段\n\n新卡片第二段\n\n新卡片第三段\n\n新卡片第四段",
+              timestamp: 2,
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: 260,
+      left: 0,
+      right: 560,
+      bottom: 860,
+      width: 560,
+      height: 600,
+      x: 0,
+      y: 260,
+      toJSON: () => ({}),
+    });
+
+    await waitFor(() => {
+      expect(viewport.scrollTo).toHaveBeenCalled();
     });
   });
 

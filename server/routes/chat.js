@@ -17,6 +17,7 @@ function createChatHandler({
   config,
   delay,
   dispatchOpenClaw,
+  dispatchOpenClawStream,
   formatTokenBadge,
   getCommandCenterSessionKey,
   getDefaultAgentId,
@@ -38,6 +39,19 @@ function createChatHandler({
   setSessionPreferences,
   summarizeMessages,
 }) {
+  function startChatStream(res) {
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+  }
+
+  function writeChatStreamEvent(res, payload) {
+    res.write(`${JSON.stringify(payload)}\n`);
+  }
+
   async function patchOpenClawSession(callOpenClawGateway, delay, sessionKey, updates = {}) {
     if (updates.model) {
       await callOpenClawGateway('sessions.patch', {
@@ -60,6 +74,7 @@ function createChatHandler({
     try {
       const body = await parseRequestBody(req);
       const messages = Array.isArray(body.messages) ? body.messages : [];
+      const shouldStream = body.stream !== false;
       const fastMode = Boolean(body.fastMode);
       const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
       const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
@@ -242,16 +257,30 @@ function createChatHandler({
 
       setSessionPreferences(sessionUser, nextPreferences);
 
+      if (shouldStream) {
+        startChatStream(res);
+      }
+
       const reply =
         config.mode === 'openclaw'
-          ? await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
+          ? shouldStream
+            ? await dispatchOpenClawStream(outboundMessages, nextFastMode, sessionUser, {
+                commandBody,
+                thinkMode: nextThinkMode,
+                onDelta: (delta) => {
+                  if (!shouldStream || !delta) {
+                    return;
+                  }
+                  writeChatStreamEvent(res, { type: 'delta', delta });
+                },
+              })
+            : await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
           : createMockReply(latestUserContent, clip);
 
       const snapshot = await buildDashboardSnapshot(sessionUser);
       snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
       const resolvedModel = snapshot.session?.model || config.model;
-
-      sendJson(res, 200, {
+      const responsePayload = {
         ok: true,
         mode: config.mode,
         model: resolvedModel,
@@ -263,8 +292,27 @@ function createChatHandler({
           summary: summarizeMessages(messages),
         },
         ...snapshot,
-      });
+      };
+
+      if (shouldStream) {
+        writeChatStreamEvent(res, {
+          type: 'done',
+          payload: responsePayload,
+        });
+        res.end();
+        return;
+      }
+
+      sendJson(res, 200, responsePayload);
     } catch (error) {
+      if (res.headersSent) {
+        writeChatStreamEvent(res, {
+          type: 'error',
+          error: error.message || 'Unknown server error',
+        });
+        res.end();
+        return;
+      }
       sendJson(res, 500, {
         ok: false,
         error: error.message || 'Unknown server error',

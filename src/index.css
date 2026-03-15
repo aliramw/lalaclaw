@@ -166,10 +166,15 @@
   }
 
   .cc-inline-code {
-    border: 1px solid #d7dde7 !important;
-    background: #eef3f8 !important;
-    color: #243345 !important;
-    line-height: 1.2 !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    background: rgb(175 184 193 / 0.2) !important;
+    color: #24292f !important;
+    padding: 0.2em 0.4em !important;
+    font-size: 85% !important;
+    line-height: 1.45 !important;
+    text-decoration: none !important;
+    box-shadow: none !important;
   }
 
   .cc-inline-code-link {
@@ -218,9 +223,9 @@
 
   html[data-theme="dark"] .cc-inline-code,
   html[data-theme="dark"] .cc-inline-code[class] {
-    border: 1px solid #4b5563 !important;
-    background: #2a3340 !important;
-    color: #eef4ff !important;
+    border: 0 !important;
+    background: rgb(110 118 129 / 0.4) !important;
+    color: #e6edf3 !important;
   }
 
   html[data-theme="dark"] .cc-inline-code-link,

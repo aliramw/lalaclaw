@@ -39,6 +39,7 @@ function createClient(overrides = {}) {
     resolveSessionModel: overrides.resolveSessionModel || (() => "gpt-5"),
     readTextIfExists: overrides.readTextIfExists || (() => ""),
     tailLines: overrides.tailLines || (() => []),
+    loadGatewaySdk: overrides.loadGatewaySdk,
   });
 }
 
@@ -139,6 +140,99 @@ describe("createOpenClawClient", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(execFileAsync).not.toHaveBeenCalled();
+  });
+
+  it("streams text-only conversations through gateway chat events", async () => {
+    const deltas = [];
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+        expect(params).toMatchObject({
+          sessionKey: "main:command-center",
+          message: "继续",
+          thinking: "medium",
+        });
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "流式" }],
+              },
+            },
+          });
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "流式输出" }],
+              },
+            },
+          });
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "流式输出" }],
+              },
+            },
+          });
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          status: "started",
+        };
+      }
+    }
+
+    const client = createClient({
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const result = await client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        thinkMode: "medium",
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    expect(deltas).toEqual(["流式", "输出"]);
+    expect(result).toEqual({
+      outputText: "流式输出",
+      usage: null,
+    });
   });
 
   it("returns mock browser peek details when running outside openclaw mode", async () => {
