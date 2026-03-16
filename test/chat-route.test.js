@@ -311,6 +311,58 @@ describe("createChatHandler", () => {
     expect(writes.some((chunk) => String(chunk || "").includes("\"message.complete\""))).toBe(false);
   });
 
+  it("does not try to send a json error after a streamed response has already started", async () => {
+    let rejectDispatch;
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: true,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchOpenClawStream: vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            rejectDispatch = reject;
+          }),
+      ),
+    });
+
+    const req = new EventEmitter();
+    req.once = req.once.bind(req);
+    const writes = [];
+    const res = new EventEmitter();
+    res.once = res.once.bind(res);
+    res.headersSent = false;
+    res.destroyed = false;
+    res.writableEnded = false;
+    res.writeHead = vi.fn(() => {
+      res.headersSent = true;
+    });
+    res.write = vi.fn((chunk) => {
+      writes.push(chunk);
+    });
+    res.end = vi.fn(() => {
+      res.writableEnded = true;
+    });
+
+    const handlerPromise = harness.handler(req, res);
+    await vi.waitFor(() => {
+      expect(harness.dispatchOpenClawStream).toHaveBeenCalledTimes(1);
+    });
+
+    res.destroyed = true;
+    res.emit("close");
+
+    rejectDispatch?.(new Error("Gateway chat stream closed"));
+    await expect(handlerPromise).resolves.toBeUndefined();
+
+    expect(harness.responseRecorder.sendJson).not.toHaveBeenCalled();
+    expect(writes.some((chunk) => String(chunk || "").includes("\"message.error\""))).toBe(false);
+  });
+
   it("creates a fresh session for reset commands and copies preferences", async () => {
     const harness = createHandler({
       parseRequestBody: vi.fn(async () => ({

@@ -394,13 +394,15 @@ function createChatHandler({
       sendJson(res, 200, responsePayload);
     } catch (error) {
       replySettled = true;
-      if (res.headersSent && !clientDisconnected && !res.destroyed && !res.writableEnded) {
-        writeChatStreamEvent(res, {
-          type: 'message.error',
-          messageId: typeof assistantMessageId === 'string' ? assistantMessageId : '',
-          error: error.message || 'Unknown server error',
-        });
-        res.end();
+      if (res.headersSent) {
+        if (!clientDisconnected && !res.destroyed && !res.writableEnded) {
+          writeChatStreamEvent(res, {
+            type: 'message.error',
+            messageId: typeof assistantMessageId === 'string' ? assistantMessageId : '',
+            error: error.message || 'Unknown server error',
+          });
+          res.end();
+        }
         return;
       }
       sendJson(res, 500, {
