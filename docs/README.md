@@ -2,6 +2,18 @@
 
 This directory is organized by locale.
 
+## Repository Entry Points
+
+Use the root-level guides for repository workflow and project policy:
+
+- [README.md](../README.md) for product overview, quick start, development notes, and versioning
+- [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution workflow and PR expectations
+- [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) for community behavior expectations
+- [CHANGELOG.md](../CHANGELOG.md) for release notes and version history
+- [SECURITY.md](../SECURITY.md) for security reporting guidance
+
+This `docs/` tree focuses on product behavior, usage, architecture, and troubleshooting.
+
 ## Available Locales
 
 - [English](./en/documentation.md)

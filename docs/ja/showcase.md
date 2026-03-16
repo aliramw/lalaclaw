@@ -1,6 +1,6 @@
 # プロダクトショーケース
 
-> Navigation: [Documentation Home](./documentation.md) | [画面概要](./documentation-interface.md) | [イースターエッグ: 左上のロブスター](./documentation-easter-egg.md) | [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md) | [アーキテクチャ概要](./architecture.md) | [リファクタリングロードマップ](./refactor-roadmap.md)
+> Navigation: [Documentation Home](./documentation.md) | [画面概要](./documentation-interface.md) | [イースターエッグ](./documentation-easter-egg.md) | [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md) | [アーキテクチャ概要](./architecture.md) | [リファクタリングロードマップ](./refactor-roadmap.md)
 
 この文書は、LalaClaw を紹介する際に何をデモし、何を撮影し、何を記録すべきかを簡潔にまとめたものです。
 

@@ -1,6 +1,6 @@
 [返回首页](./documentation.md) | [界面总览](./documentation-interface.md) | [快捷键说明](./documentation-shortcuts.md)
 
-# 彩蛋：左上角龙虾
+# 彩蛋
 
 ## 入口
 

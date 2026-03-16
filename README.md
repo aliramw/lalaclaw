@@ -148,6 +148,37 @@ More detail lives in [deploy/macos/README.md](./deploy/macos/README.md).
 - `npm run build` creates the production bundle
 - `npm start` launches the Node server that serves `dist/`
 
+## Contributing
+
+Contributions are welcome. For larger features, architectural changes, or behavior changes, please open an issue first so the direction can be discussed before implementation.
+
+Before opening a PR:
+
+- keep changes focused and avoid unrelated refactors
+- add or update tests for behavior changes
+- route new user-facing copy through `src/locales/*.js`
+- update docs for user-visible behavior changes
+- update [CHANGELOG.md](./CHANGELOG.md) when versioned behavior changes
+
+For the full contribution checklist and project structure notes, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Development Notes
+
+- Use `npm run dev:all` for the standard local development workflow.
+- Use [http://127.0.0.1:5173](http://127.0.0.1:5173) for the Vite app during development.
+- Use `npm run lalaclaw:start` or `npm start` only for built output that depends on `dist/`.
+- By default, the app auto-detects a local OpenClaw gateway when available.
+- To force `mock` mode for reproducible UI or frontend debugging, set `COMMANDCENTER_FORCE_MOCK=1`.
+- Before submitting a PR, prefer running `npm run lint`, `npm test`, and the affected build or coverage checks.
+
+## Versioning
+
+LalaClaw follows Semantic Versioning for releases.
+
+- Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes.
+- Call out breaking changes explicitly in release notes and migration-facing docs.
+- The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
+
 ## Structure
 
 - Backend layering notes live in [server/README.md](./server/README.md)
@@ -158,6 +189,10 @@ More detail lives in [deploy/macos/README.md](./deploy/macos/README.md).
 - Continuous integration is defined in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
 - Dependency update automation is defined in [`.github/dependabot.yml`](./.github/dependabot.yml)
 - Contribution expectations are documented in [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Community expectations are documented in [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- Issue intake is guided by [`.github/ISSUE_TEMPLATE/`](./.github/ISSUE_TEMPLATE)
+- Pull request context is guided by [`.github/pull_request_template.md`](./.github/pull_request_template.md)
+- Review ownership is defined in [`.github/CODEOWNERS`](./.github/CODEOWNERS)
 - The repository license is defined in [LICENSE](./LICENSE)
 - Security reporting guidance is documented in [SECURITY.md](./SECURITY.md)
 - Ongoing release notes are tracked in [CHANGELOG.md](./CHANGELOG.md)

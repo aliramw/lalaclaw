@@ -631,6 +631,7 @@ function AppContent() {
                     layout="tab-brand"
                     availableAgents={availableAgents}
                     availableModels={availableModels}
+                    composerSendMode={composerSendMode}
                     fastMode={fastMode}
                     formatCompactK={formatCompactK}
                     model={model}
@@ -653,6 +654,7 @@ function AppContent() {
                     layout="agent-tab"
                     availableAgents={availableAgents}
                     availableModels={availableModels}
+                    composerSendMode={composerSendMode}
                     fastMode={fastMode}
                     formatCompactK={formatCompactK}
                     model={model}
@@ -674,6 +676,7 @@ function AppContent() {
               layout="controls"
               availableAgents={availableAgents}
               availableModels={availableModels}
+              composerSendMode={composerSendMode}
               fastMode={fastMode}
               formatCompactK={formatCompactK}
               model={model}
@@ -733,6 +736,7 @@ function AppContent() {
                     layout="status"
                     availableAgents={availableAgents}
                     availableModels={availableModels}
+                    composerSendMode={composerSendMode}
                     fastMode={fastMode}
                     formatCompactK={formatCompactK}
                     model={model}

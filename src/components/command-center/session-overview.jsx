@@ -840,11 +840,20 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
   );
 }
 
-function ShortcutHelpButton() {
+function ShortcutHelpButton({ composerSendMode = "enter-send" }) {
   const { messages } = useI18n();
   const [open, setOpen] = useState(false);
   const helpShortcut = formatShortcutForPlatform("Cmd + /");
   const applePlatform = isApplePlatform();
+  const composerShortcutLabels = composerSendMode === "double-enter-send"
+    ? {
+        sendMessage: messages.shortcuts.shortcuts.sendMessageDoubleEnterSend,
+        insertNewline: messages.shortcuts.shortcuts.insertNewlineDoubleEnterSend,
+      }
+    : {
+        sendMessage: messages.shortcuts.shortcuts.sendMessageEnterSend,
+        insertNewline: messages.shortcuts.shortcuts.insertNewlineEnterSend,
+      };
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -933,12 +942,12 @@ function ShortcutHelpButton() {
       items: [
         {
           id: "send",
-          shortcut: messages.shortcuts.shortcuts.sendMessage,
+          shortcut: composerShortcutLabels.sendMessage,
           description: messages.shortcuts.items.sendMessage,
         },
         {
           id: "newline",
-          shortcut: messages.shortcuts.shortcuts.insertNewline,
+          shortcut: composerShortcutLabels.insertNewline,
           description: messages.shortcuts.items.insertNewline,
         },
         {
@@ -1391,6 +1400,7 @@ function LobsterBrand({ compact = false, subtitle }) {
 export function SessionOverview({
   availableAgents,
   availableModels,
+  composerSendMode = "enter-send",
   fastMode,
   formatCompactK,
   layout = "full",
@@ -1525,7 +1535,7 @@ export function SessionOverview({
       <div className="flex h-9 items-center gap-2">
         <LanguageToggle />
         <ThemeToggle value={theme} resolvedTheme={resolvedTheme} onChange={onThemeChange} />
-        <ShortcutHelpButton />
+        <ShortcutHelpButton composerSendMode={composerSendMode} />
       </div>
     </div>
   );

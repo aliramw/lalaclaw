@@ -1,4 +1,4 @@
-[Volver al inicio](./documentation.md) | [Inicio rapido](./documentation-quick-start.md) | [Easter egg: la langosta superior izquierda](./documentation-easter-egg.md) | [Chat, adjuntos y comandos](./documentation-chat.md) | [Inspector, vista previa de archivos y trazas](./documentation-inspector.md)
+[Volver al inicio](./documentation.md) | [Inicio rapido](./documentation-quick-start.md) | [Easter egg](./documentation-easter-egg.md) | [Chat, adjuntos y comandos](./documentation-chat.md) | [Inspector, vista previa de archivos y trazas](./documentation-inspector.md)
 
 # Resumen de la interfaz
 

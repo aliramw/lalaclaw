@@ -60,8 +60,10 @@ const pt = {
       closeDialog: "Fechar a janela de atalhos",
     },
     shortcuts: {
-      sendMessage: "Shift + Enter / Enter duplo",
-      insertNewline: "Enter",
+      sendMessageEnterSend: "Enter",
+      sendMessageDoubleEnterSend: "Shift + Enter / Enter duplo",
+      insertNewlineEnterSend: "Shift + Enter",
+      insertNewlineDoubleEnterSend: "Enter",
       previousPrompt: "ArrowUp",
       nextPrompt: "ArrowDown",
     },

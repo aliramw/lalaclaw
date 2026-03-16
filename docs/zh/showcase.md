@@ -1,6 +1,6 @@
 # 产品演示指南
 
-> 导航：[文档首页](./documentation.md) | [界面总览](./documentation-interface.md) | [彩蛋：左上角龙虾](./documentation-easter-egg.md) | [检查器、文件预览与追踪](./documentation-inspector.md) | [架构概览](./architecture.md) | [重构路线图](./refactor-roadmap.md)
+> 导航：[文档首页](./documentation.md) | [界面总览](./documentation-interface.md) | [彩蛋](./documentation-easter-egg.md) | [检查器、文件预览与追踪](./documentation-inspector.md) | [架构概览](./architecture.md) | [重构路线图](./refactor-roadmap.md)
 
 这份文档用于整理展示、截图或录屏时值得突出的 LalaClaw 画面与流程。
 

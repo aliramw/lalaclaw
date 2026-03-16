@@ -6,10 +6,10 @@ Esta documentacao foi criada a partir do frontend, backend, testes e configuraca
 
 - [Inicio rapido](./documentation-quick-start.md)
 - [Visao geral da interface](./documentation-interface.md)
-- [Easter egg: a lagosta no canto superior esquerdo](./documentation-easter-egg.md)
 - [Chat, anexos e comandos](./documentation-chat.md)
 - [Inspector, preview de arquivos e rastreamento](./documentation-inspector.md)
 - [Sessoes, agentes e modos de execucao](./documentation-sessions.md)
 - [Atalhos de teclado](./documentation-shortcuts.md)
 - [Persistencia local e recuperacao](./documentation-persistence.md)
 - [API e solucao de problemas](./documentation-api-troubleshooting.md)
+- [Easter egg](./documentation-easter-egg.md)

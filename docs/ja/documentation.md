@@ -6,19 +6,19 @@
 
 - [クイックスタート](./documentation-quick-start.md)
 - [画面概要](./documentation-interface.md)
-- [イースターエッグ: 左上のロブスター](./documentation-easter-egg.md)
 - [チャット、添付、コマンド](./documentation-chat.md)
 - [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md)
 - [セッション、Agent、ランタイムモード](./documentation-sessions.md)
 - [キーボードショートカット](./documentation-shortcuts.md)
 - [ローカル保存と復元](./documentation-persistence.md)
 - [API とトラブルシューティング](./documentation-api-troubleshooting.md)
+- [イースターエッグ](./documentation-easter-egg.md)
 
 ## 推奨読書順
 
 1. まず [クイックスタート](./documentation-quick-start.md) でフロントエンドとバックエンドを起動します。
 2. 次に [画面概要](./documentation-interface.md) と [チャット、添付、コマンド](./documentation-chat.md) で主な操作フローを確認します。
-3. ブランド演出の小さな仕掛けを見たい場合は [イースターエッグ: 左上のロブスター](./documentation-easter-egg.md) を読みます。
+3. ブランド演出の小さな仕掛けを見たい場合は [イースターエッグ](./documentation-easter-egg.md) を読みます。
 4. 右側の追跡パネルを理解したい場合は [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md) を読みます。
 5. Agent 切替、モデル選択、`mock` と `openclaw` の違いは [セッション、Agent、ランタイムモード](./documentation-sessions.md) です。
 6. ショートカット、リロード復元、API 調査は [キーボードショートカット](./documentation-shortcuts.md)、[ローカル保存と復元](./documentation-persistence.md)、[API とトラブルシューティング](./documentation-api-troubleshooting.md) を参照してください。

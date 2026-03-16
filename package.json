@@ -1,6 +1,6 @@
 {
   "name": "commandcenter",
-  "version": "2026.3.16",
+  "version": "2026.3.17",
   "description": "Agent command center prototype for an OpenClaw-style operator cockpit.",
   "main": "server.js",
   "bin": {

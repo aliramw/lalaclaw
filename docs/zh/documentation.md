@@ -6,19 +6,19 @@
 
 - [快速开始](./documentation-quick-start.md)
 - [界面总览](./documentation-interface.md)
-- [彩蛋：左上角龙虾](./documentation-easter-egg.md)
 - [对话、附件与命令](./documentation-chat.md)
 - [检查器、文件预览与追踪](./documentation-inspector.md)
 - [会话、Agent 与运行模式](./documentation-sessions.md)
 - [快捷键说明](./documentation-shortcuts.md)
 - [本地持久化与恢复](./documentation-persistence.md)
 - [API 与排障](./documentation-api-troubleshooting.md)
+- [彩蛋](./documentation-easter-egg.md)
 
 ## 推荐阅读顺序
 
 1. 先看 [快速开始](./documentation-quick-start.md)，启动前后端。
 2. 再看 [界面总览](./documentation-interface.md) 和 [对话、附件与命令](./documentation-chat.md)，熟悉主要工作流。
-3. 如果想了解品牌交互细节，可以看 [彩蛋：左上角龙虾](./documentation-easter-egg.md)。
+3. 如果想了解品牌交互细节，可以看 [彩蛋](./documentation-easter-egg.md)。
 4. 想理解右侧追踪面板时，看 [检查器、文件预览与追踪](./documentation-inspector.md)。
 5. 想确认 Agent、模型和 `mock` / `openclaw` 模式时，看 [会话、Agent 与运行模式](./documentation-sessions.md)。
 6. 需要快捷键、刷新恢复或接口排障时，看 [快捷键说明](./documentation-shortcuts.md)、[本地持久化与恢复](./documentation-persistence.md) 和 [API 与排障](./documentation-api-troubleshooting.md)。

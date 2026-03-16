@@ -60,8 +60,10 @@ const zh = {
       closeDialog: "关闭快捷键浮窗",
     },
     shortcuts: {
-      sendMessage: "Shift + Enter / 连按两次 Enter",
-      insertNewline: "Enter",
+      sendMessageEnterSend: "Enter",
+      sendMessageDoubleEnterSend: "Shift + Enter / 连按两次 Enter",
+      insertNewlineEnterSend: "Shift + Enter",
+      insertNewlineDoubleEnterSend: "Enter",
       previousPrompt: "ArrowUp",
       nextPrompt: "ArrowDown",
     },

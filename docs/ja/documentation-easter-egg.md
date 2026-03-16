@@ -1,6 +1,6 @@
 [ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [キーボードショートカット](./documentation-shortcuts.md)
 
-# イースターエッグ: 左上のロブスター
+# イースターエッグ
 
 ## 入口
 

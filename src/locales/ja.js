@@ -60,8 +60,10 @@ const ja = {
       closeDialog: "ショートカット画面を閉じる",
     },
     shortcuts: {
-      sendMessage: "Shift + Enter / Enter を2回",
-      insertNewline: "Enter",
+      sendMessageEnterSend: "Enter",
+      sendMessageDoubleEnterSend: "Shift + Enter / Enter を2回",
+      insertNewlineEnterSend: "Shift + Enter",
+      insertNewlineDoubleEnterSend: "Enter",
       previousPrompt: "ArrowUp",
       nextPrompt: "ArrowDown",
     },

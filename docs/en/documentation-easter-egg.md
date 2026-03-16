@@ -1,6 +1,6 @@
 [Back to Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Keyboard Shortcuts](./documentation-shortcuts.md)
 
-# Easter Egg: Top-Left Lobster
+# Easter Egg
 
 ## Entry Point
 

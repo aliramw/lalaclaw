@@ -1,4 +1,4 @@
-[Back to Home](./documentation.md) | [Quick Start](./documentation-quick-start.md) | [Easter Egg: Top-Left Lobster](./documentation-easter-egg.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md)
+[Back to Home](./documentation.md) | [Quick Start](./documentation-quick-start.md) | [Easter Egg](./documentation-easter-egg.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md)
 
 # Interface Overview
 
@@ -15,7 +15,7 @@ The top area is driven by `SessionOverview` and includes:
 - Language switching for `中文 / English / 日本語 / Français / Español / Português`
 - Theme switching for `system / light / dark`
 - A keyboard shortcut help dialog in the upper-right
-- A clickable lobster brand easter egg in the upper-left, documented in [Easter Egg: Top-Left Lobster](./documentation-easter-egg.md)
+- A clickable lobster brand easter egg in the upper-left, documented in [Easter Egg](./documentation-easter-egg.md)
 
 ## Chat Workspace
 

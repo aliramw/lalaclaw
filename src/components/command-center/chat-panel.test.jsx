@@ -162,6 +162,7 @@ describe("ChatPanel", () => {
           onSend={() => {}}
           prompt=""
           promptRef={null}
+          resolvedTheme="light"
           session={createSession()}
         />
       </TooltipProvider>,
@@ -223,6 +224,7 @@ describe("ChatPanel", () => {
           onSend={() => {}}
           prompt=""
           promptRef={null}
+          resolvedTheme="light"
           session={createSession()}
         />
       </TooltipProvider>,
@@ -253,6 +255,7 @@ describe("ChatPanel", () => {
           onSend={() => {}}
           prompt=""
           promptRef={null}
+          resolvedTheme="light"
           session={createSession()}
         />
       </TooltipProvider>,
@@ -735,12 +738,14 @@ describe("ChatPanel", () => {
           onSend={() => {}}
           prompt=""
           promptRef={null}
+          resolvedTheme="light"
           session={createSession()}
         />
       </TooltipProvider>,
     );
 
     expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为Shift + 回车发送" })).toHaveClass("text-[#6b7280]");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));

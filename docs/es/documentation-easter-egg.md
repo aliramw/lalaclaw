@@ -1,6 +1,6 @@
 [Volver al inicio](./documentation.md) | [Resumen de la interfaz](./documentation-interface.md) | [Atajos de teclado](./documentation-shortcuts.md)
 
-# Easter egg: la langosta superior izquierda
+# Easter egg
 
 El icono `🦞` en la zona de marca superior izquierda es clicable.
 

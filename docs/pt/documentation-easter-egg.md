@@ -1,6 +1,6 @@
 [Voltar ao inicio](./documentation.md) | [Visao geral da interface](./documentation-interface.md) | [Atalhos de teclado](./documentation-shortcuts.md)
 
-# Easter egg: a lagosta no canto superior esquerdo
+# Easter egg
 
 O icone `🦞` no canto superior esquerdo e clicavel.
 

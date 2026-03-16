@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17]
+
+### Added
+
+- A root-level `CODE_OF_CONDUCT.md` and linked repository entry points for issue intake, PR expectations, review ownership, and security reporting
+- Contribution, development, and versioning guidance in the root `README.md`
+- Repository workflow, testing, internationalization, and release-note guidance in `CONTRIBUTING.md`
+- A repository entry-point index in `docs/README.md` so product docs and governance docs are easier to navigate
+
+### Changed
+
+- Updated the command-center shortcut help to reflect the active composer send mode instead of showing a single static shortcut mapping
+- Tuned the connection-status send-mode toggle styling for light theme so it stays legible outside dark mode
+- Aligned localized docs and showcase links around the shorter `Easter Egg` page title across the documentation tree
+
 ## [2026.3.16]
 
 ### Added

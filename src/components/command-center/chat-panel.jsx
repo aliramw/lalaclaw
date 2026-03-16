@@ -1024,7 +1024,7 @@ const MessageBubble = memo(function MessageBubble({
     && areMessageAttachmentsEqual(prevProps.message?.attachments || [], nextProps.message?.attachments || []);
 });
 
-function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSendMode, session }) {
+function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSendMode, resolvedTheme = "dark", session }) {
   const { messages } = useI18n();
   const isOffline = isOfflineStatus(session.status);
   const isOpenClaw = session.mode === "openclaw";
@@ -1047,6 +1047,9 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
     : isOpenClaw
       ? messages.chat.connectionStatusConnected
       : messages.chat.connectionStatusLocal;
+  const toggleClassName = resolvedTheme === "dark"
+    ? "border-b border-current text-[#78b7ff] transition-colors hover:text-[#a8d0ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#78b7ff]/35"
+    : "border-b border-current text-[#6b7280] transition-colors hover:text-[#4b5563] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ca3af]/35";
 
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -1073,7 +1076,7 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
             <button
               type="button"
               onClick={onToggleComposerSendMode}
-              className="border-b border-current text-[#1677eb] transition-colors hover:text-[#0f5fc6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1677eb]/35 dark:text-[#78b7ff] dark:hover:text-[#a8d0ff]"
+              className={toggleClassName}
             >
               {toggleLabel}
             </button>
@@ -2583,6 +2586,7 @@ export function ChatPanel({
               <ConnectionStatus
                 composerSendMode={composerSendMode}
                 onToggleComposerSendMode={onComposerSendModeToggle}
+                resolvedTheme={resolvedTheme}
                 session={session}
               />
             </div>

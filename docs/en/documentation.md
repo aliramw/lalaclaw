@@ -6,19 +6,19 @@ This guide is built from the current frontend, backend, tests, and configuration
 
 - [Quick Start](./documentation-quick-start.md)
 - [Interface Overview](./documentation-interface.md)
-- [Easter Egg: Top-Left Lobster](./documentation-easter-egg.md)
 - [Chat, Attachments, and Commands](./documentation-chat.md)
 - [Inspector, File Preview, and Tracing](./documentation-inspector.md)
 - [Sessions, Agents, and Runtime Modes](./documentation-sessions.md)
 - [Keyboard Shortcuts](./documentation-shortcuts.md)
 - [Local Persistence and Recovery](./documentation-persistence.md)
 - [API and Troubleshooting](./documentation-api-troubleshooting.md)
+- [Easter Egg](./documentation-easter-egg.md)
 
 ## Suggested Reading Order
 
 1. Start with [Quick Start](./documentation-quick-start.md) to boot both the frontend and backend.
 2. Then read [Interface Overview](./documentation-interface.md) and [Chat, Attachments, and Commands](./documentation-chat.md) to understand the main workflow.
-3. If you want the small brand interaction detail, read [Easter Egg: Top-Left Lobster](./documentation-easter-egg.md).
+3. If you want the small brand interaction detail, read [Easter Egg](./documentation-easter-egg.md).
 4. For the right-side trace panel, read [Inspector, File Preview, and Tracing](./documentation-inspector.md).
 5. For agent switching, model selection, and `mock` vs `openclaw`, read [Sessions, Agents, and Runtime Modes](./documentation-sessions.md).
 6. For shortcuts, refresh recovery, or backend debugging, read [Keyboard Shortcuts](./documentation-shortcuts.md), [Local Persistence and Recovery](./documentation-persistence.md), and [API and Troubleshooting](./documentation-api-troubleshooting.md).

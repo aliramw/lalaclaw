@@ -1,6 +1,6 @@
 # Showcase produit
 
-> Navigation: [Documentation Home](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Easter egg : le homard en haut à gauche](./documentation-easter-egg.md) | [Inspecteur, aperçu de fichiers et traçage](./documentation-inspector.md) | [Vue d'ensemble de l'architecture](./architecture.md) | [Feuille de route de refactorisation](./refactor-roadmap.md)
+> Navigation: [Documentation Home](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Easter egg](./documentation-easter-egg.md) | [Inspecteur, aperçu de fichiers et traçage](./documentation-inspector.md) | [Vue d'ensemble de l'architecture](./architecture.md) | [Feuille de route de refactorisation](./refactor-roadmap.md)
 
 Ce document rassemble les éléments à montrer, capturer ou enregistrer lors d'une présentation de LalaClaw.
 

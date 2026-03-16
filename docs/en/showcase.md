@@ -1,6 +1,6 @@
 # Product Showcase
 
-> Navigation: [Documentation Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Easter Egg: Top-Left Lobster](./documentation-easter-egg.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md) | [Architecture Overview](./architecture.md) | [Refactor Roadmap](./refactor-roadmap.md)
+> Navigation: [Documentation Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Easter Egg](./documentation-easter-egg.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md) | [Architecture Overview](./architecture.md) | [Refactor Roadmap](./refactor-roadmap.md)
 
 This document is a lightweight guide for what to demo, screenshot, or record when presenting LalaClaw.
 

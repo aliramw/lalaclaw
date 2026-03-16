@@ -1,4 +1,4 @@
-[Retour à l'accueil](./documentation.md) | [Démarrage rapide](./documentation-quick-start.md) | [Easter egg : le homard en haut à gauche](./documentation-easter-egg.md) | [Chat, pièces jointes et commandes](./documentation-chat.md) | [Inspecteur, aperçu de fichiers et traçage](./documentation-inspector.md)
+[Retour à l'accueil](./documentation.md) | [Démarrage rapide](./documentation-quick-start.md) | [Easter egg](./documentation-easter-egg.md) | [Chat, pièces jointes et commandes](./documentation-chat.md) | [Inspecteur, aperçu de fichiers et traçage](./documentation-inspector.md)
 
 # Vue d'ensemble de l'interface
 
@@ -15,7 +15,7 @@ La zone supérieure, pilotée par `SessionOverview`, inclut :
 - Le changement de langue
 - Le changement de thème `system / light / dark`
 - L'aide des raccourcis clavier
-- Le homard cliquable en haut à gauche, documenté dans [Easter egg : le homard en haut à gauche](./documentation-easter-egg.md)
+- Le homard cliquable en haut à gauche, documenté dans [Easter egg](./documentation-easter-egg.md)
 
 ## Espace de chat
 

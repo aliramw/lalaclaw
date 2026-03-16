@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Code of Conduct
+    url: https://github.com/aliramw/lalaclaw/blob/main/CODE_OF_CONDUCT.md
+    about: Please review the community behavior expectations before posting.
   - name: Security report
     url: https://github.com/aliramw/lalaclaw/security/advisories/new
     about: Please report security issues privately.

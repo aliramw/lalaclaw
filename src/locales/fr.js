@@ -60,8 +60,10 @@ const fr = {
       closeDialog: "Fermer la fenêtre des raccourcis",
     },
     shortcuts: {
-      sendMessage: "Shift + Enter / Double Enter",
-      insertNewline: "Enter",
+      sendMessageEnterSend: "Entrée",
+      sendMessageDoubleEnterSend: "Maj + Entrée / Double Entrée",
+      insertNewlineEnterSend: "Maj + Entrée",
+      insertNewlineDoubleEnterSend: "Entrée",
       previousPrompt: "ArrowUp",
       nextPrompt: "ArrowDown",
     },

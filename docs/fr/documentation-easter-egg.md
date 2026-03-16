@@ -1,6 +1,6 @@
 [Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Raccourcis clavier](./documentation-shortcuts.md)
 
-# Easter egg : le homard en haut à gauche
+# Easter egg
 
 ## Point d'entrée
 

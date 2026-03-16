@@ -60,8 +60,10 @@ const en = {
       closeDialog: "Close the shortcuts dialog",
     },
     shortcuts: {
-      sendMessage: "Shift + Enter / Double Enter",
-      insertNewline: "Enter",
+      sendMessageEnterSend: "Enter",
+      sendMessageDoubleEnterSend: "Shift + Enter / Double Enter",
+      insertNewlineEnterSend: "Shift + Enter",
+      insertNewlineDoubleEnterSend: "Enter",
       previousPrompt: "ArrowUp",
       nextPrompt: "ArrowDown",
     },

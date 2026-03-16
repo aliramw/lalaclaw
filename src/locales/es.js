@@ -60,8 +60,10 @@ const es = {
       closeDialog: "Cerrar la ventana de atajos",
     },
     shortcuts: {
-      sendMessage: "Shift + Enter / Enter doble",
-      insertNewline: "Enter",
+      sendMessageEnterSend: "Enter",
+      sendMessageDoubleEnterSend: "Shift + Enter / Enter doble",
+      insertNewlineEnterSend: "Shift + Enter",
+      insertNewlineDoubleEnterSend: "Enter",
       previousPrompt: "ArrowUp",
       nextPrompt: "ArrowDown",
     },

@@ -331,7 +331,8 @@ describe("SessionOverview", () => {
     expect(screen.getByRole("dialog", { name: "快捷键提示" })).toBeInTheDocument();
     expect(screen.getByText("这里列出当前可用的快捷键以及它们对应的功能。")).toBeInTheDocument();
     expect(screen.getByText("打开快捷键提示")).toBeInTheDocument();
-    expect(screen.getByText("Shift + Enter / 连按两次 Enter")).toBeInTheDocument();
+    expect(screen.getByText("Enter")).toBeInTheDocument();
+    expect(screen.getByText("Shift + Enter")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "关闭快捷键提示" }));
     await waitFor(() => {
@@ -377,6 +378,39 @@ describe("SessionOverview", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "快捷键提示" })).not.toBeInTheDocument();
     });
+  });
+
+  it("shows composer shortcuts for double-enter send mode", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            composerSendMode="double-enter-send"
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="system"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "快捷键提示" }));
+
+    expect(screen.getByText("Shift + Enter / 连按两次 Enter")).toBeInTheDocument();
+    expect(screen.getByText("Enter")).toBeInTheDocument();
   });
 
   it("does not open the shortcut dialog with ctrl slash on macOS", async () => {
