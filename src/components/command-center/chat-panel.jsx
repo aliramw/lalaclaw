@@ -525,7 +525,7 @@ function MessageOutline({ headingScopeId, items, onSelect }) {
   const { messages } = useI18n();
 
   return (
-    <aside className="w-40 shrink-0 self-start rounded-[5px] border border-border/70 bg-muted/20 p-2">
+    <aside className="max-h-[calc(100vh-6rem)] w-40 shrink-0 self-start overflow-y-auto rounded-[5px] border border-border/70 bg-muted/20 p-2">
       <div className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{messages.chat.outline}</div>
       <div className="grid gap-px">
         {items.map((item) => (

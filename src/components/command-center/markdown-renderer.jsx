@@ -250,6 +250,29 @@ function markdownUrlTransform(url = "") {
   return defaultUrlTransform(normalizedUrl);
 }
 
+function resolveScopedHashTarget(href = "", headingScopeId = "message") {
+  const normalizedHref = String(href || "").trim();
+  if (!normalizedHref.startsWith("#") || normalizedHref === "#") {
+    return "";
+  }
+
+  let decodedTarget = normalizedHref.slice(1);
+  try {
+    decodedTarget = decodeURIComponent(decodedTarget);
+  } catch {}
+
+  if (!decodedTarget) {
+    return "";
+  }
+
+  if (decodedTarget.startsWith(`${headingScopeId}-`)) {
+    return decodedTarget;
+  }
+
+  const slug = slugifyHeading(decodedTarget);
+  return slug ? `${headingScopeId}-${slug}` : "";
+}
+
 function flattenChildrenText(children) {
   return Children.toArray(children)
     .map((child) => {
@@ -262,9 +285,15 @@ function flattenChildrenText(children) {
     .trim();
 }
 
-function LinkRenderer({ href, children, files, onOpenFilePreview, ...props }) {
+function LinkRenderer({ href, children, files, headingScopeId, onOpenFilePreview, onClick, ...props }) {
   const isExternal = typeof href === "string" && /^https?:\/\//i.test(href);
+  const scopedHashTarget = resolveScopedHashTarget(href, headingScopeId);
   const matchedFile = resolveTrackedFile(href, files) || resolveTrackedFile(flattenChildrenText(children), files);
+  const resolvedHref = matchedFile
+    ? getVsCodeHref(matchedFile.fullPath || matchedFile.path)
+    : scopedHashTarget
+      ? `#${scopedHashTarget}`
+      : href;
 
   if (matchedFile && onOpenFilePreview) {
     return (
@@ -281,10 +310,26 @@ function LinkRenderer({ href, children, files, onOpenFilePreview, ...props }) {
 
   return (
     <a
-      href={matchedFile ? getVsCodeHref(matchedFile.fullPath || matchedFile.path) : href}
+      href={resolvedHref}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noreferrer" : undefined}
       className="file-link"
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented || !scopedHashTarget || typeof document === "undefined") {
+          return;
+        }
+        const element = document.getElementById(scopedHashTarget);
+        if (!element) {
+          return;
+        }
+        event.preventDefault();
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+          inline: "nearest",
+        });
+      }}
       {...props}
     >
       {children}
@@ -491,6 +536,44 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
     </Tag>
   );
 
+  const renderList = (ordered = false) => ({ children, className: blockClassName, ...props }) => {
+    const isTaskList = String(blockClassName || "").includes("contains-task-list");
+    const Tag = ordered ? "ol" : "ul";
+
+    return (
+      <Tag
+        data-scroll-anchor-id={nextScrollAnchorId()}
+        className={cn(
+          "my-1.5",
+          ordered ? "list-decimal pl-5" : isTaskList ? "list-none pl-0" : "list-disc pl-5",
+          "[&:last-child]:mb-0",
+          blockClassName,
+        )}
+        {...props}
+      >
+        {children}
+      </Tag>
+    );
+  };
+
+  const renderListItem = ({ children, className: blockClassName, ...props }) => {
+    const isTaskItem = String(blockClassName || "").includes("task-list-item");
+
+    return (
+      <li
+        data-scroll-anchor-id={nextScrollAnchorId()}
+        className={cn(
+          "leading-5",
+          isTaskItem ? "ml-0 flex items-start gap-2" : "",
+          blockClassName,
+        )}
+        {...props}
+      >
+        {children}
+      </li>
+    );
+  };
+
   const renderHeading = (Tag) => ({ children, ...props }) => {
     const current = outlineItems[headingRenderIndex++];
     const anchorId = current?.id ? `${headingScopeId}-${current.id}` : undefined;
@@ -509,7 +592,7 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
           rehypePlugins={[rehypeKatex]}
           urlTransform={markdownUrlTransform}
           components={{
-            a: (props) => <LinkRenderer {...props} files={files} onOpenFilePreview={onOpenFilePreview} />,
+            a: (props) => <LinkRenderer {...props} files={files} headingScopeId={headingScopeId} onOpenFilePreview={onOpenFilePreview} />,
             blockquote: renderBlock("blockquote"),
             code: (props) => (
               <CodeRenderer
@@ -520,8 +603,18 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
                 scrollAnchorId={nextScrollAnchorId()}
               />
             ),
-            li: renderBlock("li"),
-            ol: renderBlock("ol"),
+            input: ({ className: inputClassName, type, ...props }) => (
+              <input
+                type={type}
+                className={cn(
+                  type === "checkbox" ? "mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-primary" : "",
+                  inputClassName,
+                )}
+                {...props}
+              />
+            ),
+            li: renderListItem,
+            ol: renderList(true),
             p: renderBlock("p"),
             table: (props) => <TableRenderer {...props} scrollAnchorId={nextScrollAnchorId()} />,
             img: ({ alt, src = "" }) => {
@@ -560,7 +653,7 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
             h4: renderHeading("h4"),
             h5: renderHeading("h5"),
             h6: renderHeading("h6"),
-            ul: renderBlock("ul"),
+            ul: renderList(false),
           }}
         >
           {normalizedContent}

@@ -809,6 +809,7 @@ describe("ChatPanel", () => {
     expect(metaStack).toBeTruthy();
     expect(metaStack).toContainElement(screen.getByText("大纲"));
     expect(metaStack.querySelector("time")).toHaveTextContent("10:00:00");
+    expect(metaStack.querySelector("aside")).toHaveClass("max-h-[calc(100vh-6rem)]", "overflow-y-auto");
   });
 
   it("does not render the outline card while the latest assistant message is still streaming", () => {

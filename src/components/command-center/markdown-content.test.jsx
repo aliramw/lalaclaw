@@ -114,6 +114,38 @@ describe("MarkdownContent", () => {
     expect(fileButton).toHaveClass("file-link", "appearance-none", "border-0", "bg-transparent", "p-0", "leading-inherit");
   });
 
+  it("renders unordered lists and task lists with dedicated list styling", async () => {
+    render(<MarkdownContent content={`- 第一项\n- 第二项\n\n普通段落\n\n- [ ] 未完成\n- [x] 已完成`} />);
+
+    const unorderedList = (await screen.findByText("第一项")).closest("ul");
+    expect(unorderedList).toHaveClass("list-disc", "pl-5");
+
+    const checkboxes = await screen.findAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes[0]).not.toBeChecked();
+    expect(checkboxes[1]).toBeChecked();
+    expect(checkboxes[0].closest("ul")).toHaveClass("list-none", "pl-0");
+  });
+
+  it("rewrites same-message anchor links to scoped heading ids and scrolls to them", async () => {
+    const user = userEvent.setup();
+
+    render(<MarkdownContent headingScopeId="message-1" content={`# 标题\n\n[跳到标题](#标题)`} />);
+
+    const heading = await screen.findByRole("heading", { name: "标题" });
+    heading.scrollIntoView = vi.fn();
+
+    const anchorLink = await screen.findByRole("link", { name: "跳到标题" });
+    expect(anchorLink).toHaveAttribute("href", "#message-1-标题");
+
+    await user.click(anchorLink);
+    expect(heading.scrollIntoView).toHaveBeenCalledWith({
+      behavior: "smooth",
+      block: "start",
+      inline: "nearest",
+    });
+  });
+
   it("adds stable block-level scroll anchors for headings and paragraphs", async () => {
     const { container } = render(<MarkdownContent content={`# 标题\n\n第一段\n\n第二段`} />);
 

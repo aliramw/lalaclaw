@@ -10,8 +10,7 @@ const markdownShellClassName =
   "[&_h4]:mt-[1.35em] [&_h4]:mb-[0.45em] [&_h4]:text-[1.08em] [&_h4]:font-semibold [&_h4]:leading-[1.24] [&_h4:first-child]:mt-0 " +
   "[&_h5]:mt-[1.3em] [&_h5]:mb-[0.45em] [&_h5]:text-[1em] [&_h5]:font-semibold [&_h5]:leading-[1.32] [&_h5:first-child]:mt-0 " +
   "[&_h6]:mt-[1.2em] [&_h6]:mb-[0.4em] [&_h6]:text-[0.9em] [&_h6]:font-semibold [&_h6]:uppercase [&_h6]:tracking-[0.08em] [&_h6]:text-muted-foreground [&_h6]:leading-[1.35] [&_h6:first-child]:mt-0 " +
-  "[&_li]:ml-4 [&_li]:leading-5 [&_ol]:my-1.5 [&_ol]:list-decimal " +
-  "[&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_ul]:my-1.5 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0 [&_blockquote:last-child]:mb-0 [&_pre:last-child]:mb-0 [&_table]:w-full [&_table]:border-collapse " +
+  "[&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_blockquote:last-child]:mb-0 [&_pre:last-child]:mb-0 [&_table]:w-full [&_table]:border-collapse " +
   "[&_thead]:bg-muted/40 [&_th]:border [&_th]:border-border " +
   "[&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_td]:border [&_td]:border-border " +
   "[&_td]:px-2 [&_td]:py-1.5 [&_td]:align-top [&_hr]:my-2.5 [&_hr]:border-border";
