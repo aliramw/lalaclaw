@@ -18,7 +18,8 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run dev:all
+npm run build
+npm run lalaclaw:start
 ```
 
 Remarques :
@@ -27,6 +28,8 @@ Remarques :
 - `npm run doctor -- --json` renvoie le meme diagnostic en JSON avec `summary.status` et `summary.exitCode`
 - `npm run lalaclaw:init` aide à créer ou mettre à jour `.env.local`
 - `npm run lalaclaw:init -- --write-example` copie `.env.local.example` vers le fichier cible sans interaction
+- `npm run lalaclaw:start` est le point d'entrée recommandé en production après `npm run build`
+- `npm run lalaclaw:start` s'exécute dans le terminal courant, donc fermer ce terminal arrête le service
 - Si votre configuration locale est déjà prête, vous pouvez ignorer `npm run lalaclaw:init`
 - Si vous préférez une configuration manuelle, partez de [`.env.local.example`](../../.env.local.example)
 
@@ -71,6 +74,44 @@ Remarques :
 - `npm run lalaclaw:start` suppose que `dist/` existe déjà
 - Sans `npm run build`, le backend renvoie `503 Web app build is missing`
 - Le mode build n'est donc pas adapté au développement frontend quotidien
+
+## Déploiement persistant sur macOS
+
+Si vous voulez que l'application reste disponible après la fermeture du terminal sur macOS, utilisez `launchd`.
+
+1. Construisez l'application :
+
+```bash
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run build
+```
+
+2. Générez le plist avec le script du dépôt :
+
+```bash
+./deploy/macos/generate-launchd-plist.sh
+```
+
+3. Chargez le service :
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+launchctl enable gui/$(id -u)/ai.lalaclaw.app
+launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app
+```
+
+Commandes utiles :
+
+```bash
+launchctl print gui/$(id -u)/ai.lalaclaw.app
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+tail -f ./logs/lalaclaw-launchd.out.log
+tail -f ./logs/lalaclaw-launchd.err.log
+```
+
+Le guide macOS complet se trouve dans [deploy/macos/README.md](../../deploy/macos/README.md).
 
 ## `mock` et OpenClaw
 

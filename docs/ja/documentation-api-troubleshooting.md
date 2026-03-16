@@ -88,6 +88,48 @@
 - `COMMANDCENTER_FORCE_MOCK=1` が設定されていないか
 - `OPENCLAW_BASE_URL` と `OPENCLAW_API_KEY` が空または誤っていないか
 
+### 最初のメッセージ送信後に会話が消えて空画面へ戻る
+
+よくある症状:
+
+- `127.0.0.1:5173` で画面は開く
+- 最初に `hi` を送る
+- 直後に「最初の指令を待っています」の空状態へ戻る
+
+まず確認:
+
+- `npm run doctor` を実行する
+- `local-openclaw` を使っている場合、`OpenClaw CLI not found on PATH` が出ていないか確認する
+- ブラウザの Network で `POST /api/chat` を見て、空の `conversation` が返っていないか確認する
+
+最も多い原因:
+
+- `~/.openclaw/openclaw.json` はあるので `local-openclaw` には入る
+- しかし `openclaw` CLI 本体が未インストール、または `PATH` に入っていない
+- そのため backend が local OpenClaw session を完了できず、frontend が空 snapshot で上書きされる
+
+対処:
+
+- `which openclaw` を実行する
+- 結果がなければ OpenClaw CLI をインストールするか、`PATH` に追加する
+- CLI が独自パスにある場合は backend 起動前に次を設定する
+
+```bash
+OPENCLAW_BIN=/absolute/path/to/openclaw PORT=3000 HOST=127.0.0.1 node server.js
+```
+
+- その後で次を実行する
+
+```bash
+npm run doctor
+```
+
+確認ポイント:
+
+- `Runtime profile` が想定どおり
+- `OpenClaw CLI found` が正常表示になる
+- そのあと最初のメッセージを再送する
+
 ### Model や Agent を切り替えても変化しない
 
 考えられる理由:

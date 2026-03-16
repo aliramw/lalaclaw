@@ -18,3 +18,12 @@
 - Si falta `dist`, ejecuta `npm run build`
 - Si falla el desarrollo, verifica `127.0.0.1:5173` y `127.0.0.1:3000`
 - Si sigue en `mock`, revisa `~/.openclaw/openclaw.json` y las variables `OPENCLAW_*`
+- Si el primer mensaje desaparece y el chat vuelve a quedar vacio:
+  ejecuta `npm run doctor`, confirma que en `local-openclaw` no aparezca `OpenClaw CLI not found on PATH`, revisa `POST /api/chat` en Network y verifica si `conversation` vuelve vacio
+- La causa mas comun es que `~/.openclaw/openclaw.json` existe pero el binario `openclaw` no esta instalado o no esta en `PATH`
+- Prueba `which openclaw`; si no devuelve nada, instala OpenClaw CLI o agregalo al `PATH`
+- Si el binario existe en una ruta personalizada, inicia el backend asi:
+
+```bash
+OPENCLAW_BIN=/absolute/path/to/openclaw PORT=3000 HOST=127.0.0.1 node server.js
+```

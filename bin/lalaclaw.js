@@ -293,7 +293,7 @@ function applyConfigOverrides(config, options = {}) {
   return nextConfig;
 }
 
-function validateConfig(config, localOpenClaw) {
+function validateConfig(config, localOpenClaw, openclawBinary = '') {
   const errors = [];
   const warnings = [];
   const notes = [];
@@ -333,6 +333,8 @@ function validateConfig(config, localOpenClaw) {
       errors.push(`Local OpenClaw profile selected, but ${localOpenClaw.path} could not be parsed.`);
     } else if (!localOpenClaw.token) {
       errors.push(`Local OpenClaw profile selected, but no gateway token was found in ${localOpenClaw.path}.`);
+    } else if (!openclawBinary) {
+      errors.push('Local OpenClaw profile selected, but the `openclaw` CLI was not found. Install it or set OPENCLAW_BIN.');
     } else {
       notes.push(`Using local OpenClaw config from ${localOpenClaw.path}.`);
     }
@@ -680,6 +682,10 @@ function buildDoctorReport({
       },
     },
     runtime: {
+      host: config.host,
+      backendPort: config.backendPort,
+      frontendHost: config.frontendHost,
+      frontendPort: config.frontendPort,
       profile: config.profile,
       frontendUrl: `http://${config.frontendHost}:${config.frontendPort}`,
       backendUrl: `http://${config.host}:${config.backendPort}`,
@@ -709,11 +715,11 @@ async function collectDoctorData(envFilePath) {
   const envValues = readEnvFile(envFilePath);
   const localOpenClaw = detectLocalOpenClaw();
   const config = resolveConfig(envValues, localOpenClaw);
-  const validation = validateConfig(config, localOpenClaw);
   const nodeVersion = process.versions.node;
   const nodeMajor = Number(String(nodeVersion || '').split('.')[0] || 0);
   const nodeMatches = nodeMajor === REQUIRED_NODE_MAJOR;
   const openclawBinary = findExecutable(process.env.OPENCLAW_BIN || 'openclaw');
+  const validation = validateConfig(config, localOpenClaw, openclawBinary);
   const frontendPortFree = await checkPortAvailable(config.frontendHost, config.frontendPort);
   const backendPortFree = await checkPortAvailable(config.host, config.backendPort);
   let gatewayProbe = null;
@@ -784,6 +790,7 @@ async function runInit(envFilePath, options = {}) {
   }
 
   const localOpenClaw = detectLocalOpenClaw();
+  const openclawBinary = findExecutable(process.env.OPENCLAW_BIN || 'openclaw');
   const currentEnv = readEnvFile(envFilePath);
   const detectedConfig = resolveConfig(currentEnv, localOpenClaw);
 
@@ -824,7 +831,7 @@ async function runInit(envFilePath, options = {}) {
       rl.close();
     }
   }
-  const validation = validateConfig(nextConfig, localOpenClaw);
+  const validation = validateConfig(nextConfig, localOpenClaw, openclawBinary);
   if (validation.errors.length) {
     throw new Error(validation.errors.join(' '));
   }
@@ -847,6 +854,10 @@ async function runInit(envFilePath, options = {}) {
 }
 
 function findExecutable(binName) {
+  if (path.isAbsolute(binName)) {
+    return fs.existsSync(binName) ? binName : '';
+  }
+
   const locator = process.platform === 'win32' ? 'where' : 'which';
   const result = spawnSync(locator, [binName], { encoding: 'utf8' });
   if (result.status === 0) {

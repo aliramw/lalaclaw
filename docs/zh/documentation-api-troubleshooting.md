@@ -88,6 +88,47 @@
 - 是否设置了 `COMMANDCENTER_FORCE_MOCK=1`
 - `OPENCLAW_BASE_URL` 和 `OPENCLAW_API_KEY` 是否为空或错误
 
+### 第一条消息发出后立刻消失，又回到“等待第一条指令”
+
+常见表现：
+
+- 页面可以在 `127.0.0.1:5173` 打开
+- 发送第一条 `hi` 之后，对话区又回到空白状态
+- 没有看到正常回复，像是消息被“吃掉”了
+
+优先检查：
+
+- 运行 `npm run doctor`
+- 如果你使用的是 `local-openclaw`，确认输出里不是 `OpenClaw CLI not found on PATH`
+- 在浏览器 Network 里看 `POST /api/chat` 是否返回了空的 `conversation`
+
+最常见原因：
+
+- 本机虽然有 `~/.openclaw/openclaw.json`，但 `openclaw` 命令本身没有安装好，或不在 `PATH` 里
+- 后端因此无法正确 patch 或调用本地 OpenClaw session，前端随后又被一个空快照覆盖
+
+解决：
+
+- 先执行 `which openclaw`
+- 如果没有结果，安装 OpenClaw CLI，或把它加入 `PATH`
+- 如果 CLI 已经安装在自定义位置，启动后端前设置：
+
+```bash
+OPENCLAW_BIN=/absolute/path/to/openclaw PORT=3000 HOST=127.0.0.1 node server.js
+```
+
+- 然后重新执行：
+
+```bash
+npm run doctor
+```
+
+确认：
+
+- `Runtime profile` 是你预期的模式
+- `OpenClaw CLI found` 不再报错
+- 再重新发送第一条消息
+
 ### 切换模型或 Agent 后没有变化
 
 可能原因：

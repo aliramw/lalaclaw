@@ -18,7 +18,8 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run dev:all
+npm run build
+npm run lalaclaw:start
 ```
 
 说明：
@@ -27,6 +28,8 @@ npm run dev:all
 - `npm run doctor -- --json` 会输出相同诊断结果的 JSON，并带有 `summary.status` 和 `summary.exitCode`
 - `npm run lalaclaw:init` 会帮助你生成或刷新 `.env.local`
 - `npm run lalaclaw:init -- --write-example` 会直接把 `.env.local.example` 复制到目标配置文件，不进入交互
+- `npm run lalaclaw:start` 是执行 `npm run build` 之后推荐的生产启动入口
+- `npm run lalaclaw:start` 会占用当前 terminal，关闭 terminal 后服务也会停止
 - 如果你的本地配置已经准备好，可以跳过 `npm run lalaclaw:init`
 - 如果你更想手动编辑配置，可以从 [`.env.local.example`](../../.env.local.example) 开始
 
@@ -85,6 +88,44 @@ npm run lalaclaw:start
 - `npm run lalaclaw:start` 依赖现有的 `dist/`
 - 如果跳过 `npm run build`，后端会返回 `503 Web app build is missing`
 - 因此日常前端开发不应使用构建模式
+
+## macOS 常驻生产部署
+
+如果你希望在 macOS 上关闭 terminal 之后服务仍然在线，建议使用 `launchd`。
+
+1. 先构建应用：
+
+```bash
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run build
+```
+
+2. 用仓库里的脚本生成 plist：
+
+```bash
+./deploy/macos/generate-launchd-plist.sh
+```
+
+3. 加载服务：
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+launchctl enable gui/$(id -u)/ai.lalaclaw.app
+launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app
+```
+
+常用命令：
+
+```bash
+launchctl print gui/$(id -u)/ai.lalaclaw.app
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+tail -f ./logs/lalaclaw-launchd.out.log
+tail -f ./logs/lalaclaw-launchd.err.log
+```
+
+更完整的 macOS 部署说明见 [deploy/macos/README.md](../../deploy/macos/README.md)。
 
 ## `mock` 与 OpenClaw
 

@@ -729,7 +729,11 @@ export function mergeStaleLocalConversationTail(snapshotMessages = [], localMess
     .filter((message) => !message?.pending)
     .map((message) => ({ ...message }));
 
-  if (!nextMessages.length || normalizedLocalMessages.length <= nextMessages.length) {
+  if (!nextMessages.length) {
+    return collapseDuplicateConversationTurns(normalizedLocalMessages);
+  }
+
+  if (normalizedLocalMessages.length <= nextMessages.length) {
     return nextMessages;
   }
 

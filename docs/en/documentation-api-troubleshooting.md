@@ -88,6 +88,48 @@ Check:
 - Is `COMMANDCENTER_FORCE_MOCK=1` set?
 - Are `OPENCLAW_BASE_URL` and `OPENCLAW_API_KEY` empty or wrong?
 
+### The first message disappears and the chat returns to the empty state
+
+Typical symptoms:
+
+- The page opens on `127.0.0.1:5173`
+- You send the first `hi`
+- The conversation immediately goes back to "Waiting for your first command"
+
+Check these first:
+
+- Run `npm run doctor`
+- If you are using `local-openclaw`, make sure the output does not say `OpenClaw CLI not found on PATH`
+- In the browser Network panel, inspect `POST /api/chat` and see whether it comes back with an empty `conversation`
+
+Most common cause:
+
+- `~/.openclaw/openclaw.json` exists, so LalaClaw enters `local-openclaw`
+- But the `openclaw` CLI itself is not installed correctly or is not available on `PATH`
+- The backend cannot complete the local OpenClaw session flow, and the frontend is then overwritten by an empty snapshot
+
+Fix:
+
+- Run `which openclaw`
+- If it returns nothing, install the OpenClaw CLI or add it to `PATH`
+- If the CLI is already installed in a custom location, start the backend with:
+
+```bash
+OPENCLAW_BIN=/absolute/path/to/openclaw PORT=3000 HOST=127.0.0.1 node server.js
+```
+
+- Then run:
+
+```bash
+npm run doctor
+```
+
+Confirm:
+
+- `Runtime profile` is the expected one
+- `OpenClaw CLI found` is no longer failing
+- Then try the first message again
+
 ### Model or agent switches do not seem to take effect
 
 Possible reasons:

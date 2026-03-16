@@ -55,6 +55,42 @@ Révèle le fichier dans le gestionnaire du système.
 - Vérifiez `COMMANDCENTER_FORCE_MOCK=1`
 - Vérifiez `OPENCLAW_BASE_URL` et `OPENCLAW_API_KEY`
 
+### Le premier message disparaît et le chat revient à l'etat vide
+
+Symptomes habituels :
+
+- La page s'ouvre bien sur `127.0.0.1:5173`
+- Vous envoyez un premier `hi`
+- Le panneau revient aussitot a l'etat vide
+
+Verifiez d'abord :
+
+- Lancez `npm run doctor`
+- En mode `local-openclaw`, verifiez que la sortie ne dit pas `OpenClaw CLI not found on PATH`
+- Dans l'onglet Network du navigateur, regardez si `POST /api/chat` revient avec `conversation: []`
+
+Cause la plus frequente :
+
+- `~/.openclaw/openclaw.json` existe, donc LalaClaw passe en `local-openclaw`
+- Mais le binaire `openclaw` n'est pas installe correctement ou n'est pas sur le `PATH`
+- Le backend ne peut pas terminer le flux de session OpenClaw local, puis le frontend est ecrase par un snapshot vide
+
+Resolution :
+
+- Executez `which openclaw`
+- Si rien n'est retourne, installez OpenClaw CLI ou ajoutez-le au `PATH`
+- Si le binaire est dans un chemin personnalise, demarrez le backend avec :
+
+```bash
+OPENCLAW_BIN=/absolute/path/to/openclaw PORT=3000 HOST=127.0.0.1 node server.js
+```
+
+- Puis relancez :
+
+```bash
+npm run doctor
+```
+
 ### Un fichier ne peut pas être prévisualisé
 
 - Il manque peut-être un chemin absolu

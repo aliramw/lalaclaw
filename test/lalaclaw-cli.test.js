@@ -261,11 +261,40 @@ describe("LalaClaw CLI helpers", () => {
         path: "/Users/example/.openclaw/openclaw.json",
         token: "token-123",
       },
+      "/usr/local/bin/openclaw",
     );
 
     expect(issues.errors).toEqual([]);
     expect(issues.warnings).toEqual([]);
     expect(issues.notes).toContain("Using local OpenClaw config from /Users/example/.openclaw/openclaw.json.");
+  });
+
+  it("requires the openclaw CLI for a local-openclaw profile", () => {
+    const issues = cli.validateConfig(
+      {
+        host: "127.0.0.1",
+        backendPort: "3000",
+        frontendHost: "127.0.0.1",
+        frontendPort: "5173",
+        profile: "local-openclaw",
+        openclawBaseUrl: "",
+        openclawApiKey: "",
+        openclawModel: "openclaw",
+        openclawAgentId: "main",
+        openclawApiStyle: "chat",
+        openclawApiPath: "/v1/chat/completions",
+      },
+      {
+        exists: true,
+        path: "/Users/example/.openclaw/openclaw.json",
+        token: "token-123",
+      },
+      "",
+    );
+
+    expect(issues.errors).toContain(
+      "Local OpenClaw profile selected, but the `openclaw` CLI was not found. Install it or set OPENCLAW_BIN.",
+    );
   });
 
   it("probes a remote gateway health endpoint successfully", async () => {
@@ -449,6 +478,10 @@ describe("LalaClaw CLI helpers", () => {
         },
       },
       runtime: {
+        host: "127.0.0.1",
+        backendPort: "3000",
+        frontendHost: "127.0.0.1",
+        frontendPort: "5173",
         profile: "remote-gateway",
         gatewayUrl: "https://gateway.example.com",
       },

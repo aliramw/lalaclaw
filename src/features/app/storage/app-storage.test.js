@@ -297,6 +297,21 @@ describe("mergePendingConversation", () => {
     ]);
   });
 
+  it("keeps locally rendered messages when the runtime snapshot is temporarily empty", () => {
+    expect(
+      mergeStaleLocalConversationTail(
+        [],
+        [
+          { id: "msg-user-1", role: "user", content: "hi", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "请求失败。\nspawn openclaw ENOENT", timestamp: 120 },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "hi", timestamp: 100 },
+      { id: "msg-assistant-1", role: "assistant", content: "请求失败。\nspawn openclaw ENOENT", timestamp: 120 },
+    ]);
+  });
+
   it("does not append local messages when the runtime snapshot has already diverged from the local prefix", () => {
     expect(
       mergeStaleLocalConversationTail(

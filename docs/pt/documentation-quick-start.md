@@ -18,7 +18,8 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run dev:all
+npm run build
+npm run lalaclaw:start
 ```
 
 Notas:
@@ -27,6 +28,8 @@ Notas:
 - `npm run doctor -- --json` retorna o mesmo diagnostico em JSON com `summary.status` e `summary.exitCode`
 - `npm run lalaclaw:init` ajuda a criar ou atualizar `.env.local`
 - `npm run lalaclaw:init -- --write-example` copia `.env.local.example` para o arquivo de configuracao de destino sem perguntas interativas
+- `npm run lalaclaw:start` e a entrada recomendada para producao depois de `npm run build`
+- `npm run lalaclaw:start` roda no terminal atual, entao fechar esse terminal interrompe o servico
 - Se a configuracao local ja estiver pronta, voce pode pular `npm run lalaclaw:init`
 - Se preferir configurar manualmente, use [`.env.local.example`](../../.env.local.example) como ponto de partida
 
@@ -61,6 +64,44 @@ Notas:
 - `npm run lalaclaw:start` depende de `dist/`
 - Se voce pular `npm run build`, o backend retorna `503 Web app build is missing`
 - O modo build nao e a melhor escolha para o desenvolvimento diario do frontend
+
+## Deploy persistente no macOS
+
+Se voce quiser manter o app online mesmo depois de fechar o terminal no macOS, use `launchd`.
+
+1. Faça o build do app:
+
+```bash
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run build
+```
+
+2. Gere o plist com o script do repositorio:
+
+```bash
+./deploy/macos/generate-launchd-plist.sh
+```
+
+3. Carregue o servico:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+launchctl enable gui/$(id -u)/ai.lalaclaw.app
+launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app
+```
+
+Comandos uteis:
+
+```bash
+launchctl print gui/$(id -u)/ai.lalaclaw.app
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+tail -f ./logs/lalaclaw-launchd.out.log
+tail -f ./logs/lalaclaw-launchd.err.log
+```
+
+O guia completo do macOS esta em [deploy/macos/README.md](../../deploy/macos/README.md).
 
 ## `mock` e OpenClaw
 

@@ -206,6 +206,35 @@ describe("createChatHandler", () => {
     });
   });
 
+  it("persists a normal chat turn to the local session conversation before building the snapshot", async () => {
+    const harness = createHandler({
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "hi" }],
+      })),
+      buildDashboardSnapshot: vi.fn(async (sessionUser) => ({
+        session: {
+          model: "gpt-5",
+          sessionUser,
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.appendLocalSessionConversation).toHaveBeenCalledWith(
+      "api-user",
+      [
+        { role: "user", content: "hi", timestamp: Date.now() },
+        { role: "assistant", content: "OpenClaw command channel is online in mock mode.\nCurrent intent: hi", timestamp: Date.now() + 1 },
+      ],
+    );
+    expect(harness.buildDashboardSnapshot).toHaveBeenCalledWith("api-user");
+  });
+
   it("still completes the stream after the request input closes normally", async () => {
     let resolveDispatch;
     const harness = createHandler({

@@ -335,6 +335,28 @@ function createChatHandler({
             : await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
           : createMockReply(latestUserContent, clip);
 
+      appendLocalSessionConversation(sessionUser, [
+        ...(latestUserMessage
+          ? [
+              {
+                role: 'user',
+                content: latestUserContent,
+                timestamp: requestTimestamp,
+              },
+            ]
+          : []),
+        ...(reply.outputText
+          ? [
+              {
+                role: 'assistant',
+                content: reply.outputText,
+                timestamp: Math.max(Date.now(), requestTimestamp + 1),
+                ...(reply.usage ? { tokenBadge: formatTokenBadge(reply.usage) } : {}),
+              },
+            ]
+          : []),
+      ]);
+
       const snapshot = await buildDashboardSnapshot(sessionUser);
       snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
       const resolvedModel = snapshot.session?.model || config.model;

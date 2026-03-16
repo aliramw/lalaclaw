@@ -58,10 +58,16 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run dev:all
+npm run build
+npm run lalaclaw:start
 ```
 
-Then open [http://127.0.0.1:5173](http://127.0.0.1:5173).
+Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+
+Important:
+
+- `npm run lalaclaw:start` runs in the current terminal and is not a daemon
+- If you close that terminal, the service stops and `http://127.0.0.1:3000` becomes unavailable
 
 If you already know your local setup is ready, you can skip `npm run lalaclaw:init`.
 
@@ -72,6 +78,56 @@ npm run lalaclaw:init
 ```
 
 If you prefer to edit configuration manually, start from [.env.local.example](./.env.local.example).
+
+If you want the live development environment instead of the production build:
+
+```bash
+npm run dev:all
+```
+
+Then open [http://127.0.0.1:5173](http://127.0.0.1:5173).
+
+### Persistent Production Deploy On macOS
+
+If you want the app to stay online after you close the terminal on macOS, use `launchd`.
+
+1. Build the app first:
+
+```bash
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run build
+```
+
+2. Generate the plist from the checked-in template:
+
+```bash
+./deploy/macos/generate-launchd-plist.sh
+```
+
+That writes `~/Library/LaunchAgents/ai.lalaclaw.app.plist` and prepares `./logs/`.
+
+3. Load it:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+launchctl enable gui/$(id -u)/ai.lalaclaw.app
+launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app
+```
+
+That keeps the built app running in the background after logout or terminal close.
+
+Useful follow-up commands:
+
+```bash
+launchctl print gui/$(id -u)/ai.lalaclaw.app
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+tail -f ./logs/lalaclaw-launchd.out.log
+tail -f ./logs/lalaclaw-launchd.err.log
+```
+
+More detail lives in [deploy/macos/README.md](./deploy/macos/README.md).
 
 ## Scripts
 
@@ -111,7 +167,7 @@ If you prefer to edit configuration manually, start from [.env.local.example](./
 
 If `~/.openclaw/openclaw.json` exists, CommandCenter will automatically detect your local OpenClaw gateway and reuse its loopback endpoint plus gateway token.
 
-For a fresh machine, the shortest setup is usually:
+For a fresh machine, the recommended production setup is:
 
 ```bash
 git clone https://github.com/aliramw/CommandCenter.git lalaclaw
@@ -119,8 +175,11 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run dev:all
+npm run build
+npm run lalaclaw:start
 ```
+
+If you need it to keep running after logout or terminal close on macOS, use `launchd` instead of a plain foreground shell.
 
 If you want to override that and point to another OpenClaw-compatible gateway, set:
 

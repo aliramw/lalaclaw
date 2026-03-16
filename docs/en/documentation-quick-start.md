@@ -18,7 +18,8 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run dev:all
+npm run build
+npm run lalaclaw:start
 ```
 
 Notes:
@@ -27,6 +28,8 @@ Notes:
 - `npm run doctor -- --json` returns the same diagnosis as JSON with `summary.status` and `summary.exitCode`
 - `npm run lalaclaw:init` helps you create or refresh `.env.local`
 - `npm run lalaclaw:init -- --write-example` copies `.env.local.example` to the target config file without prompts
+- `npm run lalaclaw:start` is the recommended production entrypoint after `npm run build`
+- `npm run lalaclaw:start` runs in the current terminal, so closing that terminal stops the app
 - If your setup is already ready, you can skip `npm run lalaclaw:init`
 - If you prefer manual setup, use [`.env.local.example`](../../.env.local.example) as a starting point
 
@@ -89,6 +92,44 @@ Notes:
 - `npm run lalaclaw:start` depends on an existing `dist/`
 - If you skip `npm run build`, the backend returns `503 Web app build is missing`
 - Because of that, `npm start` is not the right choice for normal frontend development
+
+## Persistent Production Deploy On macOS
+
+If you want the app to keep running after you close the terminal on macOS, use `launchd`.
+
+1. Build the app:
+
+```bash
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run build
+```
+
+2. Generate the plist:
+
+```bash
+./deploy/macos/generate-launchd-plist.sh
+```
+
+3. Load it:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+launchctl enable gui/$(id -u)/ai.lalaclaw.app
+launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app
+```
+
+Useful commands:
+
+```bash
+launchctl print gui/$(id -u)/ai.lalaclaw.app
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
+tail -f ./logs/lalaclaw-launchd.out.log
+tail -f ./logs/lalaclaw-launchd.err.log
+```
+
+For the full macOS flow, see [deploy/macos/README.md](../../deploy/macos/README.md).
 
 ## `mock` and OpenClaw
 
