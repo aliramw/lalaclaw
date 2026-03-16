@@ -8,7 +8,6 @@ const readline = require('node:readline/promises');
 const { spawn, spawnSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const DEFAULT_ENV_FILE = path.join(PROJECT_ROOT, '.env.local');
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_FRONTEND_PORT = '5173';
 const DEFAULT_BACKEND_PORT = '3000';
@@ -17,6 +16,8 @@ const DEFAULT_AGENT_ID = 'main';
 const REQUIRED_NODE_MAJOR = 22;
 const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const EXAMPLE_ENV_FILE = path.join(PROJECT_ROOT, '.env.local.example');
+const PACKAGE_NAME = 'lalaclaw';
+const LEGACY_ENV_FILE = path.join(PROJECT_ROOT, '.env.local');
 const OPTION_ALIASES = {
   '--config-file': 'configFile',
   '--profile': 'profile',
@@ -31,6 +32,53 @@ const OPTION_ALIASES = {
   '--api-style': 'openclawApiStyle',
   '--api-path': 'openclawApiPath',
 };
+
+function resolveDefaultConfigDir() {
+  const explicitConfigDir = String(process.env.LALACLAW_CONFIG_DIR || '').trim();
+  if (explicitConfigDir) {
+    return path.resolve(explicitConfigDir);
+  }
+
+  if (process.platform === 'win32') {
+    const appDataDir = String(process.env.APPDATA || '').trim();
+    if (appDataDir) {
+      return path.join(appDataDir, 'LalaClaw');
+    }
+  }
+
+  const xdgConfigHome = String(process.env.XDG_CONFIG_HOME || '').trim();
+  if (xdgConfigHome) {
+    return path.join(path.resolve(xdgConfigHome), PACKAGE_NAME);
+  }
+
+  const homeDir = os.homedir();
+  if (homeDir) {
+    return path.join(homeDir, '.config', PACKAGE_NAME);
+  }
+
+  return PROJECT_ROOT;
+}
+
+function resolveDefaultEnvFile() {
+  const explicitConfigFile = String(process.env.LALACLAW_CONFIG_FILE || '').trim();
+  if (explicitConfigFile) {
+    return path.resolve(explicitConfigFile);
+  }
+
+  const preferredEnvFile = path.join(resolveDefaultConfigDir(), '.env.local');
+  if (fs.existsSync(preferredEnvFile)) {
+    return preferredEnvFile;
+  }
+
+  if (fs.existsSync(LEGACY_ENV_FILE)) {
+    return LEGACY_ENV_FILE;
+  }
+
+  return preferredEnvFile;
+}
+
+const DEFAULT_CONFIG_DIR = resolveDefaultConfigDir();
+const DEFAULT_ENV_FILE = resolveDefaultEnvFile();
 
 function printHelp() {
   console.log(`LalaClaw CLI
@@ -50,6 +98,9 @@ Commands:
   start     Start the built backend server after checking dist/.
   frontend  Start only the Vite frontend server.
   backend   Start only the backend server.
+
+By default, config is stored at:
+  ${DEFAULT_ENV_FILE}
 `);
 }
 
@@ -784,8 +835,8 @@ async function runInit(envFilePath, options = {}) {
     console.log(`OK    Wrote example config to ${envFilePath}`);
     console.log('Next steps:');
     console.log('  1. Review the placeholder values in the file');
-    console.log('  2. npm run doctor');
-    console.log('  3. npm run dev:all');
+    console.log('  2. lalaclaw doctor');
+    console.log('  3. lalaclaw start');
     return;
   }
 
@@ -849,8 +900,8 @@ async function runInit(envFilePath, options = {}) {
   console.log(`OK    Wrote ${envFilePath}`);
   printConfigSummary(nextConfig);
   console.log('Next steps:');
-  console.log('  1. npm run doctor');
-  console.log('  2. npm run dev:all');
+  console.log('  1. lalaclaw doctor');
+  console.log('  2. lalaclaw start');
 }
 
 function findExecutable(binName) {
@@ -938,6 +989,21 @@ function runChild(command, args, env) {
   });
 }
 
+function ensureDevelopmentAssetsAvailable() {
+  const requiredPaths = [
+    path.join(PROJECT_ROOT, 'src', 'main.jsx'),
+    path.join(PROJECT_ROOT, 'vite.config.mjs'),
+    path.join(PROJECT_ROOT, 'node_modules'),
+  ];
+
+  const missingPath = requiredPaths.find((filePath) => !fs.existsSync(filePath));
+  if (missingPath) {
+    throw new Error(
+      'Development commands are only available from a source checkout. Install from GitHub and run `npm ci` before using `lalaclaw dev` or `lalaclaw frontend`.',
+    );
+  }
+}
+
 function stopChild(child) {
   if (!child || child.killed) {
     return;
@@ -952,6 +1018,7 @@ function stopChild(child) {
 }
 
 async function runFrontend(envFilePath) {
+  ensureDevelopmentAssetsAvailable();
   const { childEnv, config } = buildChildEnv(envFilePath);
   await ensurePortAvailable('Frontend port', config.frontendHost, config.frontendPort);
   console.log(`INFO  Starting frontend at http://${config.frontendHost}:${config.frontendPort}`);
@@ -978,6 +1045,7 @@ async function runBackend(envFilePath) {
 }
 
 async function runDev(envFilePath) {
+  ensureDevelopmentAssetsAvailable();
   const { childEnv, config } = buildChildEnv(envFilePath);
   await ensurePortAvailable('Frontend port', config.frontendHost, config.frontendPort);
   await ensurePortAvailable('Backend port', config.host, config.backendPort);
@@ -1014,7 +1082,9 @@ async function runStart(envFilePath) {
   const { childEnv, config } = buildChildEnv(envFilePath);
 
   if (!fs.existsSync(DIST_DIR)) {
-    throw new Error(`Build output is missing at ${DIST_DIR}. Run \`npm run build\` first.`);
+    throw new Error(
+      `Build output is missing at ${DIST_DIR}. Reinstall the published package or run \`npm run build\` from a source checkout before starting LalaClaw.`,
+    );
   }
 
   await ensurePortAvailable('Backend port', config.host, config.backendPort);
@@ -1085,6 +1155,9 @@ module.exports = {
   DEFAULT_MODEL,
   DEFAULT_AGENT_ID,
   REQUIRED_NODE_MAJOR,
+  PACKAGE_NAME,
+  LEGACY_ENV_FILE,
+  DEFAULT_CONFIG_DIR,
   EXAMPLE_ENV_FILE,
   parseArgs,
   readEnvFile,
@@ -1095,6 +1168,8 @@ module.exports = {
   applyConfigOverrides,
   clipText,
   readExampleEnvTemplate,
+  resolveDefaultConfigDir,
+  resolveDefaultEnvFile,
   resolveRuntimeProfile,
   resolveConfig,
   renderEnvFile,

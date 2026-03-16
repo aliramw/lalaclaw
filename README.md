@@ -50,7 +50,28 @@ flowchart LR
 
 ## Quick Start
 
+### Install From npm
+
+For the simplest end-user setup:
+
+```bash
+npm install -g lalaclaw
+lalaclaw init
+lalaclaw doctor
+lalaclaw start
+```
+
+Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+
+Notes:
+
+- `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
+- `lalaclaw doctor` checks Node.js, OpenClaw discovery, ports, and local config
+- `lalaclaw start` runs in the current terminal, so closing that terminal stops the app
+
 ### Install From GitHub
+
+If you want a source checkout for development or local modification:
 
 On a fresh machine with OpenClaw already installed:
 
@@ -91,6 +112,24 @@ Then open [http://127.0.0.1:5173](http://127.0.0.1:5173).
 
 ### Update LalaClaw
 
+If you installed LalaClaw with npm and want the newest version:
+
+```bash
+npm install -g lalaclaw@latest
+lalaclaw doctor
+lalaclaw start
+```
+
+If you want a specific published version instead, such as `2026.3.17.2`:
+
+```bash
+npm install -g lalaclaw@2026.3.17.2
+lalaclaw doctor
+lalaclaw start
+```
+
+If you installed LalaClaw from GitHub, update it like this:
+
 If you already installed LalaClaw from GitHub and want the latest version:
 
 ```bash
@@ -101,12 +140,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17`:
+If you want a specific released version instead, such as `2026.3.17.2`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17
+git checkout 2026.3.17.2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -117,6 +156,7 @@ Notes:
 - `git pull` updates your local copy to the newest version on GitHub.
 - `npm ci` installs the dependencies required by that version.
 - `npm run build` refreshes the web app files used by the production server.
+- `npm install -g lalaclaw@latest` updates the globally installed npm package.
 - If you use the macOS `launchd` setup, restart the service after updating with `launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app`.
 - If Git says you have local changes, back them up or commit them before updating.
 

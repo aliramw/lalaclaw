@@ -5,10 +5,29 @@
 ## 必要環境
 
 - リポジトリの [`.nvmrc`](../../.nvmrc) に定義されている Node.js を使用します。現在は `22` です。
-- 初回実行前にプロジェクトルートで `npm ci` を実行します。
-- ローカルの `.env.local` を作る場合は `npm run lalaclaw:init` を実行します。
+- 通常のローカル利用では npm インストールを推奨します。
+- 開発モードやローカルでのコード変更が必要な場合だけ GitHub のソース checkout を使ってください。
 
-## 新しいマシンで GitHub からインストール
+## npm からインストール
+
+通常ユーザー向けの最も簡単なセットアップ:
+
+```bash
+npm install -g lalaclaw
+lalaclaw init
+lalaclaw doctor
+lalaclaw start
+```
+
+補足:
+
+- `lalaclaw init` は macOS と Linux では `~/.config/lalaclaw/.env.local` にローカル設定を書き込みます
+- `lalaclaw doctor` は Node.js、ローカル OpenClaw の検出、ポート、設定を確認します
+- `lalaclaw start` は現在の terminal 上で動くため、その terminal を閉じると停止します
+
+## GitHub からインストール
+
+開発やローカル修正のためにソース checkout が欲しい場合はこちらを使います。
 
 OpenClaw がすでにインストールされていて、`~/.openclaw/openclaw.json` が使える場合は、まず次を実行します。
 
@@ -35,6 +54,24 @@ npm run lalaclaw:start
 
 ## 既存インストールを更新
 
+npm でインストールしていて最新版に更新したい場合:
+
+```bash
+npm install -g lalaclaw@latest
+lalaclaw doctor
+lalaclaw start
+```
+
+`2026.3.17.2` のような特定の公開版を使いたい場合:
+
+```bash
+npm install -g lalaclaw@2026.3.17.2
+lalaclaw doctor
+lalaclaw start
+```
+
+GitHub からインストールした場合は次の手順で更新します。
+
 すでに GitHub から LalaClaw をインストールしていて、最新版に更新したい場合:
 
 ```bash
@@ -45,12 +82,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-`2026.3.17` のような特定のリリース版を使いたい場合:
+`2026.3.17.2` のような特定のリリース版を使いたい場合:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17
+git checkout 2026.3.17.2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -58,6 +95,7 @@ npm run lalaclaw:start
 
 補足:
 
+- `npm install -g lalaclaw@latest` はグローバルにインストールされた npm パッケージを更新します
 - `git pull` は GitHub 上の最新バージョンへローカルコピーを更新します
 - `npm ci` はそのバージョンに必要な依存関係をインストールします
 - `npm run build` は本番サーバーが使う Web アプリのファイルを更新します
@@ -65,6 +103,8 @@ npm run lalaclaw:start
 - Git がローカル変更を報告した場合は、更新前にバックアップするかコミットしてください
 
 ## 開発モード
+
+開発モードには GitHub のソース checkout と、事前に実行した `npm ci` が必要です。
 
 開発時はフロントエンドとバックエンドを同時に起動し、ブラウザの入口には Vite ページを使います。
 

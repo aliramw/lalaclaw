@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import os from "node:os";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -203,6 +204,68 @@ describe("LalaClaw CLI helpers", () => {
     expect(template).toContain("HOST=127.0.0.1");
     expect(template).toContain("OPENCLAW_MODEL=openclaw");
     expect(fs.existsSync(cli.EXAMPLE_ENV_FILE)).toBe(true);
+  });
+
+  it("resolves the default config directory under XDG config home", () => {
+    const previousXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    const previousConfigDir = process.env.LALACLAW_CONFIG_DIR;
+
+    process.env.XDG_CONFIG_HOME = "/tmp/lalaclaw-xdg";
+    delete process.env.LALACLAW_CONFIG_DIR;
+
+    try {
+      expect(cli.resolveDefaultConfigDir()).toBe(path.join("/tmp/lalaclaw-xdg", "lalaclaw"));
+    } finally {
+      if (previousXdgConfigHome === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdgConfigHome;
+      }
+      if (previousConfigDir === undefined) {
+        delete process.env.LALACLAW_CONFIG_DIR;
+      } else {
+        process.env.LALACLAW_CONFIG_DIR = previousConfigDir;
+      }
+    }
+  });
+
+  it("prefers the user config file over the legacy project env file", () => {
+    const previousConfigFile = process.env.LALACLAW_CONFIG_FILE;
+    const previousConfigDir = process.env.LALACLAW_CONFIG_DIR;
+
+    delete process.env.LALACLAW_CONFIG_FILE;
+    process.env.LALACLAW_CONFIG_DIR = path.join(os.tmpdir(), "lalaclaw-config-test");
+
+    try {
+      expect(cli.resolveDefaultEnvFile()).toBe(path.join(process.env.LALACLAW_CONFIG_DIR, ".env.local"));
+    } finally {
+      if (previousConfigFile === undefined) {
+        delete process.env.LALACLAW_CONFIG_FILE;
+      } else {
+        process.env.LALACLAW_CONFIG_FILE = previousConfigFile;
+      }
+      if (previousConfigDir === undefined) {
+        delete process.env.LALACLAW_CONFIG_DIR;
+      } else {
+        process.env.LALACLAW_CONFIG_DIR = previousConfigDir;
+      }
+    }
+  });
+
+  it("uses an explicit config file override when provided", () => {
+    const previousConfigFile = process.env.LALACLAW_CONFIG_FILE;
+    const explicitPath = path.join(os.tmpdir(), "lalaclaw-explicit.env");
+    process.env.LALACLAW_CONFIG_FILE = explicitPath;
+
+    try {
+      expect(cli.resolveDefaultEnvFile()).toBe(explicitPath);
+    } finally {
+      if (previousConfigFile === undefined) {
+        delete process.env.LALACLAW_CONFIG_FILE;
+      } else {
+        process.env.LALACLAW_CONFIG_FILE = previousConfigFile;
+      }
+    }
   });
 
   it("reports validation errors for an invalid remote gateway config", () => {

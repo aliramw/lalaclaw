@@ -50,7 +50,28 @@ flowchart LR
 
 ## 快速开始
 
+### 从 npm 安装
+
+如果你是普通用户，最简单的安装方式是：
+
+```bash
+npm install -g lalaclaw
+lalaclaw init
+lalaclaw doctor
+lalaclaw start
+```
+
+然后打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)。
+
+说明：
+
+- `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
+- `lalaclaw doctor` 会检查 Node.js、OpenClaw 探测、端口和本地配置
+- `lalaclaw start` 会占用当前终端运行，关闭终端后服务会停止
+
 ### 从 GitHub 安装
+
+如果你希望拿到源码，用于开发或本地修改：
 
 如果你在一台已经安装好 OpenClaw 的新机器上使用：
 
@@ -91,6 +112,24 @@ npm run dev:all
 
 ### 更新 LalaClaw
 
+如果你是通过 npm 安装的，想更新到最新版：
+
+```bash
+npm install -g lalaclaw@latest
+lalaclaw doctor
+lalaclaw start
+```
+
+如果你想切换到某个指定发布版本，比如 `2026.3.17.2`：
+
+```bash
+npm install -g lalaclaw@2026.3.17.2
+lalaclaw doctor
+lalaclaw start
+```
+
+如果你是从 GitHub 安装的，请按下面方式更新：
+
 如果你已经从 GitHub 安装过 LalaClaw，想更新到最新版本：
 
 ```bash
@@ -101,12 +140,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17.2`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17
+git checkout 2026.3.17.2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -117,6 +156,7 @@ npm run lalaclaw:start
 - `git pull` 会把你本地的代码更新到 GitHub 上的最新版本
 - `npm ci` 会安装这个版本对应的依赖
 - `npm run build` 会刷新生产模式使用的前端文件
+- `npm install -g lalaclaw@latest` 会更新全局安装的 npm 包
 - 如果你使用 macOS 的 `launchd` 常驻运行，更新后请执行 `launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app` 重启服务
 - 如果 Git 提示你有本地改动，请先备份或提交这些改动，再执行更新
 

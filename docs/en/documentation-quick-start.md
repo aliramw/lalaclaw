@@ -5,10 +5,29 @@
 ## Requirements
 
 - Use the Node.js version defined in [`.nvmrc`](../../.nvmrc), currently `22`
-- Run `npm ci` in the project root before your first local run
-- Optionally run `npm run lalaclaw:init` to generate a local `.env.local`
+- npm installation is recommended for normal local use
+- Use a GitHub source checkout only if you want development mode or local code changes
 
-## Fastest Setup On A New Machine
+## Install From npm
+
+For the simplest end-user setup:
+
+```bash
+npm install -g lalaclaw
+lalaclaw init
+lalaclaw doctor
+lalaclaw start
+```
+
+Notes:
+
+- `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
+- `lalaclaw doctor` checks Node.js, local OpenClaw discovery, ports, and config
+- `lalaclaw start` runs in the current terminal, so closing that terminal stops the app
+
+## Install From GitHub
+
+Use this path if you want a source checkout for development or local modification.
 
 If OpenClaw is already installed on the machine and `~/.openclaw/openclaw.json` is available:
 
@@ -35,6 +54,24 @@ Notes:
 
 ## Update An Existing Install
 
+If you installed LalaClaw from npm and want the newest version:
+
+```bash
+npm install -g lalaclaw@latest
+lalaclaw doctor
+lalaclaw start
+```
+
+If you want a specific published version instead, such as `2026.3.17.2`:
+
+```bash
+npm install -g lalaclaw@2026.3.17.2
+lalaclaw doctor
+lalaclaw start
+```
+
+If you installed LalaClaw from GitHub, update it like this:
+
 If you already installed LalaClaw from GitHub and want the latest version:
 
 ```bash
@@ -45,12 +82,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17`:
+If you want a specific released version instead, such as `2026.3.17.2`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17
+git checkout 2026.3.17.2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -58,6 +95,7 @@ npm run lalaclaw:start
 
 Notes:
 
+- `npm install -g lalaclaw@latest` updates the globally installed npm package
 - `git pull` updates your local copy to the newest version on GitHub
 - `npm ci` installs the dependencies required by that version
 - `npm run build` refreshes the web app files used by the production server
@@ -65,6 +103,8 @@ Notes:
 - If Git says you have local changes, back them up or commit them before updating
 
 ## Development Mode
+
+Development mode requires a GitHub source checkout with `npm ci` already run.
 
 For development, run both the frontend and backend at the same time, and use the Vite entry page as the browser entrypoint.
 

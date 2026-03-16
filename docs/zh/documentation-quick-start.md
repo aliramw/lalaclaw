@@ -5,10 +5,29 @@
 ## 环境要求
 
 - 使用仓库 [`.nvmrc`](../../.nvmrc) 中定义的 Node.js 版本，当前为 `22`
-- 首次本地运行前，在项目根目录执行 `npm ci`
-- 如需生成本地 `.env.local`，可执行 `npm run lalaclaw:init`
+- 普通本地使用推荐走 npm 安装
+- 只有在需要开发模式或本地修改代码时，才需要 GitHub 源码仓库
 
-## 在新机器上从 GitHub 安装
+## 从 npm 安装
+
+如果你是普通用户，最简单的安装方式是：
+
+```bash
+npm install -g lalaclaw
+lalaclaw init
+lalaclaw doctor
+lalaclaw start
+```
+
+说明：
+
+- `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
+- `lalaclaw doctor` 会检查 Node、OpenClaw、本地配置和端口占用
+- `lalaclaw start` 会占用当前 terminal，关闭 terminal 后服务也会停止
+
+## 从 GitHub 安装
+
+如果你希望拿到源码，用于开发或本地修改：
 
 如果这台机器已经安装好 OpenClaw，并且 `~/.openclaw/openclaw.json` 可用，推荐直接执行：
 
@@ -35,6 +54,24 @@ npm run lalaclaw:start
 
 ## 更新已安装的 LalaClaw
 
+如果你是通过 npm 安装的，想更新到最新版：
+
+```bash
+npm install -g lalaclaw@latest
+lalaclaw doctor
+lalaclaw start
+```
+
+如果你想切换到某个指定发布版本，比如 `2026.3.17.2`：
+
+```bash
+npm install -g lalaclaw@2026.3.17.2
+lalaclaw doctor
+lalaclaw start
+```
+
+如果你是从 GitHub 安装的，请按下面方式更新：
+
 如果你已经从 GitHub 安装过 LalaClaw，想更新到最新版本：
 
 ```bash
@@ -45,12 +82,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17.2`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17
+git checkout 2026.3.17.2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -58,6 +95,7 @@ npm run lalaclaw:start
 
 说明：
 
+- `npm install -g lalaclaw@latest` 会更新全局安装的 npm 包
 - `git pull` 会把你本地的代码更新到 GitHub 上的最新版本
 - `npm ci` 会安装这个版本对应的依赖
 - `npm run build` 会刷新生产模式使用的前端文件
@@ -65,6 +103,8 @@ npm run lalaclaw:start
 - 如果 Git 提示你有本地改动，请先备份或提交这些改动，再执行更新
 
 ## 开发模式
+
+开发模式需要 GitHub 源码仓库，并且已经执行过 `npm ci`。
 
 开发时需要同时启动前端和后端，并且用 Vite 页面作为浏览器入口。
 

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17.2]
+
+### Added
+
+- An npm package release shape for `lalaclaw` with a bundled production `dist/` build so end users can install and start without a source checkout
+- A user-scoped default config path at `~/.config/lalaclaw/.env.local` for npm installs, while keeping compatibility with the legacy project-local `.env.local`
+- npm-first install and upgrade instructions in the root README plus all localized quick-start guides
+- Additional CLI coverage for default config resolution and explicit config overrides in the npm-install path
+
+### Changed
+
+- Switched the package identity from `commandcenter` to `lalaclaw` for npm distribution and added publish-time file filtering with a `prepack` build step
+- Repositioned GitHub installation docs as the source-checkout path for development, while keeping npm installation as the default user-facing setup
+
 ## [2026.3.17]
 
 ### Added

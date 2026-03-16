@@ -5,10 +5,29 @@
 ## Requisitos
 
 - Usa la version de Node.js definida en [`.nvmrc`](../../.nvmrc), actualmente `22`
-- Ejecuta `npm ci` en la raiz del proyecto antes del primer inicio local
-- Ejecuta `npm run lalaclaw:init` si quieres generar un `.env.local` local
+- La instalacion con npm es la opcion recomendada para el uso normal
+- Usa un checkout de GitHub solo si quieres modo desarrollo o cambios locales de codigo
 
-## Instalar desde GitHub en una maquina nueva
+## Instalar desde npm
+
+Para la configuracion mas simple como usuario final:
+
+```bash
+npm install -g lalaclaw
+lalaclaw init
+lalaclaw doctor
+lalaclaw start
+```
+
+Notas:
+
+- `lalaclaw init` guarda tu configuracion local en `~/.config/lalaclaw/.env.local` en macOS y Linux
+- `lalaclaw doctor` verifica Node.js, OpenClaw local, puertos y configuracion
+- `lalaclaw start` se ejecuta en el terminal actual, asi que si cierras ese terminal el servicio se detiene
+
+## Instalar desde GitHub
+
+Usa esta opcion si quieres un checkout del codigo fuente para desarrollo o cambios locales.
 
 Si OpenClaw ya esta instalado en la maquina y `~/.openclaw/openclaw.json` esta disponible:
 
@@ -35,6 +54,24 @@ Notas:
 
 ## Actualizar una instalacion existente
 
+Si instalaste LalaClaw con npm y quieres la version mas reciente:
+
+```bash
+npm install -g lalaclaw@latest
+lalaclaw doctor
+lalaclaw start
+```
+
+Si quieres una version publicada especifica, como `2026.3.17.2`:
+
+```bash
+npm install -g lalaclaw@2026.3.17.2
+lalaclaw doctor
+lalaclaw start
+```
+
+Si instalaste LalaClaw desde GitHub, actualizalo asi:
+
 Si ya instalaste LalaClaw desde GitHub y quieres la version mas reciente:
 
 ```bash
@@ -45,12 +82,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Si prefieres una version publicada especifica, como `2026.3.17`:
+Si prefieres una version publicada especifica, como `2026.3.17.2`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17
+git checkout 2026.3.17.2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -58,6 +95,7 @@ npm run lalaclaw:start
 
 Notas:
 
+- `npm install -g lalaclaw@latest` actualiza el paquete global instalado con npm
 - `git pull` actualiza tu copia local a la version mas reciente en GitHub
 - `npm ci` instala las dependencias requeridas por esa version
 - `npm run build` actualiza los archivos web usados por el servidor de produccion
@@ -65,6 +103,8 @@ Notas:
 - Si Git dice que tienes cambios locales, haz una copia de seguridad o confírmalos antes de actualizar
 
 ## Modo desarrollo
+
+El modo desarrollo requiere un checkout de GitHub con `npm ci` ya ejecutado.
 
 En desarrollo, inicia frontend y backend al mismo tiempo y usa la pagina de Vite como entrada del navegador.
 

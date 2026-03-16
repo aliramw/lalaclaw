@@ -1,11 +1,30 @@
 {
-  "name": "commandcenter",
-  "version": "2026.3.17",
+  "name": "lalaclaw",
+  "version": "2026.3.17.2",
   "description": "Agent command center prototype for an OpenClaw-style operator cockpit.",
   "main": "server.js",
+  "engines": {
+    "node": "22.x"
+  },
   "bin": {
     "lalaclaw": "./bin/lalaclaw.js"
   },
+  "files": [
+    "bin/",
+    "deploy/macos/",
+    "dist/",
+    "docs/",
+    "server/",
+    ".env.local.example",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "README.zh-CN.md",
+    "SECURITY.md",
+    "server.js"
+  ],
   "scripts": {
     "build": "vite build",
     "dev": "vite",
@@ -16,6 +35,7 @@
     "lalaclaw:init": "node ./bin/lalaclaw.js init",
     "lalaclaw:start": "node ./bin/lalaclaw.js start",
     "lint": "eslint .",
+    "prepack": "npm run build",
     "start": "node server.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
