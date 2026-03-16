@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17-4]
+
+### Fixed
+
+- Prevented duplicate chat turns from appearing when the same replayed user/assistant pair was merged from multiple conversation sources in a different timestamp order
+- Reduced duplicate-send and duplicate-reply glitches in the main chat flow by tightening optimistic turn handling and replay collapse across runtime sync
+
+### Changed
+
+- Sorted tool input/output items in the inspector timeline newest-first by timestamp so the latest call appears at the top
+- Kept the `Files` count badge visible even when the inspector tabs collapse down to icon-only mode
+
 ## [2026.3.17-3]
 
 ### Added

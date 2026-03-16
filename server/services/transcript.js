@@ -97,16 +97,42 @@ function createTranscriptProjector({
   }
 
   function cleanUserMessage(text) {
-    let cleaned = String(text || '').trim();
+    let lines = String(text || '').trim().split('\n');
+    const stripLeadingBlankLines = () => {
+      while (lines.length && !String(lines[0] || '').trim()) {
+        lines.shift();
+      }
+    };
 
-    cleaned = cleaned.replace(
-      /^System:\s*\[[^\]]+\]\s*Exec completed\s*\([^)]+\)\s*::\s*[\s\S]*?(?=(?:Sender \(untrusted metadata\):|\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*))/i,
-      '',
-    );
-    cleaned = cleaned.replace(
-      /^Sender \(untrusted metadata\):\s*(?:```json\s*[\s\S]*?```\s*)?/i,
-      '',
-    );
+    stripLeadingBlankLines();
+
+    while (
+      lines.length &&
+      /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::/i.test(String(lines[0] || '').trim())
+    ) {
+      lines.shift();
+      stripLeadingBlankLines();
+    }
+
+    if (/^Sender \(untrusted metadata\):/i.test(String(lines[0] || '').trim())) {
+      lines.shift();
+      stripLeadingBlankLines();
+
+      if (/^```(?:json)?\s*$/i.test(String(lines[0] || '').trim())) {
+        lines.shift();
+        while (lines.length && !/^```\s*$/.test(String(lines[0] || '').trim())) {
+          lines.shift();
+        }
+        if (lines.length && /^```\s*$/.test(String(lines[0] || '').trim())) {
+          lines.shift();
+        }
+      }
+
+      stripLeadingBlankLines();
+    }
+
+    let cleaned = lines.join('\n').trim();
+
     cleaned = cleaned.replace(
       /^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*/i,
       '',

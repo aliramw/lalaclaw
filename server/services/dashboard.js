@@ -14,6 +14,7 @@ function collapseDuplicateConversationTurns(entries = []) {
   let lastUserTimestamp = 0;
   let lastAssistantTimestamp = 0;
   let assistantSeenForCurrentTurn = false;
+  let pendingReplayBeforeAssistant = false;
   let suppressAssistantReplay = false;
 
   for (const entry of entries) {
@@ -37,10 +38,17 @@ function collapseDuplicateConversationTurns(entries = []) {
       const isReplay =
         Boolean(fingerprint)
         && fingerprint === lastUserFingerprint
-        && assistantSeenForCurrentTurn
-        && (withinShortReplayWindow || immediateAssistantReplay);
+        && (
+          (assistantSeenForCurrentTurn && (withinShortReplayWindow || immediateAssistantReplay))
+          || (!assistantSeenForCurrentTurn && withinShortReplayWindow)
+        );
 
       if (isReplay) {
+        if (!assistantSeenForCurrentTurn && withinShortReplayWindow) {
+          pendingReplayBeforeAssistant = true;
+          suppressAssistantReplay = false;
+          continue;
+        }
         suppressAssistantReplay = true;
         continue;
       }
@@ -49,12 +57,25 @@ function collapseDuplicateConversationTurns(entries = []) {
       lastUserFingerprint = fingerprint;
       lastUserTimestamp = timestamp;
       assistantSeenForCurrentTurn = false;
+      pendingReplayBeforeAssistant = false;
       suppressAssistantReplay = false;
       continue;
     }
 
     if (entry.role === 'assistant') {
+      if (pendingReplayBeforeAssistant) {
+        collapsed.push(entry);
+        assistantSeenForCurrentTurn = true;
+        lastAssistantTimestamp = Number(entry.timestamp || 0);
+        pendingReplayBeforeAssistant = false;
+        suppressAssistantReplay = true;
+        continue;
+      }
+
       if (suppressAssistantReplay) {
+        suppressAssistantReplay = false;
+        assistantSeenForCurrentTurn = true;
+        lastAssistantTimestamp = Number(entry.timestamp || 0);
         continue;
       }
 

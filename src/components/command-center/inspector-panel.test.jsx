@@ -62,7 +62,10 @@ function TestHarness() {
           prompt: "修复错误",
           status: "已完成",
           toolsSummary: "edit_file(完成)",
-          tools: [{ id: "tool-1", name: "edit_file", status: "完成", input: "{}", output: "ok" }],
+          tools: [
+            { id: "tool-1", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1000 },
+            { id: "tool-2", name: "gateway", status: "完成", input: '{"action":"latest"}', output: "newest", timestamp: 2000 },
+          ],
           relationships: [{ id: "rel-1", type: "child_agent", sourceAgentId: "main", targetAgentId: "writer", detail: "draft-worker", status: "running" }],
           files: [{ path: "src/App.jsx", kind: "文件", updatedLabel: "刚刚" }],
           outcome: "处理完成",
@@ -70,6 +73,13 @@ function TestHarness() {
       ]}
     />
   );
+}
+
+function getToolCard(name, toggleLabel = "收起详情") {
+  const toggle = screen.getByRole("button", { name: `${name} ${toggleLabel}` });
+  const card = toggle.closest(".space-y-3");
+  expect(card).not.toBeNull();
+  return card;
 }
 
 describe("InspectorPanel", () => {
@@ -84,15 +94,30 @@ describe("InspectorPanel", () => {
     expect(screen.getAllByRole("tab").slice(0, 3).map((tab) => tab.textContent)).toEqual(["文件1", "回复摘要", "运行记录"]);
     expect(screen.getByText("查看 Agent 执行记录的明细")).toBeInTheDocument();
     expect(screen.getByText("修复错误")).toBeInTheDocument();
-    expect(screen.getByText("输入")).toBeInTheDocument();
-    expect(screen.getByText("输出")).toBeInTheDocument();
     expect(screen.getByText("协同任务")).toBeInTheDocument();
     expect(screen.getByText("writer")).toBeInTheDocument();
     expect(screen.getByText("draft-worker")).toBeInTheDocument();
-    expect(screen.getAllByText((_, element) => element?.textContent === "{}").length).toBeGreaterThan(0);
-    expect(screen.getAllByText((_, element) => element?.textContent === "ok").length).toBeGreaterThan(0);
     expect(screen.getAllByTitle("src/App.jsx").length).toBeGreaterThan(0);
     expect(within(screen.getByRole("tab", { name: "文件" })).getByText("1")).toBeInTheDocument();
+
+    expect(
+      screen
+        .getAllByRole("button", { name: /收起详情/ })
+        .map((button) => button.getAttribute("aria-label"))
+        .filter(Boolean),
+    ).toEqual(["gateway 收起详情", "edit_file 收起详情"]);
+
+    const gatewayCard = getToolCard("gateway");
+    expect(within(gatewayCard).getByText("输入")).toBeInTheDocument();
+    expect(within(gatewayCard).getByText("输出")).toBeInTheDocument();
+    expect(within(gatewayCard).getAllByText((_, element) => element?.textContent === '{"action":"latest"}').length).toBeGreaterThan(0);
+    expect(within(gatewayCard).getAllByText((_, element) => element?.textContent === "newest").length).toBeGreaterThan(0);
+
+    const editFileCard = getToolCard("edit_file");
+    expect(within(editFileCard).getByText("输入")).toBeInTheDocument();
+    expect(within(editFileCard).getByText("输出")).toBeInTheDocument();
+    expect(within(editFileCard).getAllByText((_, element) => element?.textContent === "{}").length).toBeGreaterThan(0);
+    expect(within(editFileCard).getAllByText((_, element) => element?.textContent === "ok").length).toBeGreaterThan(0);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: "回复摘要" }));
@@ -239,6 +264,7 @@ describe("InspectorPanel", () => {
     );
 
     expect(screen.getByRole("tab", { name: "文件" })).not.toHaveTextContent("文件");
+    expect(screen.getByRole("tab", { name: "文件" })).toHaveTextContent("1");
     expect(screen.getByRole("tab", { name: "回复摘要" })).not.toHaveTextContent("回复摘要");
   });
 
@@ -300,9 +326,13 @@ describe("InspectorPanel", () => {
     renderWithTooltip(<TestHarness />);
 
     const user = userEvent.setup();
-    const copyButtons = screen.getAllByRole("button", { name: "复制代码" });
-    expect(copyButtons).toHaveLength(2);
-    await user.click(copyButtons[0]);
+    const gatewayCard = getToolCard("gateway");
+    const editFileCard = getToolCard("edit_file");
+
+    expect(within(gatewayCard).getAllByRole("button", { name: "复制代码" })).toHaveLength(2);
+    expect(within(editFileCard).getAllByRole("button", { name: "复制代码" })).toHaveLength(2);
+
+    await user.click(within(gatewayCard).getAllByRole("button", { name: "复制代码" })[0]);
   });
 
   it("collapses individual tool cards inside the detail section", async () => {
@@ -311,8 +341,9 @@ describe("InspectorPanel", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "edit_file 收起详情" }));
 
-    expect(screen.queryByText("输入")).not.toBeInTheDocument();
+    expect(within(getToolCard("gateway")).getByText("输入")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "edit_file 查看详情" })).toBeInTheDocument();
+    expect(within(getToolCard("edit_file", "查看详情")).queryByText("输入")).not.toBeInTheDocument();
   });
 
   it("clips workspace-root paths in file displays while keeping external paths full", async () => {

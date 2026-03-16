@@ -30,6 +30,24 @@ describe("MarkdownContent", () => {
     });
   });
 
+  it("repairs code fences that are accidentally closed with two backticks", async () => {
+    const { container } = render(<MarkdownContent content={"```js\nconst answer = 42;\n``\n后面的说明"} />);
+
+    await waitFor(() => {
+      expect(container.querySelector("pre pre")?.textContent).toBe("const answer = 42;");
+    });
+    expect(screen.getByText("后面的说明")).toBeInTheDocument();
+    expect(container.querySelector("pre pre")?.textContent).not.toContain("后面的说明");
+  });
+
+  it("auto-closes a trailing fenced block while the closing marker is still missing", async () => {
+    const { container } = render(<MarkdownContent content={"```js\nconst answer = 42;"} />);
+
+    await waitFor(() => {
+      expect(container.querySelector("pre pre")?.textContent).toBe("const answer = 42;");
+    });
+  });
+
   it("renders assistant images in large format and supports previewing", async () => {
     const user = userEvent.setup();
     const { container } = render(<MarkdownContent content={"![示例图](https://example.com/demo.png)"} />);

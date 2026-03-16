@@ -353,6 +353,48 @@ describe("server helpers", () => {
       },
     ]);
   });
+
+  it("collapses a replayed turn even when both duplicate user entries sort before the assistant replies", () => {
+    const merged = __test.mergeConversationMessages(
+      [
+        {
+          role: "user",
+          content: "好了吗",
+          timestamp: 1_000,
+        },
+        {
+          role: "assistant",
+          content: "已经好了，下面是完整结果。",
+          timestamp: 2_000,
+        },
+      ],
+      [
+        {
+          role: "user",
+          content: "好了吗",
+          timestamp: 1_001,
+        },
+        {
+          role: "assistant",
+          content: "已经好了，下面是完整结果。",
+          timestamp: 2_001,
+        },
+      ],
+    );
+
+    expect(merged).toEqual([
+      {
+        role: "user",
+        content: "好了吗",
+        timestamp: 1_000,
+      },
+      {
+        role: "assistant",
+        content: "已经好了，下面是完整结果。",
+        timestamp: 2_000,
+      },
+    ]);
+  });
 });
 
 describe("server routes", () => {

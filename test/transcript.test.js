@@ -103,6 +103,41 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("strips repeated system exec wrappers and sender metadata before the visible user text", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [
+            {
+              type: "text",
+              text: [
+                "System: [2026-03-17 02:30:24 GMT+8] Exec failed (faint-cr, signal SIGTERM) :: 1.94.2 tailscale",
+                "System: [2026-03-17 02:30:24 GMT+8] Exec completed (warm-dai, code 0) :: 1.94.2 tailscale",
+                "System: [2026-03-17 02:30:24 GMT+8] Exec completed (tidy-emb, code 1) :: Logged out.",
+                "",
+                "Sender (untrusted metadata):",
+                "```json",
+                '{"label":"LalaClaw (gateway-client)","id":"gateway-client","name":"LalaClaw","username":"LalaClaw"}',
+                "```",
+                "",
+                '[Tue 2026-03-17 02:31 GMT+8] “Tailscale 已登录并显示 Connected”',
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "user", content: "“Tailscale 已登录并显示 Connected”", timestamp: 1 },
+    ]);
+  });
+
   it("collapses fallback-replayed user messages after a transient assistant failure", () => {
     const projector = createProjector();
     const wrappedPrompt = [

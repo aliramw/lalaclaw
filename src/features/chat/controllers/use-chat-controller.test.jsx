@@ -493,6 +493,96 @@ describe("useChatController", () => {
     });
   });
 
+  it("ignores a same-tab duplicate submit even before busy state rerenders", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = { current: [] };
+    let resolveFetch;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = () =>
+            resolve(
+              {
+                ok: true,
+                status: 200,
+                headers: {
+                  get: () => "application/json; charset=utf-8",
+                },
+                json: async () => ({
+                  ok: true,
+                  assistantMessageId: "msg-assistant-race-1",
+                  outputText: "任务完成",
+                  metadata: { status: "已完成 / 标准" },
+                  sessionPatch: {
+                    agentId: "main",
+                    sessionUser: "command-center",
+                    selectedModel: "gpt-5",
+                    thinkMode: "off",
+                  },
+                }),
+              },
+            );
+        }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        messagesRef,
+        setBusy,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    const entry = {
+      id: "entry-race-1",
+      key: "command-center:main",
+      content: "帮我看一下这段配置",
+      attachments: [],
+      timestamp: 1000,
+      userMessageId: "msg-user-race-1",
+      agentId: "main",
+      sessionUser: "command-center",
+      model: "gpt-5",
+      fastMode: false,
+    };
+
+    const duplicateEntry = {
+      ...entry,
+      id: "entry-race-2",
+      timestamp: 1050,
+      userMessageId: "msg-user-race-2",
+    };
+
+    let firstPromise;
+    let secondPromise;
+    await act(async () => {
+      firstPromise = result.current.enqueueOrRunEntry(entry);
+      secondPromise = result.current.enqueueOrRunEntry(duplicateEntry);
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveFetch();
+      await firstPromise;
+      await secondPromise;
+    });
+  });
+
   it("does not queue a duplicate prompt again while the tab is already busy", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();

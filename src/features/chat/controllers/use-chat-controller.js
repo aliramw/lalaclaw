@@ -802,7 +802,8 @@ export function useChatController({
     const entryTimestamp = Number(resolvedEntry.timestamp || Date.now());
     const hasQueuedForTab = queuedMessages.some((item) => (item.tabId || targetTabId) === targetTabId);
     const isBusyForTarget = Object.prototype.hasOwnProperty.call(busyByTabId, targetTabId) ? busyByTabId[targetTabId] : busy;
-    const shouldGuardRapidDuplicate = isBusyForTarget || hasQueuedForTab;
+    const hasInFlightTurnForTarget = Boolean(inFlightTurnsRef.current[targetTabId]);
+    const shouldGuardRapidDuplicate = isBusyForTarget || hasQueuedForTab || hasInFlightTurnForTarget;
     const isRapidDuplicate =
       lastAcceptedEntry
       && lastAcceptedEntry.fingerprint === fingerprint

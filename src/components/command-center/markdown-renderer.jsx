@@ -135,6 +135,57 @@ function normalizeMathDelimiters(content = "") {
     .replace(/\\\((.+?)\\\)/g, (_, expression) => `$${String(expression || "").trim()}$`);
 }
 
+function repairFencedCodeBlocks(content = "") {
+  const lines = String(content || "").split("\n");
+  const repaired = [];
+  let openFence = null;
+
+  for (const line of lines) {
+    if (!openFence) {
+      const match = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
+      if (match) {
+        const [, indent, marker, rest] = match;
+        const markerChar = marker[0];
+        if (markerChar !== "`" || !String(rest || "").includes("`")) {
+          openFence = {
+            indent,
+            markerChar,
+            markerLength: marker.length,
+          };
+        }
+      }
+
+      repaired.push(line);
+      continue;
+    }
+
+    const closingPattern = new RegExp(`^ {0,3}${openFence.markerChar}{${openFence.markerLength},}\\s*$`);
+    if (closingPattern.test(line)) {
+      openFence = null;
+      repaired.push(line);
+      continue;
+    }
+
+    // Some model outputs accidentally end fenced blocks with two backticks.
+    if (openFence.markerChar === "`") {
+      const malformedCloseMatch = /^( {0,3})``\s*$/.exec(line);
+      if (malformedCloseMatch) {
+        repaired.push(`${malformedCloseMatch[1]}${"`".repeat(openFence.markerLength)}`);
+        openFence = null;
+        continue;
+      }
+    }
+
+    repaired.push(line);
+  }
+
+  if (openFence) {
+    repaired.push(`${openFence.indent}${openFence.markerChar.repeat(openFence.markerLength)}`);
+  }
+
+  return repaired.join("\n");
+}
+
 function resolveMarkdownImageSource(src = "") {
   const normalizedSrc = String(src || "").trim();
   if (!normalizedSrc) {
@@ -400,7 +451,7 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
   const { messages } = useI18n();
   const [previewImage, setPreviewImage] = useState(null);
   const normalizedContent = useMemo(
-    () => normalizeMathDelimiters(promoteStandaloneImageLinks(content)),
+    () => repairFencedCodeBlocks(normalizeMathDelimiters(promoteStandaloneImageLinks(content))),
     [content],
   );
   const outlineItems = useMemo(

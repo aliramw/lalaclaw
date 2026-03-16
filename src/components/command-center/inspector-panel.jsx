@@ -484,13 +484,33 @@ function ToolCallTimeline({ messages, resolvedTheme = "light", tools }) {
     return null;
   }
 
+  const orderedTools = tools
+    .map((tool, index) => ({ tool, index }))
+    .sort((left, right) => {
+      const leftTimestamp = Number(left.tool?.timestamp || 0);
+      const rightTimestamp = Number(right.tool?.timestamp || 0);
+      const leftHasTimestamp = Number.isFinite(leftTimestamp) && leftTimestamp > 0;
+      const rightHasTimestamp = Number.isFinite(rightTimestamp) && rightTimestamp > 0;
+
+      if (leftHasTimestamp && rightHasTimestamp && leftTimestamp !== rightTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      if (leftHasTimestamp !== rightHasTimestamp) {
+        return rightHasTimestamp ? 1 : -1;
+      }
+
+      return left.index - right.index;
+    })
+    .map(({ tool }) => tool);
+
   return (
     <div className="space-y-0">
-      {tools.map((tool, toolIndex) => (
+      {orderedTools.map((tool, toolIndex) => (
         <ToolCallCard
           key={tool.id || `${tool.name}-${tool.timestamp}`}
           isFirst={toolIndex === 0}
-          isLast={toolIndex === tools.length - 1}
+          isLast={toolIndex === orderedTools.length - 1}
           tool={tool}
           messages={messages}
           resolvedTheme={resolvedTheme}
@@ -781,6 +801,7 @@ export function InspectorPanel({ activeTab, artifacts, currentWorkspaceRoot = ""
               {tabDefinitions.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = resolvedActiveTab === tab.key;
+                const showCountBadge = Boolean(tab.count) && (showTabLabels || tab.key === "files");
                 return (
                   <TabsTrigger
                     key={tab.key}
@@ -825,7 +846,7 @@ export function InspectorPanel({ activeTab, artifacts, currentWorkspaceRoot = ""
                       <Icon className="h-3.5 w-3.5 shrink-0 stroke-[1.9]" />
                     </span>
                     {showTabLabels ? <span className="truncate">{tab.label}</span> : null}
-                    {showTabLabels ? <TabCountBadge count={tab.count} active={resolvedActiveTab === tab.key} /> : null}
+                    {showCountBadge ? <TabCountBadge count={tab.count} active={resolvedActiveTab === tab.key} /> : null}
                     {!showTabLabels && tooltipTabKey === tab.key ? (
                       <span
                         aria-hidden="true"
