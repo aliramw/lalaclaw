@@ -1,4 +1,4 @@
-[Read this README in: English](./README.md) | [中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
+[Read this README in: English](./README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
 
 # LalaClaw
 

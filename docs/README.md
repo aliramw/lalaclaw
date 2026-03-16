@@ -7,7 +7,7 @@ This directory is organized by locale.
 Use the root-level guides for repository workflow and project policy:
 
 - [README.md](../README.md) for product overview, quick start, development notes, and versioning
-- [README.zh-CN.md](../README.zh-CN.md) for the Chinese root overview and quick start
+- [README.zh.md](../README.zh.md) for the Chinese root overview and quick start
 - [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution workflow and PR expectations
 - [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) for community behavior expectations
 - [CHANGELOG.md](../CHANGELOG.md) for release notes and version history

@@ -1,4 +1,4 @@
-[別の言語の README: English](./README.md) | [中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
+[別の言語の README: English](./README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
 
 # LalaClaw
 
@@ -73,4 +73,3 @@ LalaClaw は npm 互換のカレンダーバージョニングを使います。
 
 - バージョン変更時は [CHANGELOG.md](./CHANGELOG.md) を更新します
 - 同日の複数リリースは `YYYY.M.D-N` 形式を使います。例: `2026.3.17-4`
-

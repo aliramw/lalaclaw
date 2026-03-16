@@ -1,4 +1,4 @@
-[Leia este README em outro idioma: English](./README.md) | [中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
+[Leia este README em outro idioma: English](./README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
 
 # LalaClaw
 
@@ -73,4 +73,3 @@ O LalaClaw usa versionamento de calendario compativel com npm.
 
 - Atualize [CHANGELOG.md](./CHANGELOG.md) sempre que a versao mudar
 - Para varias releases no mesmo dia, use `YYYY.M.D-N`, por exemplo `2026.3.17-4`
-
