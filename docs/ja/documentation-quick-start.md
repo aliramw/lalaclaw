@@ -33,6 +33,37 @@ npm run lalaclaw:start
 - すでに設定が揃っている場合は `npm run lalaclaw:init` を省略できます
 - 手動で設定したい場合は [`.env.local.example`](../../.env.local.example) を出発点にできます
 
+## 既存インストールを更新
+
+すでに GitHub から LalaClaw をインストールしていて、最新版に更新したい場合:
+
+```bash
+cd /path/to/lalaclaw
+git pull
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+`2026.3.17` のような特定のリリース版を使いたい場合:
+
+```bash
+cd /path/to/lalaclaw
+git fetch --tags
+git checkout 2026.3.17
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+補足:
+
+- `git pull` は GitHub 上の最新バージョンへローカルコピーを更新します
+- `npm ci` はそのバージョンに必要な依存関係をインストールします
+- `npm run build` は本番サーバーが使う Web アプリのファイルを更新します
+- macOS の `launchd` 構成を使っている場合は、更新後に `launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app` でサービスを再起動してください
+- Git がローカル変更を報告した場合は、更新前にバックアップするかコミットしてください
+
 ## 開発モード
 
 開発時はフロントエンドとバックエンドを同時に起動し、ブラウザの入口には Vite ページを使います。

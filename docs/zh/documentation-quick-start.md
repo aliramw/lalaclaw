@@ -33,6 +33,37 @@ npm run lalaclaw:start
 - 如果你的本地配置已经准备好，可以跳过 `npm run lalaclaw:init`
 - 如果你更想手动编辑配置，可以从 [`.env.local.example`](../../.env.local.example) 开始
 
+## 更新已安装的 LalaClaw
+
+如果你已经从 GitHub 安装过 LalaClaw，想更新到最新版本：
+
+```bash
+cd /path/to/lalaclaw
+git pull
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+如果你想切换到某个指定发布版本，比如 `2026.3.17`：
+
+```bash
+cd /path/to/lalaclaw
+git fetch --tags
+git checkout 2026.3.17
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+说明：
+
+- `git pull` 会把你本地的代码更新到 GitHub 上的最新版本
+- `npm ci` 会安装这个版本对应的依赖
+- `npm run build` 会刷新生产模式使用的前端文件
+- 如果你使用 macOS 的 `launchd` 常驻运行，更新后请执行 `launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app` 重启服务
+- 如果 Git 提示你有本地改动，请先备份或提交这些改动，再执行更新
+
 ## 开发模式
 
 开发时需要同时启动前端和后端，并且用 Vite 页面作为浏览器入口。

@@ -33,6 +33,37 @@ Notas:
 - Se a configuracao local ja estiver pronta, voce pode pular `npm run lalaclaw:init`
 - Se preferir configurar manualmente, use [`.env.local.example`](../../.env.local.example) como ponto de partida
 
+## Atualizar uma instalacao existente
+
+Se voce ja instalou o LalaClaw a partir do GitHub e quer a versao mais recente:
+
+```bash
+cd /path/to/lalaclaw
+git pull
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+Se preferir uma versao publicada especifica, como `2026.3.17`:
+
+```bash
+cd /path/to/lalaclaw
+git fetch --tags
+git checkout 2026.3.17
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+Notas:
+
+- `git pull` atualiza sua copia local para a versao mais recente no GitHub
+- `npm ci` instala as dependencias exigidas por essa versao
+- `npm run build` atualiza os arquivos web usados pelo servidor de producao
+- Se voce usa a configuracao de `launchd` no macOS, reinicie o servico apos a atualizacao com `launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app`
+- Se o Git disser que voce tem alteracoes locais, faca backup delas ou confirme-as antes de atualizar
+
 ## Modo de desenvolvimento
 
 Inicie frontend e backend ao mesmo tempo e use a pagina do Vite como entrada do navegador.

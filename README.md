@@ -1,5 +1,7 @@
 # LalaClaw
 
+[中文 README](./README.zh-CN.md)
+
 [![CI](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
@@ -9,7 +11,7 @@ A better way to co-create with agents.
 
 - React + Vite command center UI with chat, timeline, inspector, theme, locale, and attachment flows
 - Built-in locale support for 中文, English, 日本語, Français, Español, and Português
-- Node.js backend that can run in `mock` mode or connect to a local OpenClaw gateway
+- Node.js backend that can connect to local or remote OpenClaw gateways
 - Modular frontend and backend boundaries with focused hook- and module-level tests
 - CI, linting, coverage thresholds, contribution docs, security policy, and issue templates
 
@@ -86,6 +88,37 @@ npm run dev:all
 ```
 
 Then open [http://127.0.0.1:5173](http://127.0.0.1:5173).
+
+### Update LalaClaw
+
+If you already installed LalaClaw from GitHub and want the latest version:
+
+```bash
+cd /path/to/lalaclaw
+git pull
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+If you want a specific released version instead, such as `2026.3.17`:
+
+```bash
+cd /path/to/lalaclaw
+git fetch --tags
+git checkout 2026.3.17
+npm ci
+npm run build
+npm run lalaclaw:start
+```
+
+Notes:
+
+- `git pull` updates your local copy to the newest version on GitHub.
+- `npm ci` installs the dependencies required by that version.
+- `npm run build` refreshes the web app files used by the production server.
+- If you use the macOS `launchd` setup, restart the service after updating with `launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app`.
+- If Git says you have local changes, back them up or commit them before updating.
 
 ### Persistent Production Deploy On macOS
 
