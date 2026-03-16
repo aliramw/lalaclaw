@@ -1,11 +1,20 @@
 {
   "name": "commandcenter",
-  "version": "1.0.0",
+  "version": "2026.3.16",
   "description": "Agent command center prototype for an OpenClaw-style operator cockpit.",
   "main": "server.js",
+  "bin": {
+    "lalaclaw": "./bin/lalaclaw.js"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "dev:all": "node ./bin/lalaclaw.js dev",
+    "dev:backend": "node ./bin/lalaclaw.js backend",
+    "dev:frontend": "node ./bin/lalaclaw.js frontend",
+    "doctor": "node ./bin/lalaclaw.js doctor",
+    "lalaclaw:init": "node ./bin/lalaclaw.js init",
+    "lalaclaw:start": "node ./bin/lalaclaw.js start",
     "lint": "eslint .",
     "start": "node server.js",
     "test": "vitest run",

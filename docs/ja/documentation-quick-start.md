@@ -6,10 +6,41 @@
 
 - リポジトリの [`.nvmrc`](../../.nvmrc) に定義されている Node.js を使用します。現在は `22` です。
 - 初回実行前にプロジェクトルートで `npm ci` を実行します。
+- ローカルの `.env.local` を作る場合は `npm run lalaclaw:init` を実行します。
+
+## 新しいマシンで GitHub からインストール
+
+OpenClaw がすでにインストールされていて、`~/.openclaw/openclaw.json` が使える場合は、まず次を実行します。
+
+```bash
+git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+cd lalaclaw
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run dev:all
+```
+
+補足:
+
+- `npm run doctor` は Node.js、OpenClaw、ローカル設定、ポート使用状況を確認します
+- `npm run doctor -- --json` は同じ診断結果を `summary.status` と `summary.exitCode` 付きの JSON で返します
+- `npm run lalaclaw:init` は `.env.local` の作成や更新を補助します
+- `npm run lalaclaw:init -- --write-example` は `.env.local.example` を対話なしで対象の設定ファイルへコピーします
+- すでに設定が揃っている場合は `npm run lalaclaw:init` を省略できます
+- 手動で設定したい場合は [`.env.local.example`](../../.env.local.example) を出発点にできます
 
 ## 開発モード
 
 開発時はフロントエンドとバックエンドを同時に起動し、ブラウザの入口には Vite ページを使います。
+
+1コマンドで起動することもできます。
+
+```bash
+npm run dev:all
+```
+
+個別に起動する場合は次の手順です。
 
 ### 1. フロントエンドを起動
 
@@ -46,14 +77,14 @@ http://127.0.0.1:3000
 
 ```bash
 npm run build
-npm start
+npm run lalaclaw:start
 ```
 
 注意:
 
-- `npm start` は既存の `dist/` を前提とします
+- `npm run lalaclaw:start` は既存の `dist/` を前提とします
 - `npm run build` を省くと、バックエンドは `503 Web app build is missing` を返します
-- そのため通常のフロントエンド開発には `npm start` は向きません
+- そのため通常のフロントエンド開発にはビルドモードは向きません
 
 ## `mock` と OpenClaw
 
@@ -67,6 +98,15 @@ npm start
 ```bash
 COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
 ```
+
+CLI で設定を作る場合:
+
+```bash
+npm run lalaclaw:init
+npm run doctor
+```
+
+`remote-gateway` モードでは、`doctor` が実際にリモート gateway にアクセスし、設定した model と agent が使えるか最小リクエストで確認します。
 
 gateway を明示的に設定:
 

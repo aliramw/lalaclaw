@@ -74,6 +74,19 @@ export default [
     },
   },
   {
+    files: ["bin/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "commonjs",
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
+    },
+  },
+  {
     files: ["*.mjs"],
     languageOptions: {
       ecmaVersion: "latest",

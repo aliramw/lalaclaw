@@ -6,10 +6,41 @@
 
 - Use the Node.js version defined in [`.nvmrc`](../../.nvmrc), currently `22`
 - Run `npm ci` in the project root before your first local run
+- Optionally run `npm run lalaclaw:init` to generate a local `.env.local`
+
+## Fastest Setup On A New Machine
+
+If OpenClaw is already installed on the machine and `~/.openclaw/openclaw.json` is available:
+
+```bash
+git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+cd lalaclaw
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run dev:all
+```
+
+Notes:
+
+- `npm run doctor` checks Node.js, local OpenClaw discovery, ports, and config
+- `npm run doctor -- --json` returns the same diagnosis as JSON with `summary.status` and `summary.exitCode`
+- `npm run lalaclaw:init` helps you create or refresh `.env.local`
+- `npm run lalaclaw:init -- --write-example` copies `.env.local.example` to the target config file without prompts
+- If your setup is already ready, you can skip `npm run lalaclaw:init`
+- If you prefer manual setup, use [`.env.local.example`](../../.env.local.example) as a starting point
 
 ## Development Mode
 
 For development, run both the frontend and backend at the same time, and use the Vite entry page as the browser entrypoint.
+
+You can do that with one command:
+
+```bash
+npm run dev:all
+```
+
+Or run the two servers separately:
 
 ### 1. Start the Frontend
 
@@ -50,12 +81,12 @@ If you want to verify the built app instead of the live development setup:
 
 ```bash
 npm run build
-npm start
+npm run lalaclaw:start
 ```
 
 Notes:
 
-- `npm start` depends on an existing `dist/`
+- `npm run lalaclaw:start` depends on an existing `dist/`
 - If you skip `npm run build`, the backend returns `503 Web app build is missing`
 - Because of that, `npm start` is not the right choice for normal frontend development
 
@@ -71,6 +102,20 @@ Force `mock` mode:
 ```bash
 COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
 ```
+
+The CLI writes the same values into `.env.local` when you run:
+
+```bash
+npm run lalaclaw:init
+```
+
+Then run:
+
+```bash
+npm run doctor
+```
+
+In `remote-gateway` mode, `doctor` also performs a live probe against the configured gateway URL and sends a minimal API request to validate the configured model and agent.
 
 Explicitly configure a gateway:
 

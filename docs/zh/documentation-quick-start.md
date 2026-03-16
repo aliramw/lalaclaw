@@ -6,10 +6,41 @@
 
 - 使用仓库 [`.nvmrc`](../../.nvmrc) 中定义的 Node.js 版本，当前为 `22`
 - 首次本地运行前，在项目根目录执行 `npm ci`
+- 如需生成本地 `.env.local`，可执行 `npm run lalaclaw:init`
+
+## 在新机器上从 GitHub 安装
+
+如果这台机器已经安装好 OpenClaw，并且 `~/.openclaw/openclaw.json` 可用，推荐直接执行：
+
+```bash
+git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+cd lalaclaw
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run dev:all
+```
+
+说明：
+
+- `npm run doctor` 会检查 Node、OpenClaw、本地配置和端口占用
+- `npm run doctor -- --json` 会输出相同诊断结果的 JSON，并带有 `summary.status` 和 `summary.exitCode`
+- `npm run lalaclaw:init` 会帮助你生成或刷新 `.env.local`
+- `npm run lalaclaw:init -- --write-example` 会直接把 `.env.local.example` 复制到目标配置文件，不进入交互
+- 如果你的本地配置已经准备好，可以跳过 `npm run lalaclaw:init`
+- 如果你更想手动编辑配置，可以从 [`.env.local.example`](../../.env.local.example) 开始
 
 ## 开发模式
 
 开发时需要同时启动前端和后端，并且用 Vite 页面作为浏览器入口。
+
+也可以直接用一条命令启动前后端：
+
+```bash
+npm run dev:all
+```
+
+如果你想分别启动，再按下面步骤执行：
 
 ### 1. 启动前端
 
@@ -46,14 +77,14 @@ http://127.0.0.1:3000
 
 ```bash
 npm run build
-npm start
+npm run lalaclaw:start
 ```
 
 说明：
 
-- `npm start` 依赖现有的 `dist/`
+- `npm run lalaclaw:start` 依赖现有的 `dist/`
 - 如果跳过 `npm run build`，后端会返回 `503 Web app build is missing`
-- 因此日常前端开发不应使用 `npm start`
+- 因此日常前端开发不应使用构建模式
 
 ## `mock` 与 OpenClaw
 
@@ -67,6 +98,15 @@ npm start
 ```bash
 COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
 ```
+
+如果你使用 CLI 初始化配置：
+
+```bash
+npm run lalaclaw:init
+npm run doctor
+```
+
+在 `remote-gateway` 模式下，`doctor` 还会实际探测远端网关，并用最小请求校验配置的 model 和 agent 是否可用。
 
 显式配置网关：
 

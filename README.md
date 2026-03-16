@@ -22,6 +22,16 @@ A better way to co-create with agents.
 
 - A longer walkthrough lives in [docs/en/showcase.md](./docs/en/showcase.md)
 
+## Documentation
+
+- Language index: [docs/README.md](./docs/README.md)
+- English: [docs/en/documentation.md](./docs/en/documentation.md)
+- 中文: [docs/zh/documentation.md](./docs/zh/documentation.md)
+- 日本語: [docs/ja/documentation.md](./docs/ja/documentation.md)
+- Français: [docs/fr/documentation.md](./docs/fr/documentation.md)
+- Español: [docs/es/documentation.md](./docs/es/documentation.md)
+- Português: [docs/pt/documentation.md](./docs/pt/documentation.md)
+
 ## Architecture
 
 ```mermaid
@@ -38,20 +48,43 @@ flowchart LR
 
 ## Quick Start
 
+### Install From GitHub
+
+On a fresh machine with OpenClaw already installed:
+
 ```bash
+git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+cd lalaclaw
 npm ci
-npm run lint
-npm test
-npm run test:coverage
-npm run build
-node server.js
+npm run doctor
+npm run lalaclaw:init
+npm run dev:all
 ```
 
-Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+Then open [http://127.0.0.1:5173](http://127.0.0.1:5173).
+
+If you already know your local setup is ready, you can skip `npm run lalaclaw:init`.
+
+If you want to review or regenerate the local config later:
+
+```bash
+npm run lalaclaw:init
+```
+
+If you prefer to edit configuration manually, start from [.env.local.example](./.env.local.example).
 
 ## Scripts
 
 - `npm run dev` starts the Vite development server
+- `npm run dev:all` starts both the frontend and backend in development mode
+- `npm run dev:frontend` starts only the Vite development server
+- `npm run dev:backend` starts only the backend server
+- `npm run doctor` checks Node.js, OpenClaw discovery, ports, and local config
+  For `remote-gateway`, it also probes the configured gateway URL and sends a minimal API request to validate the configured model and agent.
+- `npm run doctor -- --json` prints the same diagnosis as machine-readable JSON with `summary.status` and `summary.exitCode`
+- `npm run lalaclaw:init` writes a local `.env.local` bootstrap file
+- `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
+- `npm run lalaclaw:start` starts the built app after checking `dist/`
 - `npm run lint` runs ESLint across the workspace
 - `npm test` runs the Vitest suite once
 - `npm run test:coverage` runs Vitest with coverage thresholds and HTML output in `coverage/`
@@ -77,6 +110,17 @@ Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 ## OpenClaw wiring
 
 If `~/.openclaw/openclaw.json` exists, CommandCenter will automatically detect your local OpenClaw gateway and reuse its loopback endpoint plus gateway token.
+
+For a fresh machine, the shortest setup is usually:
+
+```bash
+git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+cd lalaclaw
+npm ci
+npm run doctor
+npm run lalaclaw:init
+npm run dev:all
+```
 
 If you want to override that and point to another OpenClaw-compatible gateway, set:
 
