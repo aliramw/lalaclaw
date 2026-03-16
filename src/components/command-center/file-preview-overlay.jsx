@@ -320,7 +320,6 @@ export function ImagePreviewOverlay({ image, onClose }) {
         type="button"
         className="absolute right-5 top-5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/16"
         aria-label={messages.common.closePreview}
-        title={messages.common.closePreview}
         onClick={onClose}
       >
         <X className="h-4 w-4" />
@@ -590,7 +589,6 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
                     : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800",
                 )}
                 aria-label={isFullscreen ? messages.inspector.previewActions.restore : messages.inspector.previewActions.maximize}
-                title={isFullscreen ? messages.inspector.previewActions.restore : messages.inspector.previewActions.maximize}
                 onClick={() => setIsFullscreen((current) => !current)}
               >
                 {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -662,7 +660,6 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
                 )}
                 aria-label={messages.common.closePreview}
-                title={messages.common.closePreview}
                 onClick={onClose}
               >
                 <X className="h-4 w-4" />

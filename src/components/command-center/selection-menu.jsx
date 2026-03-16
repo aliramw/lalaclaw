@@ -5,13 +5,28 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
-export function SelectionMenu({ children, emptyText, getItemDescription, getItemLabel, items, label, onSelect, tooltipContent, triggerLabel, value }) {
+export function SelectionMenu({
+  children,
+  contentClassName,
+  emptyText,
+  getItemDescription,
+  getItemLabel,
+  items,
+  label,
+  onSelect,
+  showSelectionIndicator = true,
+  tooltipContent,
+  triggerLabel,
+  value,
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [tooltipSuppressed, setTooltipSuppressed] = useState(false);
@@ -85,24 +100,41 @@ export function SelectionMenu({ children, emptyText, getItemDescription, getItem
         </TooltipTrigger>
         {tooltipContent ? <TooltipContent side="bottom">{tooltipContent}</TooltipContent> : null}
       </Tooltip>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className={contentClassName}>
         <DropdownMenuLabel>{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {items.length ? (
           items.map((item) => (
-            <DropdownMenuCheckboxItem key={item} checked={item === value} onCheckedChange={() => handleSelect(item)}>
-              {getItemDescription ? (
-                <div className="grid min-w-[14rem] grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3">
-                  <span className="font-medium">{getItemLabel ? getItemLabel(item) : item}</span>
-                  <span className="text-muted-foreground">{getItemDescription(item)}</span>
-                </div>
-              ) : (
-                getItemLabel ? getItemLabel(item) : item
-              )}
-            </DropdownMenuCheckboxItem>
+            showSelectionIndicator ? (
+              <DropdownMenuCheckboxItem key={item} checked={item === value} onCheckedChange={() => handleSelect(item)}>
+                {getItemDescription ? (
+                  <div className="grid min-w-[14rem] grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3">
+                    <span className="font-medium">{getItemLabel ? getItemLabel(item) : item}</span>
+                    <span className="text-muted-foreground">{getItemDescription(item)}</span>
+                  </div>
+                ) : (
+                  getItemLabel ? getItemLabel(item) : item
+                )}
+              </DropdownMenuCheckboxItem>
+            ) : (
+              <DropdownMenuItem key={item} onSelect={() => handleSelect(item)}>
+                {getItemDescription ? (
+                  <div className="grid min-w-[14rem] grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3">
+                    <span className="font-medium">{getItemLabel ? getItemLabel(item) : item}</span>
+                    <span className="text-muted-foreground">{getItemDescription(item)}</span>
+                  </div>
+                ) : (
+                  getItemLabel ? getItemLabel(item) : item
+                )}
+              </DropdownMenuItem>
+            )
           ))
         ) : (
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">{emptyText}</div>
+          <div className="px-1 py-1">
+            <div className="rounded-md bg-background/70 px-3 py-2.5 text-xs leading-5 text-muted-foreground whitespace-pre-line break-words">
+              {emptyText}
+            </div>
+          </div>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -13,6 +13,9 @@ export const defaultChatFontSize = "small";
 export const minInspectorPanelWidth = 300;
 export const maxInspectorPanelWidth = 720;
 export const defaultInspectorPanelWidth = 380;
+const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
+const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
+const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
 
 function normalizeAgentId(value = "main") {
   return String(value || "main").trim() || "main";
@@ -45,6 +48,11 @@ export function createAgentSessionUser(agentId = "main") {
   return sanitizeSessionUser(`command-center-${normalizedAgentId}-${Date.now()}`);
 }
 
+export function createResetSessionUser(agentId = "main") {
+  const normalizedAgentId = normalizeAgentId(agentId).replace(/[^\w:-]+/g, "-");
+  return sanitizeSessionUser(`command-center-reset-${normalizedAgentId}-${Date.now()}`);
+}
+
 function sanitizeChatFontSize(value) {
   return value === "medium" || value === "large" ? value : defaultChatFontSize;
 }
@@ -68,6 +76,17 @@ function sanitizeChatFontSizeMap(value) {
       .map(([key, size]) => [String(key || "").trim(), sanitizeChatFontSize(size)])
       .filter(([key]) => Boolean(key)),
   );
+}
+
+function resolveStoredChatFontSize(parsed) {
+  const directChatFontSize = sanitizeChatFontSize(parsed?.chatFontSize);
+  if (directChatFontSize !== defaultChatFontSize || parsed?.chatFontSize === defaultChatFontSize) {
+    return directChatFontSize;
+  }
+
+  const legacyChatFontSizeMap = sanitizeChatFontSizeMap(parsed?.chatFontSizeBySessionUser);
+  const legacyChatFontSize = Object.values(legacyChatFontSizeMap)[0];
+  return sanitizeChatFontSize(legacyChatFontSize);
 }
 
 function sanitizeDismissedTaskRelationshipsMap(value) {
@@ -146,6 +165,115 @@ function sanitizeChatScrollTopMap(value) {
       })
       .filter(Boolean),
   );
+}
+
+function normalizeConversationContent(content = "", role = "") {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  let text = String(content || "");
+
+  if (normalizedRole === "assistant") {
+    text = text
+      .replace(/\[\[reply_to_current\]\]/gi, "")
+      .replace(/\*\*<small>[\s\S]*?<\/small>\*\*/gi, "")
+      .replace(/<small>[\s\S]*?<\/small>/gi, "");
+  }
+
+  return text
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function collapseDuplicateConversationTurns(entries = []) {
+  const collapsed = [];
+  let lastUserFingerprint = "";
+  let lastUserTimestamp = 0;
+  let lastAssistantTimestamp = 0;
+  let lastAssistantFingerprint = "";
+  let assistantSeenForCurrentTurn = false;
+  let pendingReplayUser = null;
+  let pendingReplayAssistantFingerprint = "";
+
+  const flushPendingReplayUser = () => {
+    if (!pendingReplayUser) {
+      return;
+    }
+    collapsed.push(pendingReplayUser);
+    pendingReplayUser = null;
+    pendingReplayAssistantFingerprint = "";
+  };
+
+  for (const entry of entries) {
+    if (!entry?.role || !entry?.content) {
+      continue;
+    }
+
+    if (entry.role === "user") {
+      flushPendingReplayUser();
+      const fingerprint = normalizeConversationContent(entry.content, entry.role);
+      const timestamp = Number(entry.timestamp || 0);
+      const withinShortReplayWindow =
+        timestamp > 0
+        && lastUserTimestamp > 0
+        && timestamp - lastUserTimestamp <= DUPLICATE_CONVERSATION_TURN_WINDOW_MS;
+      const immediateAssistantReplay =
+        timestamp > 0
+        && lastAssistantTimestamp > 0
+        && lastUserTimestamp > 0
+        && timestamp - lastAssistantTimestamp <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS
+        && timestamp - lastUserTimestamp <= DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS;
+      const isReplay =
+        Boolean(fingerprint)
+        && fingerprint === lastUserFingerprint
+        && assistantSeenForCurrentTurn
+        && (withinShortReplayWindow || immediateAssistantReplay);
+
+      if (isReplay) {
+        pendingReplayUser = entry;
+        pendingReplayAssistantFingerprint = lastAssistantFingerprint;
+        continue;
+      }
+
+      collapsed.push(entry);
+      lastUserFingerprint = fingerprint;
+      lastUserTimestamp = timestamp;
+      assistantSeenForCurrentTurn = false;
+      pendingReplayAssistantFingerprint = "";
+      continue;
+    }
+
+    if (entry.role === "assistant") {
+      const fingerprint = normalizeConversationContent(entry.content, entry.role);
+      if (pendingReplayUser) {
+        const shouldCollapseReplay =
+          pendingReplayAssistantFingerprint
+          && fingerprint
+          && fingerprint === pendingReplayAssistantFingerprint;
+
+        if (!shouldCollapseReplay) {
+          collapsed.push(pendingReplayUser);
+        }
+
+        pendingReplayUser = null;
+        pendingReplayAssistantFingerprint = "";
+
+        if (shouldCollapseReplay) {
+          continue;
+        }
+      }
+
+      collapsed.push(entry);
+      assistantSeenForCurrentTurn = true;
+      lastAssistantTimestamp = Number(entry.timestamp || 0);
+      lastAssistantFingerprint = fingerprint;
+      continue;
+    }
+
+    flushPendingReplayUser();
+    collapsed.push(entry);
+  }
+
+  flushPendingReplayUser();
+  return collapsed;
 }
 
 function sanitizeMessagesByTabId(value) {
@@ -299,6 +427,7 @@ function loadParsedStorageState(raw) {
   }
 
   return {
+    _persistedAt: Number(parsed?._persistedAt || 0) || 0,
     activeTab: parsed?.activeTab || defaultTab,
     activeChatTabId,
     chatTabs,
@@ -311,10 +440,22 @@ function loadParsedStorageState(raw) {
     agentId: activeTab?.agentId || fallbackAgentId || "main",
     sessionUser: activeTab?.sessionUser || fallbackSessionUser || defaultSessionUser,
     inspectorPanelWidth: sanitizeInspectorPanelWidth(parsed?.inspectorPanelWidth),
-    chatFontSizeBySessionUser: sanitizeChatFontSizeMap(parsed?.chatFontSizeBySessionUser),
+    chatFontSize: resolveStoredChatFontSize(parsed),
     dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(parsed?.dismissedTaskRelationshipIdsByConversation),
     promptDraftsByConversation: sanitizePromptDraftsMap(parsed?.promptDraftsByConversation),
   };
+}
+
+function readStoredPersistedAt(raw) {
+  if (!raw) {
+    return 0;
+  }
+
+  try {
+    return Number(JSON.parse(raw)?._persistedAt || 0) || 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function loadStoredState() {
@@ -328,6 +469,50 @@ export function loadStoredState() {
   } catch {
     return null;
   }
+}
+
+export function persistUiStateSnapshot(state = {}) {
+  try {
+    const activeChatTabId = String(state.activeChatTabId || "").trim();
+    const persistedAt = Number(state.persistedAt || 0) || Date.now();
+    const currentPersistedAt = Math.max(
+      readStoredPersistedAt(window.localStorage.getItem(storageKey)),
+      readStoredPersistedAt(window.localStorage.getItem(legacyStorageKey)),
+    );
+    if (currentPersistedAt > persistedAt) {
+      return;
+    }
+    const payload = {
+      _persistedAt: persistedAt,
+      activeChatTabId,
+      activeTab: state.activeTab || defaultTab,
+      chatTabs: Array.isArray(state.chatTabs) ? state.chatTabs : [],
+      chatFontSize: sanitizeChatFontSize(state.chatFontSize),
+      dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(state.dismissedTaskRelationshipIdsByConversation),
+      fastMode: Boolean(state.fastMode),
+      inspectorPanelWidth: sanitizeInspectorPanelWidth(state.inspectorPanelWidth),
+      thinkMode: typeof state.thinkMode === "string" ? state.thinkMode : "off",
+      model: String(state.model || "").trim(),
+      agentId: String(state.agentId || "main").trim() || "main",
+      sessionUser: sanitizeSessionUser(state.sessionUser || defaultSessionUser),
+      tabMetaById: sanitizeTabMetaMap(state.tabMetaById, sanitizeChatTabs(state.chatTabs, state.sessionUser, state.agentId)),
+      promptDraftsByConversation: sanitizePromptDraftsMap(state.promptDraftsByConversation),
+      messages: sanitizeMessagesForStorage(state.messages || []),
+      messagesByTabId: sanitizeMessagesByTabId(state.messagesByTabId || {}),
+    };
+    const serialized = JSON.stringify(payload);
+    window.localStorage.setItem(storageKey, serialized);
+    window.localStorage.setItem(legacyStorageKey, serialized);
+    if (state.pendingChatTurns && typeof state.pendingChatTurns === "object") {
+      window.localStorage.setItem(
+        pendingChatStorageKey,
+        JSON.stringify({
+          _persistedAt: persistedAt,
+          pendingChatTurns: state.pendingChatTurns,
+        }),
+      );
+    }
+  } catch {}
 }
 
 export function loadStoredTheme() {
@@ -380,10 +565,44 @@ export function loadPendingChatTurns() {
     const raw = window.localStorage.getItem(pendingChatStorageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    if (parsed.pendingChatTurns && typeof parsed.pendingChatTurns === "object") {
+      return parsed.pendingChatTurns;
+    }
+    return parsed;
   } catch {
     return {};
   }
+}
+
+export function pruneCompletedPendingChatTurns(pendingChatTurns = {}, messagesByTabId = {}, tabMetaById = {}) {
+  if (!pendingChatTurns || typeof pendingChatTurns !== "object") {
+    return {};
+  }
+
+  const messagesByConversationKey = new Map(
+    Object.entries(tabMetaById || {}).map(([tabId, meta]) => [
+      createConversationKey(meta?.sessionUser || defaultSessionUser, meta?.agentId || "main"),
+      Array.isArray(messagesByTabId?.[tabId]) ? messagesByTabId[tabId] : [],
+    ]),
+  );
+
+  return Object.fromEntries(
+    Object.entries(pendingChatTurns).filter(([conversationKey, pendingEntry]) => {
+      if (!pendingEntry || typeof pendingEntry !== "object") {
+        return false;
+      }
+
+      const localMessages = messagesByConversationKey.get(conversationKey) || [];
+      if (!localMessages.length) {
+        return true;
+      }
+
+      return !hasAuthoritativePendingAssistantReply(localMessages, pendingEntry);
+    }),
+  );
 }
 
 export function loadStoredChatScrollTops() {
@@ -434,13 +653,127 @@ export function sanitizeMessagesForStorage(messages = []) {
     .filter((message) => !message.pending)
     .slice(-80)
     .map((message) => ({
+      ...(message.id ? { id: message.id } : {}),
       role: message.role,
       content: message.content,
       timestamp: message.timestamp,
       ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       ...(message.tokenBadge ? { tokenBadge: message.tokenBadge } : {}),
-      ...(message.streaming ? { streaming: true } : {}),
     }));
+}
+
+function areEquivalentConversationMessages(snapshotMessage, localMessage) {
+  if (!snapshotMessage || !localMessage || snapshotMessage.role !== localMessage.role) {
+    return false;
+  }
+
+  const normalizeAssistantConversationContent = (content = "") =>
+    String(content || "")
+      .replace(/\[\[reply_to_current\]\]/gi, "")
+      .replace(/\*\*<small>[\s\S]*?<\/small>\*\*/gi, "")
+      .replace(/<small>[\s\S]*?<\/small>/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const snapshotContent = snapshotMessage.role === "assistant"
+    ? normalizeAssistantConversationContent(snapshotMessage.content)
+    : String(snapshotMessage.content || "").trim();
+  const localContent = localMessage.role === "assistant"
+    ? normalizeAssistantConversationContent(localMessage.content)
+    : String(localMessage.content || "").trim();
+  if (!snapshotContent || snapshotContent !== localContent) {
+    return false;
+  }
+
+  if (snapshotMessage.role === "assistant") {
+    const snapshotTokenBadge = String(snapshotMessage.tokenBadge || "").trim();
+    const localTokenBadge = String(localMessage.tokenBadge || "").trim();
+    if (snapshotTokenBadge && localTokenBadge && snapshotTokenBadge !== localTokenBadge) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function mergeConversationIdentity(snapshotMessages = [], localMessages = []) {
+  const nextMessages = snapshotMessages.map((message) => ({ ...message }));
+  const usedLocalIndices = new Set();
+
+  nextMessages.forEach((message, index) => {
+    const localIndex = localMessages.findIndex(
+      (localMessage, candidateIndex) =>
+        !usedLocalIndices.has(candidateIndex)
+        && areEquivalentConversationMessages(message, localMessage),
+    );
+
+    if (localIndex === -1) {
+      return;
+    }
+
+    const localMessage = localMessages[localIndex];
+    nextMessages[index] = {
+      ...message,
+      ...(localMessage.id ? { id: localMessage.id } : {}),
+      ...(Number.isFinite(Number(localMessage.timestamp)) ? { timestamp: localMessage.timestamp } : {}),
+    };
+    usedLocalIndices.add(localIndex);
+  });
+
+  return nextMessages;
+}
+
+export function mergeStaleLocalConversationTail(snapshotMessages = [], localMessages = []) {
+  const nextMessages = snapshotMessages.map((message) => ({ ...message }));
+  const normalizedLocalMessages = (localMessages || [])
+    .filter((message) => !message?.pending)
+    .map((message) => ({ ...message }));
+
+  if (!nextMessages.length || normalizedLocalMessages.length <= nextMessages.length) {
+    return nextMessages;
+  }
+
+  const snapshotMatchesLocalPrefix = nextMessages.every((message, index) =>
+    areEquivalentConversationMessages(message, normalizedLocalMessages[index]),
+  );
+
+  if (!snapshotMatchesLocalPrefix) {
+    return nextMessages;
+  }
+
+  const localTail = normalizedLocalMessages.slice(nextMessages.length);
+  if (!localTail.length) {
+    return nextMessages;
+  }
+
+  let overlapCount = 0;
+  const maxOverlap = Math.min(nextMessages.length, localTail.length);
+  for (let candidate = maxOverlap; candidate > 0; candidate -= 1) {
+    const snapshotSlice = nextMessages.slice(-candidate);
+    const tailSlice = localTail.slice(0, candidate);
+    const hasOverlap = snapshotSlice.every((message, index) => {
+      const tailMessage = tailSlice[index];
+      const snapshotId = String(message?.id || "").trim();
+      const tailId = String(tailMessage?.id || "").trim();
+      if (snapshotId && tailId && snapshotId === tailId) {
+        return true;
+      }
+
+      return message?.role === "assistant"
+        && tailMessage?.role === "assistant"
+        && areEquivalentConversationMessages(message, tailMessage);
+    });
+
+    if (hasOverlap) {
+      overlapCount = candidate;
+      break;
+    }
+  }
+
+  return [
+    ...nextMessages,
+    ...localTail.slice(overlapCount),
+  ];
 }
 
 export function mergeConversationAttachments(snapshotMessages = [], localMessages = []) {
@@ -474,21 +807,41 @@ export function mergeConversationAttachments(snapshotMessages = [], localMessage
 }
 
 function hasSnapshotAssistantReply(snapshotMessages = [], pendingEntry) {
-  const pendingUserIndex = findPendingUserIndex(snapshotMessages, pendingEntry);
-  if (pendingUserIndex === -1) {
+  if (pendingEntry?.stopped) {
     return false;
   }
 
+  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+  if (assistantMessageId) {
+    const hasDirectMatch = snapshotMessages.some(
+      (message) =>
+        message?.role === "assistant"
+        && !message?.pending
+        && String(message?.id || "").trim() === assistantMessageId
+        && Boolean(String(message.content || "").trim()),
+    );
+    if (hasDirectMatch) {
+      return true;
+    }
+  }
+
+  const pendingUserIndex = findPendingUserIndex(snapshotMessages, pendingEntry);
   const startedAt = Number(pendingEntry?.startedAt || 0);
 
-  return snapshotMessages.slice(pendingUserIndex + 1).some((message) => {
-    if (message?.role !== "assistant" || !Boolean(String(message.content || "").trim())) {
+  const matchesAssistant = (message) => {
+    if (message?.role !== "assistant" || message?.pending || !Boolean(String(message.content || "").trim())) {
       return false;
     }
 
     const timestamp = Number(message.timestamp || 0);
     return !startedAt || !timestamp || timestamp >= startedAt;
-  });
+  };
+
+  if (pendingUserIndex >= 0) {
+    return snapshotMessages.slice(pendingUserIndex + 1).some(matchesAssistant);
+  }
+
+  return snapshotMessages.some(matchesAssistant);
 }
 
 function findPendingUserIndex(snapshotMessages = [], pendingEntry) {
@@ -498,8 +851,8 @@ function findPendingUserIndex(snapshotMessages = [], pendingEntry) {
   }
 
   const expectedTimestamp = Number(pendingEntry?.userMessage?.timestamp || 0);
-  const startedAt = Number(pendingEntry?.startedAt || expectedTimestamp || 0);
-  const matchThreshold = startedAt || expectedTimestamp || 0;
+  const startedAt = Number(pendingEntry?.startedAt || 0);
+  const matchThreshold = expectedTimestamp || startedAt || 0;
   const timedMatches = [];
   const untimedMatches = [];
 
@@ -569,7 +922,22 @@ function findLocalStreamingAssistant(localMessages = [], pendingEntry) {
 }
 
 function findSnapshotPendingAssistantIndex(snapshotMessages = [], pendingEntry) {
+  if (pendingEntry?.stopped) {
+    return -1;
+  }
+
+  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+  if (assistantMessageId) {
+    const directIndex = snapshotMessages.findIndex(
+      (message) => message?.role === "assistant" && String(message?.id || "").trim() === assistantMessageId,
+    );
+    if (directIndex >= 0) {
+      return directIndex;
+    }
+  }
+
   const startedAt = Number(pendingEntry?.startedAt || 0);
+  const expectedTimestamp = Number(pendingEntry?.userMessage?.timestamp || 0);
   const pendingUserIndex = findPendingUserIndex(snapshotMessages, pendingEntry);
 
   if (pendingUserIndex >= 0) {
@@ -578,27 +946,64 @@ function findSnapshotPendingAssistantIndex(snapshotMessages = [], pendingEntry) 
       if (message?.role !== "assistant" || !Boolean(String(message.content || "").trim())) {
         continue;
       }
-
-      const timestamp = Number(message.timestamp || 0);
-      if (!startedAt || !timestamp || timestamp >= startedAt) {
-        return index;
-      }
+      return index;
     }
     return -1;
   }
 
+  const matchThreshold = expectedTimestamp || startedAt || 0;
   for (let index = snapshotMessages.length - 1; index >= 0; index -= 1) {
     const message = snapshotMessages[index];
     if (message?.role !== "assistant" || !Boolean(String(message.content || "").trim())) {
       continue;
     }
     const timestamp = Number(message.timestamp || 0);
-    if (!startedAt || timestamp >= startedAt) {
+    if (!matchThreshold || !timestamp || timestamp >= matchThreshold) {
       return index;
     }
   }
 
   return -1;
+}
+
+function hasEquivalentAssistantMessage(messages = [], candidate, pendingEntry) {
+  if (!candidate || candidate?.role !== "assistant") {
+    return false;
+  }
+
+  const normalizeAssistantConversationContent = (content = "") =>
+    String(content || "")
+      .replace(/\[\[reply_to_current\]\]/gi, "")
+      .replace(/\*\*<small>[\s\S]*?<\/small>\*\*/gi, "")
+      .replace(/<small>[\s\S]*?<\/small>/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const candidateContent = normalizeAssistantConversationContent(candidate.content);
+  if (!candidateContent) {
+    return false;
+  }
+
+  const candidateTokenBadge = String(candidate.tokenBadge || "").trim();
+  const pendingUserIndex = findPendingUserIndex(messages, pendingEntry);
+  const candidates =
+    pendingUserIndex >= 0
+      ? messages.slice(pendingUserIndex + 1)
+      : messages;
+
+  return candidates.some((message) => {
+    if (message?.role !== "assistant") {
+      return false;
+    }
+
+    const content = normalizeAssistantConversationContent(message.content);
+    if (!content || content !== candidateContent) {
+      return false;
+    }
+
+    const tokenBadge = String(message.tokenBadge || "").trim();
+    return !candidateTokenBadge || !tokenBadge || tokenBadge === candidateTokenBadge;
+  });
 }
 
 function mergeStreamingAssistant(snapshotMessages = [], pendingEntry, localStreamingAssistant) {
@@ -609,6 +1014,9 @@ function mergeStreamingAssistant(snapshotMessages = [], pendingEntry, localStrea
   const nextMessages = [...snapshotMessages];
   const snapshotAssistantIndex = findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
   if (snapshotAssistantIndex === -1) {
+    if (hasEquivalentAssistantMessage(nextMessages, localStreamingAssistant, pendingEntry)) {
+      return nextMessages;
+    }
     return [...nextMessages, localStreamingAssistant];
   }
 
@@ -643,30 +1051,113 @@ function insertPendingUserMessage(snapshotMessages = [], pendingEntry) {
   return nextMessages;
 }
 
+function filterStoppedTurnAssistantMessages(snapshotMessages = [], pendingEntry) {
+  if (!pendingEntry?.stopped) {
+    return [...snapshotMessages];
+  }
+
+  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+  let nextMessages = snapshotMessages.filter((message) => {
+    if (message?.role !== "assistant") {
+      return true;
+    }
+
+    if (!assistantMessageId) {
+      return true;
+    }
+
+    return String(message?.id || "").trim() !== assistantMessageId;
+  });
+
+  const pendingUserIndex = findPendingUserIndex(nextMessages, pendingEntry);
+  if (pendingUserIndex < 0) {
+    return nextMessages;
+  }
+
+  const nextUserIndex = nextMessages.findIndex((message, index) => index > pendingUserIndex && message?.role === "user");
+  const assistantUpperBound = nextUserIndex >= 0 ? nextUserIndex : nextMessages.length;
+
+  return nextMessages.filter((message, index) => {
+    if (index <= pendingUserIndex || index >= assistantUpperBound) {
+      return true;
+    }
+
+    return message?.role !== "assistant";
+  });
+}
+
+export function derivePendingEntryFromLocalMessages(localMessages = []) {
+  if (!Array.isArray(localMessages) || !localMessages.length) {
+    return null;
+  }
+
+  const pendingAssistantIndex = [...localMessages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(({ message }) => message?.role === "assistant" && Boolean(message?.pending))?.index;
+
+  if (!Number.isInteger(pendingAssistantIndex) || pendingAssistantIndex < 0) {
+    return null;
+  }
+
+  const pendingAssistant = localMessages[pendingAssistantIndex];
+  const pendingUser = [...localMessages.slice(0, pendingAssistantIndex)]
+    .reverse()
+    .find((message) => message?.role === "user");
+
+  if (!pendingUser) {
+    return null;
+  }
+
+  return {
+    startedAt: Number(pendingUser.timestamp || pendingAssistant.timestamp || Date.now()),
+    pendingTimestamp: Number(pendingAssistant.timestamp || Date.now()),
+    assistantMessageId: String(pendingAssistant.id || "").trim() || undefined,
+    suppressPendingPlaceholder: Boolean(pendingAssistant?.suppressPendingPlaceholder),
+    userMessage: {
+      ...(pendingUser.id ? { id: pendingUser.id } : {}),
+      role: "user",
+      content: pendingUser.content,
+      timestamp: pendingUser.timestamp,
+      ...(pendingUser.attachments?.length ? { attachments: pendingUser.attachments } : {}),
+    },
+  };
+}
+
 export function mergePendingConversation(snapshotMessages = [], pendingEntry, pendingLabel, localMessages = []) {
   if (!pendingEntry) {
-    return snapshotMessages;
+    return [...snapshotMessages];
   }
 
+  const filteredSnapshotMessages = filterStoppedTurnAssistantMessages(snapshotMessages, pendingEntry);
   const localStreamingAssistant = findLocalStreamingAssistant(localMessages, pendingEntry);
-  if (hasSnapshotAssistantReply(snapshotMessages, pendingEntry)) {
-    return mergeStreamingAssistant(snapshotMessages, pendingEntry, localStreamingAssistant);
+  if (hasSnapshotAssistantReply(filteredSnapshotMessages, pendingEntry)) {
+    return collapseDuplicateConversationTurns(
+      mergeStreamingAssistant(filteredSnapshotMessages, pendingEntry, localStreamingAssistant),
+    );
   }
 
-  const hasPendingUserMessage = findPendingUserIndex(snapshotMessages, pendingEntry) >= 0;
+  const hasPendingUserMessage = findPendingUserIndex(filteredSnapshotMessages, pendingEntry) >= 0;
 
-  const merged = hasPendingUserMessage ? [...snapshotMessages] : insertPendingUserMessage(snapshotMessages, pendingEntry);
+  const merged = hasPendingUserMessage ? [...filteredSnapshotMessages] : insertPendingUserMessage(filteredSnapshotMessages, pendingEntry);
   const snapshotAssistantIndex = findSnapshotPendingAssistantIndex(merged, pendingEntry);
 
   if (localStreamingAssistant) {
-    return [...merged, localStreamingAssistant];
+    if (hasEquivalentAssistantMessage(merged, localStreamingAssistant, pendingEntry)) {
+      return collapseDuplicateConversationTurns(merged);
+    }
+    return collapseDuplicateConversationTurns([...merged, localStreamingAssistant]);
   }
 
   if (snapshotAssistantIndex >= 0) {
     return merged;
   }
 
-  return [
+  if (pendingEntry?.suppressPendingPlaceholder) {
+    return collapseDuplicateConversationTurns(merged);
+  }
+
+  return collapseDuplicateConversationTurns([
     ...merged,
     {
       role: "assistant",
@@ -674,9 +1165,27 @@ export function mergePendingConversation(snapshotMessages = [], pendingEntry, pe
       timestamp: pendingEntry.pendingTimestamp,
       pending: true,
     },
-  ];
+  ]);
 }
 
 export function hasAuthoritativePendingAssistantReply(snapshotMessages = [], pendingEntry) {
+  if (pendingEntry?.stopped) {
+    return false;
+  }
+
+  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+  if (assistantMessageId) {
+    const hasDirectMatch = snapshotMessages.some(
+      (message) =>
+        message?.role === "assistant"
+        && !message?.pending
+        && String(message?.id || "").trim() === assistantMessageId
+        && Boolean(String(message?.content || "").trim()),
+    );
+    if (hasDirectMatch) {
+      return true;
+    }
+  }
+
   return hasSnapshotAssistantReply(snapshotMessages, pendingEntry);
 }

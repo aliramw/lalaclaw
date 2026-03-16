@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createConversationKey,
+  derivePendingEntryFromLocalMessages,
   extractUserPromptHistory,
   hasAuthoritativePendingAssistantReply,
   mergeConversationAttachments,
+  mergeConversationIdentity,
   mergePendingConversation,
+  mergeStaleLocalConversationTail,
 } from "@/features/app/storage";
 import { normalizeStatusKey } from "@/features/session/status-display";
 
@@ -48,10 +51,52 @@ export function mergeTaskRelationships(previousRelationships, nextRelationships)
   return [...merged.values()].sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0));
 }
 
+function snapshotHasPendingUserMessage(snapshotMessages = [], pendingEntry = null) {
+  if (!pendingEntry?.userMessage?.content) {
+    return false;
+  }
+
+  const targetContent = String(pendingEntry.userMessage.content);
+  const expectedTimestamp = Number(pendingEntry.userMessage.timestamp || 0);
+  const startedAt = Number(pendingEntry.startedAt || 0);
+  const matchThreshold = expectedTimestamp || startedAt || 0;
+
+  return (snapshotMessages || []).some((message) => {
+    if (message?.role !== "user" || String(message.content || "") !== targetContent) {
+      return false;
+    }
+
+    const timestamp = Number(message.timestamp || 0);
+    return !matchThreshold || !timestamp || timestamp >= matchThreshold;
+  });
+}
+
+function shouldClearRecoveredPendingTurn({
+  pendingEntry,
+  recoveringPendingReply = false,
+  snapshotHasPendingUserMessage = false,
+  snapshotHasAssistantReply = false,
+  status = "",
+} = {}) {
+  if (!recoveringPendingReply || !pendingEntry || pendingEntry?.stopped || snapshotHasAssistantReply) {
+    return false;
+  }
+
+  const normalizedStatus = normalizeStatusKey(status);
+  if (normalizedStatus === "failed" || normalizedStatus === "offline") {
+    return true;
+  }
+
+  // Runtime snapshots often lag behind an in-flight turn after a refresh. If the
+  // snapshot already includes the latest user turn, keep the recovered pending
+  // reply alive until an assistant answer arrives.
+  return (normalizedStatus === "idle" || normalizedStatus === "completed") && !snapshotHasPendingUserMessage;
+}
+
 export function useRuntimeSnapshot({
   activePendingChat,
   busy,
-  fastMode,
+  recoveringPendingReply = false,
   i18n,
   messagesRef,
   pendingChatTurns,
@@ -64,6 +109,7 @@ export function useRuntimeSnapshot({
   setPromptHistoryByConversation,
   setSession,
 }) {
+  const INITIAL_RUNTIME_RETRY_DELAY_MS = 1200;
   const [availableModels, setAvailableModels] = useState([]);
   const [availableAgents, setAvailableAgents] = useState([]);
   const [taskTimeline, setTaskTimeline] = useState([]);
@@ -74,6 +120,11 @@ export function useRuntimeSnapshot({
   const [agents, setAgents] = useState([]);
   const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null, environment: null });
   const runtimeRequestRef = useRef(0);
+  const pendingChatTurnsRef = useRef(pendingChatTurns);
+  const sessionRef = useRef(session);
+
+  pendingChatTurnsRef.current = pendingChatTurns;
+  sessionRef.current = session;
 
   const hydrateRuntimeState = useCallback((state = null) => {
     const nextState = state || {};
@@ -91,19 +142,22 @@ export function useRuntimeSnapshot({
   const applySnapshot = useCallback((snapshot, options = {}) => {
     if (!snapshot) return;
 
-    const currentConversationKey = createConversationKey(session.sessionUser, session.agentId);
+    const currentSession = sessionRef.current;
+    const currentPendingChatTurns = pendingChatTurnsRef.current;
+    const currentConversationKey = createConversationKey(currentSession.sessionUser, currentSession.agentId);
     const nextSession = {
-      ...session,
+      ...currentSession,
       ...(snapshot.session || {}),
-      mode: snapshot.session?.mode || session.mode,
+      mode: snapshot.session?.mode || currentSession.mode,
     };
     const nextConversationKey = createConversationKey(
       snapshot.session?.sessionUser || nextSession.sessionUser,
       snapshot.session?.agentId || nextSession.agentId,
     );
-    const pendingEntry = pendingChatTurns[nextConversationKey] || null;
+    const localMessages = messagesRef.current || [];
+    const pendingEntry = currentPendingChatTurns[nextConversationKey] || derivePendingEntryFromLocalMessages(localMessages) || null;
     const snapshotPromptHistory = extractUserPromptHistory(snapshot.conversation);
-    const shouldDeferConversationSync = Boolean(pendingEntry);
+    const shouldDeferConversationSync = Boolean(pendingEntry) && options.syncConversation === false;
     const nextFastMode =
       snapshot.session?.fastMode === i18n.sessionOverview.fastMode.on ||
       snapshot.session?.fastMode === "开启" ||
@@ -112,18 +166,41 @@ export function useRuntimeSnapshot({
 
     setFastMode(nextFastMode);
 
-    if (!shouldDeferConversationSync && options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
-      const mergedConversation = mergeConversationAttachments(snapshot.conversation, messagesRef.current);
+    if (options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
+      const mergedConversation = mergeConversationIdentity(
+        mergeConversationAttachments(snapshot.conversation, localMessages),
+        localMessages,
+      );
       const snapshotHasAssistantReply = pendingEntry
         ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
         : false;
-      const hydratedConversation = mergePendingConversation(
-        mergedConversation,
+      const snapshotIncludesPendingUserMessage = pendingEntry
+        ? snapshotHasPendingUserMessage(mergedConversation, pendingEntry)
+        : false;
+      const shouldClearPending = shouldClearRecoveredPendingTurn({
         pendingEntry,
-        i18n.chat.thinkingPlaceholder,
-        messagesRef.current,
-      );
-      const hasActivePendingTurn = Boolean(pendingEntry) && !snapshotHasAssistantReply;
+        recoveringPendingReply,
+        snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
+        snapshotHasAssistantReply,
+        status: snapshot.session?.status || nextSession.status,
+      });
+      const effectiveLocalMessages = pendingEntry && !snapshotHasAssistantReply ? localMessages : [];
+      const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
+      const mergedConversationWithLocalTail = pendingEntry && !shouldClearPending
+        ? mergedConversation
+        : mergeStaleLocalConversationTail(
+            mergedConversation,
+            shouldClearPending ? localMessagesWithoutPending : localMessages,
+          );
+      const hydratedConversation = shouldClearPending
+        ? mergedConversationWithLocalTail
+        : mergePendingConversation(
+            mergedConversationWithLocalTail,
+            pendingEntry,
+            i18n.chat.thinkingPlaceholder,
+            effectiveLocalMessages,
+          );
+      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !shouldClearPending;
       setSession({ ...nextSession, status: hasActivePendingTurn ? i18n.common.running : nextSession.status });
       setMessagesSynced(hydratedConversation);
       setBusy(hasActivePendingTurn);
@@ -175,8 +252,7 @@ export function useRuntimeSnapshot({
     i18n.common.running,
     i18n.sessionOverview.fastMode.on,
     messagesRef,
-    pendingChatTurns,
-    session,
+    recoveringPendingReply,
     setArtifacts,
     setAvailableAgents,
     setAvailableModels,
@@ -194,13 +270,14 @@ export function useRuntimeSnapshot({
     setTaskTimeline,
   ]);
 
-  const loadRuntime = useCallback(async (sessionUser = session.sessionUser, overrides = {}) => {
+  const loadRuntime = useCallback(async (sessionUser = sessionRef.current.sessionUser, overrides = {}) => {
+    const currentSession = sessionRef.current;
     const requestId = runtimeRequestRef.current + 1;
     runtimeRequestRef.current = requestId;
     const params = new URLSearchParams({
-      sessionUser: String(sessionUser || session.sessionUser || "").trim(),
+      sessionUser: String(sessionUser || currentSession.sessionUser || "").trim(),
     });
-    const resolvedAgentId = String(overrides.agentId || session.agentId || "").trim();
+    const resolvedAgentId = String(overrides.agentId || currentSession.agentId || "").trim();
 
     if (resolvedAgentId) {
       params.set("agentId", resolvedAgentId);
@@ -216,32 +293,50 @@ export function useRuntimeSnapshot({
     }
     applySnapshot(payload);
     return payload;
-  }, [applySnapshot, session.agentId, session.sessionUser]);
+  }, [applySnapshot]);
 
   useEffect(() => {
     const runtimeOverrides = {
       agentId: session.agentId,
     };
+    let retryTimerId = 0;
+    let cancelled = false;
 
     loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {
-      setSession((current) => ({ ...current, status: i18n.common.offline }));
+      if (cancelled) {
+        return;
+      }
+
+      retryTimerId = window.setTimeout(() => {
+        loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {
+          if (cancelled) {
+            return;
+          }
+          setSession((current) => ({ ...current, status: i18n.common.offline }));
+        });
+      }, INITIAL_RUNTIME_RETRY_DELAY_MS);
     });
 
-    const pollInterval = busy || activePendingChat ? 4000 : 15000;
+    const pollInterval = recoveringPendingReply ? 1500 : busy || activePendingChat ? 4000 : 15000;
     const id = window.setInterval(() => {
       loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {});
     }, pollInterval);
 
-    return () => window.clearInterval(id);
-  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, session.agentId, session.sessionUser, setSession]);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.clearTimeout(retryTimerId);
+    };
+  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, recoveringPendingReply, session.agentId, session.sessionUser, setSession]);
 
   const updateSessionSettings = async (payload) => {
+    const targetSessionUser = String(payload?.sessionUser || session.sessionUser || "").trim();
     const response = await fetch("/api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sessionUser: session.sessionUser,
         ...payload,
+        sessionUser: targetSessionUser,
       }),
     });
     const data = await response.json();

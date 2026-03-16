@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
 const { createAppServer } = require("../server");
-const { createChatHandler } = require("../server/routes/chat");
+const { createChatHandler, createChatStopHandler } = require("../server/routes/chat");
 const { createSessionHandlers } = require("../server/routes/session");
 const { parseRequestBody, sendJson } = require("../server/http");
 const { DIST_DIR } = require("../server/core");
 
-function createServerHarness() {
+function createServerHarness({ chatDependencyOverrides = {} } = {}) {
   const sessionPreferences = new Map();
   const normalizeThinkModeValue = (value) => {
     const normalized = String(value || "").trim().toLowerCase();
@@ -122,6 +122,7 @@ function createServerHarness() {
     sendJson,
     setSessionPreferences,
     summarizeMessages: vi.fn(() => "summary"),
+    ...chatDependencyOverrides,
   };
 
   const sessionDependencies = {
@@ -152,6 +153,7 @@ function createServerHarness() {
     config: { mode: "openclaw" },
     getStaticDir: () => DIST_DIR,
     handleChat: createChatHandler(chatDependencies),
+    handleChatStop: createChatStopHandler(chatDependencies),
     handleRuntime: async (req, res) => {
       const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get("sessionUser") || "command-center");
       const snapshot = await buildDashboardSnapshot(sessionUser);
@@ -210,6 +212,7 @@ describe("server HTTP integration", () => {
         agentId: "worker",
         model: "gpt-5-mini",
         fastMode: false,
+        stream: false,
         messages: [{ role: "user", content: "/think high" }],
       }),
     });
@@ -232,6 +235,72 @@ describe("server HTTP integration", () => {
     );
     expect(payload.ok).toBe(true);
     expect(payload.metadata.summary).toBe("summary");
+  });
+
+  it("forwards stop requests to OpenClaw chat.abort over HTTP", async () => {
+    const harness = createServerHarness();
+    server = createAppServer(harness.appContext);
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+    const response = await fetch(`${baseUrl}/api/chat/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        agentId: "worker",
+      }),
+    });
+    const payload = await readJson(response);
+
+    expect(response.ok).toBe(true);
+    expect(payload).toEqual({ ok: true });
+    expect(harness.chatDependencies.callOpenClawGateway).toHaveBeenCalledWith("chat.abort", {
+      sessionKey: "agent:worker:api-user",
+    });
+  });
+
+  it.skip("keeps the OpenClaw session running when the streaming chat request disconnects", async () => {
+    let resolveDispatch;
+    const harness = createServerHarness({
+      chatDependencyOverrides: {
+        dispatchOpenClawStream: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              resolveDispatch = resolve;
+            }),
+        ),
+      },
+    });
+    harness.chatDependencies.callOpenClawGateway.mockResolvedValue({});
+
+    server = createAppServer(harness.appContext);
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+    const abortController = new AbortController();
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: abortController.signal,
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: true,
+        messages: [{ role: "user", content: "请开始" }],
+      }),
+    });
+
+    const streamReader = response.body?.getReader?.();
+    abortController.abort();
+    resolveDispatch?.({ outputText: "", usage: null });
+    await response.body?.cancel?.().catch(() => {});
+    streamReader?.releaseLock?.();
+    await Promise.resolve();
+    expect(harness.chatDependencies.callOpenClawGateway).not.toHaveBeenCalledWith("chat.abort", {
+      sessionKey: "agent:worker:api-user",
+    });
   });
 
   it("returns a 500 session response without persisting preferences when patch fails over HTTP", async () => {
@@ -298,6 +367,7 @@ describe("server HTTP integration", () => {
       body: JSON.stringify({
         sessionUser: "api-user",
         fastMode: true,
+        stream: false,
         messages: [{ role: "user", content: "继续整理项目结构" }],
       }),
     });
@@ -343,6 +413,7 @@ describe("server HTTP integration", () => {
       body: JSON.stringify({
         sessionUser: "api-user",
         fastMode: false,
+        stream: false,
         messages: [{ role: "user", content: "/new 继续拆分测试" }],
       }),
     });
@@ -363,6 +434,7 @@ describe("server HTTP integration", () => {
       body: JSON.stringify({
         sessionUser: resetPayload.resetSessionUser,
         fastMode: false,
+        stream: false,
         messages: [{ role: "user", content: "继续" }],
       }),
     });

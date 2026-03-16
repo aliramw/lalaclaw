@@ -21,6 +21,43 @@ function createSession(overrides = {}) {
   };
 }
 
+function createProps(overrides = {}) {
+  return {
+    activeChatTabId: "agent:main",
+    activeTab: "timeline",
+    chatFontSize: "small",
+    chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+    dismissedTaskRelationshipIdsByConversation: {},
+    fastMode: false,
+    initialStoredMessagesByTabIdRef: { current: {} },
+    initialStoredPendingRef: { current: {} },
+    inspectorPanelWidth: 380,
+    messages: [{ role: "user", content: "你好", timestamp: 1, pending: false }],
+    messagesByTabId: {
+      "agent:main": [{ role: "user", content: "你好", timestamp: 1, pending: false }],
+    },
+    messagesRef: { current: [] },
+    model: "",
+    pendingChatTurns: {},
+    promptDraftsByConversation: {},
+    promptHistoryByConversation: {},
+    session: createSession(),
+    setMessagesByTabId: vi.fn(),
+    setMessagesSynced: vi.fn(),
+    setPendingChatTurns: vi.fn(),
+    tabMetaById: {
+      "agent:main": {
+        agentId: "main",
+        fastMode: false,
+        model: "",
+        sessionUser: "command-center",
+        thinkMode: "off",
+      },
+    },
+    ...overrides,
+  };
+}
+
 describe("useAppPersistence", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -29,6 +66,7 @@ describe("useAppPersistence", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -55,9 +93,7 @@ describe("useAppPersistence", () => {
       useAppPersistence({
         activeChatTabId: "agent:main",
         activeTab: "timeline",
-        chatFontSizeBySessionUser: {
-          "command-center": "medium",
-        },
+        chatFontSize: "medium",
         chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
@@ -113,9 +149,7 @@ describe("useAppPersistence", () => {
       expect(JSON.parse(window.localStorage.getItem("command-center-ui-state-v2") || "{}")).toMatchObject({
         activeChatTabId: "agent:main",
         activeTab: "timeline",
-        chatFontSizeBySessionUser: {
-          "command-center": "medium",
-        },
+        chatFontSize: "medium",
         chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
@@ -137,8 +171,11 @@ describe("useAppPersistence", () => {
       "command-center:main": ["你好"],
     });
     expect(JSON.parse(window.localStorage.getItem("command-center-pending-chat-v1") || "{}")).toEqual({
-      "command-center:main": {
-        key: "command-center:main",
+      _persistedAt: expect.any(Number),
+      pendingChatTurns: {
+        "command-center:main": {
+          key: "command-center:main",
+        },
       },
     });
   });
@@ -177,7 +214,7 @@ describe("useAppPersistence", () => {
       useAppPersistence({
         activeChatTabId: "agent:main",
         activeTab: "timeline",
-        chatFontSizeBySessionUser: {},
+        chatFontSize: "small",
         chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {},
         fastMode: false,
@@ -218,5 +255,68 @@ describe("useAppPersistence", () => {
 
     const pendingUpdater = setPendingChatTurns.mock.calls[0][0];
     expect(pendingUpdater(initialPending)).toEqual(hydratedState.pendingChatTurns);
+  });
+
+  it("debounces persistence while chat messages update rapidly", async () => {
+    vi.useFakeTimers();
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [{ role: "assistant", content: "最终输出", timestamp: 3 }],
+      },
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+
+    const { rerender } = renderHook((props) => useAppPersistence(props), {
+      initialProps: createProps(),
+    });
+
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockClear();
+
+    rerender(createProps({
+      messages: [
+        { role: "user", content: "你好", timestamp: 1, pending: false },
+        { role: "assistant", content: "正", timestamp: 2, streaming: true },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { role: "user", content: "你好", timestamp: 1, pending: false },
+          { role: "assistant", content: "正", timestamp: 2, streaming: true },
+        ],
+      },
+    }));
+
+    rerender(createProps({
+      messages: [
+        { role: "user", content: "你好", timestamp: 1, pending: false },
+        { role: "assistant", content: "正在", timestamp: 2, streaming: true },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { role: "user", content: "你好", timestamp: 1, pending: false },
+          { role: "assistant", content: "正在", timestamp: 2, streaming: true },
+        ],
+      },
+    }));
+
+    await vi.advanceTimersByTimeAsync(449);
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledWith(
+      {
+        "agent:main": [
+          { role: "user", content: "你好", timestamp: 1, pending: false },
+          { role: "assistant", content: "正在", timestamp: 2, streaming: true },
+        ],
+      },
+      {},
+    );
   });
 });

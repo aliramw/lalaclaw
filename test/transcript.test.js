@@ -103,6 +103,215 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("collapses fallback-replayed user messages after a transient assistant failure", () => {
+    const projector = createProjector();
+    const wrappedPrompt = [
+      "Sender (untrusted metadata):",
+      "```json",
+      '{"label":"command-center-backend (gateway-client)","id":"gateway-client"}',
+      "```",
+      "",
+      "[Mon 2026-03-16 11:12 GMT+8] 你昨天做了些什么？",
+    ].join("\n");
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1000,
+          content: [{ type: "text", text: wrappedPrompt }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2500,
+          content: [],
+          stopReason: "error",
+          errorMessage: "402 This request requires more credits",
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "user",
+          timestamp: 121000,
+          content: [{ type: "text", text: wrappedPrompt }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4,
+        message: {
+          role: "assistant",
+          timestamp: 121500,
+          content: [{ type: "text", text: "我昨天主要完成了部署和发布链路。" }],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "user", content: "你昨天做了些什么？", timestamp: 1000 },
+      { role: "assistant", content: "我昨天主要完成了部署和发布链路。", timestamp: 121500 },
+    ]);
+  });
+
+  it("drops a transient partial assistant reply when the same user turn is auto-replayed after a prompt error", () => {
+    const projector = createProjector();
+    const wrappedPrompt = [
+      "Sender (untrusted metadata):",
+      "```json",
+      '{"label":"LalaClaw (gateway-client)","id":"gateway-client"}',
+      "```",
+      "",
+      "[Mon 2026-03-16 14:41 GMT+8] 在深入说说",
+    ].join("\n");
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1000,
+          content: [{ type: "text", text: wrappedPrompt }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2000,
+          content: [{ type: "text", text: "[[reply_to_current]] 第一版开头" }],
+        },
+      },
+      {
+        type: "custom",
+        customType: "openclaw:prompt-error",
+        timestamp: 3,
+        data: {
+          timestamp: 2500,
+          error: "aborted",
+        },
+      },
+      {
+        type: "custom",
+        customType: "model-snapshot",
+        timestamp: 4,
+        data: {
+          timestamp: 2600,
+          modelId: "openai/gpt-5.4",
+        },
+      },
+      {
+        type: "message",
+        timestamp: 5,
+        message: {
+          role: "user",
+          timestamp: 3000,
+          content: [{ type: "text", text: wrappedPrompt }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 6,
+        message: {
+          role: "assistant",
+          timestamp: 4500,
+          content: [{ type: "text", text: "[[reply_to_current]] 第二版完整回答" }],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "user", content: "在深入说说", timestamp: 1000 },
+      { role: "assistant", content: "第二版完整回答", timestamp: 4500 },
+    ]);
+  });
+
+  it("drops a stopped partial assistant reply from conversation artifacts and snapshots", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1000,
+          content: [{ type: "text", text: "[Mon 2026-03-16 19:01 GMT+8] hi" }],
+        },
+      },
+      {
+        id: "assistant-partial",
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2000,
+          content: [{ type: "text", text: "[[reply_to_current]] 嗯，马锐拉，我在。" }],
+        },
+      },
+      {
+        type: "custom",
+        customType: "openclaw:prompt-error",
+        timestamp: 3,
+        data: {
+          timestamp: 2200,
+          error: "aborted",
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "user", content: "hi", timestamp: 1000 },
+    ]);
+    expect(projector.collectArtifacts(entries)).toEqual([]);
+    expect(projector.collectSnapshots(entries, { sessionId: "session-1" })).toEqual([]);
+  });
+
+  it("keeps repeated user messages when there was no transient assistant failure between them", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1000,
+          content: [{ type: "text", text: "[Mon 2026-03-16 11:12 GMT+8] 你昨天做了些什么？" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "user",
+          timestamp: 3000,
+          content: [{ type: "text", text: "[Mon 2026-03-16 11:12 GMT+8] 你昨天做了些什么？" }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 3,
+        message: {
+          role: "assistant",
+          timestamp: 5000,
+          content: [{ type: "text", text: "我可以重复回答这类问题。" }],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "user", content: "你昨天做了些什么？", timestamp: 1000 },
+      { role: "user", content: "你昨天做了些什么？", timestamp: 3000 },
+      { role: "assistant", content: "我可以重复回答这类问题。", timestamp: 5000 },
+    ]);
+  });
+
   it("builds tool history and marks failed tool results", () => {
     const projector = createProjector({
       clip: (value, length = 999) => String(value || "").slice(0, length),

@@ -14,6 +14,7 @@ const {
 function createRequestHandler(appContext = defaultAppContext) {
   const {
     handleChat,
+    handleChatStop,
     handleFileManagerReveal,
     handleFilePreview,
     handleFilePreviewContent,
@@ -59,6 +60,11 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if (req.method === 'POST' && url.pathname === '/api/chat') {
       handleChat(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/chat/stop') {
+      handleChatStop(req, res);
       return;
     }
 

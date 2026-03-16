@@ -1,20 +1,27 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   appendPromptHistory,
   createAgentSessionUser,
   createAgentTabId,
+  createResetSessionUser,
   createConversationKey,
   defaultChatFontSize,
   defaultInspectorPanelWidth,
   defaultSessionUser,
   defaultTab,
+  derivePendingEntryFromLocalMessages,
+  hasAuthoritativePendingAssistantReply,
   loadStoredChatScrollTops,
   loadPendingChatTurns,
   loadStoredPromptDrafts,
   loadStoredPromptHistory,
   loadStoredState,
   mergeConversationAttachments,
+  mergeConversationIdentity,
   mergePendingConversation,
+  pruneCompletedPendingChatTurns,
+  mergeStaleLocalConversationTail,
+  persistUiStateSnapshot,
   persistChatScrollTops,
   sanitizeInspectorPanelWidth,
 } from "@/features/app/storage";
@@ -24,6 +31,7 @@ import { useAppPersistence } from "@/features/app/storage";
 import { formatCompactK, formatTime, maxPromptRows } from "@/features/chat/utils";
 import { useChatController, usePromptHistory } from "@/features/chat/controllers";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
+import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
 import { useI18n } from "@/lib/i18n";
 
@@ -84,6 +92,91 @@ function resolveAgentIdFromTabId(tabId = "") {
   return normalized.slice("agent:".length).trim() || "main";
 }
 
+function normalizeRuntimeIdentityValue(value = "") {
+  return String(value || "").trim();
+}
+
+function snapshotHasPendingUserMessage(snapshotMessages = [], pendingEntry = null) {
+  if (!pendingEntry?.userMessage?.content) {
+    return false;
+  }
+
+  const targetContent = String(pendingEntry.userMessage.content);
+  const expectedTimestamp = Number(pendingEntry.userMessage.timestamp || 0);
+  const startedAt = Number(pendingEntry.startedAt || 0);
+  const matchThreshold = expectedTimestamp || startedAt || 0;
+
+  return (snapshotMessages || []).some((message) => {
+    if (message?.role !== "user" || String(message.content || "") !== targetContent) {
+      return false;
+    }
+
+    const timestamp = Number(message.timestamp || 0);
+    return !matchThreshold || !timestamp || timestamp >= matchThreshold;
+  });
+}
+
+function shouldClearRecoveredPendingTurn({
+  pendingEntry,
+  recovered = false,
+  snapshotHasPendingUserMessage = false,
+  snapshotHasAssistantReply = false,
+  status = "",
+} = {}) {
+  if (!recovered || !pendingEntry || pendingEntry?.stopped || snapshotHasAssistantReply) {
+    return false;
+  }
+
+  const normalizedStatus = normalizeStatusKey(status);
+  if (normalizedStatus === "failed" || normalizedStatus === "offline") {
+    return true;
+  }
+
+  // Runtime status can still briefly look settled right after a refresh while the
+  // assistant turn is actively continuing on the backend. If the latest user turn
+  // is already present in the snapshot, keep the recovered pending reply alive.
+  return (normalizedStatus === "idle" || normalizedStatus === "completed") && !snapshotHasPendingUserMessage;
+}
+
+export function hasActiveAssistantReply(messages = []) {
+  return (messages || []).some((message) => message?.role === "assistant" && (message?.pending || message?.streaming));
+}
+
+export function shouldApplyRuntimeSnapshotToTab({
+  currentAgentId = "",
+  currentSessionUser = "",
+  requestedAgentId = "",
+  requestedSessionUser = "",
+  resolvedSessionUser = "",
+} = {}) {
+  const normalizedCurrentAgentId = normalizeRuntimeIdentityValue(currentAgentId);
+  const normalizedCurrentSessionUser = normalizeRuntimeIdentityValue(currentSessionUser);
+  const normalizedRequestedAgentId = normalizeRuntimeIdentityValue(requestedAgentId);
+  const normalizedRequestedSessionUser = normalizeRuntimeIdentityValue(requestedSessionUser);
+  const normalizedResolvedSessionUser = normalizeRuntimeIdentityValue(resolvedSessionUser);
+
+  if (
+    normalizedRequestedAgentId
+    && normalizedCurrentAgentId
+    && normalizedRequestedAgentId !== normalizedCurrentAgentId
+  ) {
+    return false;
+  }
+
+  if (!normalizedCurrentSessionUser) {
+    return true;
+  }
+
+  if (
+    normalizedCurrentSessionUser !== normalizedRequestedSessionUser
+    && normalizedCurrentSessionUser !== normalizedResolvedSessionUser
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function buildInitialChatTabs(stored) {
   if (Array.isArray(stored?.chatTabs) && stored.chatTabs.length) {
     return stored.chatTabs;
@@ -128,23 +221,32 @@ function resolveViewportAnchorNode(viewport, selector, viewportRect) {
     return null;
   }
 
-  const doc = viewport.ownerDocument || document;
-  const sampleX = Math.round(viewportRect.left + Math.min(Math.max(viewportRect.width * 0.35, 48), Math.max(48, viewportRect.width - 48)));
-  const sampleY = Math.round(viewportRect.top + Math.min(Math.max(viewportRect.height * 0.16, 28), Math.max(28, viewportRect.height - 28)));
+  const candidates = [...viewport.querySelectorAll(selector)];
+  const visibleCandidates = candidates
+    .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.bottom > viewportRect.top + 1 && rect.top < viewportRect.bottom - 1)
+    .sort((left, right) => {
+      const topDelta = Math.abs(left.rect.top - viewportRect.top) - Math.abs(right.rect.top - viewportRect.top);
+      if (topDelta !== 0) {
+        return topDelta;
+      }
+      return left.rect.top - right.rect.top;
+    });
 
-  if (typeof doc.elementFromPoint === "function") {
-    const hitNode = doc.elementFromPoint(sampleX, sampleY);
-    const anchorNode = hitNode?.closest?.(selector);
-    if (anchorNode && viewport.contains(anchorNode)) {
-      return anchorNode;
+  return visibleCandidates[0]?.node || null;
+}
+
+export function getLatestUserMessageKey(messages = []) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "user") {
+      continue;
     }
+
+    return String(message?.id || `${message?.timestamp || "user"}-${index}`);
   }
 
-  const candidates = [...viewport.querySelectorAll(selector)];
-  return candidates.find((node) => {
-    const rect = node.getBoundingClientRect();
-    return rect.bottom > viewportRect.top + 1;
-  }) || null;
+  return "";
 }
 
 export function useCommandCenter() {
@@ -152,7 +254,7 @@ export function useCommandCenter() {
   const stored = useMemo(() => loadStoredState(), []);
   const storedChatScrollTops = useMemo(() => loadStoredChatScrollTops(), []);
   const storedPromptHistory = useMemo(() => loadStoredPromptHistory(), []);
-  const storedPendingChatTurns = useMemo(() => loadPendingChatTurns(), []);
+  const rawStoredPendingChatTurns = useMemo(() => loadPendingChatTurns(), []);
   const initialChatTabs = useMemo(() => buildInitialChatTabs(stored), [stored]);
   const initialActiveChatTabId = useMemo(() => {
     const requested = String(stored?.activeChatTabId || "").trim();
@@ -163,7 +265,33 @@ export function useCommandCenter() {
     () => buildInitialMessagesByTabId(stored, initialActiveChatTabId),
     [initialActiveChatTabId, stored],
   );
-  const initialStoredMessagesByTabIdRef = useRef(initialMessagesByTabId);
+  const storedPendingChatTurns = useMemo(
+    () => pruneCompletedPendingChatTurns(rawStoredPendingChatTurns, initialMessagesByTabId, initialTabMetaById),
+    [initialMessagesByTabId, initialTabMetaById, rawStoredPendingChatTurns],
+  );
+  const initialHydratedMessagesByTabId = useMemo(
+    () =>
+      Object.fromEntries(
+        initialChatTabs.map((tab) => {
+          const meta = initialTabMetaById[tab.id] || createTabMeta(tab);
+          const conversationKey = createConversationKey(meta.sessionUser, meta.agentId);
+          const pendingEntry = storedPendingChatTurns[conversationKey] || null;
+          const baseMessages = initialMessagesByTabId[tab.id] || [];
+
+          return [
+            tab.id,
+            mergePendingConversation(
+              baseMessages,
+              pendingEntry,
+              i18n.chat.thinkingPlaceholder,
+              [],
+            ),
+          ];
+        }),
+      ),
+    [i18n.chat.thinkingPlaceholder, initialChatTabs, initialMessagesByTabId, initialTabMetaById, storedPendingChatTurns],
+  );
+  const initialStoredMessagesByTabIdRef = useRef(initialHydratedMessagesByTabId);
   const initialStoredPendingRef = useRef(storedPendingChatTurns);
   const initialActiveTab = initialChatTabs.find((tab) => tab.id === initialActiveChatTabId) || initialChatTabs[0];
   const initialActiveMeta = initialTabMetaById[initialActiveChatTabId] || createTabMeta(initialActiveTab);
@@ -179,29 +307,44 @@ export function useCommandCenter() {
       ),
     [i18n, initialChatTabs, initialTabMetaById],
   );
+  const initialBusyByTabId = useMemo(
+    () =>
+      Object.fromEntries(
+        initialChatTabs.map((tab) => {
+          const meta = initialTabMetaById[tab.id] || createTabMeta(tab);
+          const conversationKey = createConversationKey(meta.sessionUser, meta.agentId);
+          const pendingEntry = storedPendingChatTurns[conversationKey];
+          const localMessages = initialHydratedMessagesByTabId[tab.id] || [];
+          return [tab.id, Boolean(pendingEntry) && !hasAuthoritativePendingAssistantReply(localMessages, pendingEntry)];
+        }),
+      ),
+    [initialChatTabs, initialHydratedMessagesByTabId, initialTabMetaById, storedPendingChatTurns],
+  );
 
   const [chatTabs, setChatTabs] = useState(initialChatTabs);
   const [activeChatTabId, setActiveChatTabId] = useState(initialActiveChatTabId);
   const [tabMetaById, setTabMetaById] = useState(initialTabMetaById);
-  const [messagesByTabId, setMessagesByTabId] = useState(initialMessagesByTabId);
+  const [messagesByTabId, setMessagesByTabId] = useState(initialHydratedMessagesByTabId);
   const [sessionByTabId, setSessionByTabId] = useState(initialSessionByTabId);
-  const [busyByTabId, setBusyByTabId] = useState({});
+  const [busyByTabId, setBusyByTabId] = useState(initialBusyByTabId);
   const [runtimeCacheByTabId, setRuntimeCacheByTabId] = useState({});
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
   const [promptDraftsByConversation, setPromptDraftsByConversation] = useState(storedPromptDrafts);
   const [pendingChatTurns, setPendingChatTurns] = useState(storedPendingChatTurns);
-  const [switchingAgentLabel, setSwitchingAgentLabel] = useState("");
+  const [switchingAgentOverlay, setSwitchingAgentOverlay] = useState(null);
+  const [switchingModelOverlay, setSwitchingModelOverlay] = useState(null);
+  const [modelSwitchNotice, setModelSwitchNotice] = useState(null);
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [inspectorPanelWidth, setInspectorPanelWidth] = useState(stored?.inspectorPanelWidth || defaultInspectorPanelWidth);
-  const [chatFontSizeBySessionUser, setChatFontSizeBySessionUser] = useState(stored?.chatFontSizeBySessionUser || {});
+  const [chatFontSize, setChatFontSize] = useState(stored?.chatFontSize || defaultChatFontSize);
   const [dismissedTaskRelationshipIdsByConversation, setDismissedTaskRelationshipIdsByConversation] = useState(
     stored?.dismissedTaskRelationshipIdsByConversation || {},
   );
   const [focusMessageRequest, setFocusMessageRequest] = useState(null);
   const { resolvedTheme, setTheme, theme } = useTheme();
   const [session, setSession] = useState(createSessionForTab(i18n, initialActiveTab, initialActiveMeta, initialSessionByTabId[initialActiveChatTabId]));
-  const [messages, setMessages] = useState(initialMessagesByTabId[initialActiveChatTabId] || []);
-  const [busy, setBusy] = useState(false);
+  const [messages, setMessages] = useState(initialHydratedMessagesByTabId[initialActiveChatTabId] || []);
+  const [busy, setBusy] = useState(Boolean(initialBusyByTabId[initialActiveChatTabId]));
   const [model, setModel] = useState(initialActiveMeta.model || "");
   const [fastMode, setFastMode] = useState(Boolean(initialActiveMeta.fastMode));
   const [prompt, setPrompt] = useState(storedPromptDrafts[initialConversationKey] || "");
@@ -211,11 +354,19 @@ export function useCommandCenter() {
   const messagesRef = useRef(messages);
   const activeChatTabIdRef = useRef(activeChatTabId);
   const hydratingActiveTabRef = useRef(false);
+  const latestUserMessageKeyRef = useRef(getLatestUserMessageKey(initialHydratedMessagesByTabId[initialActiveChatTabId] || []));
   const chatTabsRef = useRef(chatTabs);
   const tabMetaByIdRef = useRef(tabMetaById);
   const messagesByTabIdRef = useRef(messagesByTabId);
   const sessionByTabIdRef = useRef(sessionByTabId);
   const busyByTabIdRef = useRef(busyByTabId);
+  const pendingChatTurnsRef = useRef(pendingChatTurns);
+  const promptDraftsByConversationRef = useRef(promptDraftsByConversation);
+  const activeTabRef = useRef(activeTab);
+  const inspectorPanelWidthRef = useRef(inspectorPanelWidth);
+  const chatFontSizeRef = useRef(chatFontSize);
+  const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
+  const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
   const runtimeRequestByTabIdRef = useRef({});
   const sessionStateRef = useRef({
     sessionUser: initialActiveMeta.sessionUser,
@@ -229,7 +380,90 @@ export function useCommandCenter() {
     agentId: initialActiveMeta.agentId,
   });
   const chatScrollTopByConversationRef = useRef(storedChatScrollTops);
+  const [restoredChatScrollRevision, setRestoredChatScrollRevision] = useState(0);
   const localizedFormatTime = useMemo(() => (timestamp) => formatTime(timestamp, intlLocale), [intlLocale]);
+
+  const persistOptimisticChatState = useCallback(({
+    clearPendingKey = "",
+    pendingEntry,
+    tabId,
+    nextMessages,
+  }) => {
+    const normalizedTabId = String(tabId || activeChatTabIdRef.current || "").trim();
+    if (!normalizedTabId) {
+      return;
+    }
+
+    const currentTabMeta = tabMetaByIdRef.current[normalizedTabId]
+      || createTabMeta(chatTabsRef.current.find((tab) => tab.id === normalizedTabId));
+    const nextMessagesByTabId = {
+      ...messagesByTabIdRef.current,
+      [normalizedTabId]: Array.isArray(nextMessages) ? nextMessages : (messagesByTabIdRef.current[normalizedTabId] || []),
+    };
+    const normalizedClearPendingKey = String(clearPendingKey || "").trim();
+    let nextPendingChatTurns = pendingChatTurnsRef.current;
+
+    if (normalizedClearPendingKey && nextPendingChatTurns[normalizedClearPendingKey]) {
+      nextPendingChatTurns = { ...nextPendingChatTurns };
+      delete nextPendingChatTurns[normalizedClearPendingKey];
+    }
+
+    if (pendingEntry) {
+      nextPendingChatTurns = {
+        ...nextPendingChatTurns,
+        [pendingEntry.key]: pendingEntry,
+      };
+    }
+    const activeTabId = activeChatTabIdRef.current || normalizedTabId;
+    const activeMessages = nextMessagesByTabId[activeTabId] || [];
+    const activeMeta = tabMetaByIdRef.current[activeTabId] || currentTabMeta;
+
+    persistUiStateSnapshot({
+      activeChatTabId: activeTabId,
+      activeTab: activeTabRef.current,
+      chatTabs: chatTabsRef.current,
+      chatFontSize: chatFontSizeRef.current,
+      dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
+      fastMode: Boolean(activeMeta?.fastMode),
+      inspectorPanelWidth: inspectorPanelWidthRef.current,
+      thinkMode: activeMeta?.thinkMode || "off",
+      model: activeMeta?.model || "",
+      agentId: activeMeta?.agentId || "main",
+      sessionUser: activeMeta?.sessionUser || defaultSessionUser,
+      tabMetaById: tabMetaByIdRef.current,
+      promptDraftsByConversation: promptDraftsByConversationRef.current,
+      messages: activeMessages,
+      messagesByTabId: nextMessagesByTabId,
+      pendingChatTurns: nextPendingChatTurns,
+    });
+  }, []);
+
+  const persistCurrentUiStateSnapshot = useCallback((overrides = {}) => {
+    const activeTabId = activeChatTabIdRef.current || overrides.activeChatTabId || "";
+    const activeMessages = overrides.messages || messagesByTabIdRef.current[activeTabId] || [];
+    const activeMeta = tabMetaByIdRef.current[activeTabId]
+      || createTabMeta(chatTabsRef.current.find((tab) => tab.id === activeTabId));
+
+    persistUiStateSnapshot({
+      activeChatTabId: activeTabId,
+      activeTab: activeTabRef.current,
+      chatTabs: chatTabsRef.current,
+      chatFontSize: overrides.chatFontSize || chatFontSizeRef.current,
+      dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
+      fastMode: Boolean(activeMeta?.fastMode),
+      inspectorPanelWidth: inspectorPanelWidthRef.current,
+      thinkMode: activeMeta?.thinkMode || "off",
+      model: activeMeta?.model || "",
+      agentId: activeMeta?.agentId || "main",
+      sessionUser: activeMeta?.sessionUser || defaultSessionUser,
+      tabMetaById: tabMetaByIdRef.current,
+      promptDraftsByConversation: promptDraftsByConversationRef.current,
+      messages: activeMessages,
+      messagesByTabId: messagesByTabIdRef.current,
+      pendingChatTurns: pendingChatTurnsRef.current,
+      persistedAt: Date.now(),
+    });
+  }, []);
 
   const activeChatTab = useMemo(() => {
     if (activeChatTabId) {
@@ -248,11 +482,26 @@ export function useCommandCenter() {
   const activeAgentId = activeTabMeta?.agentId || session.agentId;
   const activeConversationKey = createConversationKey(activeSessionUser, activeAgentId);
   const activePendingChat = pendingChatTurns[activeConversationKey] || null;
-  const activeChatFontSize = chatFontSizeBySessionUser[activeSessionUser] || defaultChatFontSize;
+  const activePendingWasRestored = Boolean(
+    activePendingChat && restoredPendingConversationKeysRef.current.has(activeConversationKey),
+  );
+  const activeChatFontSize = chatFontSize;
   const dismissedTaskRelationshipIds = dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [];
 
   const setActiveTarget = useCallback((value) => {
     activeTargetRef.current = value;
+  }, []);
+
+  const invalidateRuntimeRequestForTab = useCallback((tabId) => {
+    const normalizedTabId = String(tabId || "").trim();
+    if (!normalizedTabId) {
+      return;
+    }
+
+    runtimeRequestByTabIdRef.current = {
+      ...runtimeRequestByTabIdRef.current,
+      [normalizedTabId]: (runtimeRequestByTabIdRef.current[normalizedTabId] || 0) + 1,
+    };
   }, []);
 
   const setMessagesForTab = useCallback((tabId, value) => {
@@ -412,8 +661,9 @@ export function useCommandCenter() {
       || snapshot.fastMode === true;
     const nextThinkMode = snapshot.session?.thinkMode || fallbackMeta?.thinkMode || "off";
     const nextConversationKey = createConversationKey(nextSessionUser, nextAgentId);
-    const pendingEntry = pendingChatTurns[nextConversationKey] || null;
     const localMessages = messagesByTabIdRef.current[tabId] || [];
+    const pendingEntry = pendingChatTurns[nextConversationKey] || derivePendingEntryFromLocalMessages(localMessages) || null;
+    const recoveredPending = restoredPendingConversationKeysRef.current.has(nextConversationKey);
 
     updateTabIdentity(tabId, {
       sessionUser: nextSessionUser,
@@ -439,15 +689,55 @@ export function useCommandCenter() {
       thinkMode: snapshot.session?.thinkMode || current.thinkMode,
     }));
 
-    if (!pendingEntry && Array.isArray(snapshot.conversation)) {
-      const mergedConversation = mergeConversationAttachments(snapshot.conversation, localMessages);
-      const hydratedConversation = mergePendingConversation(
-        mergedConversation,
-        pendingEntry,
-        i18n.chat.thinkingPlaceholder,
+    if (Array.isArray(snapshot.conversation)) {
+      const mergedConversation = mergeConversationIdentity(
+        mergeConversationAttachments(snapshot.conversation, localMessages),
         localMessages,
       );
+      const snapshotHasAssistantReply = pendingEntry
+        ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
+        : false;
+      const snapshotIncludesPendingUserMessage = pendingEntry
+        ? snapshotHasPendingUserMessage(mergedConversation, pendingEntry)
+        : false;
+      const shouldClearPending = shouldClearRecoveredPendingTurn({
+        pendingEntry,
+        recovered: recoveredPending,
+        snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
+        snapshotHasAssistantReply,
+        status: snapshot.session?.status || "",
+      });
+      const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
+      const effectiveLocalMessages = pendingEntry && !snapshotHasAssistantReply ? localMessages : [];
+      const mergedConversationWithLocalTail = pendingEntry && !shouldClearPending
+        ? mergedConversation
+        : mergeStaleLocalConversationTail(
+            mergedConversation,
+            shouldClearPending ? localMessagesWithoutPending : localMessages,
+          );
+      const hydratedConversation = shouldClearPending
+        ? mergedConversationWithLocalTail
+        : mergePendingConversation(
+            mergedConversationWithLocalTail,
+            pendingEntry,
+            i18n.chat.thinkingPlaceholder,
+            effectiveLocalMessages,
+          );
       setMessagesForTab(tabId, hydratedConversation);
+      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !shouldClearPending;
+      setBusyForTab(tabId, hasActivePendingTurn);
+
+      if (pendingEntry && !hasActivePendingTurn) {
+        setPendingChatTurns((current) => {
+          if (!current[nextConversationKey]) {
+            return current;
+          }
+
+          const next = { ...current };
+          delete next[nextConversationKey];
+          return next;
+        });
+      }
     }
 
     setRuntimeCacheByTabId((current) => ({
@@ -468,7 +758,9 @@ export function useCommandCenter() {
     i18n.chat.thinkingPlaceholder,
     i18n.sessionOverview.fastMode.on,
     pendingChatTurns,
+    setBusyForTab,
     setMessagesForTab,
+    setPendingChatTurns,
     updateTabIdentity,
     updateTabMeta,
     updateTabSession,
@@ -537,6 +829,34 @@ export function useCommandCenter() {
       return null;
     }
 
+    const latestTab = chatTabsRef.current.find((entry) => entry.id === tabId) || fallbackTab;
+    const latestMeta = tabMetaByIdRef.current[tabId] || null;
+    const latestSession = sessionByTabIdRef.current[tabId] || null;
+    const latestAgentId =
+      latestMeta?.agentId
+      || latestSession?.agentId
+      || latestTab?.agentId
+      || normalizedAgentId
+      || resolveAgentIdFromTabId(tabId)
+      || "main";
+    const latestSessionUser =
+      latestMeta?.sessionUser
+      || latestSession?.sessionUser
+      || latestTab?.sessionUser
+      || "";
+
+    if (
+      !shouldApplyRuntimeSnapshotToTab({
+        currentAgentId: latestAgentId,
+        currentSessionUser: latestSessionUser,
+        requestedAgentId: normalizedAgentId,
+        requestedSessionUser: normalizedSessionUser,
+        resolvedSessionUser,
+      })
+    ) {
+      return null;
+    }
+
     applySnapshotToTab(
       tabId,
       payload,
@@ -576,6 +896,7 @@ export function useCommandCenter() {
     i18n,
     messagesRef,
     pendingChatTurns,
+    recoveringPendingReply: activePendingWasRestored,
     session,
     setBusy,
     setFastMode,
@@ -592,6 +913,7 @@ export function useCommandCenter() {
     enqueueOrRunEntry,
     handleAddAttachments,
     handleRemoveAttachment,
+    handleStop,
     setComposerAttachments,
     setQueuedMessages,
   } = useChatController({
@@ -602,13 +924,22 @@ export function useCommandCenter() {
     getMessagesForTab,
     i18n,
     isTabActive,
+    persistOptimisticChatState,
     setBusyForTab,
     setMessagesForTab,
     setPendingChatTurns,
+    invalidateRuntimeRequestForTab,
     updateTabIdentity,
     updateTabMeta,
     updateTabSession,
   });
+
+  useEffect(() => {
+    if (!busy || session.status === i18n.common.running) {
+      return;
+    }
+    setSession((current) => ({ ...current, status: i18n.common.running }));
+  }, [busy, i18n.common.running, session.status]);
 
   const focusPrompt = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -750,6 +1081,43 @@ export function useCommandCenter() {
   }, [busyByTabId]);
 
   useEffect(() => {
+    pendingChatTurnsRef.current = pendingChatTurns;
+  }, [pendingChatTurns]);
+
+  useEffect(() => {
+    const restoredKeys = restoredPendingConversationKeysRef.current;
+    if (!restoredKeys.size) {
+      return;
+    }
+
+    for (const key of [...restoredKeys]) {
+      if (!pendingChatTurns[key]) {
+        restoredKeys.delete(key);
+      }
+    }
+  }, [pendingChatTurns]);
+
+  useEffect(() => {
+    promptDraftsByConversationRef.current = promptDraftsByConversation;
+  }, [promptDraftsByConversation]);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    inspectorPanelWidthRef.current = inspectorPanelWidth;
+  }, [inspectorPanelWidth]);
+
+  useEffect(() => {
+    chatFontSizeRef.current = chatFontSize;
+  }, [chatFontSize]);
+
+  useEffect(() => {
+    dismissedTaskRelationshipIdsByConversationRef.current = dismissedTaskRelationshipIdsByConversation;
+  }, [dismissedTaskRelationshipIdsByConversation]);
+
+  useEffect(() => {
     adjustPromptHeight();
   }, [adjustPromptHeight, prompt]);
 
@@ -856,10 +1224,38 @@ export function useCommandCenter() {
   }, [session.agentId, session.sessionUser, setActiveTarget]);
 
   useEffect(() => {
+    if (!activeChatTab?.id) {
+      return;
+    }
+
+    if (activePendingChat && hasAuthoritativePendingAssistantReply(messages, activePendingChat)) {
+      setPendingChatTurns((current) => {
+        if (!current[activeConversationKey]) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[activeConversationKey];
+        return next;
+      });
+      setBusyForTab(activeChatTab.id, false);
+      return;
+    }
+
+    if (!activePendingChat && !messages.some((message) => message?.pending || message?.streaming) && busyByTabIdRef.current[activeChatTab.id]) {
+      setBusyForTab(activeChatTab.id, false);
+    }
+  }, [activeChatTab, activeConversationKey, activePendingChat, messages, setBusyForTab, setPendingChatTurns]);
+
+  useEffect(() => {
     if (!activeChatTab) {
       return;
     }
     if (hydratingActiveTabRef.current) {
+      return;
+    }
+
+    const activeTabAgentId = resolveAgentIdFromTabId(activeChatTab.id) || activeChatTab.agentId;
+    if (activeTabAgentId !== session.agentId) {
       return;
     }
 
@@ -904,6 +1300,18 @@ export function useCommandCenter() {
   useEffect(() => {
     hydratingActiveTabRef.current = false;
   }, [activeChatTabId, messages, model, session.agentId, session.sessionUser]);
+
+  useEffect(() => {
+    if (!modelSwitchNotice) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setModelSwitchNotice(null);
+    }, 2600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [modelSwitchNotice]);
 
   useEffect(() => {
     if (!activeChatTabId) {
@@ -954,43 +1362,50 @@ export function useCommandCenter() {
     const targetMeta = (targetTabId && tabMetaByIdRef.current[targetTabId]) || null;
     const targetSession = (targetTabId && sessionByTabIdRef.current[targetTabId]) || null;
     const isActiveTargetTab = targetTabId === activeChatTabIdRef.current;
-    const targetSessionUser =
-      (isActiveTargetTab ? session.sessionUser : "")
-      || targetMeta?.sessionUser
-      || targetSession?.sessionUser
-      || targetTab?.sessionUser
-      || sessionStateRef.current.sessionUser;
     const targetAgentId =
-      (isActiveTargetTab ? session.agentId : "")
-      || targetMeta?.agentId
+      targetMeta?.agentId
       || targetSession?.agentId
       || targetTab?.agentId
+      || (isActiveTargetTab ? session.agentId : "")
       || sessionStateRef.current.agentId;
+    const rawTargetSessionUser =
+      targetMeta?.sessionUser
+      || targetSession?.sessionUser
+      || targetTab?.sessionUser
+      || (isActiveTargetTab ? session.sessionUser : "")
+      || sessionStateRef.current.sessionUser;
+    const targetSessionUser =
+      targetAgentId && targetAgentId !== "main" && rawTargetSessionUser === defaultSessionUser
+        ? createAgentSessionUser(targetAgentId)
+        : rawTargetSessionUser;
     const targetModel =
-      (isActiveTargetTab ? model : "")
-      || targetMeta?.model
+      targetMeta?.model
       || targetSession?.selectedModel
       || targetSession?.model
+      || (isActiveTargetTab ? model : "")
       || sessionStateRef.current.model;
     const targetFastMode =
-      isActiveTargetTab
-        ? fastMode
-        : typeof targetMeta?.fastMode === "boolean"
-          ? targetMeta.fastMode
+      typeof targetMeta?.fastMode === "boolean"
+        ? targetMeta.fastMode
+        : isActiveTargetTab
+          ? fastMode
           : sessionStateRef.current.fastMode;
     const targetThinkMode =
-      (isActiveTargetTab ? session.thinkMode || "off" : "")
-      || targetMeta?.thinkMode
+      targetMeta?.thinkMode
       || targetSession?.thinkMode
+      || (isActiveTargetTab ? session.thinkMode || "off" : "")
       || sessionStateRef.current.thinkMode;
 
+    const entryTimestamp = Date.now();
+    const entryId = `${entryTimestamp}-${Math.random().toString(36).slice(2, 8)}`;
     const entry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: entryId,
       tabId: targetTabId,
       key: `${targetSessionUser}:${targetAgentId}`,
       content,
       attachments,
-      timestamp: Date.now(),
+      timestamp: entryTimestamp,
+      userMessageId: `msg-user-${entryId}`,
       agentId: targetAgentId,
       sessionUser: targetSessionUser,
       model: targetModel,
@@ -1030,7 +1445,7 @@ export function useCommandCenter() {
   useAppPersistence({
     activeChatTabId,
     activeTab,
-    chatFontSizeBySessionUser,
+    chatFontSize,
     chatTabs,
     dismissedTaskRelationshipIdsByConversation,
     fastMode,
@@ -1056,16 +1471,19 @@ export function useCommandCenter() {
       return;
     }
 
-    setChatFontSizeBySessionUser((current) => {
-      if ((current[session.sessionUser] || defaultChatFontSize) === nextSize) {
-        return current;
-      }
+    if (chatFontSizeRef.current === nextSize) {
+      return;
+    }
 
-      return {
-        ...current,
-        [session.sessionUser]: nextSize,
-      };
-    });
+    const viewport = messageViewportRef.current;
+    if (viewport) {
+      persistConversationScrollTop(activeConversationKey, viewport.scrollTop);
+    }
+
+    chatFontSizeRef.current = nextSize;
+    persistCurrentUiStateSnapshot({ chatFontSize: nextSize });
+    setChatFontSize(nextSize);
+    setRestoredChatScrollRevision((current) => current + 1);
   };
 
   const handleInspectorPanelWidthChange = (nextWidth) => {
@@ -1097,10 +1515,13 @@ export function useCommandCenter() {
     [dismissedTaskRelationshipIds, taskRelationships],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = messageViewportRef.current;
-    const latestMessage = messages[messages.length - 1];
-    if (viewport && shouldAutoScrollRef.current && latestMessage?.role !== "assistant") {
+    const latestUserMessageKey = getLatestUserMessageKey(messages);
+    const hasNewUserTurn = Boolean(latestUserMessageKey) && latestUserMessageKey !== latestUserMessageKeyRef.current;
+    latestUserMessageKeyRef.current = latestUserMessageKey;
+
+    if (viewport && shouldAutoScrollRef.current && hasNewUserTurn) {
       viewport.scrollTop = viewport.scrollHeight;
     }
   }, [messages, activeQueuedMessages]);
@@ -1144,7 +1565,7 @@ export function useCommandCenter() {
   const handleSend = sendCurrentPrompt;
 
   const handleReset = async () => {
-    const nextSessionUser = createAgentSessionUser(sessionStateRef.current.agentId);
+    const nextSessionUser = createResetSessionUser(sessionStateRef.current.agentId);
     const nextAgentId = sessionStateRef.current.agentId;
     const nextModel = sessionStateRef.current.model;
     const previousConversationKey = createConversationKey(sessionStateRef.current.sessionUser, nextAgentId);
@@ -1167,6 +1588,22 @@ export function useCommandCenter() {
       agentId: nextAgentId,
       model: nextModel,
     };
+    if (activeChatTabIdRef.current) {
+      updateTabIdentity(activeChatTabIdRef.current, { sessionUser: nextSessionUser });
+      updateTabMeta(activeChatTabIdRef.current, {
+        agentId: nextAgentId,
+        sessionUser: nextSessionUser,
+        model: nextModel,
+      });
+      updateTabSession(activeChatTabIdRef.current, (current) => ({
+        ...current,
+        agentId: nextAgentId,
+        selectedAgentId: nextAgentId,
+        sessionUser: nextSessionUser,
+        model: nextModel || current.model,
+        selectedModel: nextModel || current.selectedModel,
+      }));
+    }
     setActiveTarget({
       sessionUser: nextSessionUser,
       agentId: nextAgentId,
@@ -1205,12 +1642,32 @@ export function useCommandCenter() {
 
   const handleModelChange = async (nextModel) => {
     if (!nextModel || nextModel === model) return;
-    await applySessionUpdate({ model: nextModel });
+
+    setSwitchingModelOverlay({ modelLabel: nextModel });
+    try {
+      await updateSessionSettings({ model: nextModel });
+      setModelSwitchNotice({
+        type: "success",
+        message: i18n.common.modelSwitchSucceeded(nextModel),
+      });
+    } catch {
+      await loadRuntime(sessionStateRef.current.sessionUser, {
+        agentId: sessionStateRef.current.agentId,
+      }).catch(() => {
+        setSession((current) => ({ ...current, status: i18n.common.failed }));
+      });
+      setModelSwitchNotice({
+        type: "error",
+        message: i18n.common.modelSwitchFailed(nextModel),
+      });
+    } finally {
+      setSwitchingModelOverlay(null);
+    }
   };
 
   const openOrActivateAgentTab = useCallback(async (nextAgent) => {
     if (!nextAgent) {
-      return null;
+      return { created: false, tabId: null };
     }
 
     const nextTabId = createAgentTabId(nextAgent);
@@ -1219,7 +1676,7 @@ export function useCommandCenter() {
       flushVisibleConversationScrollTop();
       activeChatTabIdRef.current = existingTab.id;
       setActiveChatTabId(existingTab.id);
-      return existingTab.id;
+      return { created: false, tabId: existingTab.id };
     }
 
     const tabId = nextTabId;
@@ -1237,7 +1694,9 @@ export function useCommandCenter() {
         isGeneratedAgentBootstrapSessionUser(existingSessionUser, nextAgent)
       )
         ? existingSessionUser
-        : defaultSessionUser;
+        : nextAgent === "main"
+          ? defaultSessionUser
+          : createAgentSessionUser(nextAgent);
     const nextTab = {
       id: tabId,
       agentId: nextAgent,
@@ -1260,17 +1719,59 @@ export function useCommandCenter() {
     activeChatTabIdRef.current = tabId;
     setActiveChatTabId(tabId);
 
-    return tabId;
+    return { created: true, tabId };
   }, [flushVisibleConversationScrollTop, i18n, updateTabMeta, updateTabSession]);
 
   const handleAgentChange = async (nextAgent) => {
     if (!nextAgent) return;
     if (nextAgent === session.agentId && resolveAgentIdFromTabId(activeChatTab?.id) === nextAgent) return;
-    setSwitchingAgentLabel(nextAgent);
+
+    let shouldShowOverlay = false;
     try {
-      await openOrActivateAgentTab(nextAgent);
+      const { created, tabId: targetTabId } = await openOrActivateAgentTab(nextAgent);
+      shouldShowOverlay = created;
+      if (created) {
+        setSwitchingAgentOverlay({
+          agentLabel: nextAgent,
+          mode: "opening-session",
+        });
+      }
+
+      const targetTab = chatTabsRef.current.find((tab) => tab.id === targetTabId);
+      const targetMeta = (targetTabId && tabMetaByIdRef.current[targetTabId]) || null;
+      const targetSession = (targetTabId && sessionByTabIdRef.current[targetTabId]) || null;
+      const existingTargetSessionUser =
+        targetMeta?.sessionUser
+        || targetSession?.sessionUser
+        || targetTab?.sessionUser
+        || "";
+      const targetSessionUser =
+        nextAgent !== "main" && (!existingTargetSessionUser || existingTargetSessionUser === defaultSessionUser)
+          ? createAgentSessionUser(nextAgent)
+          : existingTargetSessionUser || createAgentSessionUser(nextAgent);
+
+      if (targetTabId) {
+        updateTabIdentity(targetTabId, { sessionUser: targetSessionUser });
+        updateTabMeta(targetTabId, {
+          agentId: nextAgent,
+          sessionUser: targetSessionUser,
+        });
+        updateTabSession(targetTabId, (current) => ({
+          ...current,
+          agentId: nextAgent,
+          selectedAgentId: nextAgent,
+          sessionUser: targetSessionUser,
+        }));
+      }
+
+      await applySessionUpdate({
+        agentId: nextAgent,
+        sessionUser: targetSessionUser,
+      });
     } finally {
-      setSwitchingAgentLabel((current) => (current === nextAgent ? "" : current));
+      if (shouldShowOverlay) {
+        setSwitchingAgentOverlay(null);
+      }
     }
   };
 
@@ -1290,6 +1791,25 @@ export function useCommandCenter() {
     }
 
     const targetTab = chatTabsRef.current[numericIndex - 1];
+    if (!targetTab?.id) {
+      return;
+    }
+
+    handleActivateChatTab(targetTab.id);
+  }, []);
+
+  const handleActivateAdjacentChatTab = useCallback((direction) => {
+    const normalizedDirection = Number(direction);
+    if (!normalizedDirection) {
+      return;
+    }
+
+    const currentIndex = chatTabsRef.current.findIndex((tab) => tab.id === activeChatTabIdRef.current);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const targetTab = chatTabsRef.current[currentIndex + (normalizedDirection < 0 ? -1 : 1)];
     if (!targetTab?.id) {
       return;
     }
@@ -1324,6 +1844,33 @@ export function useCommandCenter() {
     });
   };
 
+  const handleReorderChatTabs = useCallback((sourceTabId, targetTabId, placement = "before") => {
+    const normalizedSourceTabId = String(sourceTabId || "").trim();
+    const normalizedTargetTabId = String(targetTabId || "").trim();
+    if (!normalizedSourceTabId || !normalizedTargetTabId || normalizedSourceTabId === normalizedTargetTabId) {
+      return;
+    }
+
+    setChatTabs((current) => {
+      const sourceIndex = current.findIndex((tab) => tab.id === normalizedSourceTabId);
+      const targetIndex = current.findIndex((tab) => tab.id === normalizedTargetTabId);
+      if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) {
+        return current;
+      }
+
+      const updated = [...current];
+      const [movedTab] = updated.splice(sourceIndex, 1);
+      const nextTargetIndex = updated.findIndex((tab) => tab.id === normalizedTargetTabId);
+      if (nextTargetIndex === -1) {
+        return current;
+      }
+      const insertionIndex = placement === "after" ? nextTargetIndex + 1 : nextTargetIndex;
+      updated.splice(insertionIndex, 0, movedTab);
+      chatTabsRef.current = updated;
+      return updated;
+    });
+  }, []);
+
   const handleFastModeChange = async (nextFastMode) => {
     const resolvedFastMode = Boolean(nextFastMode);
     await applySessionUpdate({ fastMode: resolvedFastMode });
@@ -1335,6 +1882,7 @@ export function useCommandCenter() {
   };
 
   useAppHotkeys({
+    handleActivateAdjacentChatTab,
     handleActivateChatTabByIndex,
     handlePromptChange,
     handleReset,
@@ -1377,7 +1925,9 @@ export function useCommandCenter() {
 
     setFocusMessageRequest({
       id: `${matchedMessage.timestamp}-${Date.now()}`,
+      messageId: matchedMessage.id || "",
       role: matchedMessage.role || artifact?.messageRole || "assistant",
+      source: "artifact",
       timestamp: matchedMessage.timestamp,
     });
   };
@@ -1389,11 +1939,10 @@ export function useCommandCenter() {
         agentId: resolveAgentIdFromTabId(tab.id),
         sessionUser: tab.sessionUser,
         active: tab.id === activeChatTabId,
-        busy: Boolean(busyByTabId[tab.id]),
+        busy: Boolean(busyByTabId[tab.id]) || hasActiveAssistantReply(messagesByTabId[tab.id] || []),
       })),
-    [activeChatTabId, busyByTabId, chatTabs],
+    [activeChatTabId, busyByTabId, chatTabs, messagesByTabId],
   );
-
   return {
     activeChatTabId,
     activeQueuedMessages,
@@ -1416,6 +1965,7 @@ export function useCommandCenter() {
     handleArtifactSelect,
     handleChatFontSizeChange,
     handleCloseChatTab,
+    handleReorderChatTabs,
     handleFastModeChange,
     handleInspectorPanelWidthChange,
     handleModelChange,
@@ -1424,11 +1974,13 @@ export function useCommandCenter() {
     handleRemoveAttachment,
     handleReset,
     handleSend,
+    handleStop,
     handleThinkModeChange,
     localizedFormatTime,
     messageViewportRef,
     messages,
     model,
+    modelSwitchNotice,
     inspectorPanelWidth,
     peeks,
     prompt,
@@ -1436,13 +1988,15 @@ export function useCommandCenter() {
     renderPeek,
     resolvedTheme,
     restoredChatScrollKey: activeConversationKey,
+    restoredChatScrollRevision,
     restoredChatScrollState: chatScrollTopByConversationRef.current[activeConversationKey] || null,
     session,
     setActiveTab,
     dismissTaskRelationship,
     setTheme,
     snapshots,
-    switchingAgentLabel,
+    switchingAgentOverlay,
+    switchingModelOverlay,
     taskRelationships: visibleTaskRelationships,
     taskTimeline,
     theme,

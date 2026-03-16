@@ -360,19 +360,98 @@ function createOpenClawClient({
     return {
       acceptedAt,
       runId: resolvedRunId,
+      requestMessage: message,
       sessionKey,
     };
   }
 
-  function findLatestAssistantSince(messages = [], acceptedAt = 0) {
-    return [...messages]
-      .reverse()
-      .find((entry) => entry?.role === 'assistant' && Number(entry?.timestamp) >= acceptedAt && normalizeChatMessage(entry)) ||
-      [...messages].reverse().find((entry) => entry?.role === 'assistant' && normalizeChatMessage(entry)) ||
-      null;
+  function normalizeMessageTimestamp(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+
+    const parsed = Date.parse(String(value || ''));
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  async function readOpenClawSessionAssistant(runState) {
+  function normalizeComparableMessageText(message) {
+    return normalizeChatMessage(message).replace(/\r\n/g, '\n').trim();
+  }
+
+  function isTerminalOpenClawWaitStatus(status = '') {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    return Boolean(normalizedStatus) && !['timeout', 'started', 'running'].includes(normalizedStatus);
+  }
+
+  function isFailedOpenClawWaitStatus(status = '') {
+    return ['error', 'aborted', 'failed', 'cancelled', 'canceled'].includes(String(status || '').trim().toLowerCase());
+  }
+
+  function isCurrentTurnUserMessage(entry, requestMessage = '') {
+    const normalizedRequestMessage = String(requestMessage || '').trim();
+    if (!normalizedRequestMessage || entry?.role !== 'user') {
+      return false;
+    }
+
+    const entryText = normalizeComparableMessageText(entry);
+    return (
+      entryText === normalizedRequestMessage
+      || entryText.endsWith(normalizedRequestMessage)
+      || entryText.includes(`\n${normalizedRequestMessage}`)
+    );
+  }
+
+  function findLatestAssistantSince(messages = [], acceptedAt = 0, requestMessage = '', options = {}) {
+    const normalizedAcceptedAt = Number.isFinite(Number(acceptedAt)) ? Number(acceptedAt) : 0;
+    const normalizedRequestMessage = String(requestMessage || '').trim();
+    const strictTurnMatch = Boolean(options?.strictTurnMatch);
+    const turnUserIndex = [...messages]
+      .map((entry, index) => {
+        if (!isCurrentTurnUserMessage(entry, normalizedRequestMessage)) {
+          return -1;
+        }
+
+        if (normalizedAcceptedAt <= 0) {
+          return index;
+        }
+
+        const entryTimestamp = normalizeMessageTimestamp(entry?.timestamp);
+        return entryTimestamp === 0 || entryTimestamp >= normalizedAcceptedAt ? index : -1;
+      })
+      .filter((index) => index >= 0)
+      .pop();
+
+    if (Number.isInteger(turnUserIndex) && turnUserIndex >= 0) {
+      const turnAssistants = messages
+        .slice(turnUserIndex + 1)
+        .filter((entry) => entry?.role === 'assistant' && normalizeChatMessage(entry));
+
+      if (turnAssistants.length) {
+        return turnAssistants[turnAssistants.length - 1];
+      }
+
+      return null;
+    }
+
+    if (normalizedRequestMessage && strictTurnMatch) {
+      return null;
+    }
+
+    const assistants = [...messages].reverse().filter((entry) => entry?.role === 'assistant' && normalizeChatMessage(entry));
+
+    if (normalizedAcceptedAt > 0) {
+      return assistants.find((entry) => normalizeMessageTimestamp(entry?.timestamp) >= normalizedAcceptedAt) || null;
+    }
+
+    return assistants[0] || null;
+  }
+
+  async function readOpenClawSessionAssistant(runState, options = {}) {
     if (!runState?.sessionKey) {
       return null;
     }
@@ -387,7 +466,7 @@ function createOpenClawClient({
     );
 
     const historyMessages = Array.isArray(history?.messages) ? history.messages : [];
-    return findLatestAssistantSince(historyMessages, runState.acceptedAt);
+    return findLatestAssistantSince(historyMessages, runState.acceptedAt, runState.requestMessage, options);
   }
 
   async function waitForOpenClawSessionCompletion(runState, timeoutMs = 30000) {
@@ -404,12 +483,12 @@ function createOpenClawClient({
       timeoutMs + 2000,
     );
 
-    if (waitResult?.status === 'timeout') {
+    if (String(waitResult?.status || '').trim().toLowerCase() === 'timeout') {
       throw new Error(waitResult?.error || 'OpenClaw session timed out');
     }
 
-    if (waitResult?.status === 'error') {
-      throw new Error(waitResult?.error || 'OpenClaw session failed');
+    if (isFailedOpenClawWaitStatus(waitResult?.status)) {
+      throw new Error(waitResult?.error || `OpenClaw session ${String(waitResult?.status || '').trim().toLowerCase()}`);
     }
 
     return await readOpenClawSessionAssistant(runState);
@@ -616,6 +695,7 @@ function createOpenClawClient({
 
   async function callOpenClawSessionEventStream(messages, sessionUser = 'command-center', timeoutMs = 30000, options = {}) {
     const onDelta = typeof options.onDelta === 'function' ? options.onDelta : () => {};
+    const silentDeltaPollMs = 1500;
     const { GatewayClient, GATEWAY_CLIENT_NAMES, GATEWAY_CLIENT_MODES, VERSION } = await loadOpenClawGatewaySdk();
     if (typeof GatewayClient !== 'function') {
       throw new Error('OpenClaw Gateway client is unavailable');
@@ -642,12 +722,115 @@ function createOpenClawClient({
     let settled = false;
     let latestText = '';
     let activeRunState = null;
+    const acceptedRunIds = new Set([runId]);
+    let silentDeltaPollTimer = 0;
+    let silentDeltaPollInFlight = false;
+    let lastDeltaAt = Date.now();
+
+    const emitDeltaFromFullText = (nextText = '') => {
+      if (!nextText) {
+        return;
+      }
+
+      if (!latestText) {
+        latestText = nextText;
+        onDelta(nextText);
+        lastDeltaAt = Date.now();
+        return;
+      }
+
+      if (!nextText.startsWith(latestText)) {
+        return;
+      }
+
+      const delta = nextText.slice(latestText.length);
+      latestText = nextText;
+      if (delta) {
+        onDelta(delta);
+        lastDeltaAt = Date.now();
+      }
+    };
+
+    const stopSilentDeltaPolling = () => {
+      if (silentDeltaPollTimer) {
+        clearTimeout(silentDeltaPollTimer);
+        silentDeltaPollTimer = 0;
+      }
+    };
+
+    const settleFromSilentWaitResult = (waitResult) => {
+      if (settled || !waitResult || typeof waitResult !== 'object') {
+        return false;
+      }
+
+      const status = String(waitResult.status || '').trim().toLowerCase();
+      if (!isTerminalOpenClawWaitStatus(status)) {
+        return false;
+      }
+
+      if (isFailedOpenClawWaitStatus(status)) {
+        settled = true;
+        rejectFinal(new Error(waitResult?.error || `OpenClaw session ${status}`));
+        return true;
+      }
+
+      settled = true;
+      resolveFinal(waitResult);
+      return true;
+    };
+
+    const scheduleSilentDeltaPolling = () => {
+      stopSilentDeltaPolling();
+      if (settled || !activeRunState) {
+        return;
+      }
+
+      silentDeltaPollTimer = setTimeout(async () => {
+        if (settled || !activeRunState || silentDeltaPollInFlight) {
+          scheduleSilentDeltaPolling();
+          return;
+        }
+
+        if (Date.now() - lastDeltaAt < silentDeltaPollMs) {
+          scheduleSilentDeltaPolling();
+          return;
+        }
+
+        silentDeltaPollInFlight = true;
+        try {
+          const [waitResultState, latestAssistantState] = await Promise.allSettled([
+            callOpenClawGateway(
+              'agent.wait',
+              {
+                runId: activeRunState.runId,
+                timeoutMs: 1,
+              },
+              2500,
+            ),
+            readOpenClawSessionAssistant(activeRunState, { strictTurnMatch: true }),
+          ]);
+          const latestAssistant = latestAssistantState.status === 'fulfilled'
+            ? latestAssistantState.value
+            : null;
+          const nextText = latestAssistant ? normalizeChatMessage(latestAssistant) || '' : '';
+          emitDeltaFromFullText(nextText);
+          const waitResult = waitResultState.status === 'fulfilled' ? waitResultState.value : null;
+          if (settleFromSilentWaitResult(waitResult)) {
+            return;
+          }
+        } catch {}
+        finally {
+          silentDeltaPollInFlight = false;
+          scheduleSilentDeltaPolling();
+        }
+      }, silentDeltaPollMs);
+    };
 
     const client = new GatewayClient({
       url: gatewayUrl,
       token: config.apiKey || undefined,
       clientName: GATEWAY_CLIENT_NAMES?.GATEWAY_CLIENT || 'gateway-client',
-      clientDisplayName: 'command-center-backend',
+      clientDisplayName: 'LalaClaw',
       clientVersion: VERSION || 'unknown',
       platform: process.platform,
       mode: GATEWAY_CLIENT_MODES?.BACKEND || 'backend',
@@ -669,7 +852,16 @@ function createOpenClawClient({
         }
 
         const payload = evt.payload;
-        if (!payload || payload.sessionKey !== sessionKey || payload.runId !== runId) {
+        if (!payload || payload.sessionKey !== sessionKey) {
+          return;
+        }
+
+        const payloadRunId = typeof payload.runId === 'string' && payload.runId.trim() ? payload.runId.trim() : '';
+        if (payloadRunId) {
+          if (!acceptedRunIds.has(payloadRunId)) {
+            return;
+          }
+        } else if (payload.runId !== runId) {
           return;
         }
 
@@ -678,16 +870,7 @@ function createOpenClawClient({
           if (!nextText) {
             return;
           }
-          if (nextText.startsWith(latestText)) {
-            const delta = nextText.slice(latestText.length);
-            latestText = nextText;
-            if (delta) {
-              onDelta(delta);
-            }
-            return;
-          }
-          latestText = nextText;
-          onDelta(nextText);
+          emitDeltaFromFullText(nextText);
           return;
         }
 
@@ -732,8 +915,11 @@ function createOpenClawClient({
       activeRunState = {
         acceptedAt: Number(requestResult?.acceptedAt) || Date.now(),
         runId: typeof requestResult?.runId === 'string' && requestResult.runId.trim() ? requestResult.runId.trim() : runId,
+        requestMessage: message,
         sessionKey,
       };
+      acceptedRunIds.add(activeRunState.runId);
+      scheduleSilentDeltaPolling();
 
       const finalPayload = await Promise.race([
         finalPromise,
@@ -742,17 +928,11 @@ function createOpenClawClient({
 
       let finalAssistant = null;
       try {
-        finalAssistant = await readOpenClawSessionAssistant({
-          sessionKey,
-          acceptedAt: Date.now() - timeoutMs,
-        });
+        finalAssistant = await readOpenClawSessionAssistant(activeRunState);
       } catch {}
       const finalText = normalizeChatMessage(finalPayload?.message) || (finalAssistant ? normalizeChatMessage(finalAssistant) : '') || latestText;
 
-      if (finalText && finalText.startsWith(latestText) && finalText.length > latestText.length) {
-        onDelta(finalText.slice(latestText.length));
-        latestText = finalText;
-      }
+      emitDeltaFromFullText(finalText);
 
       return {
         outputText: finalText || 'OpenClaw returned an empty response.',
@@ -765,6 +945,8 @@ function createOpenClawClient({
       }
       throw error;
     } finally {
+      settled = true;
+      stopSilentDeltaPolling();
       closeClient();
     }
   }
@@ -794,12 +976,12 @@ function createOpenClawClient({
         onDelta(nextText);
       }
 
-      if (waitResult?.status === 'timeout') {
+      if (String(waitResult?.status || '').trim().toLowerCase() === 'timeout') {
         continue;
       }
 
-      if (waitResult?.status === 'error') {
-        throw new Error(waitResult?.error || 'OpenClaw session failed');
+      if (isFailedOpenClawWaitStatus(waitResult?.status)) {
+        throw new Error(waitResult?.error || `OpenClaw session ${String(waitResult?.status || '').trim().toLowerCase()}`);
       }
 
       const finalAssistant = latestAssistant || await waitForOpenClawSessionCompletion(runState, timeoutMs);

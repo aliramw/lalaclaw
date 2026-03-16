@@ -27,6 +27,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange: vi.fn(),
         handleReset,
@@ -56,6 +57,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
@@ -106,6 +108,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
@@ -161,6 +164,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
         handlePromptChange,
         handleReset: vi.fn().mockResolvedValue(undefined),
@@ -192,6 +196,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex,
         handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
@@ -230,6 +235,7 @@ describe("useAppHotkeys", () => {
 
     renderHook(() =>
       useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex,
         handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
@@ -260,5 +266,112 @@ describe("useAppHotkeys", () => {
     );
 
     expect(handleActivateChatTabByIndex).not.toHaveBeenCalled();
+  });
+
+  it("switches to adjacent tabs with cmd+arrow on macOS", () => {
+    const handleActivateAdjacentChatTab = vi.fn();
+
+    renderHook(() =>
+      useAppHotkeys({
+        handleActivateAdjacentChatTab,
+        handleActivateChatTabByIndex: vi.fn(),
+        handlePromptChange: vi.fn(),
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        prompt: "",
+        promptRef: { current: textarea },
+        setTheme: vi.fn(),
+      }),
+    );
+
+    const leftEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowLeft",
+      code: "ArrowLeft",
+      metaKey: true,
+    });
+    const rightEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowRight",
+      code: "ArrowRight",
+      metaKey: true,
+    });
+
+    window.dispatchEvent(leftEvent);
+    window.dispatchEvent(rightEvent);
+
+    expect(handleActivateAdjacentChatTab).toHaveBeenNthCalledWith(1, -1);
+    expect(handleActivateAdjacentChatTab).toHaveBeenNthCalledWith(2, 1);
+    expect(leftEvent.defaultPrevented).toBe(true);
+    expect(rightEvent.defaultPrevented).toBe(true);
+  });
+
+  it("switches to adjacent tabs with ctrl+arrow on Windows", () => {
+    const handleActivateAdjacentChatTab = vi.fn();
+
+    renderHook(() =>
+      useAppHotkeys({
+        handleActivateAdjacentChatTab,
+        handleActivateChatTabByIndex: vi.fn(),
+        handlePromptChange: vi.fn(),
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        prompt: "",
+        promptRef: { current: textarea },
+        setTheme: vi.fn(),
+      }),
+    );
+
+    const leftEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowLeft",
+      code: "ArrowLeft",
+      ctrlKey: true,
+    });
+    const rightEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowRight",
+      code: "ArrowRight",
+      ctrlKey: true,
+    });
+
+    window.dispatchEvent(leftEvent);
+    window.dispatchEvent(rightEvent);
+
+    expect(handleActivateAdjacentChatTab).toHaveBeenNthCalledWith(1, -1);
+    expect(handleActivateAdjacentChatTab).toHaveBeenNthCalledWith(2, 1);
+    expect(leftEvent.defaultPrevented).toBe(true);
+    expect(rightEvent.defaultPrevented).toBe(true);
+  });
+
+  it("does not switch adjacent tabs while focus is inside an editable field", () => {
+    const handleActivateAdjacentChatTab = vi.fn();
+    textarea.focus();
+
+    renderHook(() =>
+      useAppHotkeys({
+        handleActivateAdjacentChatTab,
+        handleActivateChatTabByIndex: vi.fn(),
+        handlePromptChange: vi.fn(),
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        prompt: "",
+        promptRef: { current: textarea },
+        setTheme: vi.fn(),
+      }),
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        metaKey: true,
+      }),
+    );
+
+    expect(handleActivateAdjacentChatTab).not.toHaveBeenCalled();
   });
 });

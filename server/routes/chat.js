@@ -8,6 +8,38 @@ function createMockReply(intent = '', clip) {
   };
 }
 
+function createChatStopHandler({
+  callOpenClawGateway,
+  config,
+  getCommandCenterSessionKey,
+  normalizeSessionUser,
+  parseRequestBody,
+  resolveSessionAgentId,
+  sendJson,
+}) {
+  return async function handleChatStop(req, res) {
+    try {
+      const body = await parseRequestBody(req);
+      const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+      const requestedAgentId = typeof body.agentId === 'string' ? body.agentId.trim() : '';
+      const agentId = requestedAgentId || resolveSessionAgentId(sessionUser);
+
+      if (config.mode === 'openclaw') {
+        await callOpenClawGateway('chat.abort', {
+          sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
+        });
+      }
+
+      sendJson(res, 200, { ok: true });
+    } catch (error) {
+      sendJson(res, 500, {
+        ok: false,
+        error: error.message || 'Unknown server error',
+      });
+    }
+  };
+}
+
 function createChatHandler({
   appendLocalSessionFileEntries,
   appendLocalSessionConversation,
@@ -71,12 +103,25 @@ function createChatHandler({
   }
 
   return async function handleChat(req, res) {
+    let sessionKey = '';
+    let replySettled = false;
+    let clientDisconnected = false;
+    const markClientDisconnected = () => {
+      clientDisconnected = true;
+    };
+
+    req.once?.('aborted', markClientDisconnected);
+    res.once?.('close', markClientDisconnected);
+
     try {
       const body = await parseRequestBody(req);
       const messages = Array.isArray(body.messages) ? body.messages : [];
       const shouldStream = body.stream !== false;
       const fastMode = Boolean(body.fastMode);
       const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+      const assistantMessageId = typeof body.assistantMessageId === 'string' && body.assistantMessageId.trim()
+        ? body.assistantMessageId.trim()
+        : `msg-assistant-${Date.now()}`;
       const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
       const latestUserContent = normalizeChatMessage(latestUserMessage);
       const latestUserAttachments = getMessageAttachments(latestUserMessage);
@@ -216,6 +261,7 @@ function createChatHandler({
       const currentPreferences = getSessionPreferences(sessionUser);
       const currentAgentId = resolveSessionAgentId(sessionUser);
       const nextAgentId = body.agentId ? String(body.agentId).trim() || currentAgentId : currentAgentId;
+      sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
       const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
       const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
       const nextThinkMode = slashCommandState?.kind === 'thinkMode' ? slashCommandState.value : resolveSessionThinkMode(sessionUser);
@@ -259,6 +305,17 @@ function createChatHandler({
 
       if (shouldStream) {
         startChatStream(res);
+        if (!clientDisconnected) {
+          writeChatStreamEvent(res, {
+            type: 'message.start',
+            message: {
+              id: assistantMessageId,
+              role: 'assistant',
+              kind: 'text',
+              streamState: 'streaming',
+            },
+          });
+        }
       }
 
       const reply =
@@ -267,11 +324,12 @@ function createChatHandler({
             ? await dispatchOpenClawStream(outboundMessages, nextFastMode, sessionUser, {
                 commandBody,
                 thinkMode: nextThinkMode,
+                assistantMessageId,
                 onDelta: (delta) => {
-                  if (!shouldStream || !delta) {
+                  if (!shouldStream || !delta || clientDisconnected || res.destroyed || res.writableEnded) {
                     return;
                   }
-                  writeChatStreamEvent(res, { type: 'delta', delta });
+                  writeChatStreamEvent(res, { type: 'message.patch', messageId: assistantMessageId, delta });
                 },
               })
             : await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
@@ -284,6 +342,7 @@ function createChatHandler({
         ok: true,
         mode: config.mode,
         model: resolvedModel,
+        assistantMessageId,
         outputText: reply.outputText,
         usage: reply.usage,
         tokenBadge: formatTokenBadge(reply.usage),
@@ -295,19 +354,50 @@ function createChatHandler({
       };
 
       if (shouldStream) {
-        writeChatStreamEvent(res, {
-          type: 'done',
-          payload: responsePayload,
-        });
-        res.end();
+        replySettled = true;
+        if (!clientDisconnected && !res.destroyed && !res.writableEnded) {
+          writeChatStreamEvent(res, {
+            type: 'message.complete',
+            messageId: assistantMessageId,
+            payload: {
+              ok: true,
+              mode: config.mode,
+              model: resolvedModel,
+              assistantMessageId,
+              outputText: reply.outputText,
+              usage: reply.usage,
+              tokenBadge: formatTokenBadge(reply.usage),
+              session: {
+                ...(snapshot.session || {}),
+                status: snapshot.session.status,
+              },
+              conversation: snapshot.conversation || [],
+              metadata: {
+                status: snapshot.session.status,
+                summary: summarizeMessages(messages),
+              },
+            },
+          });
+          writeChatStreamEvent(res, {
+            type: 'session.sync',
+            session: {
+              ...(snapshot.session || {}),
+              status: snapshot.session.status,
+            },
+          });
+          res.end();
+        }
         return;
       }
 
+      replySettled = true;
       sendJson(res, 200, responsePayload);
     } catch (error) {
-      if (res.headersSent) {
+      replySettled = true;
+      if (res.headersSent && !clientDisconnected && !res.destroyed && !res.writableEnded) {
         writeChatStreamEvent(res, {
-          type: 'error',
+          type: 'message.error',
+          messageId: typeof assistantMessageId === 'string' ? assistantMessageId : '',
           error: error.message || 'Unknown server error',
         });
         res.end();
@@ -323,4 +413,5 @@ function createChatHandler({
 
 module.exports = {
   createChatHandler,
+  createChatStopHandler,
 };

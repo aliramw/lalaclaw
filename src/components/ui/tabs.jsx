@@ -27,5 +27,5 @@ export function TabsTrigger({ className, ...props }) {
 }
 
 export function TabsContent({ className, ...props }) {
-  return <TabsPrimitive.Content className={cn("mt-4 outline-none", className)} {...props} />;
+  return <TabsPrimitive.Content className={cn("mt-4 min-w-0 outline-none", className)} {...props} />;
 }

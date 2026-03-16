@@ -42,7 +42,7 @@ describe("I18nProvider", () => {
     );
 
     expect(screen.getByTestId("locale")).toHaveTextContent("en");
-    expect(document.title).toBe("LalaClaw.ai | OpenClaw Command Center");
+    expect(document.title).toBe("LalaClaw | OpenClaw Command Center");
     expect(document.documentElement.lang).toBe("en-US");
   });
 
@@ -56,12 +56,12 @@ describe("I18nProvider", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "English" }));
 
-    expect(document.title).toBe("LalaClaw.ai | OpenClaw Command Center");
+    expect(document.title).toBe("LalaClaw | OpenClaw Command Center");
     expect(document.documentElement.lang).toBe("en-US");
 
     await user.click(screen.getByRole("button", { name: "Chinese" }));
 
-    expect(document.title).toBe("LalaClaw.ai | 龙虾指挥中心");
+    expect(document.title).toBe("LalaClaw | 龙虾指挥中心");
     expect(document.documentElement.lang).toBe("zh-CN");
   });
 
@@ -75,14 +75,14 @@ describe("I18nProvider", () => {
     );
 
     expect(screen.getByTestId("locale")).toHaveTextContent("es");
-    expect(document.title).toBe("LalaClaw.ai | Centro de Comando OpenClaw");
+    expect(document.title).toBe("LalaClaw | Centro de Comando OpenClaw");
     expect(document.documentElement.lang).toBe("es-ES");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "English" }));
     await user.click(screen.getByRole("button", { name: "Spanish" }));
 
-    expect(document.title).toBe("LalaClaw.ai | Centro de Comando OpenClaw");
+    expect(document.title).toBe("LalaClaw | Centro de Comando OpenClaw");
     expect(document.documentElement.lang).toBe("es-ES");
   });
 
@@ -96,14 +96,14 @@ describe("I18nProvider", () => {
     );
 
     expect(screen.getByTestId("locale")).toHaveTextContent("pt");
-    expect(document.title).toBe("LalaClaw.ai | Central de Comando OpenClaw");
+    expect(document.title).toBe("LalaClaw | Central de Comando OpenClaw");
     expect(document.documentElement.lang).toBe("pt-BR");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "English" }));
     await user.click(screen.getByRole("button", { name: "Portuguese" }));
 
-    expect(document.title).toBe("LalaClaw.ai | Central de Comando OpenClaw");
+    expect(document.title).toBe("LalaClaw | Central de Comando OpenClaw");
     expect(document.documentElement.lang).toBe("pt-BR");
   });
 });

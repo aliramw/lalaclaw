@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
 import { Prism } from "@/lib/prism-languages";
-import { cn } from "@/lib/utils";
+import { cn, stripMarkdownForDisplay } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
 const homePrefix = "/Users/marila";
@@ -214,16 +214,21 @@ function FilesTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview })
   }, [groups]);
 
   if (!groups.length) {
-    return <PanelEmpty text={messages.inspector.empty.files} />;
+    return (
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-2 py-1">
+          <InspectorHint text={messages.inspector.filesHint} />
+          <PanelEmpty text={messages.inspector.empty.files} />
+        </div>
+      </ScrollArea>
+    );
   }
 
   return (
     <>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 py-1">
-          <p className="pr-6 text-[11px] leading-5 text-muted-foreground/80">
-            {messages.inspector.filesHint}
-          </p>
+          <InspectorHint text={messages.inspector.filesHint} />
           {groups.map((group) => (
             <section key={group.key} className="space-y-2">
               <button
@@ -275,11 +280,23 @@ function FilesTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview })
 
 function PanelEmpty({ compact = false, text }) {
   return (
-    <Card className={cn("border-dashed bg-muted/20", compact && "rounded-[16px]")}>
-      <CardContent className={cn("flex items-center justify-center text-center text-sm text-muted-foreground", compact ? "px-5 py-5" : "py-8")}>
+    <div className={cn(compact && "rounded-[16px]")}>
+      <div className={cn("flex items-center justify-center text-center text-sm text-muted-foreground", compact ? "px-5 py-5" : "py-8")}>
         {text}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  );
+}
+
+function InspectorHint({ text }) {
+  if (!text) {
+    return null;
+  }
+
+  return (
+    <p className="pr-6 text-[11px] leading-5 text-muted-foreground/80">
+      {text}
+    </p>
   );
 }
 
@@ -293,7 +310,7 @@ function TabCountBadge({ count, active = false }) {
       aria-hidden="true"
       className={cn(
         "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none",
-        active ? "bg-white text-[#1677eb]" : "bg-muted text-muted-foreground",
+        active ? "bg-black/14 text-white" : "bg-muted text-muted-foreground",
       )}
     >
       {count}
@@ -301,30 +318,31 @@ function TabCountBadge({ count, active = false }) {
   );
 }
 
-function DataList({ items, empty, getItemActionLabel, onSelect, render }) {
+function DataList({ empty, getItemActionLabel, hint, items, onSelect, render }) {
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className="grid gap-3 pr-4">
+      <div className="space-y-2 py-1 pr-4">
+        <InspectorHint text={hint} />
         {items.length ? (
-          items.map((item, index) => (
-            <Card key={getItemKey(item, index)}>
-              <CardContent className={cn(onSelect ? "p-0" : "py-4")}>
-                {onSelect ? (
-                  <button
-                    type="button"
-                    onClick={() => onSelect(item)}
-                    aria-label={getItemActionLabel?.(item) || item.title || item.label || "item"}
-                    className="block w-full rounded-[inherit] px-6 py-4 text-left transition hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                  >
-                    {render(item)}
-                  </button>
-                ) : render(item)}
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <PanelEmpty text={empty} />
-        )}
+          <div className="grid gap-3">
+            {items.map((item, index) => (
+              <Card key={getItemKey(item, index)}>
+                <CardContent className={cn(onSelect ? "p-0" : "py-4")}>
+                  {onSelect ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(item)}
+                      aria-label={getItemActionLabel?.(item) || item.title || item.label || "item"}
+                      className="block w-full rounded-[inherit] px-6 py-4 text-left transition hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      {render(item)}
+                    </button>
+                  ) : render(item)}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : <PanelEmpty text={empty} />}
       </div>
     </ScrollArea>
   );
@@ -365,7 +383,6 @@ function CopyCodeButton({ content }) {
       onClick={handleCopy}
       className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground/75 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       aria-label={copied ? messages.markdown.copiedCode : messages.markdown.copyCode}
-      title={copied ? messages.markdown.copiedCode : messages.markdown.copyCode}
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
@@ -636,19 +653,24 @@ function TimelineTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview
       data-testid="timeline-scroll-region"
       className="cc-scroll-region min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pr-2"
     >
-      <div className="grid gap-3">
+      <div className="space-y-2 py-1">
+        <InspectorHint text={messages.inspector.timelineHint} />
         {items.length
-          ? items.map((item, index) => (
-              <TimelineItemCard
-                key={getItemKey(item, index)}
-                item={item}
-                defaultOpen={index === 0}
-                messages={messages}
-                onOpenPreview={onOpenPreview}
-                resolvedTheme={resolvedTheme}
-                currentWorkspaceRoot={currentWorkspaceRoot}
-              />
-            ))
+          ? (
+            <div className="grid gap-3">
+              {items.map((item, index) => (
+                <TimelineItemCard
+                  key={getItemKey(item, index)}
+                  item={item}
+                  defaultOpen={index === 0}
+                  messages={messages}
+                  onOpenPreview={onOpenPreview}
+                  resolvedTheme={resolvedTheme}
+                  currentWorkspaceRoot={currentWorkspaceRoot}
+                />
+              ))}
+            </div>
+          )
           : <PanelEmpty text={messages.inspector.empty.timeline} />}
       </div>
     </div>
@@ -661,20 +683,23 @@ function EnvironmentTab({ section, messages }) {
   }
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <div className="grid gap-3 pr-2">
-        {messages.inspector.empty.environment ? (
-          <p className="text-[11px] leading-5 text-muted-foreground/80">{messages.inspector.empty.environment}</p>
-        ) : null}
+    <ScrollArea className="min-h-0 flex-1" viewportClassName="min-w-0">
+      <div className="min-w-0 max-w-full space-y-2 overflow-hidden py-1 pr-4">
+        <InspectorHint text={messages.inspector.empty.environment} />
         {section.items.map((item, index) => (
-          <Card key={`${item.label}-${index}`}>
-            <CardContent className="space-y-1 py-4">
-              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          <div
+            key={`${item.label}-${index}`}
+            className="w-full min-w-0 max-w-full border-b border-border/55 pb-3 last:border-b-0 last:pb-0"
+          >
+            <div className="min-w-0 space-y-1 overflow-hidden">
+              <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                 {item.label}
               </div>
-              <div className="break-words font-mono text-[13px] text-foreground">{item.value}</div>
-            </CardContent>
-          </Card>
+              <div className="w-full min-w-0 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-[13px] text-foreground">
+                {item.value}
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     </ScrollArea>
@@ -737,7 +762,7 @@ export function InspectorPanel({ activeTab, artifacts, currentWorkspaceRoot = ""
 
   return (
     <>
-      <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+      <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         <CardHeader className="flex min-h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
           <div className="flex min-w-0 flex-1 items-baseline justify-start gap-2 text-left">
             <CardTitle className="truncate text-sm leading-[1.15]">{messages.inspector.title}</CardTitle>
@@ -745,8 +770,8 @@ export function InspectorPanel({ activeTab, artifacts, currentWorkspaceRoot = ""
           </div>
         </CardHeader>
 
-        <CardContent className="flex min-h-0 flex-1 flex-col p-4">
-          <Tabs value={resolvedActiveTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
+        <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
+          <Tabs value={resolvedActiveTab} onValueChange={setActiveTab} className="flex min-h-0 min-w-0 flex-1 flex-col">
             <TabsList ref={tabsListRef} className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 p-1 md:grid-cols-4">
               {tabDefinitions.map((tab) => {
                 const Icon = tab.icon;
@@ -814,26 +839,27 @@ export function InspectorPanel({ activeTab, artifacts, currentWorkspaceRoot = ""
               <FilesTab items={files} messages={messages} onOpenPreview={handleOpenPreview} currentWorkspaceRoot={currentWorkspaceRoot} />
             </TabsContent>
 
-            <TabsContent value="artifacts" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent value="artifacts" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <DataList
                 items={artifacts}
+                hint={messages.inspector.artifactsHint}
                 empty={messages.inspector.empty.artifacts}
                 getItemActionLabel={(item) => `${messages.inspector.artifactJumpTo} ${localizeArtifactTitle(item.title || messages.inspector.tabs.artifacts, messages)}`}
                 onSelect={onSelectArtifact}
                 render={(item) => (
                   <>
                     <div className="text-sm font-medium">{localizeArtifactTitle(item.title, messages)}</div>
-                    <div className="text-xs text-muted-foreground">{item.detail}</div>
+                    <div className="text-xs text-muted-foreground">{stripMarkdownForDisplay(item.detail)}</div>
                   </>
                 )}
               />
             </TabsContent>
 
-            <TabsContent value="timeline" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent value="timeline" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
             </TabsContent>
 
-            <TabsContent value="environment" className="min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent value="environment" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
               <EnvironmentTab section={peeks?.environment} messages={messages} />
             </TabsContent>
           </Tabs>

@@ -1,5 +1,7 @@
 # Architecture Overview
 
+> Navigation: [Documentation Home](./documentation.md) | [Quick Start](./documentation-quick-start.md) | [Interface Overview](./documentation-interface.md) | [Product Showcase](./showcase.md) | [Refactor Roadmap](./refactor-roadmap.md)
+
 LalaClaw is organized around a thin UI entrypoint, a thin server entrypoint, and testable modules between them.
 
 ## Frontend

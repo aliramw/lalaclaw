@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent } from "react";
 import { isEditableElement } from "@/features/chat/utils";
 
 export function useAppHotkeys({
+  handleActivateAdjacentChatTab,
   handleActivateChatTabByIndex,
   handlePromptChange,
   handleReset,
@@ -54,6 +55,26 @@ export function useAppHotkeys({
     handleActivateChatTabByIndex?.(Number.parseInt(normalizedKey, 10));
   });
 
+  const onAdjacentChatTabHotkey = useEffectEvent((event) => {
+    const normalizedKey = String(event.key || "").trim();
+    const isArrowKey = normalizedKey === "ArrowLeft" || normalizedKey === "ArrowRight";
+    const usesExpectedModifier =
+      ((event.metaKey && !event.ctrlKey) || (event.ctrlKey && !event.metaKey))
+      && !event.altKey;
+
+    if (!isArrowKey || !usesExpectedModifier || event.shiftKey || event.repeat || event.isComposing) {
+      return;
+    }
+
+    if (isEditableElement(document.activeElement)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    handleActivateAdjacentChatTab?.(normalizedKey === "ArrowLeft" ? -1 : 1);
+  });
+
   const onPromptCharacterHotkey = useEffectEvent((event) => {
     if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
       return;
@@ -94,6 +115,7 @@ export function useAppHotkeys({
       onResetHotkey(event);
       onThemeHotkey(event);
       onChatTabHotkey(event);
+      onAdjacentChatTabHotkey(event);
       onPromptCharacterHotkey(event);
     };
 

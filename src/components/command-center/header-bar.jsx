@@ -10,7 +10,7 @@ export function HeaderBar({ onReset }) {
           <Bot className="h-4 w-4" />
         </div>
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold tracking-tight">🦞 LalaClaw.ai</h1>
+          <h1 className="truncate text-lg font-semibold tracking-tight">🦞 LalaClaw</h1>
           <p className="truncate text-xs text-muted-foreground">龙虾指挥中心</p>
         </div>
       </div>

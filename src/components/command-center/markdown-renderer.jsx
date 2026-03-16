@@ -1,4 +1,4 @@
-import { Children, useEffect, useState } from "react";
+import { Children, useEffect, useMemo, useState } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
@@ -219,7 +219,6 @@ function LinkRenderer({ href, children, files, onOpenFilePreview, ...props }) {
     return (
       <button
         type="button"
-        title={matchedFile.fullPath || matchedFile.path}
         className={trackedFileLinkButtonClassName}
         onClick={() => onOpenFilePreview(matchedFile)}
         {...props}
@@ -358,7 +357,6 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedT
         return (
           <button
             type="button"
-            title={matchedFile.fullPath || matchedFile.path}
             className={getInlineCodeClassName(resolvedTheme, true)}
             onClick={() => onOpenFilePreview(matchedFile)}
           >
@@ -370,7 +368,6 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedT
       return (
         <a
           href={getVsCodeHref(matchedFile.fullPath || matchedFile.path)}
-          title={matchedFile.fullPath || matchedFile.path}
           className={getInlineCodeClassName(resolvedTheme, true)}
         >
           {children}
@@ -402,8 +399,14 @@ function TableRenderer({ children, scrollAnchorId = "" }) {
 export default function MarkdownRenderer({ content, files, headingScopeId = "message", resolvedTheme = "light", className, shellClassName, onOpenFilePreview, onOpenImagePreview }) {
   const { messages } = useI18n();
   const [previewImage, setPreviewImage] = useState(null);
-  const normalizedContent = normalizeMathDelimiters(promoteStandaloneImageLinks(content));
-  const outlineItems = extractHeadingOutline(normalizedContent);
+  const normalizedContent = useMemo(
+    () => normalizeMathDelimiters(promoteStandaloneImageLinks(content)),
+    [content],
+  );
+  const outlineItems = useMemo(
+    () => extractHeadingOutline(normalizedContent),
+    [normalizedContent],
+  );
   let headingRenderIndex = 0;
   let blockRenderIndex = 0;
 

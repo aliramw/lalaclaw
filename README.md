@@ -1,7 +1,7 @@
 # LalaClaw
 
 [![CI](https://github.com/aliramw/CommandCenter/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/CommandCenter/actions/workflows/ci.yml)
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 A better way to co-create with agents.
 
@@ -20,7 +20,7 @@ A better way to co-create with agents.
 - Inspector panel: timeline, files, artifacts, snapshots, agent activity, and runtime peeks
 - Session runtime loop: `mock` mode by default, with optional OpenClaw gateway wiring for live runs
 
-- A longer walkthrough lives in [docs/showcase.md](./docs/showcase.md)
+- A longer walkthrough lives in [docs/en/showcase.md](./docs/en/showcase.md)
 
 ## Architecture
 
@@ -34,7 +34,7 @@ flowchart LR
     Services --> Gateway["OpenClaw Gateway or Mock Runtime"]
 ```
 
-- More structure notes live in [server/README.md](./server/README.md), [src/features/README.md](./src/features/README.md), and [docs/architecture.md](./docs/architecture.md)
+- More structure notes live in [server/README.md](./server/README.md), [src/features/README.md](./src/features/README.md), and [docs/en/architecture.md](./docs/en/architecture.md)
 
 ## Quick Start
 

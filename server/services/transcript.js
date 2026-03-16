@@ -15,6 +15,8 @@ function createTranscriptProjector({
   clip,
   formatTimestamp,
 }) {
+  const TRANSIENT_USER_REPLAY_WINDOW_MS = 10 * 60 * 1000;
+
   function getSessionsIndexPath(agentId) {
     return path.join(LOCAL_OPENCLAW_DIR, 'agents', agentId, 'sessions', 'sessions.json');
   }
@@ -118,6 +120,32 @@ function createTranscriptProjector({
     }
 
     return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function normalizeConversationFingerprint(text = '') {
+    return String(text || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function isTransientAssistantFailure(payload = {}) {
+    if (String(payload?.errorMessage || '').trim()) {
+      return true;
+    }
+
+    return /(error|failed|failure|denied|rejected|timeout|timed_out|aborted|cancelled|canceled)/i.test(
+      String(payload?.stopReason || '').trim(),
+    );
+  }
+
+  function isTransientPromptErrorEntry(entry = {}) {
+    if (entry?.type !== 'custom' || entry?.customType !== 'openclaw:prompt-error') {
+      return false;
+    }
+
+    return /(error|failed|failure|denied|rejected|timeout|timed_out|aborted|cancelled|canceled)/i.test(
+      String(entry?.data?.error || '').trim(),
+    );
   }
 
   function parseSessionStatusText(statusText) {
@@ -424,85 +452,123 @@ function createTranscriptProjector({
   }
 
   function collectArtifacts(entries) {
-    return entries
-      .filter((entry) => entry.type === 'message' && entry.message?.role === 'assistant')
-      .map((entry) => {
-        const reply = cleanAssistantReply(extractPlainTextSegments(entry.message.content).join('\n\n'));
-        if (!reply) {
-          return null;
-        }
-
-        return {
-          title: `回复 ${formatTimestamp(entry.message.timestamp || entry.timestamp)}`,
-          type: 'assistant_output',
-          detail: clip(reply, 180),
-          messageRole: 'assistant',
-          messageTimestamp: entry.message.timestamp || entry.timestamp,
-          timestamp: entry.message.timestamp || entry.timestamp,
-        };
-      })
+    return collectConversationMessages(entries)
+      .filter((message) => message?.role === 'assistant' && Boolean(String(message.content || '').trim()))
+      .map((message) => ({
+        title: `回复 ${formatTimestamp(message.timestamp)}`,
+        type: 'assistant_output',
+        detail: clip(message.content, 180),
+        messageRole: 'assistant',
+        messageTimestamp: message.timestamp,
+        timestamp: message.timestamp,
+      }))
       .filter(Boolean)
       .slice(-6)
       .reverse();
   }
 
   function collectConversationMessages(entries) {
-    return entries
-      .filter((entry) => entry.type === 'message')
-      .map((entry) => {
-        const payload = entry.message || {};
-        if (payload.role === 'user') {
-          const content = cleanUserMessage(extractPlainTextSegments(payload.content).join('\n\n'));
-          if (!content) {
-            return null;
-          }
+    const conversation = [];
+    let lastVisibleUserFingerprint = '';
+    let lastVisibleUserTimestamp = 0;
+    let sawTransientAssistantFailureAfterLastUser = false;
+    let lastAssistantConversationIndexAfterLastUser = -1;
 
-          return {
-            role: 'user',
-            content,
-            timestamp: payload.timestamp || Date.parse(entry.timestamp) || Date.now(),
-          };
+    entries.forEach((entry) => {
+      if (isTransientPromptErrorEntry(entry)) {
+        sawTransientAssistantFailureAfterLastUser = true;
+        return;
+      }
+
+      if (entry.type !== 'message') {
+        return;
+      }
+
+      const payload = entry.message || {};
+      const timestamp = payload.timestamp || Date.parse(entry.timestamp) || Date.now();
+
+      if (payload.role === 'user') {
+        const content = cleanUserMessage(extractPlainTextSegments(payload.content).join('\n\n'));
+        if (!content) {
+          return;
         }
 
-        if (payload.role === 'assistant') {
-          const content = cleanAssistantReply(extractPlainTextSegments(payload.content).join('\n\n'));
-          if (!content) {
-            return null;
+        const fingerprint = normalizeConversationFingerprint(content);
+        const isTransientReplay =
+          Boolean(fingerprint)
+          && fingerprint === lastVisibleUserFingerprint
+          && sawTransientAssistantFailureAfterLastUser
+          && timestamp > 0
+          && lastVisibleUserTimestamp > 0
+          && timestamp - lastVisibleUserTimestamp <= TRANSIENT_USER_REPLAY_WINDOW_MS;
+
+        if (isTransientReplay) {
+          if (
+            lastAssistantConversationIndexAfterLastUser >= 0
+            && conversation[lastAssistantConversationIndexAfterLastUser]?.role === 'assistant'
+          ) {
+            conversation.splice(lastAssistantConversationIndexAfterLastUser, 1);
           }
-
-          const tokenBadge = formatTokenBadge(payload.usage);
-
-          return {
-            role: 'assistant',
-            content,
-            timestamp: payload.timestamp || Date.parse(entry.timestamp) || Date.now(),
-            ...(tokenBadge ? { tokenBadge } : {}),
-          };
+          lastAssistantConversationIndexAfterLastUser = -1;
+          sawTransientAssistantFailureAfterLastUser = false;
+          return;
         }
 
-        return null;
-      })
-      .filter(Boolean)
-      .slice(-80);
+        conversation.push({
+          role: 'user',
+          content,
+          timestamp,
+        });
+        lastVisibleUserFingerprint = fingerprint;
+        lastVisibleUserTimestamp = timestamp;
+        lastAssistantConversationIndexAfterLastUser = -1;
+        sawTransientAssistantFailureAfterLastUser = false;
+        return;
+      }
+
+      if (payload.role === 'assistant') {
+        const content = cleanAssistantReply(extractPlainTextSegments(payload.content).join('\n\n'));
+        if (!content) {
+          if (isTransientAssistantFailure(payload)) {
+            sawTransientAssistantFailureAfterLastUser = true;
+          }
+          return;
+        }
+
+        const tokenBadge = formatTokenBadge(payload.usage);
+
+        conversation.push({
+          role: 'assistant',
+          content,
+          timestamp,
+          ...(tokenBadge ? { tokenBadge } : {}),
+        });
+        lastAssistantConversationIndexAfterLastUser = conversation.length - 1;
+        sawTransientAssistantFailureAfterLastUser = false;
+      }
+    });
+
+    if (
+      sawTransientAssistantFailureAfterLastUser
+      && lastAssistantConversationIndexAfterLastUser >= 0
+      && conversation[lastAssistantConversationIndexAfterLastUser]?.role === 'assistant'
+    ) {
+      conversation.splice(lastAssistantConversationIndexAfterLastUser, 1);
+    }
+
+    return conversation.slice(-80);
   }
 
   function collectSnapshots(entries, sessionRecord) {
-    return entries
-      .filter((entry) => entry.type === 'message' && entry.message?.role === 'assistant')
-      .map((entry) => {
-        const reply = cleanAssistantReply(extractPlainTextSegments(entry.message.content).join('\n\n'));
-        if (!reply) {
-          return null;
-        }
-
-        return {
-          id: entry.id,
-          title: `快照 ${formatTimestamp(entry.message.timestamp || entry.timestamp)}`,
-          detail: clip(reply, 120),
-          sessionId: sessionRecord?.sessionId || '',
-          timestamp: entry.message.timestamp || entry.timestamp,
-        };
-      })
+    return collectConversationMessages(entries)
+      .filter((message) => message?.role === 'assistant' && Boolean(String(message.content || '').trim()))
+      .map((message) => ({
+        id: `snapshot-${message.timestamp}`,
+        title: `快照 ${formatTimestamp(message.timestamp)}`,
+        detail: clip(message.content, 120),
+        sessionId: sessionRecord?.sessionId || '',
+        timestamp: message.timestamp,
+      }))
       .filter(Boolean)
       .slice(-6)
       .reverse();

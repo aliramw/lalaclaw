@@ -198,6 +198,17 @@ function getNormalizedBodyText() {
   return document.body.textContent?.replace(/\s+/g, "") || "";
 }
 
+function hasAncestorClass(node, className) {
+  let current = node;
+  while (current) {
+    if (typeof current.className === "string" && current.className.includes(className)) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
 function mockDesktopLayout(width = 1200) {
   vi.stubGlobal(
     "matchMedia",
@@ -242,15 +253,22 @@ describe("App", () => {
   });
 
   it("loads runtime data and sends a chat message", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
     const fetchMock = vi.fn((input, init) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
-        return mockJsonResponse(createSnapshot());
+        return mockJsonResponse(openClawSnapshot);
       }
 
       if (url === "/api/chat" && init?.method === "POST") {
         return mockJsonResponse({
-          ...createSnapshot(),
+          ...openClawSnapshot,
           outputText: "任务已完成。",
           metadata: { status: "已完成 / 标准" },
         });
@@ -266,7 +284,7 @@ describe("App", () => {
     expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "帮我检查状态");
+    await user.type(await screen.findByRole("textbox"), "帮我检查状态");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("帮我检查状态")).toBeInTheDocument();
@@ -277,7 +295,274 @@ describe("App", () => {
     });
   });
 
+  it("switches the main action to stop while a reply is running and aborts the turn on click", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn((input, init = {}) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat/stop" && init?.method === "POST") {
+        return mockJsonResponse({ ok: true });
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: {
+            get: (name) => (String(name).toLowerCase() === "content-type" ? "application/x-ndjson; charset=utf-8" : null),
+          },
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(`${JSON.stringify({
+                type: "message.patch",
+                messageId: "msg-assistant-stop-app",
+                delta: "第一段",
+              })}\n`));
+              init.signal?.addEventListener("abort", () => {
+                controller.error(new DOMException("The operation was aborted.", "AbortError"));
+              });
+            },
+          }),
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("textbox"), "请开始");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByRole("button", { name: "停止" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "停止" }));
+
+    expect(await screen.findByText("第一段")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/chat/stop", expect.objectContaining({ method: "POST" }));
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    });
+  });
+
+  it("shows only one thinking bubble while later prompts wait in the queue", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    let resolveFirstChat;
+    let chatCallCount = 0;
+    const chatBodies = [];
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        chatCallCount += 1;
+
+        if (chatCallCount === 1) {
+          return new Promise((resolve) => {
+            resolveFirstChat = () =>
+              resolve(
+                mockJsonResponse({
+                  ...openClawSnapshot,
+                  outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+                  metadata: { status: "已完成 / 标准" },
+                }),
+              );
+          });
+        }
+
+        return mockJsonResponse({
+          ...openClawSnapshot,
+          outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const composer = await screen.findByRole("textbox");
+
+    await user.type(composer, "甲");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await user.type(composer, "乙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await user.type(composer, "丙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    expect(await screen.findByText("甲")).toBeInTheDocument();
+    expect((await screen.findAllByText("乙")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("丙")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("正在思考…")).toHaveLength(1);
+    expect(screen.getByText("待发送 2")).toBeInTheDocument();
+    expect(screen.getByText("当前回复结束后将按顺序发送")).toBeInTheDocument();
+    expect(chatBodies).toHaveLength(1);
+
+    resolveFirstChat?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：甲")).toBeInTheDocument();
+    });
+  });
+
+  it("ignores a rapid duplicate prompt while the current reply is still pending", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    let resolveFirstChat;
+    const chatBodies = [];
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        return new Promise((resolve) => {
+          resolveFirstChat = () =>
+            resolve(
+              mockJsonResponse({
+                ...openClawSnapshot,
+                outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+                metadata: { status: "已完成 / 标准" },
+              }),
+            );
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const composer = await screen.findByRole("textbox");
+
+    await user.type(composer, "1");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await user.type(composer, "1");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    expect(chatBodies).toHaveLength(1);
+    expect(screen.queryByText("待发送 1")).not.toBeInTheDocument();
+
+    resolveFirstChat?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：1")).toBeInTheDocument();
+    });
+  });
+
+  it("ignores repeated rapid duplicates of the same prompt while the first reply is pending", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    let resolveFirstChat;
+    const chatBodies = [];
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        return new Promise((resolve) => {
+          resolveFirstChat = () =>
+            resolve(
+              mockJsonResponse({
+                ...openClawSnapshot,
+                outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+                metadata: { status: "已完成 / 标准" },
+              }),
+            );
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const composer = await screen.findByRole("textbox");
+
+    await user.type(composer, "1");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await user.type(composer, "1");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await user.type(composer, "1");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    expect(chatBodies).toHaveLength(1);
+    expect(screen.queryByText(/待发送/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("正在思考…")).toHaveLength(1);
+
+    resolveFirstChat?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：1")).toBeInTheDocument();
+    });
+  });
+
   it("scrolls the chat viewport to the matching assistant bubble when an artifact summary is clicked", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback) => {
+      callback();
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
     const assistantTimestamp = 1700000000000;
     const fetchMock = vi.fn((input) => {
       const url = String(input);
@@ -351,7 +636,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "定位到 回复 10:00" }));
 
     await waitFor(() => {
-      expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 700, behavior: "smooth" });
+      expect(viewport.scrollTop).toBe(700);
     });
   });
 
@@ -383,6 +668,83 @@ describe("App", () => {
       expect(textarea).toHaveFocus();
       expect(textarea).toHaveValue("h");
     });
+  });
+
+  it("applies the selected chat font size across chat tabs", async () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        chatTabs: [
+          { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+          { id: "agent:expert", agentId: "expert", sessionUser: "command-center-expert-1" },
+        ],
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+          "agent:expert": {
+            agentId: "expert",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "command-center-expert-1",
+            thinkMode: "off",
+          },
+        },
+        messagesByTabId: {
+          "agent:main": [{ role: "assistant", content: "主会话消息", timestamp: 1 }],
+          "agent:expert": [{ role: "assistant", content: "专家会话消息", timestamp: 2 }],
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          const params = new URL(url, "http://localhost").searchParams;
+          const sessionUser = params.get("sessionUser") || "command-center";
+          const agentId = params.get("agentId") || (sessionUser === "command-center-expert-1" ? "expert" : "main");
+          return mockJsonResponse(
+            createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                agentId,
+                selectedAgentId: agentId,
+                sessionUser,
+                sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+              },
+              conversation: sessionUser === "command-center-expert-1"
+                ? [{ role: "assistant", content: "专家会话消息", timestamp: 2 }]
+                : [{ role: "assistant", content: "主会话消息", timestamp: 1 }],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const mainMessage = await screen.findByText("主会话消息");
+    await user.click(screen.getByRole("button", { name: "字体大小：大" }));
+
+    await waitFor(() => {
+      expect(hasAncestorClass(mainMessage, "text-[15px]")).toBe(true);
+    });
+
+    await user.click(screen.getByRole("button", { name: /expert/ }));
+
+    const expertMessage = await screen.findByText("专家会话消息");
+    expect(hasAncestorClass(expertMessage, "text-[15px]")).toBe(true);
   });
 
   it("marks the UI offline when runtime loading fails", async () => {
@@ -733,7 +1095,7 @@ describe("App", () => {
     expect(await screen.findByText("需要被重置")).toBeInTheDocument();
     expect(await screen.findByText("这是待清空的回复。")).toBeInTheDocument();
 
-    await user.click(screen.getByLabelText("重置对话"));
+    await user.click(screen.getByLabelText("开启新会话"));
 
     await waitFor(() => {
       expect(screen.queryByText("需要被重置")).not.toBeInTheDocument();
@@ -967,7 +1329,7 @@ describe("App", () => {
     const { container } = render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     const fileInput = container.querySelector('input[type="file"]');
     expect(fileInput).not.toBeNull();
@@ -1004,7 +1366,7 @@ describe("App", () => {
     const { container } = render(<App />);
     const user = userEvent.setup();
 
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     const fileInput = container.querySelector('input[type="file"]');
     expect(fileInput).not.toBeNull();
@@ -1053,7 +1415,7 @@ describe("App", () => {
     const { container, unmount } = render(<App />);
     const user = userEvent.setup();
 
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     const fileInput = container.querySelector('input[type="file"]');
     expect(fileInput).not.toBeNull();
@@ -1274,7 +1636,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     await user.keyboard("{Meta>}{Shift>}l{/Shift}{/Meta}");
     expect(document.documentElement.dataset.theme).toBe("light");
@@ -1326,7 +1688,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换模型"));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "openrouter/google/gemini-3-flash-preview" }));
@@ -1371,7 +1733,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换模型"));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "openrouter/google/gemini-3-flash-preview" }));
@@ -1422,7 +1784,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "发送" }));
     expect(await screen.findByText("已记录。")).toBeInTheDocument();
 
-    await user.click(screen.getByLabelText("重置对话"));
+    await user.click(screen.getByLabelText("开启新会话"));
     await waitFor(() => {
       expect(screen.queryByText("旧会话消息")).not.toBeInTheDocument();
     });
@@ -1443,7 +1805,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换模型"));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "openrouter/google/gemini-3-flash-preview" }));
@@ -1515,18 +1877,18 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
 
-    expect(await screen.findByText("正在切换到 worker...")).toBeInTheDocument();
+    expect(await screen.findByText("正在开启与 worker 的会话...")).toBeInTheDocument();
     expect(screen.getByText("请稍候，界面会在切换完成后恢复。")).toBeInTheDocument();
 
     resolveSessionUpdate?.();
 
     await waitFor(() => {
-      expect(screen.queryByText("正在切换到 worker...")).not.toBeInTheDocument();
+      expect(screen.queryByText("正在开启与 worker 的会话...")).not.toBeInTheDocument();
     });
   });
 
@@ -1546,7 +1908,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw.ai");
+    await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
@@ -1566,7 +1928,47 @@ describe("App", () => {
       agentId: "worker",
       model: "anthropic/claude-sonnet-4.5",
     });
-    expect(harness.chatBodies[0]?.sessionUser).toMatch(/^command-center-worker-/);
+    expect({
+      chatBodySessionUser: harness.chatBodies[0]?.sessionUser,
+      chatBodyAgentId: harness.chatBodies[0]?.agentId,
+      sessionUpdateSessionUser: harness.sessionUpdates[0]?.sessionUser,
+      sessionUpdateAgentId: harness.sessionUpdates[0]?.agentId,
+    }).toMatchObject({
+      chatBodySessionUser: expect.stringMatching(/^command-center-worker-/),
+      chatBodyAgentId: "worker",
+      sessionUpdateSessionUser: expect.stringMatching(/^command-center-worker-/),
+      sessionUpdateAgentId: "worker",
+    });
+  });
+
+  it("does not list agents that already have open tabs in the switcher menu", async () => {
+    const harness = createInteractiveFetchMock({
+      availableAgents: ["main", "worker"],
+      availableModels: ["openai-codex/gpt-5.4", "anthropic/claude-sonnet-4.5"],
+      agentModels: {
+        main: "openai-codex/gpt-5.4",
+        worker: "anthropic/claude-sonnet-4.5",
+      },
+      model: "openai-codex/gpt-5.4",
+    });
+
+    vi.stubGlobal("fetch", harness.fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+    await screen.findByText("worker - 当前会话");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    expect(screen.queryByRole("menuitemcheckbox", { name: "main" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitemcheckbox", { name: "worker" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("可以和主Agent聊天以便创建新的Agent，比如：帮我创建一个新的Agent，名字叫 Developer（中文名：程序员），他的职责是..."),
+    ).toBeInTheDocument();
   });
 
   it("restores the previous chat scroll position when switching away and back to a conversation", async () => {

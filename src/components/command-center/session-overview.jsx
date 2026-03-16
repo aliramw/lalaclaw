@@ -1,4 +1,5 @@
-import { Languages, Monitor, Moon, Sun } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Keyboard, Languages, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownIcon,
@@ -10,11 +11,689 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn, formatShortcutForPlatform } from "@/lib/utils";
+import { cn, formatShortcutForPlatform, isApplePlatform } from "@/lib/utils";
 import { SelectionMenu } from "@/components/command-center/selection-menu";
 import { useI18n } from "@/lib/i18n";
 
 const thinkModeOptions = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
+const LOBSTER_WALK_MARGIN = 32;
+const LOBSTER_SPEED_PX_PER_SECOND = 150;
+const LOBSTER_MIN_DURATION_MS = 5000;
+const LOBSTER_MAX_DURATION_MS = 15000;
+const LOBSTER_COMPANION_SPAWN_PROBABILITY = 0.9;
+const LOBSTER_COMPANION_COUNT = 10;
+const CRAB_SPAWN_PROBABILITY = 0.05;
+const OCTOPUS_SPAWN_PROBABILITY = 0.01;
+const LOBSTER_OFFSCREEN_PADDING = 56;
+const LOBSTER_COLLISION_DISTANCE_PX = 54;
+const LOBSTER_REROUTE_COOLDOWN_MS = 450;
+const LOBSTER_COMPANION_MIN_FONT_SIZE_PX = 10;
+const LOBSTER_COMPANION_MAX_FONT_SIZE_PX = 180;
+const LOBSTER_COMPANION_MEAN_FONT_SIZE_PX = 72;
+const LOBSTER_COMPANION_STD_DEV_FONT_SIZE_PX = 28;
+const LOBSTER_BASE_FONT_SIZE_PX = 24;
+const LOBSTER_MAX_FONT_SIZE_PX = 48;
+const LOBSTER_GROW_PROGRESS = 0.14;
+const LOBSTER_SHRINK_PROGRESS = 0.9;
+const LOBSTER_MIN_RANDOM_POINT_COUNT = 5;
+const LOBSTER_MAX_RANDOM_POINT_COUNT = 10;
+const WALKER_TURN_STEP_DEGREES = 6;
+const OCTOPUS_BREATH_SCALE = 0.1;
+const OCTOPUS_WIDTH_SQUASH_SCALE = 0.1;
+const OCTOPUS_BREATH_CYCLE_MS = 1500;
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function randomBetween(min, max) {
+  return min + (Math.random() * (max - min));
+}
+
+function normalizeAngleDelta(delta) {
+  let normalized = delta;
+  while (normalized > 180) normalized -= 360;
+  while (normalized < -180) normalized += 360;
+  return normalized;
+}
+
+function stepAngleDegrees(current, target, maxStep = WALKER_TURN_STEP_DEGREES) {
+  if (!Number.isFinite(current)) {
+    return target;
+  }
+
+  const delta = normalizeAngleDelta(target - current);
+  if (Math.abs(delta) <= maxStep) {
+    return target;
+  }
+
+  return current + (Math.sign(delta) * maxStep);
+}
+
+function randomNormal(mean, standardDeviation) {
+  const u1 = Math.max(Math.random(), Number.EPSILON);
+  const u2 = Math.random();
+  const magnitude = Math.sqrt(-2 * Math.log(u1));
+  const z0 = magnitude * Math.cos(2 * Math.PI * u2);
+  return mean + (z0 * standardDeviation);
+}
+
+function sampleCompanionFontSize() {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = randomNormal(
+      LOBSTER_COMPANION_MEAN_FONT_SIZE_PX,
+      LOBSTER_COMPANION_STD_DEV_FONT_SIZE_PX,
+    );
+    if (candidate >= LOBSTER_COMPANION_MIN_FONT_SIZE_PX && candidate <= LOBSTER_COMPANION_MAX_FONT_SIZE_PX) {
+      return candidate;
+    }
+  }
+
+  return clamp(
+    randomNormal(LOBSTER_COMPANION_MEAN_FONT_SIZE_PX, LOBSTER_COMPANION_STD_DEV_FONT_SIZE_PX),
+    LOBSTER_COMPANION_MIN_FONT_SIZE_PX,
+    LOBSTER_COMPANION_MAX_FONT_SIZE_PX,
+  );
+}
+
+function distanceBetween(a, b) {
+  return Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
+}
+
+function getWalkerForwardVector(species, motionAngle = 0) {
+  const radians = ((species === "crab" ? motionAngle : motionAngle - 90) * Math.PI) / 180;
+  return {
+    x: Math.cos(radians),
+    y: Math.sin(radians),
+  };
+}
+
+function chaikinSmooth(points, iterations = 3) {
+  let smoothed = points;
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const next = [smoothed[0]];
+    for (let index = 0; index < smoothed.length - 1; index += 1) {
+      const current = smoothed[index];
+      const following = smoothed[index + 1];
+      next.push({
+        x: (0.75 * current.x) + (0.25 * following.x),
+        y: (0.75 * current.y) + (0.25 * following.y),
+      });
+      next.push({
+        x: (0.25 * current.x) + (0.75 * following.x),
+        y: (0.25 * current.y) + (0.75 * following.y),
+      });
+    }
+    next.push(smoothed.at(-1));
+    smoothed = next;
+  }
+
+  return smoothed;
+}
+
+function buildSamplesFromAbsolutePoints(points, startPoint) {
+  let totalLength = 0;
+  return points.map((point, index) => {
+    if (index > 0) {
+      totalLength += distanceBetween(points[index - 1], point);
+    }
+
+    return {
+      length: totalLength,
+      x: point.x - startPoint.x,
+      y: point.y - startPoint.y,
+    };
+  });
+}
+
+function buildBezierSamplesFromAbsolutePoints(startPoint, controlPoint, endPoint, sampleCount = 64) {
+  const points = [];
+  for (let index = 0; index <= sampleCount; index += 1) {
+    const t = index / sampleCount;
+    const inverse = 1 - t;
+    points.push({
+      x: (inverse * inverse * startPoint.x) + (2 * inverse * t * controlPoint.x) + (t * t * endPoint.x),
+      y: (inverse * inverse * startPoint.y) + (2 * inverse * t * controlPoint.y) + (t * t * endPoint.y),
+    });
+  }
+
+  return buildSamplesFromAbsolutePoints(points, startPoint);
+}
+
+function createViewportBounds(originRect) {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const minLeft = LOBSTER_WALK_MARGIN;
+  const maxLeft = Math.max(minLeft, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN);
+  const minTop = LOBSTER_WALK_MARGIN;
+  const maxTop = Math.max(minTop, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN);
+
+  return {
+    maxLeft,
+    maxTop,
+    minLeft,
+    minTop,
+  };
+}
+
+function pickRandomEdgeStart(originRect) {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const side = Math.floor(Math.random() * 4);
+
+  if (side === 0) {
+    return {
+      x: randomBetween(LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN),
+      y: -originRect.height - LOBSTER_OFFSCREEN_PADDING,
+    };
+  }
+
+  if (side === 1) {
+    return {
+      x: viewportWidth + LOBSTER_OFFSCREEN_PADDING,
+      y: randomBetween(LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN),
+    };
+  }
+
+  if (side === 2) {
+    return {
+      x: randomBetween(LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN),
+      y: viewportHeight + LOBSTER_OFFSCREEN_PADDING,
+    };
+  }
+
+  return {
+    x: -originRect.width - LOBSTER_OFFSCREEN_PADDING,
+    y: randomBetween(LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN),
+  };
+}
+
+function getStartSide(point, originRect) {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const distances = [
+    { side: "left", distance: Math.abs(point.x + originRect.width + LOBSTER_OFFSCREEN_PADDING) },
+    { side: "right", distance: Math.abs(point.x - (viewportWidth + LOBSTER_OFFSCREEN_PADDING)) },
+    { side: "top", distance: Math.abs(point.y + originRect.height + LOBSTER_OFFSCREEN_PADDING) },
+    { side: "bottom", distance: Math.abs(point.y - (viewportHeight + LOBSTER_OFFSCREEN_PADDING)) },
+  ];
+  return distances.sort((a, b) => a.distance - b.distance)[0]?.side || "left";
+}
+
+function getNearestEdgeExitPoint(point, originRect) {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const candidates = [
+    { distance: point.x, point: { x: -originRect.width - LOBSTER_OFFSCREEN_PADDING, y: clamp(point.y, LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN) } },
+    { distance: viewportWidth - point.x, point: { x: viewportWidth + LOBSTER_OFFSCREEN_PADDING, y: clamp(point.y, LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN) } },
+    { distance: point.y, point: { x: clamp(point.x, LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN), y: -originRect.height - LOBSTER_OFFSCREEN_PADDING } },
+    { distance: viewportHeight - point.y, point: { x: clamp(point.x, LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN), y: viewportHeight + LOBSTER_OFFSCREEN_PADDING } },
+  ];
+
+  return candidates.sort((a, b) => a.distance - b.distance)[0].point;
+}
+
+function pickDiagonalExitPoint(startPoint, originRect) {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const startSide = getStartSide(startPoint, originRect);
+  const availableSides = startSide === "left" || startSide === "right"
+    ? ["top", "bottom"]
+    : ["left", "right"];
+  const chosenSide = availableSides[Math.floor(Math.random() * availableSides.length)];
+
+  if (chosenSide === "top") {
+    return {
+      x: clamp(
+        startPoint.x + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportWidth * 0.18, viewportWidth * 0.42),
+        LOBSTER_WALK_MARGIN,
+        viewportWidth - originRect.width - LOBSTER_WALK_MARGIN,
+      ),
+      y: -originRect.height - LOBSTER_OFFSCREEN_PADDING,
+    };
+  }
+
+  if (chosenSide === "bottom") {
+    return {
+      x: clamp(
+        startPoint.x + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportWidth * 0.18, viewportWidth * 0.42),
+        LOBSTER_WALK_MARGIN,
+        viewportWidth - originRect.width - LOBSTER_WALK_MARGIN,
+      ),
+      y: viewportHeight + LOBSTER_OFFSCREEN_PADDING,
+    };
+  }
+
+  if (chosenSide === "left") {
+    return {
+      x: -originRect.width - LOBSTER_OFFSCREEN_PADDING,
+      y: clamp(
+        startPoint.y + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportHeight * 0.18, viewportHeight * 0.42),
+        LOBSTER_WALK_MARGIN,
+        viewportHeight - originRect.height - LOBSTER_WALK_MARGIN,
+      ),
+    };
+  }
+
+  return {
+    x: viewportWidth + LOBSTER_OFFSCREEN_PADDING,
+    y: clamp(
+      startPoint.y + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportHeight * 0.18, viewportHeight * 0.42),
+      LOBSTER_WALK_MARGIN,
+      viewportHeight - originRect.height - LOBSTER_WALK_MARGIN,
+    ),
+  };
+}
+
+function pickRandomInteriorPoint(originRect) {
+  const bounds = createViewportBounds(originRect);
+  return {
+    x: randomBetween(bounds.minLeft, bounds.maxLeft),
+    y: randomBetween(bounds.minTop, bounds.maxTop),
+  };
+}
+
+function pickDiagonalInteriorPoint(startPoint, originRect) {
+  const bounds = createViewportBounds(originRect);
+  const horizontalDirection = Math.random() < 0.5 ? -1 : 1;
+  const verticalDirection = Math.random() < 0.5 ? -1 : 1;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  return {
+    x: clamp(
+      startPoint.x + (horizontalDirection * randomBetween(viewportWidth * 0.16, viewportWidth * 0.34)),
+      bounds.minLeft,
+      bounds.maxLeft,
+    ),
+    y: clamp(
+      startPoint.y + (verticalDirection * randomBetween(viewportHeight * 0.16, viewportHeight * 0.34)),
+      bounds.minTop,
+      bounds.maxTop,
+    ),
+  };
+}
+
+function getRandomTargetDurationMs() {
+  return randomBetween(LOBSTER_MIN_DURATION_MS, LOBSTER_MAX_DURATION_MS);
+}
+
+function createBreakoutAnchor({ avoidPoints, bounds, originRect, startPoint }) {
+  if (!avoidPoints.length) {
+    return null;
+  }
+
+  const nearest = avoidPoints.reduce((best, point) => {
+    const distance = distanceBetween(startPoint, point);
+    if (!best || distance < best.distance) {
+      return { distance, point };
+    }
+    return best;
+  }, null);
+
+  if (!nearest || nearest.distance > (originRect.width || 40) * 1.8) {
+    return null;
+  }
+
+  const dx = startPoint.x - nearest.point.x;
+  const dy = startPoint.y - nearest.point.y;
+  const magnitude = Math.hypot(dx, dy) || 1;
+
+  return {
+    x: clamp(startPoint.x + ((dx / magnitude) * 96), bounds.minLeft, bounds.maxLeft),
+    y: clamp(startPoint.y + ((dy / magnitude) * 96), bounds.minTop, bounds.maxTop),
+  };
+}
+
+function isSeparatedFromPoints(candidate, avoidPoints, minimumDistance) {
+  return avoidPoints.every((point) => distanceBetween(candidate, point) >= minimumDistance);
+}
+
+function buildRandomWalkPath({
+  avoidPoints = [],
+  initialMotionAngle = null,
+  originRect,
+  resolveEndPoint,
+  species = "lobster",
+  startPoint,
+  targetDurationMs = null,
+}) {
+  const bounds = createViewportBounds(originRect);
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const minStep = Math.max(72, Math.min(viewportWidth, viewportHeight) * 0.1);
+  const desiredDurationMs = targetDurationMs ?? getRandomTargetDurationMs();
+  const targetDistance = (LOBSTER_SPEED_PX_PER_SECOND * desiredDurationMs) / 1000;
+  const desiredPointCount = clamp(
+    Math.round(desiredDurationMs / 1800) + 2,
+    LOBSTER_MIN_RANDOM_POINT_COUNT,
+    LOBSTER_MAX_RANDOM_POINT_COUNT,
+  );
+  const minimumClearance = Math.max(originRect.width, originRect.height) * 1.4;
+
+  let bestPath = null;
+
+  for (let attempt = 0; attempt < 18; attempt += 1) {
+    const anchors = [startPoint];
+    const breakoutAnchor = createBreakoutAnchor({ avoidPoints, bounds, originRect, startPoint });
+    let previous = startPoint;
+
+    if (Number.isFinite(initialMotionAngle)) {
+      const forward = getWalkerForwardVector(species, initialMotionAngle);
+      const headingAnchor = {
+        x: clamp(startPoint.x + (forward.x * (minStep * 0.9)), bounds.minLeft, bounds.maxLeft),
+        y: clamp(startPoint.y + (forward.y * (minStep * 0.9)), bounds.minTop, bounds.maxTop),
+      };
+
+      if (
+        distanceBetween(startPoint, headingAnchor) >= minStep * 0.45 &&
+        isSeparatedFromPoints(headingAnchor, avoidPoints, minimumClearance * 0.8)
+      ) {
+        anchors.push(headingAnchor);
+        previous = headingAnchor;
+      }
+    }
+
+    if (breakoutAnchor && distanceBetween(startPoint, breakoutAnchor) >= minStep * 0.6) {
+      anchors.push(breakoutAnchor);
+      previous = breakoutAnchor;
+    }
+
+    while (anchors.length < desiredPointCount + 1) {
+      const candidate = {
+        x: randomBetween(bounds.minLeft, bounds.maxLeft),
+        y: randomBetween(bounds.minTop, bounds.maxTop),
+      };
+      const farEnough = distanceBetween(previous, candidate) >= minStep;
+      if (!farEnough || !isSeparatedFromPoints(candidate, avoidPoints, minimumClearance)) {
+        continue;
+      }
+
+      anchors.push(candidate);
+      previous = candidate;
+    }
+
+    anchors.push(resolveEndPoint(previous));
+    const smoothedPoints = chaikinSmooth(anchors, 3);
+    const samples = buildSamplesFromAbsolutePoints(smoothedPoints, startPoint);
+    const totalLength = samples.at(-1)?.length || 0;
+    const candidatePath = {
+      durationMs: (totalLength / LOBSTER_SPEED_PX_PER_SECOND) * 1000,
+      samples,
+      totalLength,
+    };
+
+    if (!bestPath || Math.abs(candidatePath.totalLength - targetDistance) < Math.abs(bestPath.totalLength - targetDistance)) {
+      bestPath = candidatePath;
+    }
+  }
+
+  return bestPath;
+}
+
+function buildPrimaryLobsterWalkPath(
+  originRect,
+  startPoint,
+  endPoint = startPoint,
+  avoidPoints = [],
+  targetDurationMs = null,
+  initialMotionAngle = null,
+) {
+  return buildRandomWalkPath({
+    avoidPoints,
+    initialMotionAngle,
+    originRect,
+    resolveEndPoint: () => endPoint,
+    species: "lobster",
+    startPoint,
+    targetDurationMs,
+  });
+}
+
+function buildCompanionLobsterWalkPath(
+  originRect,
+  startPoint,
+  avoidPoints = [],
+  targetDurationMs = null,
+  species = "lobster",
+  initialMotionAngle = null,
+) {
+  return buildRandomWalkPath({
+    avoidPoints,
+    initialMotionAngle,
+    originRect,
+    resolveEndPoint: (point) => getNearestEdgeExitPoint(point, originRect),
+    species,
+    startPoint,
+    targetDurationMs,
+  });
+}
+
+function buildOctopusWalkPath(originRect, startPoint, avoidPoints = [], targetDurationMs = null) {
+  const bounds = createViewportBounds(originRect);
+  const desiredDurationMs = targetDurationMs ?? getRandomTargetDurationMs();
+  const targetDistance = (LOBSTER_SPEED_PX_PER_SECOND * desiredDurationMs) / 1000;
+  const minimumClearance = Math.max(originRect.width, originRect.height) * 1.4;
+  let bestPath = null;
+
+  for (let attempt = 0; attempt < 18; attempt += 1) {
+    const endPoint = pickDiagonalInteriorPoint(startPoint, originRect);
+    const midpoint = {
+      x: (startPoint.x + endPoint.x) / 2,
+      y: (startPoint.y + endPoint.y) / 2,
+    };
+    const dx = endPoint.x - startPoint.x;
+    const dy = endPoint.y - startPoint.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const normal = { x: -dy / length, y: dx / length };
+    const arcHeight = randomBetween(72, 180);
+    const controlPoint = {
+      x: clamp(midpoint.x + (normal.x * arcHeight), bounds.minLeft, bounds.maxLeft),
+      y: clamp(midpoint.y + (normal.y * arcHeight), bounds.minTop, bounds.maxTop),
+    };
+
+    if (!isSeparatedFromPoints(controlPoint, avoidPoints, minimumClearance * 0.75)) {
+      continue;
+    }
+
+    const samples = buildBezierSamplesFromAbsolutePoints(startPoint, controlPoint, endPoint, 72);
+    const totalLength = samples.at(-1)?.length || 0;
+    const candidatePath = {
+      durationMs: (totalLength / LOBSTER_SPEED_PX_PER_SECOND) * 1000,
+      samples,
+      totalLength,
+    };
+
+    if (!bestPath || Math.abs(candidatePath.totalLength - targetDistance) < Math.abs(bestPath.totalLength - targetDistance)) {
+      bestPath = candidatePath;
+    }
+  }
+
+  if (bestPath) {
+    return bestPath;
+  }
+
+  const fallbackEndPoint = pickDiagonalInteriorPoint(startPoint, originRect);
+  const fallbackControlPoint = {
+    x: clamp((startPoint.x + fallbackEndPoint.x) / 2, bounds.minLeft, bounds.maxLeft),
+    y: clamp(((startPoint.y + fallbackEndPoint.y) / 2) - 96, bounds.minTop, bounds.maxTop),
+  };
+  const fallbackSamples = buildBezierSamplesFromAbsolutePoints(startPoint, fallbackControlPoint, fallbackEndPoint, 72);
+  const fallbackLength = fallbackSamples.at(-1)?.length || 0;
+  return {
+    durationMs: (fallbackLength / LOBSTER_SPEED_PX_PER_SECOND) * 1000,
+    samples: fallbackSamples,
+    totalLength: fallbackLength,
+  };
+}
+
+function getPointAtDistance(samples, targetDistance) {
+  if (!samples.length) {
+    return { dx: 0, dy: -1, x: 0, y: 0 };
+  }
+
+  if (targetDistance <= 0) {
+    const next = samples[1] || samples[0];
+    return { dx: next.x - samples[0].x, dy: next.y - samples[0].y, x: samples[0].x, y: samples[0].y };
+  }
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const current = samples[index];
+    if (targetDistance <= current.length) {
+      const previous = samples[index - 1];
+      const segmentLength = current.length - previous.length || 1;
+      const segmentProgress = (targetDistance - previous.length) / segmentLength;
+      return {
+        dx: current.x - previous.x,
+        dy: current.y - previous.y,
+        x: previous.x + ((current.x - previous.x) * segmentProgress),
+        y: previous.y + ((current.y - previous.y) * segmentProgress),
+      };
+    }
+  }
+
+  const last = samples.at(-1);
+  const previous = samples.at(-2) || last;
+  return { dx: last.x - previous.x, dy: last.y - previous.y, x: last.x, y: last.y };
+}
+
+function getLobsterFontSize(progress, walker) {
+  const minFontSize = walker?.minFontSize ?? LOBSTER_BASE_FONT_SIZE_PX;
+  const maxFontSize = walker?.maxFontSize ?? LOBSTER_MAX_FONT_SIZE_PX;
+  let fontSize = maxFontSize;
+
+  if (progress <= LOBSTER_GROW_PROGRESS) {
+    const localProgress = progress / LOBSTER_GROW_PROGRESS;
+    fontSize = minFontSize + ((maxFontSize - minFontSize) * localProgress);
+  } else if (progress >= LOBSTER_SHRINK_PROGRESS) {
+    const localProgress = (progress - LOBSTER_SHRINK_PROGRESS) / (1 - LOBSTER_SHRINK_PROGRESS);
+    fontSize = maxFontSize - ((maxFontSize - minFontSize) * localProgress);
+  }
+
+  return fontSize;
+}
+
+function getWalkerFontProgress(walker, now) {
+  if (!walker.totalDurationMs) {
+    return 1;
+  }
+
+  return clamp((now - walker.animationStartedAt) / walker.totalDurationMs, 0, 1);
+}
+
+function getWalkerTransform(point, walker) {
+  if (walker?.species === "octopus") {
+    const breathProgress = ((walker.breathTimeMs || 0) % OCTOPUS_BREATH_CYCLE_MS) / OCTOPUS_BREATH_CYCLE_MS;
+    const breathWave = Math.sin(breathProgress * Math.PI * 2);
+    const breathScale = 1 + (breathWave * OCTOPUS_BREATH_SCALE);
+    const widthSquash = 1 - ((((breathWave + 1) / 2)) * OCTOPUS_WIDTH_SQUASH_SCALE);
+    return {
+      emojiTransform: `scale(${breathScale}) scaleX(${widthSquash})`,
+      motionRotation: 0,
+    };
+  }
+
+  if (walker?.species === "crab") {
+    const dx = Math.abs(point.dx) > 0.01 ? point.dx : Math.cos(((walker.motionAngle || 0) * Math.PI) / 180);
+    const dy = Math.abs(point.dy) > 0.01 ? point.dy : Math.sin(((walker.motionAngle || 0) * Math.PI) / 180);
+    const targetAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+    const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle);
+    walker.motionAngle = motionAngle;
+    return {
+      emojiTransform: "scaleX(1.08) scaleY(0.92)",
+      motionRotation: motionAngle,
+    };
+  }
+
+  const dx = Math.abs(point.dx) > 0.01 ? point.dx : Math.cos((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
+  const dy = Math.abs(point.dy) > 0.01 ? point.dy : Math.sin((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
+  const targetAngle = Math.atan2(dy || -1, dx || 0) * (180 / Math.PI) + 90;
+  const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle);
+  walker.motionAngle = motionAngle;
+  return {
+    emojiTransform: "",
+    motionRotation: motionAngle,
+  };
+}
+
+function interpolateLobsterFrame(progress, walkPath, walker) {
+  const distance = walkPath.totalLength * clamp(progress, 0, 1);
+  const point = getPointAtDistance(walkPath.samples, distance);
+  const transform = getWalkerTransform(point, walker);
+
+  return {
+    emojiTransform: transform.emojiTransform,
+    rotation: transform.motionRotation,
+    x: point.x,
+    y: point.y,
+  };
+}
+
+function createWalkerId(prefix) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createPrimaryWalker(originRect, avoidPoints = []) {
+  const startPoint = { x: originRect.left, y: originRect.top };
+  const path = buildPrimaryLobsterWalkPath(originRect, startPoint, startPoint, avoidPoints);
+  return {
+    animationStartedAt: 0,
+    emoji: "🦞",
+    height: originRect.height,
+    homePoint: startPoint,
+    id: createWalkerId("main-lobster"),
+    left: startPoint.x,
+    maxFontSize: LOBSTER_MAX_FONT_SIZE_PX,
+    minFontSize: LOBSTER_BASE_FONT_SIZE_PX,
+    motionAngle: 0,
+    path,
+    species: "lobster",
+    startedAt: 0,
+    top: startPoint.y,
+    totalDurationMs: path.durationMs,
+    type: "primary",
+    width: originRect.width,
+  };
+}
+
+function createEdgeWalker(originRect, avoidPoints = [], emoji = "🦞", idPrefix = "companion-lobster", species = "lobster") {
+  const startPoint = species === "octopus" ? pickRandomInteriorPoint(originRect) : pickRandomEdgeStart(originRect);
+  const path = species === "octopus"
+    ? buildOctopusWalkPath(originRect, startPoint, avoidPoints)
+    : buildCompanionLobsterWalkPath(originRect, startPoint, avoidPoints, null, species);
+  const fontSize = sampleCompanionFontSize();
+  return {
+    animationStartedAt: 0,
+    breathTimeMs: 0,
+    emoji,
+    height: originRect.height,
+    id: createWalkerId(idPrefix),
+    left: startPoint.x,
+    maxFontSize: fontSize,
+    minFontSize: fontSize,
+    motionAngle: 0,
+    path,
+    species,
+    startedAt: 0,
+    top: startPoint.y,
+    totalDurationMs: path.durationMs,
+    type: "companion",
+    width: originRect.width,
+  };
+}
+
+function createCompanionWalker(originRect, avoidPoints = []) {
+  return createEdgeWalker(originRect, avoidPoints, "🦞", "companion-lobster", "lobster");
+}
+
+function createCrabWalker(originRect, avoidPoints = []) {
+  return createEdgeWalker(originRect, avoidPoints, "🦀", "companion-crab", "crab");
+}
+
+function createOctopusWalker(originRect, avoidPoints = []) {
+  return createEdgeWalker(originRect, avoidPoints, "🐙", "companion-octopus", "octopus");
+}
 
 function splitModeLabel(rawLabel = "") {
   const [value, description] = String(rawLabel || "").split(/\s+-\s+/, 2);
@@ -25,10 +704,23 @@ function splitModeLabel(rawLabel = "") {
 }
 
 function formatModelLabel(modelId = "") {
-  const normalized = String(modelId || "").trim();
-  if (!normalized) return "";
-  const parts = normalized.split("/").filter(Boolean);
-  return parts.at(-1) || normalized;
+  return String(modelId || "").trim();
+}
+
+function getContextUsageColor(contextUsed, contextMax, resolvedTheme) {
+  const ratio = contextMax > 0 ? (contextUsed / contextMax) : 0;
+
+  if (resolvedTheme === "light") {
+    if (ratio < 0.3) return "#0f9f6e";
+    if (ratio < 0.6) return "#c77700";
+    if (ratio < 0.9) return "#d92d20";
+    return "#6d28d9";
+  }
+
+  if (ratio < 0.3) return "#34d399";
+  if (ratio < 0.6) return "#fbbf24";
+  if (ratio < 0.9) return "#f87171";
+  return "#c4b5fd";
 }
 
 function BlockTooltipContent({ label, value }) {
@@ -43,9 +735,11 @@ function BlockTooltipContent({ label, value }) {
 }
 
 function SelectStatusPill({
+  compact = false,
   emptyText,
   getItemDescription,
   getItemLabel,
+  hideLabel = false,
   items,
   label,
   menuLabel,
@@ -75,15 +769,19 @@ function SelectStatusPill({
         type="button"
         aria-label={triggerLabel || menuLabel || label}
         className={cn(
-          "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1",
-          isLightTheme
-            ? "border-border/70 bg-white hover:bg-accent/40 focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-border/70"
-            : "border-border/70 bg-background/80 hover:bg-accent/40 focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-border/70",
+          compact
+            ? "inline-flex h-9 min-w-[8.5rem] cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1"
+            : "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1",
+          compact
+            ? "border-border/45 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/30 focus-visible:border-border/70 focus-visible:bg-muted/30 focus-visible:ring-border/50"
+            : isLightTheme
+              ? "border-border/70 bg-white hover:bg-accent/40 focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-border/70"
+              : "border-border/70 bg-background/80 hover:bg-accent/40 focus-visible:border-border focus-visible:bg-accent/30 focus-visible:ring-border/70",
         )}
       >
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
-          <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
+          {hideLabel ? null : <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>}
+          <div className={cn("truncate font-semibold", compact ? "text-sm leading-none" : "text-sm", valueClassName)} style={valueStyle}>
             {value}
           </div>
         </div>
@@ -95,21 +793,21 @@ function SelectStatusPill({
   );
 }
 
-function StatusPill({ label, value, action, tooltipContent, valueClassName, valueStyle, children, resolvedTheme }) {
+function StatusPill({ label, value, valueNode, action, tooltipContent, valueClassName, valueStyle, children, resolvedTheme }) {
   const isLightTheme = resolvedTheme === "light";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div
           className={cn(
-            "inline-flex h-14 min-w-[88px] items-center gap-2 rounded-lg border border-border/70 px-3 py-2",
+            "inline-flex h-14 min-w-[88px] items-center gap-2 rounded-lg border border-border/70 px-2.5 py-1.5",
             isLightTheme ? "bg-white" : "bg-background/80",
           )}
         >
           <div className="min-w-0 flex-1">
             <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
             <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
-              {value}
+              {valueNode || value}
             </div>
           </div>
           {children ? <div className="shrink-0">{children}</div> : null}
@@ -118,6 +816,19 @@ function StatusPill({ label, value, action, tooltipContent, valueClassName, valu
       </TooltipTrigger>
       {tooltipContent ? <TooltipContent side="bottom">{tooltipContent}</TooltipContent> : <BlockTooltipContent label={label} value={value} />}
     </Tooltip>
+  );
+}
+
+function ContextTooltipContent({ messages }) {
+  return (
+    <div className="max-w-[22rem] space-y-0.5">
+      <div>{messages.sessionOverview.tooltips.contextTitle || messages.sessionOverview.tooltips.context}</div>
+      <div className="text-[11px] leading-relaxed text-muted-foreground">
+        {messages.sessionOverview.tooltips.contextDescriptionBefore}
+        <RotateCcw aria-hidden="true" className="mx-0.5 inline-block h-[0.95em] w-[0.95em] align-[-0.08em]" />
+        {messages.sessionOverview.tooltips.contextDescriptionAfter}
+      </div>
+    </div>
   );
 }
 
@@ -211,7 +922,7 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
   return (
     <div
       className={cn(
-        "inline-flex h-8 items-center rounded-full border p-0.5",
+        "inline-flex h-9 items-center self-stretch rounded-full border p-0.5",
         resolvedTheme === "light"
           ? "border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
           : "border-border/70 bg-background/90",
@@ -228,7 +939,7 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
                 onClick={() => onChange(option.id)}
                 aria-label={option.label}
                 className={cn(
-                  "inline-flex h-7 min-w-[2.5rem] items-center justify-center rounded-full border px-2 transition-[background-color,color,box-shadow,border-color] duration-200",
+                  "inline-flex h-8 min-w-[2.5rem] items-center justify-center self-center rounded-full border px-2 transition-[background-color,color,box-shadow,border-color] duration-200",
                   active
                     ? resolvedTheme === "light"
                       ? "border-transparent bg-slate-200 text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
@@ -255,22 +966,225 @@ function ThemeToggle({ onChange, resolvedTheme, value }) {
   );
 }
 
+function ShortcutHelpButton() {
+  const { messages } = useI18n();
+  const [open, setOpen] = useState(false);
+  const helpShortcut = formatShortcutForPlatform("Cmd + /");
+  const applePlatform = isApplePlatform();
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const normalizedKey = String(event.key || "").trim();
+      const usesExpectedModifier = applePlatform
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey;
+      const isShortcutToggle =
+        usesExpectedModifier
+        && !event.shiftKey
+        && !event.altKey
+        && (event.code === "Slash" || normalizedKey === "/" || normalizedKey === "?");
+
+      if (isShortcutToggle && !event.repeat && !event.isComposing) {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(true);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [applePlatform]);
+
+  const shortcutGroups = [
+    {
+      id: "global",
+      title: messages.shortcuts.sections.global,
+      items: [
+        {
+          id: "help",
+          shortcut: formatShortcutForPlatform("Cmd + /"),
+          description: messages.shortcuts.items.openHelp,
+        },
+        {
+          id: "reset",
+          shortcut: formatShortcutForPlatform("Cmd + N"),
+          description: messages.shortcuts.items.resetConversation,
+        },
+        {
+          id: "tab-number",
+          shortcut: formatShortcutForPlatform("Cmd + 1-9"),
+          description: messages.shortcuts.items.switchSessionByNumber,
+        },
+        {
+          id: "tab-left",
+          shortcut: formatShortcutForPlatform("Cmd + Left"),
+          description: messages.shortcuts.items.previousSession,
+        },
+        {
+          id: "tab-right",
+          shortcut: formatShortcutForPlatform("Cmd + Right"),
+          description: messages.shortcuts.items.nextSession,
+        },
+      ],
+    },
+    {
+      id: "appearance",
+      title: messages.shortcuts.sections.appearance,
+      items: [
+        {
+          id: "theme-system",
+          shortcut: formatShortcutForPlatform(messages.theme.shortcuts.system),
+          description: messages.shortcuts.items.themeSystem,
+        },
+        {
+          id: "theme-light",
+          shortcut: formatShortcutForPlatform(messages.theme.shortcuts.light),
+          description: messages.shortcuts.items.themeLight,
+        },
+        {
+          id: "theme-dark",
+          shortcut: formatShortcutForPlatform(messages.theme.shortcuts.dark),
+          description: messages.shortcuts.items.themeDark,
+        },
+      ],
+    },
+    {
+      id: "composer",
+      title: messages.shortcuts.sections.composer,
+      items: [
+        {
+          id: "send",
+          shortcut: messages.shortcuts.shortcuts.sendMessage,
+          description: messages.shortcuts.items.sendMessage,
+        },
+        {
+          id: "newline",
+          shortcut: messages.shortcuts.shortcuts.insertNewline,
+          description: messages.shortcuts.items.insertNewline,
+        },
+        {
+          id: "history-prev",
+          shortcut: messages.shortcuts.shortcuts.previousPrompt,
+          description: messages.shortcuts.items.previousPrompt,
+        },
+        {
+          id: "history-next",
+          shortcut: messages.shortcuts.shortcuts.nextPrompt,
+          description: messages.shortcuts.items.nextPrompt,
+        },
+      ],
+    },
+    {
+      id: "dialog",
+      title: messages.shortcuts.sections.dialog,
+      items: [
+        {
+          id: "close-dialog",
+          shortcut: "Esc",
+          description: messages.shortcuts.items.closeDialog,
+        },
+      ],
+    },
+  ];
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={messages.shortcuts.tooltipTitle}
+            onClick={() => setOpen(true)}
+            className="inline-flex h-9 w-9 items-center justify-center self-stretch rounded-full border border-border/70 bg-background/90 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
+          >
+            <Keyboard className="h-4 w-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="px-2.5 py-2">
+          <div className="space-y-0.5">
+            <div>{messages.shortcuts.tooltipTitle}</div>
+            <div className="text-[11px] text-background/70">{helpShortcut}</div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+
+      {open ? (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-background/68 px-4 py-6 backdrop-blur-[6px]"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={messages.shortcuts.dialogTitle}
+            className="w-full max-w-3xl rounded-[1.5rem] border border-border/70 bg-background/96 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.18)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-lg font-semibold tracking-[-0.02em] text-foreground">{messages.shortcuts.dialogTitle}</div>
+                <div className="text-sm text-muted-foreground">{messages.shortcuts.dialogDescription}</div>
+              </div>
+              <button
+                type="button"
+                aria-label={messages.shortcuts.close}
+                onClick={() => setOpen(false)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              {shortcutGroups.map((group) => (
+                <section key={group.id} className="rounded-2xl border border-border/60 bg-card/70 p-4">
+                  <div className="mb-3 text-sm font-semibold text-foreground">{group.title}</div>
+                  <div className="space-y-2.5">
+                    {group.items.map((item) => (
+                      <div key={item.id} className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1 text-sm leading-6 text-foreground">{item.description}</div>
+                        <kbd className="shrink-0 rounded-lg border border-border/70 bg-muted/70 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                          {item.shortcut}
+                        </kbd>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function LanguageToggle() {
   const { locale, localeOptions, messages, setLocale } = useI18n();
   const activeLocale = localeOptions.find((option) => option.value === locale);
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={messages.locale.switchLabel}
-          className="inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
-        >
-          <Languages className="h-4 w-4" />
-          <span className="text-xs font-medium text-foreground">{activeLocale?.label || locale.toUpperCase()}</span>
-        </button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={messages.locale.switchLabel}
+              className="inline-flex h-9 items-center self-stretch gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
+            >
+              <Languages className="h-4 w-4" />
+              <span className="text-xs font-medium text-foreground">{activeLocale?.label || locale.toUpperCase()}</span>
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{messages.locale.switchLabel}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>{messages.locale.label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -284,17 +1198,335 @@ function LanguageToggle() {
   );
 }
 
+function LobsterBrand({ compact = false, subtitle }) {
+  const anchorRef = useRef(null);
+  const activeWalkersRef = useRef([]);
+  const animationFrameRef = useRef(null);
+  const walkerContainerRefs = useRef({});
+  const walkerEmojiRefs = useRef({});
+  const walkerMotionRefs = useRef({});
+  const [activeWalkers, setActiveWalkers] = useState([]);
+
+  const setWalkerContainerRef = (id) => (node) => {
+    if (node) {
+      walkerContainerRefs.current[id] = node;
+      return;
+    }
+    delete walkerContainerRefs.current[id];
+  };
+
+  const setWalkerMotionRef = (id) => (node) => {
+    if (node) {
+      walkerMotionRefs.current[id] = node;
+      return;
+    }
+    delete walkerMotionRefs.current[id];
+  };
+
+  const setWalkerEmojiRef = (id) => (node) => {
+    if (node) {
+      walkerEmojiRefs.current[id] = node;
+      return;
+    }
+    delete walkerEmojiRefs.current[id];
+  };
+
+  useEffect(() => () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    activeWalkersRef.current = activeWalkers;
+  }, [activeWalkers]);
+
+  useEffect(() => {
+    if (!activeWalkers.length || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const rerouteWalker = (walker, currentLeft, currentTop, currentRotation, currentEmojiTransform, currentFontSize, avoidPoints, now) => {
+      const currentRect = {
+        height: walker.height,
+        left: currentLeft,
+        top: currentTop,
+        width: walker.width,
+      };
+      const startPoint = { x: currentLeft, y: currentTop };
+      const remainingDurationMs = Math.max(180, walker.endAt - now);
+      const nextPath = walker.type === "primary"
+        ? buildPrimaryLobsterWalkPath(currentRect, startPoint, walker.homePoint, avoidPoints, remainingDurationMs, currentRotation)
+        : walker.species === "octopus"
+          ? buildOctopusWalkPath(currentRect, startPoint, avoidPoints, remainingDurationMs)
+          : buildCompanionLobsterWalkPath(currentRect, startPoint, avoidPoints, remainingDurationMs, walker.species, currentRotation);
+
+      walker.left = currentLeft;
+      walker.motionAngle = currentRotation;
+      walker.path = nextPath;
+      walker.startedAt = now;
+      walker.top = currentTop;
+      walker.lastRerouteAt = now;
+
+      const containerNode = walkerContainerRefs.current[walker.id];
+      if (containerNode) {
+        containerNode.style.left = `${currentLeft}px`;
+        containerNode.style.top = `${currentTop}px`;
+      }
+
+      const motionNode = walkerMotionRefs.current[walker.id];
+      if (motionNode) {
+        motionNode.style.transform = `translate3d(0px, 0px, 0) rotate(${currentRotation}deg)`;
+      }
+
+      const emojiNode = walkerEmojiRefs.current[walker.id];
+      if (emojiNode) {
+        emojiNode.style.fontSize = `${currentFontSize}px`;
+        emojiNode.style.transform = currentEmojiTransform || "";
+      }
+    };
+
+    const tick = (now) => {
+      const currentWalkers = activeWalkersRef.current;
+      const visibleWalkers = [];
+      const positions = [];
+
+      currentWalkers.forEach((walker) => {
+        if (now >= walker.endAt) {
+          return;
+        }
+
+        const progress = Math.min((now - walker.startedAt) / walker.path.durationMs, 1);
+        if (progress >= 1) {
+          return;
+        }
+
+        walker.breathTimeMs = now - walker.animationStartedAt;
+        const frame = interpolateLobsterFrame(progress, walker.path, walker);
+        const fontSize = getLobsterFontSize(getWalkerFontProgress(walker, now), walker);
+        const motionNode = walkerMotionRefs.current[walker.id];
+        const emojiNode = walkerEmojiRefs.current[walker.id];
+
+        if (motionNode) {
+          motionNode.style.transform = `translate3d(${frame.x}px, ${frame.y}px, 0) rotate(${frame.rotation}deg)`;
+        }
+
+        if (emojiNode) {
+          emojiNode.style.fontSize = `${fontSize}px`;
+          emojiNode.style.transform = frame.emojiTransform || "";
+        }
+
+        const currentLeft = walker.left + frame.x;
+        const currentTop = walker.top + frame.y;
+        visibleWalkers.push(walker);
+        positions.push({
+          centerX: currentLeft + (walker.width / 2),
+          centerY: currentTop + (walker.height / 2),
+          currentLeft,
+          currentTop,
+          fontSize,
+          emojiTransform: frame.emojiTransform,
+          rotation: frame.rotation,
+          walker,
+        });
+      });
+
+      for (let index = 0; index < positions.length; index += 1) {
+        for (let otherIndex = index + 1; otherIndex < positions.length; otherIndex += 1) {
+          const current = positions[index];
+          const other = positions[otherIndex];
+          const distance = Math.hypot(current.centerX - other.centerX, current.centerY - other.centerY);
+          const collisionDistance = Math.max(
+            LOBSTER_COLLISION_DISTANCE_PX,
+            ((current.fontSize + other.fontSize) * 0.42),
+          );
+          if (distance >= collisionDistance) {
+            continue;
+          }
+
+          if (now - (current.walker.lastRerouteAt || 0) >= LOBSTER_REROUTE_COOLDOWN_MS) {
+            rerouteWalker(
+              current.walker,
+              current.currentLeft,
+              current.currentTop,
+              current.rotation,
+              current.emojiTransform,
+              current.fontSize,
+              positions.filter((entry) => entry.walker.id !== current.walker.id).map((entry) => ({ x: entry.currentLeft, y: entry.currentTop })),
+              now,
+            );
+          }
+
+          if (now - (other.walker.lastRerouteAt || 0) >= LOBSTER_REROUTE_COOLDOWN_MS) {
+            rerouteWalker(
+              other.walker,
+              other.currentLeft,
+              other.currentTop,
+              other.rotation,
+              other.emojiTransform,
+              other.fontSize,
+              positions.filter((entry) => entry.walker.id !== other.walker.id).map((entry) => ({ x: entry.currentLeft, y: entry.currentTop })),
+              now,
+            );
+          }
+        }
+      }
+
+      if (visibleWalkers.length) {
+        activeWalkersRef.current = visibleWalkers;
+        if (visibleWalkers.length !== currentWalkers.length) {
+          setActiveWalkers([...visibleWalkers]);
+        }
+        animationFrameRef.current = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      activeWalkersRef.current = [];
+      setActiveWalkers([]);
+    };
+
+    animationFrameRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [activeWalkers]);
+
+  const handleWalk = () => {
+    if (activeWalkersRef.current.length || typeof window === "undefined" || !anchorRef.current) {
+      return;
+    }
+
+    const rect = anchorRef.current.getBoundingClientRect();
+    const anchorRect = {
+      height: rect.height,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+    };
+    const walkers = [createPrimaryWalker(anchorRect)];
+
+    if (Math.random() <= LOBSTER_COMPANION_SPAWN_PROBABILITY) {
+      for (let index = 0; index < LOBSTER_COMPANION_COUNT; index += 1) {
+        walkers.push(createCompanionWalker(
+          anchorRect,
+          walkers.map((walker) => ({ x: walker.left, y: walker.top })),
+        ));
+      }
+    }
+
+    if (Math.random() <= CRAB_SPAWN_PROBABILITY) {
+      walkers.push(createCrabWalker(
+        anchorRect,
+        walkers.map((walker) => ({ x: walker.left, y: walker.top })),
+      ));
+    }
+
+    if (Math.random() <= OCTOPUS_SPAWN_PROBABILITY) {
+      walkers.push(createOctopusWalker(
+        anchorRect,
+        walkers.map((walker) => ({ x: walker.left, y: walker.top })),
+      ));
+    }
+
+    const startedAt = window.performance.now();
+    const initializedWalkers = walkers.map((walker) => ({
+      ...walker,
+      animationStartedAt: startedAt,
+      endAt: startedAt + walker.totalDurationMs,
+      lastRerouteAt: 0,
+      startedAt,
+    }));
+    activeWalkersRef.current = initializedWalkers;
+    setActiveWalkers(initializedWalkers);
+  };
+
+  const primaryWalkerActive = activeWalkers.some((walker) => walker.type === "primary");
+
+  return (
+    <>
+      <div className={cn("inline-flex min-w-0 items-center", compact ? "mr-3 h-9 gap-0.5" : "mr-1 h-14 gap-2")}>
+        <button
+          ref={anchorRef}
+          type="button"
+          onClick={handleWalk}
+          aria-label="Let the lobster crawl"
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center rounded-full transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            compact ? "h-9 w-8 self-stretch" : "h-10 w-10",
+          )}
+        >
+          <span
+            className={cn(
+              compact ? "inline-block text-[1.25rem] leading-none" : "text-[1.8rem] leading-none",
+              primaryWalkerActive && "opacity-0",
+            )}
+            aria-hidden="true"
+          >
+            🦞
+          </span>
+        </button>
+        {compact ? (
+          <div className="flex h-9 min-w-0 items-center self-stretch">
+            <h1 className="max-w-full truncate font-['Avenir_Next','SF_Pro_Display','Helvetica_Neue',sans-serif] text-[1.45rem] font-bold leading-none tracking-[-0.035em] text-foreground/85">
+              LalaClaw
+            </h1>
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-col justify-center">
+            <h1 className="max-w-full truncate text-sm font-bold leading-[1.1] tracking-tight">LalaClaw</h1>
+            <span className="mt-1 max-w-full truncate text-[11px] leading-4 text-muted-foreground">{subtitle}</span>
+          </div>
+        )}
+      </div>
+
+      {activeWalkers.length ? (
+        <div className="pointer-events-none fixed inset-0 z-[70] overflow-hidden">
+          {activeWalkers.map((walker) => (
+            <div
+              key={walker.id}
+              ref={setWalkerContainerRef(walker.id)}
+              className="absolute"
+              style={{
+                height: walker.height,
+                left: walker.left,
+                top: walker.top,
+                width: walker.width,
+              }}
+            >
+              <div ref={setWalkerMotionRef(walker.id)} className="flex h-full w-full items-center justify-center drop-shadow-sm will-change-transform">
+                <span
+                  ref={setWalkerEmojiRef(walker.id)}
+                  className="inline-block leading-none"
+                  style={{ fontSize: `${walker.minFontSize}px` }}
+                  aria-hidden="true"
+                >
+                  {walker.emoji || "🦞"}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function SessionOverview({
   availableAgents,
   availableModels,
   fastMode,
   formatCompactK,
+  layout = "full",
   model,
   onAgentChange,
   onFastModeChange,
   onModelChange,
   onThinkModeChange,
   onThemeChange,
+  openAgentIds = [],
   resolvedTheme,
   session,
   theme,
@@ -308,111 +1540,196 @@ export function SessionOverview({
   const isLightTheme = resolvedTheme === "light";
   const selectedModel = model || session.selectedModel || session.model || "";
   const displayedModel = formatModelLabel(selectedModel) || messages.common.unknown;
-  return (
-    <section className="pt-2.5 pb-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1 overflow-x-auto pb-1">
-              <div className="flex min-w-max items-center gap-2">
-                <div className="mr-1 inline-flex h-14 min-w-0 items-center gap-2">
-                  <span className="flex h-full items-center text-[1.5rem] leading-none" aria-hidden="true">🦞</span>
-                  <div className="flex min-w-0 flex-col justify-center">
-                    <h1 className="max-w-full truncate text-sm font-semibold leading-[1.1] tracking-tight">LalaClaw.ai</h1>
-                    <span className="mt-1 max-w-full truncate text-[11px] leading-4 text-muted-foreground">{messages.app.subtitle}</span>
-                  </div>
-                </div>
+  const normalizedOpenAgentIds = new Set(
+    (openAgentIds || [])
+      .map((agentId) => String(agentId || "").trim())
+      .filter(Boolean),
+  );
+  const selectableAgents = (availableAgents || []).filter((agentId) => !normalizedOpenAgentIds.has(String(agentId || "").trim()));
+  const defaultModel = availableModels[0] || "";
+  const getModelItemLabel = (modelId) => {
+    const normalized = formatModelLabel(modelId);
+    if (!modelId || modelId !== defaultModel) {
+      return normalized;
+    }
+    return `${normalized} (${messages.common.default})`;
+  };
+  const contextUsageColor = getContextUsageColor(Number(session.contextUsed) || 0, Number(session.contextMax) || 0, resolvedTheme);
 
-                <SelectStatusPill
-                  label={messages.sessionOverview.labels.agent}
-                  value={session.agentId || "main"}
-                  resolvedTheme={resolvedTheme}
-                  items={availableAgents}
-                  onSelect={onAgentChange}
-                  selectedValue={session.agentId}
-                  emptyText={messages.sessionOverview.menus.noAgents}
-                  menuLabel={messages.sessionOverview.menus.switchAgent}
-                  tooltipContent={messages.sessionOverview.tooltips.switchAgentSession}
-                />
+  const statusContent = (
+    <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+      <div className="flex min-w-max items-center gap-2">
+        <SelectStatusPill
+          label={messages.sessionOverview.labels.model}
+          value={displayedModel}
+          resolvedTheme={resolvedTheme}
+          items={availableModels}
+          onSelect={onModelChange}
+          selectedValue={selectedModel}
+          emptyText={messages.sessionOverview.menus.noModels}
+          getItemLabel={getModelItemLabel}
+          menuLabel={messages.sessionOverview.menus.switchModel}
+          tooltipContent={messages.sessionOverview.tooltips.switchModel}
+        />
 
-                <SelectStatusPill
-                  label={messages.sessionOverview.labels.model}
-                  value={displayedModel}
-                  resolvedTheme={resolvedTheme}
-                  items={availableModels}
-                  onSelect={onModelChange}
-                  selectedValue={selectedModel}
-                  emptyText={messages.sessionOverview.menus.noModels}
-                  menuLabel={messages.sessionOverview.menus.switchModel}
-                  tooltipContent={messages.sessionOverview.tooltips.switchModel}
-                />
+        <StatusPill
+          label={messages.sessionOverview.labels.context}
+          value={`${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`}
+          valueNode={(
+            <span>
+              <span style={{ color: contextUsageColor }}>{formatCompactK(session.contextUsed)}</span>
+              <span className={cn(isLightTheme ? "text-slate-900" : "text-foreground")}>
+                {" / "}
+                {formatCompactK(session.contextMax)}
+              </span>
+            </span>
+          )}
+          resolvedTheme={resolvedTheme}
+          tooltipContent={<ContextTooltipContent messages={messages} />}
+        />
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-pressed={fastMode}
-                      title={fastMode ? messages.sessionOverview.fastMode.disableTitle : messages.sessionOverview.fastMode.enableTitle}
-                      onClick={() => onFastModeChange(!fastMode)}
-                      className={cn(
-                        "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors",
-                        isLightTheme ? "border-border/70 bg-white hover:bg-accent/40" : "border-border/70 bg-background/80 hover:bg-accent/40",
-                      )}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.fastMode}</div>
-                        <div
-                          className={cn("text-sm font-semibold", fastMode && "dark:text-emerald-400")}
-                          style={fastMode && resolvedTheme === "light" ? { color: "#009559" } : undefined}
-                        >
-                          {fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off}
-                        </div>
-                      </div>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{messages.sessionOverview.tooltips.fastMode}</TooltipContent>
-                </Tooltip>
-
-                <SelectStatusPill
-                  label={messages.sessionOverview.labels.thinkMode}
-                  value={getThinkModeDescription(session.thinkMode || "off")}
-                  resolvedTheme={resolvedTheme}
-                  valueClassName={cn(isThinkModeEnabled && "dark:text-emerald-400")}
-                  valueStyle={isThinkModeEnabled && resolvedTheme === "light" ? { color: "#009559" } : undefined}
-                  items={thinkModeOptions}
-                  onSelect={onThinkModeChange}
-                  selectedValue={session.thinkMode || "off"}
-                  emptyText={messages.sessionOverview.menus.noThinkModes}
-                  getItemLabel={getThinkModeLabel}
-                  getItemDescription={getThinkModeDescription}
-                  menuLabel={messages.sessionOverview.menus.switchThinkMode}
-                  tooltipContent={messages.sessionOverview.tooltips.thinkMode}
-                />
-
-                <StatusPill
-                  label={messages.sessionOverview.labels.context}
-                  value={`${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`}
-                  resolvedTheme={resolvedTheme}
-                  tooltipContent={messages.sessionOverview.tooltips.context}
-                />
-
-                <StatusPill
-                  label={messages.sessionOverview.labels.queue}
-                  value={session.queue || messages.common.unknown}
-                  resolvedTheme={resolvedTheme}
-                  tooltipContent={messages.sessionOverview.tooltips.queue}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-pressed={fastMode}
+              onClick={() => onFastModeChange(!fastMode)}
+              className={cn(
+                "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-3 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+                isLightTheme ? "border-border/70 bg-white hover:bg-accent/40" : "border-border/70 bg-background/80 hover:bg-accent/40",
+              )}
+            >
+              <div className="min-w-0">
+                <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.fastMode}</div>
+                <div
+                  className={cn("text-sm font-semibold", fastMode && "dark:text-emerald-400")}
+                  style={fastMode && resolvedTheme === "light" ? { color: "#009559" } : undefined}
                 >
-                  <Badge variant="default">{updatedBadgeLabel}</Badge>
-                </StatusPill>
+                  {fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off}
+                </div>
+              </div>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <div className="space-y-0.5">
+              <div>{messages.sessionOverview.tooltips.fastModeTitle}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {messages.sessionOverview.tooltips.fastModeDescription}
               </div>
             </div>
+          </TooltipContent>
+        </Tooltip>
 
-            <div className="shrink-0 pt-1">
-              <div className="flex items-center gap-2">
-                <LanguageToggle />
-                <ThemeToggle value={theme} resolvedTheme={resolvedTheme} onChange={onThemeChange} />
+        <SelectStatusPill
+          label={messages.sessionOverview.labels.thinkMode}
+          value={getThinkModeDescription(session.thinkMode || "off")}
+          resolvedTheme={resolvedTheme}
+          valueClassName={cn(isThinkModeEnabled && "dark:text-emerald-400")}
+          valueStyle={isThinkModeEnabled && resolvedTheme === "light" ? { color: "#009559" } : undefined}
+          items={thinkModeOptions}
+          onSelect={onThinkModeChange}
+          selectedValue={session.thinkMode || "off"}
+          emptyText={messages.sessionOverview.menus.noThinkModes}
+          getItemLabel={getThinkModeLabel}
+          getItemDescription={getThinkModeDescription}
+          menuLabel={messages.sessionOverview.menus.switchThinkMode}
+          tooltipContent={(
+            <div className="space-y-0.5">
+              <div>{messages.sessionOverview.tooltips.thinkModeTitle}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {messages.sessionOverview.tooltips.thinkModeDescription}
               </div>
+            </div>
+          )}
+        />
+
+      </div>
+    </div>
+  );
+
+  const appearanceControls = (
+    <div className="flex h-9 shrink-0 items-center">
+      <div className="flex h-9 items-center gap-2">
+        <LanguageToggle />
+        <ThemeToggle value={theme} resolvedTheme={resolvedTheme} onChange={onThemeChange} />
+        <ShortcutHelpButton />
+      </div>
+    </div>
+  );
+
+  if (layout === "brand") {
+    return (
+      <section className="pt-0 pb-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <LobsterBrand subtitle={messages.app.subtitle} />
             </div>
           </div>
+          {appearanceControls}
+        </div>
+      </section>
+    );
+  }
 
+  if (layout === "tab-brand") {
+    return <LobsterBrand compact />;
+  }
+
+  if (layout === "controls") {
+    return (
+      <section className="pt-0 pb-0">
+        <div className="flex justify-end">{appearanceControls}</div>
+      </section>
+    );
+  }
+
+  if (layout === "agent-tab") {
+    return (
+      <SelectionMenu
+        label={messages.sessionOverview.menus.switchAgent}
+        triggerLabel={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
+        items={selectableAgents}
+        value={session.agentId}
+        onSelect={onAgentChange}
+        showSelectionIndicator={false}
+        contentClassName="w-[300px] max-w-[calc(100vw-1rem)] p-2"
+        emptyText={messages.sessionOverview.menus.noAvailableAgentSessionsHint || messages.sessionOverview.menus.noAgents}
+        tooltipContent={messages.sessionOverview.tooltips.switchAgentSession}
+      >
+        <button
+          type="button"
+          aria-label={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
+          className={cn(
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1",
+            "border-border/45 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/30 focus-visible:border-border/70 focus-visible:bg-muted/30 focus-visible:ring-border/50",
+          )}
+        >
+          <Plus className="h-4 w-4 text-foreground" aria-hidden="true" />
+        </button>
+      </SelectionMenu>
+    );
+  }
+
+  if (layout === "status") {
+    return (
+      <section className="pt-0 pb-0">
+        {statusContent}
+      </section>
+    );
+  }
+
+  return (
+    <section className="pt-0 pb-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden pb-1">
+          <div className="flex min-w-max items-center gap-2">
+            <LobsterBrand subtitle={messages.app.subtitle} />
+          </div>
+        </div>
+        {statusContent}
+        {appearanceControls}
+      </div>
     </section>
   );
 }

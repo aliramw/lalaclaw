@@ -82,6 +82,7 @@ describe("InspectorPanel", () => {
     renderWithTooltip(<TestHarness />);
 
     expect(screen.getAllByRole("tab").slice(0, 3).map((tab) => tab.textContent)).toEqual(["文件1", "回复摘要", "运行记录"]);
+    expect(screen.getByText("查看 Agent 执行记录的明细")).toBeInTheDocument();
     expect(screen.getByText("修复错误")).toBeInTheDocument();
     expect(screen.getByText("输入")).toBeInTheDocument();
     expect(screen.getByText("输出")).toBeInTheDocument();
@@ -94,6 +95,9 @@ describe("InspectorPanel", () => {
     expect(within(screen.getByRole("tab", { name: "文件" })).getByText("1")).toBeInTheDocument();
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "回复摘要" }));
+    expect(screen.getByText("这里列出本次会话的回复摘要，点击可以直接定位到会话位置")).toBeInTheDocument();
+
     await user.click(screen.getByRole("tab", { name: "文件" }));
     expect(screen.getByRole("tab", { name: "文件" })).toHaveAttribute("data-state", "active");
 
@@ -105,6 +109,7 @@ describe("InspectorPanel", () => {
     expect(screen.getByText("这里会列出 Gateway 与当前会话的环境信息，便于排查与检阅。")).toBeInTheDocument();
     expect(screen.getByText("gateway.baseUrl")).toBeInTheDocument();
     expect(screen.getByText("http://127.0.0.1:18789")).toBeInTheDocument();
+    expect(screen.getByText("gateway.baseUrl").closest('[role="tabpanel"]')).toHaveClass("min-w-0");
   });
 
   it("localizes timeline statuses and tool summaries for english UI", () => {
@@ -157,6 +162,26 @@ describe("InspectorPanel", () => {
     await user.click(screen.getByRole("button", { name: "定位到 交付结果" }));
 
     expect(onSelectArtifact).toHaveBeenCalledWith(expect.objectContaining({ title: "交付结果", messageTimestamp: 123 }));
+  });
+
+  it("renders artifact details without markdown markers", () => {
+    const [activeTab, setActiveTab] = ["artifacts", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[{ title: "回复 03/16 17:48", type: "assistant_output", detail: "结论先说： **外星殖民**。 --- ### 1. [继续](https://example.com)" }]}
+        files={[]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByText("结论先说： 外星殖民。 1. 继续")).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*/)).not.toBeInTheDocument();
   });
 
   it("keeps the timeline tab inside its own scroll container", () => {

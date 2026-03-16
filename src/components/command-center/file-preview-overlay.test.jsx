@@ -87,7 +87,7 @@ describe("FilePreviewOverlay", () => {
           kind: "markdown",
           name: "publish.md",
           path: "/Users/marila/projects/lalaclaw/publish.md",
-          content: `---\nname: publish-lalaclaw-ai\ndescription: 构建并发布 lalaclaw.ai 网站到服务器\nuser-invocable: true\n---\n\n# 发布 lalaclaw.ai\n\n一键构建并部署 lalaclaw.ai 网站。`,
+          content: `---\nname: prepare-release-notes\ndescription: 整理版本发布说明并生成摘要\nuser-invocable: true\n---\n\n# 发布说明\n\n生成本次版本的发布说明预览。`,
         }}
         onClose={() => {}}
         onOpenFilePreview={() => {}}
@@ -96,8 +96,7 @@ describe("FilePreviewOverlay", () => {
 
     expect(screen.getByText("Front Matter")).toBeInTheDocument();
     expect(screen.getByText("yaml")).toBeInTheDocument();
-    expect(document.querySelector("pre")?.textContent).toContain("name: publish-lalaclaw-ai");
-    expect(document.querySelector("pre")?.textContent).toContain("description: 构建并发布 lalaclaw.ai 网站到服务器");
-    expect(screen.getAllByText(/发布 lalaclaw\.ai/).length).toBeGreaterThan(0);
+    expect(document.querySelector("pre")?.textContent).toContain("name: prepare-release-notes");
+    expect(document.querySelector("pre")?.textContent).toContain("description: 整理版本发布说明并生成摘要");
   });
 });

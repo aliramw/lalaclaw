@@ -1,0 +1,138 @@
+[Back to Home](./documentation.md) | [Quick Start](./documentation-quick-start.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md) | [Sessions, Agents, and Runtime Modes](./documentation-sessions.md)
+
+# API and Troubleshooting
+
+## API Overview
+
+### `GET /api/session`
+
+Purpose:
+
+- Fetch basic session metadata
+- Return model, agent, think mode, available models, available agents, available skills, and related session state
+
+### `POST /api/session`
+
+Purpose:
+
+- Update session preferences
+- Supports `agentId`, `model`, `fastMode`, and `thinkMode`
+
+### `GET /api/runtime`
+
+Purpose:
+
+- Fetch the current runtime snapshot
+- Returns the projected `conversation`, `timeline`, `files`, `artifacts`, `snapshots`, `agents`, and `peeks`
+
+### `POST /api/chat`
+
+Purpose:
+
+- Send a chat turn
+- Streams NDJSON by default
+- Supports attachments, `fastMode`, `assistantMessageId`, and `sessionUser`
+
+### `POST /api/chat/stop`
+
+Purpose:
+
+- Abort the active reply for the current tab
+
+### `GET /api/file-preview`
+
+Purpose:
+
+- Load preview metadata for a file
+- Returns inline text content or a media `contentUrl`
+
+### `GET /api/file-preview/content`
+
+Purpose:
+
+- Return the real file content for an absolute path
+
+### `POST /api/file-manager/reveal`
+
+Purpose:
+
+- Reveal the target file in Finder, Explorer, or the platform file manager
+
+## Common Issues
+
+### The page does not load and the backend says `dist` is missing
+
+Reason:
+
+- You started `npm start` or `node server.js` expecting the production bundle
+- But `npm run build` has not been run yet
+
+Fix:
+
+- For production mode: run `npm run build` first, then `npm start`
+- For development: follow [Quick Start](./documentation-quick-start.md) and run both Vite and Node
+
+### The page loads in development, but API calls fail
+
+Check these first:
+
+- Is the frontend running on `127.0.0.1:5173`?
+- Is the backend running on `127.0.0.1:3000`?
+- Are you using the Vite entrypoint rather than the production server entrypoint?
+
+### OpenClaw is installed, but the app still runs in `mock`
+
+Check:
+
+- Does `~/.openclaw/openclaw.json` exist?
+- Is `COMMANDCENTER_FORCE_MOCK=1` set?
+- Are `OPENCLAW_BASE_URL` and `OPENCLAW_API_KEY` empty or wrong?
+
+### Model or agent switches do not seem to take effect
+
+Possible reasons:
+
+- You are still in `mock` mode, so only local preferences are changing
+- Remote session patching failed in `openclaw` mode
+- The selected model is actually the same as the agent default
+
+Best places to inspect:
+
+- The `Environment` tab in [Inspector, File Preview, and Tracing](./documentation-inspector.md)
+- Backend console output
+
+### A file cannot be previewed
+
+Common causes:
+
+- The file item does not have an absolute path
+- The file no longer exists at that path
+- The target is not a regular file
+
+Important note:
+
+- Both `file-preview` and `file-manager/reveal` require absolute paths
+
+### Why is attachment content truncated?
+
+This is expected behavior:
+
+- Text attachments are truncated to `120000` characters in the frontend
+- The file preview endpoint truncates text previews at `1 MB`
+
+That keeps chat payloads and preview rendering from being overloaded by very large content.
+
+### Why do I briefly see a thinking placeholder after refresh?
+
+That is part of the pending-turn recovery flow:
+
+- The frontend restores the local pending placeholder first
+- Once the runtime snapshot arrives with the final reply, it replaces that placeholder
+
+In most cases, that is normal recovery behavior rather than an error.
+
+## For Deeper Structure Notes
+
+- For frontend and backend layering, read [Architecture Overview](./architecture.md)
+- For demo flows, read [Product Showcase](./showcase.md)
+- For future modularization direction, read [Refactor Roadmap](./refactor-roadmap.md)

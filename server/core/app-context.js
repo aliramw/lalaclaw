@@ -35,7 +35,7 @@ const { createDashboardService } = require('../services/dashboard');
 const { collapseDuplicateConversationTurns, mergeConversationMessages } = require('../services/dashboard');
 const { createOpenClawClient } = require('../services/openclaw-client');
 const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
-const { createChatHandler } = require('../routes/chat');
+const { createChatHandler, createChatStopHandler } = require('../routes/chat');
 const { createFileManagerHandler } = require('../routes/file-manager');
 const { createFilePreviewHandlers } = require('../routes/file-preview');
 const { createRuntimeHandler } = require('../routes/runtime');
@@ -285,6 +285,15 @@ function createAppContext() {
     setSessionPreferences,
     summarizeMessages: summarizeChatMessages,
   });
+  const handleChatStop = createChatStopHandler({
+    callOpenClawGateway,
+    config,
+    getCommandCenterSessionKey,
+    normalizeSessionUser,
+    parseRequestBody,
+    resolveSessionAgentId,
+    sendJson,
+  });
 
   const handleRuntime = createRuntimeHandler({
     buildDashboardSnapshot,
@@ -334,6 +343,7 @@ function createAppContext() {
     config,
     getStaticDir,
     handleChat,
+    handleChatStop,
     handleFileManagerReveal,
     handleFilePreview,
     handleFilePreviewContent,

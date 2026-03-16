@@ -59,10 +59,9 @@ describe("SessionOverview", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("LalaClaw.ai")).toBeInTheDocument();
+    expect(screen.getByText("LalaClaw")).toBeInTheDocument();
     expect(screen.getByText("已开启")).toBeInTheDocument();
-    expect(screen.getByText("empty")).toBeInTheDocument();
-    expect(screen.getByText("1200 / 16000")).toBeInTheDocument();
+    expect(document.body).toHaveTextContent("1200 / 16000");
 
     const user = userEvent.setup();
     await user.hover(screen.getByRole("button", { name: "跟随系统" }));
@@ -101,8 +100,8 @@ describe("SessionOverview", () => {
     expect(screen.getByText("暂无可选模型")).toBeInTheDocument();
   });
 
-  it("localizes relative update labels in English", () => {
-    window.localStorage.setItem(localeStorageKey, "en");
+  it("shows context guidance in the tooltip", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
 
     render(
       <I18nProvider>
@@ -117,13 +116,17 @@ describe("SessionOverview", () => {
             onFastModeChange={() => {}}
             onModelChange={() => {}}
             onThinkModeChange={() => {}}
-            session={createSession({ updatedLabel: "2m ago" })}
+            session={createSession()}
           />
         </TooltipProvider>
       </I18nProvider>,
     );
 
-    expect(screen.getByText("2 minutes ago")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.hover(screen.getAllByText((_, element) => element?.textContent === "1200 / 16000")[0]);
+
+    expect((await screen.findAllByText("当前上下文长度 / 最大长度")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/当上下文越来越长，考虑成本和模型效果/).length).toBeGreaterThan(0);
   });
 
   it("prefers the selected model over the stale runtime model in the header", () => {
@@ -151,7 +154,35 @@ describe("SessionOverview", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("qwen3.5-397b-a17b")).toBeInTheDocument();
+    expect(screen.getByText("openrouter/qwen/qwen3.5-397b-a17b")).toBeInTheDocument();
+  });
+
+  it("marks the first available model as default in the model menu", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openai-codex/gpt-5.4", "openrouter/google/gemini-3-flash-preview"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openai-codex/gpt-5.4"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession({ model: "openai-codex/gpt-5.4" })}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("切换模型"));
+
+    expect(screen.getByRole("menuitemcheckbox", { name: "openai-codex/gpt-5.4 (默认)" })).toBeInTheDocument();
   });
 
   it("keeps the theme toggle as compact as the language switcher", () => {
@@ -179,11 +210,11 @@ describe("SessionOverview", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByRole("button", { name: "Switch language" })).toHaveClass("h-8");
-    expect(screen.getByRole("button", { name: "Follow system" }).parentElement).toHaveClass("h-8");
-    expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-7", "min-w-[2.5rem]");
-    expect(screen.getByRole("button", { name: "Light mode" })).toHaveClass("h-7", "min-w-[2.5rem]");
-    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveClass("h-7", "min-w-[2.5rem]");
+    expect(screen.getByRole("button", { name: "Switch language" })).toHaveClass("h-9");
+    expect(screen.getByRole("button", { name: "Follow system" }).parentElement).toHaveClass("h-9");
+    expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-8", "min-w-[2.5rem]");
+    expect(screen.getByRole("button", { name: "Light mode" })).toHaveClass("h-8", "min-w-[2.5rem]");
+    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveClass("h-8", "min-w-[2.5rem]");
   });
 
   it("shows ctrl shortcuts in theme tooltips on Windows", async () => {
@@ -217,6 +248,169 @@ describe("SessionOverview", () => {
     expect((await screen.findAllByText("快捷键：Shift + Ctrl + F")).length).toBeGreaterThan(0);
   });
 
+  it("hides vertical overflow in the header rows that can scroll horizontally", () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    const { container: fullContainer } = render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(fullContainer.querySelector(".overflow-x-auto.overflow-y-hidden")).toBeTruthy();
+
+    const { container: statusContainer } = render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            layout="status"
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(statusContainer.querySelector(".overflow-x-auto.overflow-y-hidden")).toBeTruthy();
+  });
+
+  it("opens the shortcut dialog from the keyboard icon and closes it from the close button", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="system"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "快捷键提示" });
+
+    await user.hover(trigger);
+    expect((await screen.findAllByText("快捷键提示")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Cmd + /")).length).toBeGreaterThan(0);
+
+    await user.click(trigger);
+    expect(screen.getByRole("dialog", { name: "快捷键提示" })).toBeInTheDocument();
+    expect(screen.getByText("这里列出当前可用的快捷键以及它们对应的功能。")).toBeInTheDocument();
+    expect(screen.getByText("打开快捷键提示")).toBeInTheDocument();
+    expect(screen.getByText("Shift + Enter / 连按两次 Enter")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "关闭快捷键提示" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "快捷键提示" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("opens the shortcut dialog with cmd or ctrl slash and closes it on escape", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    platformSpy.mockReturnValue("Win32");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="system"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}/{/Control}");
+
+    expect(screen.getByRole("dialog", { name: "快捷键提示" })).toBeInTheDocument();
+    expect(screen.getByText("Ctrl + /")).toBeInTheDocument();
+    await user.hover(screen.getByRole("button", { name: "快捷键提示" }));
+    expect((await screen.findAllByText("Ctrl + /")).length).toBeGreaterThan(0);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "快捷键提示" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not open the shortcut dialog with ctrl slash on macOS", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    platformSpy.mockReturnValue("MacIntel");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="system"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}/{/Control}");
+
+    expect(screen.queryByRole("dialog", { name: "快捷键提示" })).not.toBeInTheDocument();
+  });
+
   it("closes the agent tooltip after switching agents", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
     const onAgentChange = vi.fn();
@@ -229,11 +423,13 @@ describe("SessionOverview", () => {
             availableModels={["openclaw"]}
             fastMode={false}
             formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
             model="openclaw"
             onAgentChange={onAgentChange}
             onFastModeChange={() => {}}
             onModelChange={() => {}}
             onThinkModeChange={() => {}}
+            openAgentIds={["main"]}
             session={createSession()}
           />
         </TooltipProvider>
@@ -244,14 +440,79 @@ describe("SessionOverview", () => {
     const trigger = screen.getByRole("button", { name: "切换 Agent" });
 
     await user.hover(trigger);
-    expect(await screen.findByText("切换 Agent 会话", { selector: "div" })).toBeInTheDocument();
+    expect(await screen.findByText("选择 Agent 对话", { selector: "div" })).toBeInTheDocument();
 
     await user.click(trigger);
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "expert" }));
+    await user.click(screen.getByRole("menuitem", { name: "expert" }));
 
     expect(onAgentChange).toHaveBeenCalledWith("expert");
     await waitFor(() => {
-      expect(screen.queryByText("切换 Agent 会话", { selector: "div" })).not.toBeInTheDocument();
+      expect(screen.queryByText("选择 Agent 对话", { selector: "div" })).not.toBeInTheDocument();
     });
+  });
+
+  it("hides agents that already have an open session from the switcher menu", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main", "expert", "writer"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            openAgentIds={["main", "expert"]}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
+
+    expect(screen.queryByRole("menuitem", { name: "main" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "expert" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "writer" })).toBeInTheDocument();
+  });
+
+  it("shows the new-agent hint when every agent already has an open session", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main", "expert"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            openAgentIds={["main", "expert"]}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
+
+    const menu = screen.getByRole("menu");
+    expect(menu).toHaveClass("w-[300px]");
+    expect(menu).toHaveTextContent("可以和主 Agent 对话让他帮你创建新的 Agent，比如：");
+    expect(menu).toHaveTextContent("帮我创建一个新的 Agent，名字叫 Developer（中文名：程序员），他的职责是...");
   });
 });

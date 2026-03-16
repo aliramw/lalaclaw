@@ -4,7 +4,7 @@ import { ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { SessionOverview } from "@/components/command-center/session-overview";
-import { ChatPanel } from "@/components/command-center/chat-panel";
+import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { useCommandCenter } from "@/features/app/controllers";
 import { defaultInspectorPanelWidth, maxInspectorPanelWidth, minInspectorPanelWidth } from "@/features/app/storage";
@@ -44,12 +44,16 @@ function isSameCompletedAtMap(current = {}, next = {}) {
   return currentKeys.every((key) => current[key] === next[key]);
 }
 
-function AgentSwitchOverlay({ agentLabel }) {
+function AgentSwitchOverlay({ agentLabel, mode = "switching" }) {
   const { messages } = useI18n();
 
   if (!agentLabel) {
     return null;
   }
+
+  const title = mode === "opening-session"
+    ? messages.common.openingAgentSession(agentLabel)
+    : messages.common.switchingToAgent(agentLabel);
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-background/78 backdrop-blur-[6px]">
@@ -64,12 +68,69 @@ function AgentSwitchOverlay({ agentLabel }) {
             {messages.sessionOverview.labels.agent}
           </div>
           <div className="text-xl font-semibold tracking-[-0.02em] text-foreground">
-            {messages.common.switchingToAgent(agentLabel)}
+            {title}
           </div>
         </div>
         <div className="text-sm text-muted-foreground">
           {messages.common.switchingAgentWait}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ModelSwitchOverlay({ modelLabel }) {
+  const { messages } = useI18n();
+
+  if (!modelLabel) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-background/78 backdrop-blur-[6px]">
+      <div className="cc-agent-switch-card flex w-[min(30rem,calc(100vw-2rem))] flex-col items-center gap-4 rounded-[1.75rem] border border-border/70 bg-card/94 px-7 py-8 text-center shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+        <div className="cc-agent-switch-orbit" aria-hidden="true">
+          <span className="cc-agent-switch-dot cc-agent-switch-dot-1" />
+          <span className="cc-agent-switch-dot cc-agent-switch-dot-2" />
+          <span className="cc-agent-switch-dot cc-agent-switch-dot-3" />
+        </div>
+        <div className="space-y-1">
+          <div className="text-[11px] font-medium uppercase tracking-[0.28em] text-muted-foreground">
+            {messages.sessionOverview.labels.model}
+          </div>
+          <div className="space-y-2">
+            <div className="text-xl font-semibold tracking-[-0.02em] text-foreground">
+              {messages.common.switchingModelTo}
+            </div>
+            <div className="break-all text-xl font-semibold tracking-[-0.02em] text-foreground">
+              {modelLabel}
+            </div>
+          </div>
+        </div>
+        <div className="text-sm text-muted-foreground">
+          {messages.common.switchingModelWait}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SessionNotice({ notice }) {
+  if (!notice?.message) {
+    return null;
+  }
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-5 z-[130] flex justify-center px-4">
+      <div
+        className={cn(
+          "inline-flex min-h-11 items-center rounded-full border px-4 py-2 text-sm font-medium shadow-lg backdrop-blur",
+          notice.type === "error"
+            ? "border-rose-200/70 bg-rose-50/95 text-rose-700 dark:border-rose-500/30 dark:bg-rose-950/80 dark:text-rose-100"
+            : "border-sky-200/80 bg-white/96 text-slate-800 dark:border-sky-500/25 dark:bg-slate-900/88 dark:text-slate-100",
+        )}
+      >
+        {notice.message}
       </div>
     </div>
   );
@@ -366,6 +427,7 @@ function AppContent() {
     handleArtifactSelect,
     handleChatFontSizeChange,
     handleCloseChatTab,
+    handleReorderChatTabs,
     handleFastModeChange,
     handleInspectorPanelWidthChange,
     handleModelChange,
@@ -374,12 +436,14 @@ function AppContent() {
     handleRemoveAttachment,
     handleReset,
     handleSend,
+    handleStop,
     handleThinkModeChange,
     dismissTaskRelationship,
     localizedFormatTime,
     messageViewportRef,
     messages,
     model,
+    modelSwitchNotice,
     inspectorPanelWidth,
     peeks,
     prompt,
@@ -387,12 +451,14 @@ function AppContent() {
     renderPeek,
     resolvedTheme,
     restoredChatScrollKey,
+    restoredChatScrollRevision,
     restoredChatScrollState,
     session,
     setActiveTab,
     setTheme,
     snapshots,
-    switchingAgentLabel,
+    switchingAgentOverlay,
+    switchingModelOverlay,
     taskRelationships,
     taskTimeline,
     theme,
@@ -548,23 +614,77 @@ function AppContent() {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="min-h-dvh bg-background text-foreground xl:h-dvh xl:overflow-hidden" aria-busy={switchingAgentLabel ? "true" : "false"}>
-        <div className="mx-auto flex min-h-dvh w-full max-w-[1760px] flex-col gap-3 overflow-y-auto px-3 py-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
-          <SessionOverview
-            availableAgents={availableAgents}
-            availableModels={availableModels}
-            fastMode={fastMode}
-            formatCompactK={formatCompactK}
-            model={model}
-            onAgentChange={handleAgentChange}
-            onFastModeChange={handleFastModeChange}
-            onModelChange={handleModelChange}
-            onThinkModeChange={handleThinkModeChange}
-            onThemeChange={setTheme}
-            resolvedTheme={resolvedTheme}
-            session={session}
-            theme={theme}
-          />
+      <div
+        className="min-h-dvh bg-background text-foreground xl:h-dvh xl:overflow-hidden"
+        aria-busy={switchingAgentOverlay || switchingModelOverlay ? "true" : "false"}
+      >
+        <div className="mx-auto flex min-h-dvh w-full max-w-[1760px] flex-col gap-2 overflow-y-auto px-3 py-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <ChatTabsStrip
+                className="min-w-0 pt-0 pb-0 pr-0"
+                items={chatTabs}
+                leadingControl={(
+                  <SessionOverview
+                    layout="tab-brand"
+                    availableAgents={availableAgents}
+                    availableModels={availableModels}
+                    fastMode={fastMode}
+                    formatCompactK={formatCompactK}
+                    model={model}
+                    onAgentChange={handleAgentChange}
+                    onFastModeChange={handleFastModeChange}
+                    onModelChange={handleModelChange}
+                    onThinkModeChange={handleThinkModeChange}
+                    onThemeChange={setTheme}
+                    resolvedTheme={resolvedTheme}
+                    session={session}
+                    theme={theme}
+                  />
+                )}
+                onActivate={handleActivateChatTab}
+                onClose={handleCloseChatTab}
+                onReorder={handleReorderChatTabs}
+                resolvedTheme={resolvedTheme}
+                trailingControl={(
+                  <SessionOverview
+                    layout="agent-tab"
+                    availableAgents={availableAgents}
+                    availableModels={availableModels}
+                    fastMode={fastMode}
+                    formatCompactK={formatCompactK}
+                    model={model}
+                    onAgentChange={handleAgentChange}
+                    onFastModeChange={handleFastModeChange}
+                    onModelChange={handleModelChange}
+                    onThinkModeChange={handleThinkModeChange}
+                    onThemeChange={setTheme}
+                    openAgentIds={chatTabs.map((tab) => tab.agentId)}
+                    resolvedTheme={resolvedTheme}
+                    session={session}
+                    theme={theme}
+                  />
+                )}
+              />
+            </div>
+
+            <SessionOverview
+              layout="controls"
+              availableAgents={availableAgents}
+              availableModels={availableModels}
+              fastMode={fastMode}
+              formatCompactK={formatCompactK}
+              model={model}
+              onAgentChange={handleAgentChange}
+              onFastModeChange={handleFastModeChange}
+              onModelChange={handleModelChange}
+              onThinkModeChange={handleThinkModeChange}
+              onThemeChange={setTheme}
+              resolvedTheme={resolvedTheme}
+              session={session}
+              theme={theme}
+            />
+          </div>
 
           <main
             ref={splitLayoutRef}
@@ -588,19 +708,41 @@ function AppContent() {
                 onAddAttachments={handleAddAttachments}
                 onChatFontSizeChange={handleChatFontSizeChange}
                 onCloseChatTab={handleCloseChatTab}
-                interactionLocked={Boolean(switchingAgentLabel)}
+                onReorderChatTab={handleReorderChatTabs}
+                interactionLocked={Boolean(switchingAgentOverlay || switchingModelOverlay)}
                 queuedMessages={activeQueuedMessages}
                 onRemoveAttachment={handleRemoveAttachment}
                 onPromptChange={handlePromptChange}
                 onPromptKeyDown={handlePromptKeyDown}
                 onReset={() => handleReset().catch(() => {})}
                 onSend={handleSend}
+                onStop={() => handleStop().catch(() => {})}
                 prompt={prompt}
                 promptRef={promptRef}
                 resolvedTheme={resolvedTheme}
                 restoredScrollKey={restoredChatScrollKey}
+                restoredScrollRevision={restoredChatScrollRevision}
                 restoredScrollState={restoredChatScrollState}
                 session={session}
+                sessionOverview={(
+                  <SessionOverview
+                    layout="status"
+                    availableAgents={availableAgents}
+                    availableModels={availableModels}
+                    fastMode={fastMode}
+                    formatCompactK={formatCompactK}
+                    model={model}
+                    onAgentChange={handleAgentChange}
+                    onFastModeChange={handleFastModeChange}
+                    onModelChange={handleModelChange}
+                    onThinkModeChange={handleThinkModeChange}
+                    onThemeChange={setTheme}
+                    resolvedTheme={resolvedTheme}
+                    session={session}
+                    theme={theme}
+                  />
+                )}
+                showTabsStrip={false}
                 userLabel="marila"
               />
             </div>
@@ -609,7 +751,6 @@ function AppContent() {
               <button
                 type="button"
                 aria-label={i18nMessages.common.resizePanels}
-                title={i18nMessages.common.resizePanels}
                 onPointerDown={handleResizeStart}
                 className="group relative h-full w-full cursor-col-resize touch-none select-none"
               >
@@ -636,14 +777,14 @@ function AppContent() {
               </button>
             </div>
 
-            <div className="flex flex-col gap-3 xl:h-full xl:min-h-0 xl:min-w-[300px] xl:overflow-hidden xl:pl-0.5">
+            <div className="flex min-w-0 flex-col gap-3 xl:h-full xl:min-h-0 xl:min-w-[300px] xl:overflow-hidden xl:pl-0.5">
               <TaskRelationshipsPanel
                 onDismissRelationship={dismissTaskRelationship}
                 relationships={taskRelationships}
                 sessionAgentId={session.agentId || "main"}
                 visible={taskRelationships.length > 0}
               />
-              <div className="xl:min-h-0 xl:flex-1">
+              <div className="min-w-0 xl:min-h-0 xl:flex-1">
                 <InspectorPanel
                   activeTab={activeTab}
                   agents={agents}
@@ -662,7 +803,12 @@ function AppContent() {
             </div>
           </main>
         </div>
-        <AgentSwitchOverlay agentLabel={switchingAgentLabel} />
+        <AgentSwitchOverlay
+          agentLabel={switchingAgentOverlay?.agentLabel || ""}
+          mode={switchingAgentOverlay?.mode || "switching"}
+        />
+        <ModelSwitchOverlay modelLabel={switchingModelOverlay?.modelLabel || ""} />
+        <SessionNotice notice={modelSwitchNotice} />
       </div>
     </TooltipProvider>
   );

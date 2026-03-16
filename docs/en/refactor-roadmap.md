@@ -1,5 +1,7 @@
 # Refactor Roadmap
 
+> Navigation: [Documentation Home](./documentation.md) | [Sessions, Agents, and Runtime Modes](./documentation-sessions.md) | [API and Troubleshooting](./documentation-api-troubleshooting.md) | [Architecture Overview](./architecture.md) | [Product Showcase](./showcase.md)
+
 ## Goals
 
 - Reduce the maintenance risk of `src/App.jsx` and `server.js`.

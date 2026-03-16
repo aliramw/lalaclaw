@@ -21,7 +21,15 @@ async function readStreamDonePayload(response) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => JSON.parse(line));
-  return events.find((event) => event?.type === "done")?.payload;
+
+  const donePayload = events.find((event) => event?.type === "message.complete" || event?.type === "done")?.payload;
+  const sessionSync = events.find((event) => event?.type === "session.sync")?.session;
+
+  if (!donePayload) {
+    return undefined;
+  }
+
+  return sessionSync ? { ...donePayload, sessionSync } : donePayload;
 }
 
 describe("server helpers", () => {
@@ -445,7 +453,7 @@ describe("server routes", () => {
 
     expect(chatResponse.ok).toBe(true);
     expect(chatPayload.outputText).toContain("Current intent: /think high");
-    expect(chatPayload.session.thinkMode).toBe("high");
+    expect(chatPayload.sessionSync.thinkMode).toBe("high");
     expect(chatPayload.metadata.status).toBe("已完成 / 标准");
 
     const sessionResponse = await fetch(`${baseUrl}/api/session?sessionUser=api-user`);

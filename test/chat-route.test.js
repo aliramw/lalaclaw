@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -83,6 +84,7 @@ describe("createChatHandler", () => {
         agentId: "worker",
         model: "gpt-5-mini",
         fastMode: false,
+        stream: false,
         messages: [
           {
             role: "user",
@@ -152,6 +154,7 @@ describe("createChatHandler", () => {
         agentId: "worker",
         model: "gpt-5-mini",
         fastMode: false,
+        stream: false,
         messages: [{ role: "user", content: "继续" }],
       })),
       callOpenClawGateway: vi.fn(async () => {
@@ -201,6 +204,111 @@ describe("createChatHandler", () => {
       commandHandled: "fast",
       outputText: "已开启 fast。",
     });
+  });
+
+  it("still completes the stream after the request input closes normally", async () => {
+    let resolveDispatch;
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: true,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchOpenClawStream: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveDispatch = resolve;
+          }),
+      ),
+    });
+
+    const req = new EventEmitter();
+    req.once = req.once.bind(req);
+    const writes = [];
+    const res = new EventEmitter();
+    res.once = res.once.bind(res);
+    res.headersSent = false;
+    res.destroyed = false;
+    res.writableEnded = false;
+    res.writeHead = vi.fn(() => {
+      res.headersSent = true;
+    });
+    res.write = vi.fn((chunk) => {
+      writes.push(chunk);
+    });
+    res.end = vi.fn(() => {
+      res.writableEnded = true;
+    });
+
+    const handlerPromise = harness.handler(req, res);
+    await vi.waitFor(() => {
+      expect(harness.dispatchOpenClawStream).toHaveBeenCalledTimes(1);
+    });
+
+    req.emit("close");
+
+    resolveDispatch?.({ outputText: "已完成", usage: null });
+    await handlerPromise;
+
+    expect(writes.some((chunk) => String(chunk || "").includes("\"message.complete\""))).toBe(true);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it("does not abort the OpenClaw session when the client disconnects during a stream", async () => {
+    let resolveDispatch;
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: true,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchOpenClawStream: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveDispatch = resolve;
+          }),
+      ),
+    });
+
+    const req = new EventEmitter();
+    req.once = req.once.bind(req);
+    const writes = [];
+    const res = new EventEmitter();
+    res.once = res.once.bind(res);
+    res.headersSent = false;
+    res.destroyed = false;
+    res.writableEnded = false;
+    res.writeHead = vi.fn(() => {
+      res.headersSent = true;
+    });
+    res.write = vi.fn((chunk) => {
+      writes.push(chunk);
+    });
+    res.end = vi.fn(() => {
+      res.writableEnded = true;
+    });
+
+    const handlerPromise = harness.handler(req, res);
+    await vi.waitFor(() => {
+      expect(harness.dispatchOpenClawStream).toHaveBeenCalledTimes(1);
+    });
+
+    res.destroyed = true;
+    res.emit("close");
+
+    resolveDispatch?.({ outputText: "已完成", usage: null });
+    await handlerPromise;
+
+    expect(harness.callOpenClawGateway).not.toHaveBeenCalledWith("chat.abort", {
+      sessionKey: "agent:worker:api-user",
+    });
+    expect(writes.some((chunk) => String(chunk || "").includes("\"message.complete\""))).toBe(false);
   });
 
   it("creates a fresh session for reset commands and copies preferences", async () => {

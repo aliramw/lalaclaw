@@ -321,6 +321,689 @@ describe("createOpenClawClient", () => {
     expect(execFileAsync.mock.calls.flatMap((call) => call[1])).not.toContain("agent");
   });
 
+  it("fills in silent stream gaps by polling the session history before the final event arrives", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "流式" }],
+              },
+            },
+          });
+        });
+
+        setTimeout(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "流式输出" }],
+              },
+            },
+          });
+        }, 6000);
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify({
+        messages: [
+          {
+            role: "assistant",
+            timestamp: 125,
+            content: [{ type: "text", text: "流式输出" }],
+            usage: { output_tokens: 7 },
+          },
+        ],
+      }),
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(1600);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(6000);
+
+    const result = await promise;
+
+    expect(deltas).toEqual(["流式", "输出"]);
+    expect(result.outputText).toBe("流式输出");
+    expect(execFileAsync).toHaveBeenCalled();
+    expect(execFileAsync.mock.calls.flatMap((call) => call[1])).toContain("chat.history");
+  });
+
+  it("does not reuse a stale assistant reply from an older turn while filling a silent stream gap", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新" }],
+              },
+            },
+          });
+        });
+
+        setTimeout(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新回答" }],
+              },
+            },
+          });
+        }, 6000);
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify({
+        messages: [
+          {
+            role: "assistant",
+            timestamp: "2026-03-16T07:07:00.000Z",
+            content: [{ type: "text", text: "旧回答" }],
+            usage: { output_tokens: 7 },
+          },
+          {
+            role: "assistant",
+            timestamp: "2026-03-16T07:07:05.000Z",
+            content: [{ type: "text", text: "新回答" }],
+            usage: { output_tokens: 9 },
+          },
+        ],
+      }),
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(1600);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(6000);
+
+    const result = await promise;
+
+    expect(deltas).toEqual(["新", "回答"]);
+    expect(result.outputText).toBe("新回答");
+  });
+
+  it("fills a silent stream gap from the assistant that follows the current user turn even when timestamps are missing", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新" }],
+              },
+            },
+          });
+        });
+
+        setTimeout(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新回答" }],
+              },
+            },
+          });
+        }, 6000);
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            timestamp: "2026-03-16T07:06:55.000Z",
+            content: [{ type: "text", text: "旧问题" }],
+          },
+          {
+            role: "assistant",
+            timestamp: "2026-03-16T07:07:00.000Z",
+            content: [{ type: "text", text: "旧回答" }],
+          },
+          {
+            role: "user",
+            timestamp: "2026-03-16T07:07:04.000Z",
+            content: [{ type: "text", text: "继续" }],
+          },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "新回答" }],
+            usage: { output_tokens: 9 },
+          },
+        ],
+      }),
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(1600);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(6000);
+
+    const result = await promise;
+
+    expect(deltas).toEqual(["新", "回答"]);
+    expect(result.outputText).toBe("新回答");
+  });
+
+  it("does not reuse chat history from an older turn when the current user turn is not yet present in history", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新" }],
+              },
+            },
+          });
+        });
+
+        setTimeout(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新回答" }],
+              },
+            },
+          });
+        }, 6000);
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            timestamp: "2026-03-16T07:06:55.000Z",
+            content: [{ type: "text", text: "旧问题" }],
+          },
+          {
+            role: "assistant",
+            timestamp: "2026-03-16T07:07:00.000Z",
+            content: [{ type: "text", text: "旧回答" }],
+          },
+        ],
+      }),
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(1600);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(6000);
+
+    const result = await promise;
+
+    expect(deltas).toEqual(["新", "回答"]);
+    expect(result.outputText).toBe("新回答");
+  });
+
+  it("does not reuse an older identical prompt turn before the current prompt is persisted", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新" }],
+              },
+            },
+          });
+        });
+
+        setTimeout(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "新回答" }],
+              },
+            },
+          });
+        }, 6000);
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            timestamp: "2026-03-16T07:06:55.000Z",
+            content: [{ type: "text", text: "继续" }],
+          },
+          {
+            role: "assistant",
+            timestamp: "2026-03-16T07:07:00.000Z",
+            content: [{ type: "text", text: "旧回答" }],
+          },
+        ],
+      }),
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(1600);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(6000);
+
+    const result = await promise;
+
+    expect(deltas).toEqual(["新", "回答"]);
+    expect(result.outputText).toBe("新回答");
+  });
+
+  it("surfaces an aborted session during silent polling instead of waiting for the stream timeout", async () => {
+    vi.useFakeTimers();
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn(async (_cmd, args) => {
+      if (args.includes("agent.wait")) {
+        return {
+          stdout: JSON.stringify({
+            status: "aborted",
+            error: "Request was aborted",
+          }),
+        };
+      }
+
+      if (args.includes("chat.history")) {
+        return {
+          stdout: JSON.stringify({
+            messages: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected gateway call: ${args.join(" ")}`);
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "查看一下 ~/projects/wudaokou 这个目录下的文件" }],
+      false,
+      "command-center",
+    );
+    const rejection = expect(promise).rejects.toThrow("Request was aborted");
+
+    await vi.advanceTimersByTimeAsync(1600);
+
+    await rejection;
+    expect(execFileAsync.mock.calls.some(([, args]) => args.includes("agent.wait"))).toBe(true);
+    expect(execFileAsync.mock.calls.some(([, args]) => args.includes("chat.history"))).toBe(true);
+  });
+
+  it("ignores unrelated run ids on the same session stream", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "前半段" }],
+              },
+            },
+          });
+        });
+
+        setTimeout(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: "replayed-run-id",
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "串线内容" }],
+              },
+            },
+          });
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "前半段后半段" }],
+              },
+            },
+          });
+        }, 10);
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const client = createClient({
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(20);
+
+    const result = await promise;
+
+    expect(deltas).toEqual(["前半段", "后半段"]);
+    expect(result.outputText).toBe("前半段后半段");
+  });
+
   it("returns mock browser peek details when running outside openclaw mode", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
