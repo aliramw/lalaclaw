@@ -17,12 +17,25 @@ describe("LalaClaw CLI helpers", () => {
     expect(parsed.options.configFile).toBe(path.resolve(process.cwd(), "./tmp/dev.env"));
   });
 
+  it("parses status and stop commands without extra options", () => {
+    expect(cli.parseArgs(["status"]).command).toBe("status");
+    expect(cli.parseArgs(["stop"]).command).toBe("stop");
+    expect(cli.parseArgs(["restart"]).command).toBe("restart");
+  });
+
   it("parses write-example mode for init", () => {
     const parsed = cli.parseArgs(["init", "--write-example", "--config-file", "./tmp/example.env"]);
 
     expect(parsed.command).toBe("init");
     expect(parsed.options.writeExample).toBe(true);
     expect(parsed.options.configFile).toBe(path.resolve(process.cwd(), "./tmp/example.env"));
+  });
+
+  it("parses no-background mode for init", () => {
+    const parsed = cli.parseArgs(["init", "--no-background"]);
+
+    expect(parsed.command).toBe("init");
+    expect(parsed.options.noBackground).toBe(true);
   });
 
   it("parses non-interactive init overrides", () => {
@@ -268,6 +281,11 @@ describe("LalaClaw CLI helpers", () => {
     }
   });
 
+  it("detects source checkouts for local development commands", () => {
+    expect(cli.isSourceCheckout("/Users/marila/projects/lalaclaw2")).toBe(true);
+    expect(cli.isSourceCheckout(path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
+  });
+
   it("reports validation errors for an invalid remote gateway config", () => {
     const issues = cli.validateConfig(
       {
@@ -482,6 +500,176 @@ describe("LalaClaw CLI helpers", () => {
     expect(result.message).toContain("unknown agent or model");
   });
 
+  it("reports the built app URL separately from the dev frontend URL", () => {
+    expect(
+      cli.getRuntimeUrls({
+        host: "127.0.0.1",
+        backendPort: "5000",
+        frontendHost: "127.0.0.1",
+        frontendPort: "5001",
+      }),
+    ).toMatchObject({
+      appUrl: "http://127.0.0.1:5000",
+      apiUrl: "http://127.0.0.1:5000/api",
+      devFrontendUrl: "http://127.0.0.1:5001",
+      backendUrl: "http://127.0.0.1:5000",
+      frontendUrl: "http://127.0.0.1:5001",
+    });
+  });
+
+  it("uses launchd background startup only for packaged macOS installs", () => {
+    expect(cli.shouldAutoStartBackgroundService({}, "darwin", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(true);
+    expect(cli.shouldAutoStartBackgroundService({ noBackground: true }, "darwin", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
+    expect(cli.shouldAutoStartBackgroundService({}, "linux", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
+    expect(cli.shouldAutoStartBackgroundService({}, "darwin", "/Users/marila/projects/lalaclaw2")).toBe(false);
+  });
+
+  it("colors the ERROR label red only when terminal colors are supported", () => {
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+
+    try {
+      expect(cli.formatCliLevel("ERROR", { isTTY: true })).toContain("\u001B[31mERROR\u001B[0m");
+      expect(cli.formatCliLevel("ERROR", { isTTY: false })).toBe("ERROR");
+      expect(cli.formatCliLevel("WARN ", { isTTY: true })).toBe("WARN ");
+    } finally {
+      if (previousNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previousNoColor;
+      }
+    }
+  });
+
+  it("detects whether interactive prompting is available", () => {
+    expect(cli.canPromptInteractively({ isTTY: true }, { isTTY: true })).toBe(true);
+    expect(cli.canPromptInteractively({ isTTY: false }, { isTTY: true })).toBe(false);
+    expect(cli.canPromptInteractively({ isTTY: true }, { isTTY: false })).toBe(false);
+  });
+
+  it("opens external URLs with the platform browser launcher", () => {
+    const calls = [];
+    cli.openExternalUrl("http://127.0.0.1:5000", (command, args, options) => {
+      calls.push({ command, args, options });
+      return { unref() {} };
+    }, "darwin");
+
+    expect(calls).toEqual([
+      {
+        command: "open",
+        args: ["http://127.0.0.1:5000"],
+        options: {
+          detached: true,
+          stdio: "ignore",
+        },
+      },
+    ]);
+  });
+
+  it("renders a launchd plist that starts the CLI with the chosen env file", () => {
+    const plist = cli.renderLaunchdPlist({
+      nodePath: "/opt/homebrew/bin/node",
+      cliPath: "/Users/example/.npm-global/lib/node_modules/lalaclaw/bin/lalaclaw.js",
+      workingDirectory: "/Users/example/.npm-global/lib/node_modules/lalaclaw",
+      envFilePath: "/Users/example/.config/lalaclaw/.env.local",
+      stdoutPath: "/Users/example/.config/lalaclaw/logs/lalaclaw-launchd.out.log",
+      stderrPath: "/Users/example/.config/lalaclaw/logs/lalaclaw-launchd.err.log",
+    });
+
+    expect(plist).toContain("<string>ai.lalaclaw.app</string>");
+    expect(plist).toContain("<string>/opt/homebrew/bin/node</string>");
+    expect(plist).toContain("<string>start</string>");
+    expect(plist).toContain("<string>--config-file</string>");
+    expect(plist).toContain("<string>/Users/example/.config/lalaclaw/.env.local</string>");
+    expect(plist).toContain("/Users/example/.config/lalaclaw/logs/lalaclaw-launchd.out.log");
+  });
+
+  it("reads launchd service status from launchctl output", () => {
+    const status = cli.readLaunchdServiceStatus((command, args) => {
+      expect(command).toBe("launchctl");
+      expect(args).toEqual(["print", `gui/${process.getuid()}/ai.lalaclaw.app`]);
+      return {
+        status: 0,
+        stdout: "state = running\npid = 123",
+        stderr: "",
+      };
+    });
+
+    expect(status.installed).toBeTypeOf("boolean");
+    expect(status.running).toBe(true);
+    expect(status.details).toContain("state = running");
+  });
+
+  it("stops the launchd service with bootout when a plist exists", () => {
+    const previousConfigDir = process.env.LALACLAW_CONFIG_DIR;
+    const tempConfigDir = path.join(os.tmpdir(), "lalaclaw-stop-test");
+    process.env.LALACLAW_CONFIG_DIR = tempConfigDir;
+    const plistPath = cli.resolveLaunchdPlistPath();
+
+    fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+    fs.writeFileSync(plistPath, "plist", "utf8");
+
+    try {
+      const result = cli.stopLaunchdService((command, args) => {
+        expect(command).toBe("launchctl");
+        expect(args).toEqual(["bootout", `gui/${process.getuid()}`, plistPath]);
+        return {
+          status: 0,
+          stdout: "",
+          stderr: "",
+        };
+      });
+
+      expect(result).toMatchObject({
+        installed: true,
+        stopped: true,
+        plistPath,
+      });
+    } finally {
+      fs.rmSync(tempConfigDir, { recursive: true, force: true });
+      if (previousConfigDir === undefined) {
+        delete process.env.LALACLAW_CONFIG_DIR;
+      } else {
+        process.env.LALACLAW_CONFIG_DIR = previousConfigDir;
+      }
+    }
+  });
+
+  it("restarts the launchd service with kickstart when a plist exists", () => {
+    const previousConfigDir = process.env.LALACLAW_CONFIG_DIR;
+    const tempConfigDir = path.join(os.tmpdir(), "lalaclaw-restart-test");
+    process.env.LALACLAW_CONFIG_DIR = tempConfigDir;
+    const plistPath = cli.resolveLaunchdPlistPath();
+
+    fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+    fs.writeFileSync(plistPath, "plist", "utf8");
+
+    try {
+      const result = cli.restartLaunchdService((command, args) => {
+        expect(command).toBe("launchctl");
+        expect(args).toEqual(["kickstart", "-k", `gui/${process.getuid()}/ai.lalaclaw.app`]);
+        return {
+          status: 0,
+          stdout: "",
+          stderr: "",
+        };
+      });
+
+      expect(result).toMatchObject({
+        installed: true,
+        restarted: true,
+        plistPath,
+      });
+    } finally {
+      fs.rmSync(tempConfigDir, { recursive: true, force: true });
+      if (previousConfigDir === undefined) {
+        delete process.env.LALACLAW_CONFIG_DIR;
+      } else {
+        process.env.LALACLAW_CONFIG_DIR = previousConfigDir;
+      }
+    }
+  });
+
   it("builds a doctor report that can be serialized to JSON", () => {
     const report = cli.buildDoctorReport({
       envFilePath: "/tmp/.env.local",
@@ -546,6 +734,9 @@ describe("LalaClaw CLI helpers", () => {
         frontendHost: "127.0.0.1",
         frontendPort: "5173",
         profile: "remote-gateway",
+        appUrl: "http://127.0.0.1:3000",
+        apiUrl: "http://127.0.0.1:3000/api",
+        devFrontendUrl: "http://127.0.0.1:5173",
         gatewayUrl: "https://gateway.example.com",
       },
       summary: {

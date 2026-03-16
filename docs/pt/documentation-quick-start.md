@@ -62,10 +62,10 @@ lalaclaw doctor
 lalaclaw start
 ```
 
-Se preferir uma versao publicada especifica, como `2026.3.17-2`:
+Se preferir uma versao publicada especifica, como `2026.3.17-3`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-2
+npm install -g lalaclaw@2026.3.17-3
 lalaclaw doctor
 lalaclaw start
 ```
@@ -82,12 +82,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Se preferir uma versao publicada especifica, como `2026.3.17-2`:
+Se preferir uma versao publicada especifica, como `2026.3.17-3`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-2
+git checkout 2026.3.17-3
 npm ci
 npm run build
 npm run lalaclaw:start

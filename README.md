@@ -57,8 +57,6 @@ For the simplest end-user setup:
 ```bash
 npm install -g lalaclaw
 lalaclaw init
-lalaclaw doctor
-lalaclaw start
 ```
 
 Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
@@ -66,8 +64,11 @@ Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 Notes:
 
 - `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
-- `lalaclaw doctor` checks Node.js, OpenClaw discovery, ports, and local config
-- `lalaclaw start` runs in the current terminal, so closing that terminal stops the app
+- On npm installs for macOS, `lalaclaw init` also starts a `launchd` background service automatically
+- After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
+- If you want config only on macOS, run `lalaclaw init --no-background`
+- On Linux, or when you opt out of background startup, continue with `lalaclaw doctor` and `lalaclaw start`
+- Use `lalaclaw status` to check the background service, `lalaclaw restart` to restart it, and `lalaclaw stop` to stop it on macOS
 
 ### Install From GitHub
 
@@ -116,16 +117,14 @@ If you installed LalaClaw with npm and want the newest version:
 
 ```bash
 npm install -g lalaclaw@latest
-lalaclaw doctor
-lalaclaw start
+lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-2`:
+If you want a specific published version instead, such as `2026.3.17-3`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-2
-lalaclaw doctor
-lalaclaw start
+npm install -g lalaclaw@2026.3.17-3
+lalaclaw init
 ```
 
 If you installed LalaClaw from GitHub, update it like this:
@@ -140,12 +139,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-2`:
+If you want a specific released version instead, such as `2026.3.17-3`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-2
+git checkout 2026.3.17-3
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -249,7 +248,7 @@ For the full contribution checklist and project structure notes, see [CONTRIBUTI
 LalaClaw follows Semantic Versioning for releases.
 
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes.
-- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-2`, not `YYYY.M.D.N`.
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-3`, not `YYYY.M.D.N`.
 - Call out breaking changes explicitly in release notes and migration-facing docs.
 - The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
 

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17-3]
+
+### Added
+
+- Automatic macOS background-service setup from `lalaclaw init` for npm installs, including `launchd` registration, log files, and a prompt that opens the App URL in the browser after setup
+- User-facing `lalaclaw status`, `lalaclaw stop`, and `lalaclaw restart` commands for managing the macOS background service without calling `launchctl` directly
+- Additional CLI coverage for launchd setup, browser opening, command parsing, and colorized error output
+
+### Changed
+
+- Clarified `lalaclaw init`, `lalaclaw doctor`, and `--help` output around `App URL`, `API URL`, and `Dev frontend URL` so packaged installs no longer point users at the Vite port
+- Highlighted `ERROR` lines from `lalaclaw doctor` in red when the terminal supports color, while keeping log and non-interactive output plain
+- Adjusted the inspector timeline details and expand/collapse controls for more reliable left alignment in the session sidebar
+- Updated npm-install and upgrade docs to reflect the background-first macOS flow and the new service-management commands
+
 ## [2026.3.17-2]
 
 ### Added

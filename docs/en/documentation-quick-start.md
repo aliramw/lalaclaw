@@ -15,15 +15,16 @@ For the simplest end-user setup:
 ```bash
 npm install -g lalaclaw
 lalaclaw init
-lalaclaw doctor
-lalaclaw start
 ```
 
 Notes:
 
 - `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
-- `lalaclaw doctor` checks Node.js, local OpenClaw discovery, ports, and config
-- `lalaclaw start` runs in the current terminal, so closing that terminal stops the app
+- On npm installs for macOS, `lalaclaw init` also starts a `launchd` background service automatically
+- After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
+- If you only want to write config on macOS, use `lalaclaw init --no-background`
+- On Linux, or when you opt out of background startup, continue with `lalaclaw doctor` and `lalaclaw start`
+- On macOS, use `lalaclaw status` to inspect the background service, `lalaclaw restart` to restart it, and `lalaclaw stop` to stop it
 
 ## Install From GitHub
 
@@ -58,16 +59,14 @@ If you installed LalaClaw from npm and want the newest version:
 
 ```bash
 npm install -g lalaclaw@latest
-lalaclaw doctor
-lalaclaw start
+lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-2`:
+If you want a specific published version instead, such as `2026.3.17-3`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-2
-lalaclaw doctor
-lalaclaw start
+npm install -g lalaclaw@2026.3.17-3
+lalaclaw init
 ```
 
 If you installed LalaClaw from GitHub, update it like this:
@@ -82,12 +81,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-2`:
+If you want a specific released version instead, such as `2026.3.17-3`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-2
+git checkout 2026.3.17-3
 npm ci
 npm run build
 npm run lalaclaw:start

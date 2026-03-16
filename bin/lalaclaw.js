@@ -18,6 +18,9 @@ const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const EXAMPLE_ENV_FILE = path.join(PROJECT_ROOT, '.env.local.example');
 const PACKAGE_NAME = 'lalaclaw';
 const LEGACY_ENV_FILE = path.join(PROJECT_ROOT, '.env.local');
+const MACOS_LAUNCHD_LABEL = 'ai.lalaclaw.app';
+const ANSI_RED = '\u001B[31m';
+const ANSI_RESET = '\u001B[0m';
 const OPTION_ALIASES = {
   '--config-file': 'configFile',
   '--profile': 'profile',
@@ -84,16 +87,22 @@ function printHelp() {
   console.log(`LalaClaw CLI
 
 Usage:
-  lalaclaw init [--defaults] [--write-example] [--config-file <path>] [--profile <name>] [--base-url <url>]
+  lalaclaw init [--defaults] [--write-example] [--no-background] [--config-file <path>] [--profile <name>] [--base-url <url>]
   lalaclaw doctor [--config-file <path>] [--json]
+  lalaclaw status
+  lalaclaw stop
+  lalaclaw restart
   lalaclaw dev [--config-file <path>]
   lalaclaw start [--config-file <path>]
   lalaclaw frontend [--config-file <path>]
   lalaclaw backend [--config-file <path>]
 
 Commands:
-  init      Create a local config file for LalaClaw development.
+  init      Create or refresh local config, and auto-start the macOS packaged app in the background.
   doctor    Check Node.js, OpenClaw discovery, ports, and local config.
+  status    Show macOS background service status for npm installs.
+  stop      Stop the macOS background service for npm installs.
+  restart   Restart the macOS background service for npm installs.
   dev       Start both frontend and backend in development mode.
   start     Start the built backend server after checking dist/.
   frontend  Start only the Vite frontend server.
@@ -127,6 +136,11 @@ function parseArgs(argv) {
 
     if (token === '--json') {
       options.json = true;
+      continue;
+    }
+
+    if (token === '--no-background') {
+      options.noBackground = true;
       continue;
     }
 
@@ -208,8 +222,16 @@ function clipText(value, length = 200) {
   return text.length > length ? `${text.slice(0, length - 1)}…` : text;
 }
 
+function canPromptInteractively(input = process.stdin, output = process.stdout) {
+  return Boolean(input && output && input.isTTY && output.isTTY);
+}
+
 function readExampleEnvTemplate() {
   return fs.readFileSync(EXAMPLE_ENV_FILE, 'utf8');
+}
+
+function isSourceCheckout(projectRoot = PROJECT_ROOT) {
+  return fs.existsSync(path.join(projectRoot, '.git')) || fs.existsSync(path.join(projectRoot, 'src', 'main.jsx'));
 }
 
 function detectLocalOpenClaw() {
@@ -425,14 +447,38 @@ function validateConfig(config, localOpenClaw, openclawBinary = '') {
 
 function printIssueList(level, items) {
   items.forEach((message) => {
-    console.log(`${level} ${message}`);
+    console.log(`${formatCliLevel(level)} ${message}`);
   });
 }
 
+function supportsColor(stream = process.stdout) {
+  return Boolean(stream && stream.isTTY && !process.env.NO_COLOR);
+}
+
+function formatCliLevel(level, stream = process.stdout) {
+  if (String(level).trim() !== 'ERROR' || !supportsColor(stream)) {
+    return level;
+  }
+  return `${ANSI_RED}${level}${ANSI_RESET}`;
+}
+
+function getRuntimeUrls(config) {
+  const appUrl = `http://${config.host}:${config.backendPort}`;
+  return {
+    appUrl,
+    apiUrl: `${appUrl}/api`,
+    devFrontendUrl: `http://${config.frontendHost}:${config.frontendPort}`,
+    backendUrl: appUrl,
+    frontendUrl: `http://${config.frontendHost}:${config.frontendPort}`,
+  };
+}
+
 function printConfigSummary(config) {
+  const urls = getRuntimeUrls(config);
   console.log(`INFO  Runtime profile: ${config.profile}`);
-  console.log(`INFO  Frontend URL: http://${config.frontendHost}:${config.frontendPort}`);
-  console.log(`INFO  Backend URL:  http://${config.host}:${config.backendPort}`);
+  console.log(`INFO  App URL:           ${urls.appUrl}`);
+  console.log(`INFO  API URL:           ${urls.apiUrl}`);
+  console.log(`INFO  Dev frontend URL:  ${urls.devFrontendUrl}`);
   if (config.profile === 'remote-gateway') {
     console.log(`INFO  Gateway URL:  ${config.openclawBaseUrl}`);
     console.log(`INFO  API style:    ${config.openclawApiStyle}`);
@@ -598,6 +644,224 @@ function quoteEnvValue(value) {
   return /[\s#"'`]/.test(value) ? JSON.stringify(value) : value;
 }
 
+function xmlEscape(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function resolveLaunchdPlistPath(homeDir = os.homedir()) {
+  return path.join(homeDir, 'Library', 'LaunchAgents', `${MACOS_LAUNCHD_LABEL}.plist`);
+}
+
+function resolveLaunchdLogDir() {
+  return path.join(resolveDefaultConfigDir(), 'logs');
+}
+
+function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, stdoutPath, stderrPath }) {
+  const values = {
+    label: xmlEscape(MACOS_LAUNCHD_LABEL),
+    nodePath: xmlEscape(nodePath),
+    cliPath: xmlEscape(cliPath),
+    workingDirectory: xmlEscape(workingDirectory),
+    envFilePath: xmlEscape(envFilePath),
+    stdoutPath: xmlEscape(stdoutPath),
+    stderrPath: xmlEscape(stderrPath),
+  };
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>${values.label}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>${values.workingDirectory}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>${values.nodePath}</string>
+      <string>${values.cliPath}</string>
+      <string>start</string>
+      <string>--config-file</string>
+      <string>${values.envFilePath}</string>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>${values.stdoutPath}</string>
+
+    <key>StandardErrorPath</key>
+    <string>${values.stderrPath}</string>
+  </dict>
+</plist>
+`;
+}
+
+function shouldAutoStartBackgroundService(options = {}, platform = process.platform, projectRoot = PROJECT_ROOT) {
+  return platform === 'darwin' && !options.noBackground && !isSourceCheckout(projectRoot);
+}
+
+function runLaunchctl(args, spawnSyncImpl = spawnSync) {
+  return spawnSyncImpl('launchctl', args, {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+}
+
+function assertLaunchctlSuccess(result, description) {
+  if (result.status === 0) {
+    return;
+  }
+
+  const detail = String(result.stderr || result.stdout || '').trim();
+  throw new Error(detail ? `${description} failed. ${detail}` : `${description} failed.`);
+}
+
+function installLaunchdService(envFilePath, spawnSyncImpl = spawnSync) {
+  const plistPath = resolveLaunchdPlistPath();
+  const logDir = resolveLaunchdLogDir();
+  const stdoutPath = path.join(logDir, 'lalaclaw-launchd.out.log');
+  const stderrPath = path.join(logDir, 'lalaclaw-launchd.err.log');
+  const cliPath = path.join(PROJECT_ROOT, 'bin', 'lalaclaw.js');
+  const guiTarget = `gui/${process.getuid()}`;
+  const serviceTarget = `${guiTarget}/${MACOS_LAUNCHD_LABEL}`;
+
+  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.writeFileSync(
+    plistPath,
+    renderLaunchdPlist({
+      nodePath: process.execPath,
+      cliPath,
+      workingDirectory: PROJECT_ROOT,
+      envFilePath,
+      stdoutPath,
+      stderrPath,
+    }),
+    'utf8',
+  );
+
+  runLaunchctl(['bootout', guiTarget, plistPath], spawnSyncImpl);
+  assertLaunchctlSuccess(runLaunchctl(['bootstrap', guiTarget, plistPath], spawnSyncImpl), 'launchctl bootstrap');
+  assertLaunchctlSuccess(runLaunchctl(['enable', serviceTarget], spawnSyncImpl), 'launchctl enable');
+  assertLaunchctlSuccess(runLaunchctl(['kickstart', '-k', serviceTarget], spawnSyncImpl), 'launchctl kickstart');
+
+  return {
+    label: MACOS_LAUNCHD_LABEL,
+    plistPath,
+    logDir,
+    stdoutPath,
+    stderrPath,
+  };
+}
+
+function openExternalUrl(url, spawnImpl = spawn, platform = process.platform) {
+  let command = '';
+  let args = [];
+
+  if (platform === 'darwin') {
+    command = 'open';
+    args = [url];
+  } else if (platform === 'win32') {
+    command = 'cmd';
+    args = ['/c', 'start', '', url];
+  } else {
+    command = 'xdg-open';
+    args = [url];
+  }
+
+  const child = spawnImpl(command, args, {
+    detached: true,
+    stdio: 'ignore',
+  });
+  if (typeof child.unref === 'function') {
+    child.unref();
+  }
+}
+
+async function promptToOpenApp(url, input = process.stdin, output = process.stdout) {
+  if (!canPromptInteractively(input, output)) {
+    return false;
+  }
+
+  const rl = readline.createInterface({ input, output });
+  try {
+    await rl.question(`Configuration is ready. Press Enter to open ${url}`);
+    return true;
+  } finally {
+    rl.close();
+  }
+}
+
+function getLaunchdTargets() {
+  const guiTarget = `gui/${process.getuid()}`;
+  return {
+    guiTarget,
+    serviceTarget: `${guiTarget}/${MACOS_LAUNCHD_LABEL}`,
+    plistPath: resolveLaunchdPlistPath(),
+  };
+}
+
+function readLaunchdServiceStatus(spawnSyncImpl = spawnSync) {
+  const { serviceTarget, plistPath } = getLaunchdTargets();
+  const result = runLaunchctl(['print', serviceTarget], spawnSyncImpl);
+  return {
+    installed: fs.existsSync(plistPath),
+    running: result.status === 0,
+    plistPath,
+    logDir: resolveLaunchdLogDir(),
+    details: String(result.stdout || result.stderr || '').trim(),
+  };
+}
+
+function stopLaunchdService(spawnSyncImpl = spawnSync) {
+  const { guiTarget, plistPath } = getLaunchdTargets();
+  if (!fs.existsSync(plistPath)) {
+    return {
+      installed: false,
+      stopped: false,
+      plistPath,
+    };
+  }
+
+  const result = runLaunchctl(['bootout', guiTarget, plistPath], spawnSyncImpl);
+  assertLaunchctlSuccess(result, 'launchctl bootout');
+  return {
+    installed: true,
+    stopped: true,
+    plistPath,
+  };
+}
+
+function restartLaunchdService(spawnSyncImpl = spawnSync) {
+  const { serviceTarget, plistPath } = getLaunchdTargets();
+  if (!fs.existsSync(plistPath)) {
+    return {
+      installed: false,
+      restarted: false,
+      plistPath,
+    };
+  }
+
+  const result = runLaunchctl(['kickstart', '-k', serviceTarget], spawnSyncImpl);
+  assertLaunchctlSuccess(result, 'launchctl kickstart');
+  return {
+    installed: true,
+    restarted: true,
+    plistPath,
+  };
+}
+
 function renderEnvFile(config) {
   const lines = [
     '# LalaClaw local configuration',
@@ -676,11 +940,11 @@ function buildDoctorReport({
   }
 
   if (!frontendPortFree) {
-    warnings.push(`Frontend port ${config.frontendHost}:${config.frontendPort} is already in use.`);
+    warnings.push(`Dev frontend port ${config.frontendHost}:${config.frontendPort} is already in use.`);
   }
 
   if (!backendPortFree) {
-    warnings.push(`Backend port ${config.host}:${config.backendPort} is already in use.`);
+    warnings.push(`App port ${config.host}:${config.backendPort} is already in use.`);
   }
 
   if (gatewayProbe && !gatewayProbe.ok && !gatewayProbe.skipped) {
@@ -699,6 +963,8 @@ function buildDoctorReport({
     warnings,
     errors,
   };
+
+  const urls = getRuntimeUrls(config);
 
   return {
     projectRoot: PROJECT_ROOT,
@@ -738,8 +1004,11 @@ function buildDoctorReport({
       frontendHost: config.frontendHost,
       frontendPort: config.frontendPort,
       profile: config.profile,
-      frontendUrl: `http://${config.frontendHost}:${config.frontendPort}`,
-      backendUrl: `http://${config.host}:${config.backendPort}`,
+      appUrl: urls.appUrl,
+      apiUrl: urls.apiUrl,
+      devFrontendUrl: urls.devFrontendUrl,
+      frontendUrl: urls.frontendUrl,
+      backendUrl: urls.backendUrl,
       gatewayUrl: config.openclawBaseUrl || '',
       openclawBaseUrl: config.openclawBaseUrl || '',
       model: config.openclawModel,
@@ -813,8 +1082,8 @@ function printDoctorReport(report) {
   }
 
   console.log(`${report.openclawBinary.found ? 'OK   ' : 'WARN '} OpenClaw CLI ${report.openclawBinary.found ? `found at ${report.openclawBinary.path}` : 'not found on PATH'}`);
-  console.log(`${report.ports.frontend.available ? 'OK   ' : 'WARN '} Frontend ${report.ports.frontend.host}:${report.ports.frontend.port} ${report.ports.frontend.available ? 'is available' : 'is already in use'}`);
-  console.log(`${report.ports.backend.available ? 'OK   ' : 'WARN '} Backend ${report.ports.backend.host}:${report.ports.backend.port} ${report.ports.backend.available ? 'is available' : 'is already in use'}`);
+  console.log(`${report.ports.frontend.available ? 'OK   ' : 'WARN '} Dev frontend ${report.ports.frontend.host}:${report.ports.frontend.port} ${report.ports.frontend.available ? 'is available' : 'is already in use'}`);
+  console.log(`${report.ports.backend.available ? 'OK   ' : 'WARN '} App ${report.ports.backend.host}:${report.ports.backend.port} ${report.ports.backend.available ? 'is available' : 'is already in use'}`);
   printConfigSummary(report.runtime);
   printIssueList('WARN ', report.validation.warnings);
   printIssueList('INFO ', report.validation.notes);
@@ -824,7 +1093,7 @@ function printDoctorReport(report) {
   }
 
   if (report.probes.runtime) {
-    console.log(`${report.probes.runtime.ok ? 'OK   ' : 'ERROR'} ${report.probes.runtime.message}`);
+    console.log(`${formatCliLevel(report.probes.runtime.ok ? 'OK   ' : 'ERROR')} ${report.probes.runtime.message}`);
   }
 }
 
@@ -858,10 +1127,10 @@ async function runInit(envFilePath, options = {}) {
   if (!options.defaults) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
-      nextConfig.host = await promptWithDefault(rl, 'Backend host', nextConfig.host);
-      nextConfig.backendPort = await promptWithDefault(rl, 'Backend port', nextConfig.backendPort);
-      nextConfig.frontendHost = await promptWithDefault(rl, 'Frontend host', nextConfig.frontendHost);
-      nextConfig.frontendPort = await promptWithDefault(rl, 'Frontend port', nextConfig.frontendPort);
+      nextConfig.host = await promptWithDefault(rl, 'App host', nextConfig.host);
+      nextConfig.backendPort = await promptWithDefault(rl, 'App port', nextConfig.backendPort);
+      nextConfig.frontendHost = await promptWithDefault(rl, 'Dev frontend host', nextConfig.frontendHost);
+      nextConfig.frontendPort = await promptWithDefault(rl, 'Dev frontend port', nextConfig.frontendPort);
       nextConfig.profile = await promptProfile(rl, nextConfig.profile);
       nextConfig.commandCenterForceMock = nextConfig.profile === 'mock' ? '1' : '0';
 
@@ -899,6 +1168,25 @@ async function runInit(envFilePath, options = {}) {
   fs.writeFileSync(envFilePath, renderEnvFile(nextConfig), 'utf8');
   console.log(`OK    Wrote ${envFilePath}`);
   printConfigSummary(nextConfig);
+  if (shouldAutoStartBackgroundService(options)) {
+    try {
+      const service = installLaunchdService(envFilePath);
+      const appUrl = `http://${nextConfig.host}:${nextConfig.backendPort}`;
+      console.log(`OK    Started macOS background service ${service.label}`);
+      console.log(`INFO  LaunchAgent: ${service.plistPath}`);
+      console.log(`INFO  Logs:        ${service.logDir}`);
+      if (await promptToOpenApp(appUrl)) {
+        openExternalUrl(appUrl);
+      }
+      console.log('Next steps:');
+      console.log(`  1. Open ${appUrl}`);
+      console.log(`  2. Check status with launchctl print gui/$(id -u)/${service.label}`);
+      console.log(`  3. Stop it with launchctl bootout gui/$(id -u) ${service.plistPath}`);
+      return;
+    } catch (error) {
+      console.log(`WARN  Could not start the macOS background service automatically: ${error.message}`);
+    }
+  }
   console.log('Next steps:');
   console.log('  1. lalaclaw doctor');
   console.log('  2. lalaclaw start');
@@ -1096,6 +1384,56 @@ async function runStart(envFilePath) {
   });
 }
 
+function runStatus() {
+  if (process.platform !== 'darwin') {
+    console.log('INFO  Background service status is only available on macOS.');
+    return;
+  }
+
+  const status = readLaunchdServiceStatus();
+  if (!status.installed) {
+    console.log(`INFO  No macOS background service is installed at ${status.plistPath}`);
+    return;
+  }
+
+  console.log(`INFO  LaunchAgent: ${status.plistPath}`);
+  console.log(`INFO  Logs:        ${status.logDir}`);
+  console.log(`${status.running ? 'OK   ' : 'WARN '} Background service ${status.running ? 'is running' : 'is not running'}`);
+  if (status.details) {
+    console.log(status.details);
+  }
+}
+
+function runStop() {
+  if (process.platform !== 'darwin') {
+    console.log('INFO  Background service stop is only available on macOS.');
+    return;
+  }
+
+  const result = stopLaunchdService();
+  if (!result.installed) {
+    console.log(`INFO  No macOS background service is installed at ${result.plistPath}`);
+    return;
+  }
+
+  console.log(`OK    Stopped macOS background service at ${result.plistPath}`);
+}
+
+function runRestart() {
+  if (process.platform !== 'darwin') {
+    console.log('INFO  Background service restart is only available on macOS.');
+    return;
+  }
+
+  const result = restartLaunchdService();
+  if (!result.installed) {
+    console.log(`INFO  No macOS background service is installed at ${result.plistPath}`);
+    return;
+  }
+
+  console.log(`OK    Restarted macOS background service at ${result.plistPath}`);
+}
+
 async function main() {
   const { command, options } = parseArgs(process.argv.slice(2));
   const envFilePath = options.configFile || DEFAULT_ENV_FILE;
@@ -1121,6 +1459,21 @@ async function main() {
     if (report.summary.exitCode > 0) {
       throw new Error('Doctor found actionable errors.');
     }
+    return;
+  }
+
+  if (command === 'status') {
+    runStatus();
+    return;
+  }
+
+  if (command === 'stop') {
+    runStop();
+    return;
+  }
+
+  if (command === 'restart') {
+    runRestart();
     return;
   }
 
@@ -1170,20 +1523,35 @@ module.exports = {
   readExampleEnvTemplate,
   resolveDefaultConfigDir,
   resolveDefaultEnvFile,
+  isSourceCheckout,
   resolveRuntimeProfile,
   resolveConfig,
+  resolveLaunchdPlistPath,
+  resolveLaunchdLogDir,
   renderEnvFile,
+  renderLaunchdPlist,
   validateConfig,
   probeOpenClawGateway,
   buildRemoteValidationRequest,
   validateRemoteRuntimeConfig,
+  getRuntimeUrls,
+  shouldAutoStartBackgroundService,
+  installLaunchdService,
+  readLaunchdServiceStatus,
+  stopLaunchdService,
+  restartLaunchdService,
+  supportsColor,
+  formatCliLevel,
+  canPromptInteractively,
   buildDoctorReport,
   collectDoctorData,
+  openExternalUrl,
+  promptToOpenApp,
 };
 
 if (require.main === module) {
   main().catch((error) => {
-    console.error(`ERROR ${error.message}`);
+    console.error(`${formatCliLevel('ERROR', process.stderr)} ${error.message}`);
     process.exit(1);
   });
 }

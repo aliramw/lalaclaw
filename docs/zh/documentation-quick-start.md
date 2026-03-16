@@ -15,15 +15,16 @@
 ```bash
 npm install -g lalaclaw
 lalaclaw init
-lalaclaw doctor
-lalaclaw start
 ```
 
 说明：
 
 - `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
-- `lalaclaw doctor` 会检查 Node、OpenClaw、本地配置和端口占用
-- `lalaclaw start` 会占用当前 terminal，关闭 terminal 后服务也会停止
+- 在 macOS 的 npm 安装场景下，`lalaclaw init` 还会自动通过 `launchd` 启动后台服务
+- macOS 后台服务启动后，`lalaclaw init` 会提示你按 Enter，并自动在浏览器里打开 App URL
+- 如果你只想写配置、不自动后台启动，可以使用 `lalaclaw init --no-background`
+- 在 Linux 上，或者你关闭了自动后台启动时，再继续执行 `lalaclaw doctor` 和 `lalaclaw start`
+- 在 macOS 上可以用 `lalaclaw status` 查看后台服务状态，用 `lalaclaw restart` 重启它，用 `lalaclaw stop` 停止它
 
 ## 从 GitHub 安装
 
@@ -58,16 +59,14 @@ npm run lalaclaw:start
 
 ```bash
 npm install -g lalaclaw@latest
-lalaclaw doctor
-lalaclaw start
+lalaclaw init
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-2`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-3`：
 
 ```bash
-npm install -g lalaclaw@2026.3.17-2
-lalaclaw doctor
-lalaclaw start
+npm install -g lalaclaw@2026.3.17-3
+lalaclaw init
 ```
 
 如果你是从 GitHub 安装的，请按下面方式更新：
@@ -82,12 +81,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-2`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-3`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-2
+git checkout 2026.3.17-3
 npm ci
 npm run build
 npm run lalaclaw:start

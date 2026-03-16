@@ -351,7 +351,7 @@ function DataList({ empty, getItemActionLabel, hint, items, onSelect, render }) 
 function TimelineDetailCard({ title, children, emptyText }) {
   return (
     <section className="space-y-1.5">
-      <div className="text-xs font-medium text-muted-foreground">{title}</div>
+      <div className="text-left text-xs font-medium text-muted-foreground">{title}</div>
       {children || <PanelEmpty text={emptyText} compact />}
     </section>
   );
@@ -460,8 +460,8 @@ function ToolCallCard({ isFirst = false, isLast = false, messages, resolvedTheme
           className="flex w-full items-center justify-between gap-3 rounded-md px-1 py-0.5 text-left transition hover:bg-muted/20"
         >
           <div className="flex min-w-0 items-center gap-1.5">
-            <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open ? "rotate-0" : "-rotate-90")} />
             <div className="truncate text-sm font-medium">{tool.name}</div>
+            <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open ? "rotate-0" : "-rotate-90")} />
           </div>
           <Badge variant={normalizedStatus === "failed" ? "default" : "success"} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">
             {localizedStatus}
@@ -607,11 +607,16 @@ function TimelineItemCard({ currentWorkspaceRoot = "", defaultOpen = false, item
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 gap-1.5 rounded-md px-1 text-xs font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
+            className="relative h-7 justify-start rounded-md px-0 text-left text-xs font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
             onClick={() => setOpen((current) => !current)}
           >
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open ? "rotate-0" : "-rotate-90")} />
-            {open ? messages.inspector.timeline.collapse : messages.inspector.timeline.expand}
+            <ChevronDown
+              className={cn(
+                "absolute -left-4 h-3.5 w-3.5 transition-transform",
+                open ? "rotate-0" : "-rotate-90",
+              )}
+            />
+            <span>{open ? messages.inspector.timeline.collapse : messages.inspector.timeline.expand}</span>
           </Button>
 
           {open ? (
