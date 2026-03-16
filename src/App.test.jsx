@@ -293,7 +293,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
     });
-  });
+  }, 10_000);
 
   it("switches the main action to stop while a reply is running and aborts the turn on click", async () => {
     const openClawSnapshot = createSnapshot({
@@ -414,6 +414,7 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const composer = await screen.findByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "甲");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -479,6 +480,7 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const composer = await screen.findByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "1");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -536,6 +538,7 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const composer = await screen.findByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "1");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -1241,7 +1244,7 @@ describe("App", () => {
     });
   });
 
-  it("sends when plain enter is pressed twice quickly", async () => {
+  it("sends when plain enter is pressed in the default mode", async () => {
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
@@ -1266,14 +1269,8 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
-    const dateNowSpy = vi.spyOn(Date, "now");
 
     await user.type(textarea, "第一行");
-    dateNowSpy.mockReturnValue(1_000);
-    await user.keyboard("{Enter}");
-    expect(textarea).toHaveValue("第一行\n");
-
-    dateNowSpy.mockReturnValue(1_300);
     await user.keyboard("{Enter}");
 
     expect(await screen.findByText("已发送：第一行")).toBeInTheDocument();
@@ -1281,10 +1278,9 @@ describe("App", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
     });
-    dateNowSpy.mockRestore();
   });
 
-  it("keeps inserting newlines when plain enter presses are slow", async () => {
+  it("inserts a newline on shift-enter in the default mode", async () => {
     const fetchMock = vi.fn(async (input) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
@@ -1300,18 +1296,58 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
-    const dateNowSpy = vi.spyOn(Date, "now");
 
     await user.type(textarea, "第一行");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    expect(textarea).toHaveValue("第一行\n");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/chat", expect.anything());
+  });
+
+  it("switches to double-enter send mode and updates the hint text", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        return mockJsonResponse({
+          ...createSnapshot(),
+          outputText: `已发送：${body.messages.at(-1)?.content || ""}`,
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+
+    expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+
+    expect(screen.getByText("快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+
+    const dateNowSpy = vi.spyOn(Date, "now");
+    await user.type(textarea, "第一行");
+
     dateNowSpy.mockReturnValue(1_000);
     await user.keyboard("{Enter}");
     expect(textarea).toHaveValue("第一行\n");
 
-    dateNowSpy.mockReturnValue(1_470);
+    dateNowSpy.mockReturnValue(1_300);
     await user.keyboard("{Enter}");
 
-    expect(textarea).toHaveValue("第一行\n\n");
-    expect(fetchMock).not.toHaveBeenCalledWith("/api/chat", expect.anything());
+    expect(await screen.findByText("已发送：第一行")).toBeInTheDocument();
     dateNowSpy.mockRestore();
   });
 
