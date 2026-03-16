@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 const desktopBreakpointQuery = "(min-width: 1280px)";
 const dragHandleWidth = 8;
-const resizeHandleDots = Array.from({ length: 12 });
+const resizeHandleDots = Array.from({ length: 12 }, (_, index) => `resize-dot-${index}`);
 const minChatPanelWidth = 560;
 
 function getRelationshipDisplay(relationship, messages) {
@@ -471,7 +471,7 @@ function AppContent() {
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [splitLayoutWidth, setSplitLayoutWidth] = useState(0);
 
-  const getInspectorPanelWidthBounds = (containerWidth = splitLayoutWidth) => {
+  const getInspectorPanelWidthBounds = useCallback((containerWidth = splitLayoutWidth) => {
     const minimumWidth = minInspectorPanelWidth;
     if (!isWideLayout || !Number.isFinite(containerWidth) || containerWidth <= 0) {
       return {
@@ -489,15 +489,15 @@ function AppContent() {
       minimumWidth,
       maximumWidth,
     };
-  };
+  }, [isWideLayout, splitLayoutWidth]);
 
-  const getClampedInspectorPanelWidth = (requestedWidth, containerWidth = splitLayoutWidth) => {
+  const getClampedInspectorPanelWidth = useCallback((requestedWidth, containerWidth = splitLayoutWidth) => {
     const { minimumWidth, maximumWidth } = getInspectorPanelWidthBounds(containerWidth);
     const numericWidth = Number(requestedWidth);
     const fallbackWidth = defaultInspectorPanelWidth;
     const nextWidth = Number.isFinite(numericWidth) ? numericWidth : fallbackWidth;
     return Math.round(Math.min(maximumWidth, Math.max(minimumWidth, nextWidth)));
-  };
+  }, [getInspectorPanelWidthBounds, splitLayoutWidth]);
 
   const stopPanelResize = () => {
     resizeCleanupRef.current?.();
@@ -553,7 +553,7 @@ function AppContent() {
 
   useEffect(() => {
     handleInspectorPanelWidthChange(getClampedInspectorPanelWidth(inspectorPanelWidth));
-  }, [handleInspectorPanelWidthChange, inspectorPanelWidth, isWideLayout, splitLayoutWidth]);
+  }, [getClampedInspectorPanelWidth, handleInspectorPanelWidthChange, inspectorPanelWidth]);
 
   useEffect(() => () => stopPanelResize(), []);
 
@@ -763,10 +763,9 @@ function AppContent() {
                       : "bg-transparent",
                   )}
                 >
-                  {resizeHandleDots.map((_, index) => (
+                  {resizeHandleDots.map((dotId) => (
                     <span
-                      // eslint-disable-next-line react/no-array-index-key
-                      key={index}
+                      key={dotId}
                       className={cn(
                         "h-[2.4px] w-[2.4px] rounded-full transition-colors",
                         isResizingPanels ? "bg-primary/80" : "bg-muted-foreground/45 group-hover:bg-foreground/55",

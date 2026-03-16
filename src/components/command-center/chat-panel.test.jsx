@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatPanel, ChatTabsStrip, shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel";
+import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
+import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 function createSession(overrides = {}) {

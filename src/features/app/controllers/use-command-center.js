@@ -486,8 +486,6 @@ export function useCommandCenter() {
     activePendingChat && restoredPendingConversationKeysRef.current.has(activeConversationKey),
   );
   const activeChatFontSize = chatFontSize;
-  const dismissedTaskRelationshipIds = dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [];
-
   const setActiveTarget = useCallback((value) => {
     activeTargetRef.current = value;
   }, []);
@@ -1168,7 +1166,7 @@ export function useCommandCenter() {
         activeChatTab,
       ).catch(() => {});
     }
-  }, [activeChatTab, activeChatTabId, fetchRuntimeForTab, hydrateRuntimeState, i18n, setActiveTarget]);
+  }, [activeChatTab, activeChatTabId, fetchRuntimeForTab, hydrateRuntimeState, i18n, runtimeCacheByTabId, setActiveTarget]);
 
   useEffect(() => {
     setPrompt(promptDraftsByConversation[activeConversationKey] || "");
@@ -1511,8 +1509,11 @@ export function useCommandCenter() {
   };
 
   const visibleTaskRelationships = useMemo(
-    () => taskRelationships.filter((relationship) => !dismissedTaskRelationshipIds.includes(relationship?.id)),
-    [dismissedTaskRelationshipIds, taskRelationships],
+    () => {
+      const dismissedTaskRelationshipIds = dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [];
+      return taskRelationships.filter((relationship) => !dismissedTaskRelationshipIds.includes(relationship?.id));
+    },
+    [activeConversationKey, dismissedTaskRelationshipIdsByConversation, taskRelationships],
   );
 
   useLayoutEffect(() => {
@@ -1775,14 +1776,14 @@ export function useCommandCenter() {
     }
   };
 
-  const handleActivateChatTab = (tabId) => {
+  const handleActivateChatTab = useCallback((tabId) => {
     if (!tabId || tabId === activeChatTabIdRef.current) {
       return;
     }
     flushVisibleConversationScrollTop();
     activeChatTabIdRef.current = tabId;
     setActiveChatTabId(tabId);
-  };
+  }, [flushVisibleConversationScrollTop]);
 
   const handleActivateChatTabByIndex = useCallback((index) => {
     const numericIndex = Number(index);
@@ -1796,7 +1797,7 @@ export function useCommandCenter() {
     }
 
     handleActivateChatTab(targetTab.id);
-  }, []);
+  }, [handleActivateChatTab]);
 
   const handleActivateAdjacentChatTab = useCallback((direction) => {
     const normalizedDirection = Number(direction);
@@ -1815,7 +1816,7 @@ export function useCommandCenter() {
     }
 
     handleActivateChatTab(targetTab.id);
-  }, []);
+  }, [handleActivateChatTab]);
 
   const handleCloseChatTab = (tabId) => {
     setChatTabs((current) => {
