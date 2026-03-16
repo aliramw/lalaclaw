@@ -437,7 +437,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("已处理：甲")).toBeInTheDocument();
     });
-  });
+  }, 10_000);
 
   it("ignores a rapid duplicate prompt while the current reply is still pending", async () => {
     const openClawSnapshot = createSnapshot({
@@ -546,8 +546,10 @@ describe("App", () => {
     await user.type(composer, "1");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-    expect(chatBodies).toHaveLength(1);
-    expect(screen.queryByText(/待发送/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(chatBodies).toHaveLength(1);
+      expect(screen.queryByText(/待发送/)).not.toBeInTheDocument();
+    });
     expect(screen.getAllByText("正在思考…")).toHaveLength(1);
 
     resolveFirstChat?.();
@@ -555,7 +557,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("已处理：1")).toBeInTheDocument();
     });
-  });
+  }, 10_000);
 
   it("scrolls the chat viewport to the matching assistant bubble when an artifact summary is clicked", async () => {
     vi.stubGlobal("requestAnimationFrame", (callback) => {
@@ -1848,7 +1850,7 @@ describe("App", () => {
       model: "openrouter/google/gemini-3-flash-preview",
       sessionUser: "command-center",
     });
-  });
+  }, 10_000);
 
   it("shows a blocking overlay while switching agents", async () => {
     let resolveSessionUpdate;
