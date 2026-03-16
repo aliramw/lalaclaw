@@ -45,6 +45,8 @@ function createChatHandler({
   appendLocalSessionConversation,
   buildDashboardSnapshot,
   callOpenClawGateway,
+  clearLocalSessionConversation,
+  clearLocalSessionFileEntries,
   clip,
   config,
   delay,
@@ -59,6 +61,7 @@ function createChatHandler({
   normalizeChatMessage,
   normalizeSessionUser,
   parseFastCommand,
+  parseModelCommand,
   parseRequestBody,
   parseSessionResetCommand,
   parseSlashCommandState,
@@ -82,6 +85,26 @@ function createChatHandler({
 
   function writeChatStreamEvent(res, payload) {
     res.write(`${JSON.stringify(payload)}\n`);
+  }
+
+  function formatModelStatusText(currentModel = '') {
+    return currentModel ? `当前模型：${currentModel}。` : '当前模型未设置。';
+  }
+
+  function formatModelListText(currentModel = '', availableModels = []) {
+    const currentLine = formatModelStatusText(currentModel);
+    const normalizedModels = Array.isArray(availableModels)
+      ? availableModels.filter((modelId, index, items) => modelId && items.indexOf(modelId) === index)
+      : [];
+    if (!normalizedModels.length) {
+      return `${currentLine}\n暂无可用模型列表。`;
+    }
+
+    return [
+      currentLine,
+      '可用模型：',
+      ...normalizedModels.map((modelId) => `- ${modelId}${modelId === currentModel ? ' (当前)' : ''}`),
+    ].join('\n');
   }
 
   async function patchOpenClawSession(callOpenClawGateway, delay, sessionKey, updates = {}) {
@@ -116,6 +139,7 @@ function createChatHandler({
       const body = await parseRequestBody(req);
       const messages = Array.isArray(body.messages) ? body.messages : [];
       const shouldStream = body.stream !== false;
+      const usesGatewayNativeCommands = config.mode === 'openclaw';
       const fastMode = Boolean(body.fastMode);
       const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
       assistantMessageId = typeof body.assistantMessageId === 'string' && body.assistantMessageId.trim()
@@ -126,8 +150,9 @@ function createChatHandler({
       const latestUserAttachments = getMessageAttachments(latestUserMessage);
       const resetCommand = parseSessionResetCommand(latestUserContent);
       const fastCommand = parseFastCommand(latestUserContent);
-      const commandBody = latestUserContent.startsWith('/') ? latestUserContent : '';
-      const slashCommandState = parseSlashCommandState(latestUserMessage?.content);
+      const modelCommand = parseModelCommand?.(latestUserContent) || null;
+      const commandBody = usesGatewayNativeCommands ? latestUserContent : (latestUserContent.startsWith('/') ? latestUserContent : '');
+      const slashCommandState = usesGatewayNativeCommands ? null : parseSlashCommandState(latestUserMessage?.content);
       const outboundMessages = latestUserMessage
         ? [{ role: 'user', content: latestUserContent, ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}) }]
         : [];
@@ -144,7 +169,7 @@ function createChatHandler({
         ]);
       }
 
-      if (fastCommand) {
+      if (!usesGatewayNativeCommands && fastCommand) {
         const responseTimestamp = requestTimestamp || Date.now();
         if (fastCommand.action === 'on' || fastCommand.action === 'off') {
           setSessionPreferences(sessionUser, { fastMode: fastCommand.action === 'on' });
@@ -193,7 +218,83 @@ function createChatHandler({
         return;
       }
 
-      if (resetCommand) {
+      if (!usesGatewayNativeCommands && modelCommand) {
+        const responseTimestamp = requestTimestamp || Date.now();
+        const currentPreferences = getSessionPreferences(sessionUser);
+        const currentAgentId = resolveSessionAgentId(sessionUser);
+        const defaultModelForCurrentAgent = getDefaultModelForAgent(currentAgentId);
+        const currentModel = resolveSessionModel(sessionUser, currentAgentId);
+        let nextModel = currentModel;
+
+        if (modelCommand.action === 'set') {
+          const requestedModel = resolveCanonicalModelId(modelCommand.value);
+          nextModel = requestedModel || defaultModelForCurrentAgent;
+          const shouldPersistModel = Boolean(requestedModel) && requestedModel !== defaultModelForCurrentAgent;
+          const shouldPatchModel = nextModel !== currentModel;
+
+          if (config.mode === 'openclaw' && shouldPatchModel) {
+            await patchOpenClawSession(
+              callOpenClawGateway,
+              delay,
+              getCommandCenterSessionKey(currentAgentId, sessionUser),
+              { model: nextModel },
+            );
+          }
+
+          setSessionPreferences(sessionUser, {
+            ...currentPreferences,
+            model: shouldPersistModel ? nextModel : undefined,
+          });
+        }
+
+        const snapshot = await buildDashboardSnapshot(sessionUser);
+        const selectedModel = snapshot.session?.selectedModel || snapshot.session?.model || nextModel || currentModel || '';
+        const availableModels = Array.isArray(snapshot.session?.availableModels) && snapshot.session.availableModels.length
+          ? snapshot.session.availableModels
+          : [selectedModel].filter(Boolean);
+        const outputText =
+          modelCommand.action === 'list'
+            ? formatModelListText(selectedModel, availableModels)
+            : modelCommand.action === 'set'
+              ? `已切换到模型 ${selectedModel}。`
+              : formatModelStatusText(selectedModel);
+
+        appendLocalSessionConversation(sessionUser, [
+          {
+            role: 'user',
+            content: latestUserContent,
+            timestamp: responseTimestamp - 1,
+          },
+          {
+            role: 'assistant',
+            content: outputText,
+            timestamp: responseTimestamp,
+          },
+        ]);
+
+        snapshot.session.status = '已完成 / 标准';
+
+        sendJson(res, 200, {
+          ok: true,
+          mode: config.mode,
+          model: selectedModel || config.model,
+          outputText,
+          usage: null,
+          tokenBadge: '',
+          commandHandled: modelCommand.action === 'list' ? 'models' : 'model',
+          metadata: {
+            status: snapshot.session.status,
+            summary:
+              modelCommand.action === 'set'
+                ? `model: ${selectedModel}`
+                : `model: ${modelCommand.action}`,
+          },
+          ...snapshot,
+        });
+        return;
+      }
+
+      if (!usesGatewayNativeCommands && resetCommand) {
         const nextSessionUser = normalizeSessionUser(`${sessionUser}-${Date.now()}`);
         const currentPreferences = getSessionPreferences(sessionUser);
         setSessionPreferences(nextSessionUser, { ...currentPreferences });
@@ -333,6 +434,28 @@ function createChatHandler({
             : await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
           : createMockReply(latestUserContent, clip);
 
+      const nativeFastCommand = usesGatewayNativeCommands ? parseFastCommand(latestUserContent) : null;
+      const nativeModelCommand = usesGatewayNativeCommands ? parseModelCommand?.(latestUserContent) || null : null;
+      const nativeResetCommand = usesGatewayNativeCommands ? parseSessionResetCommand(latestUserContent) : null;
+      const nativeDirectiveState = usesGatewayNativeCommands ? parseSlashCommandState(latestUserMessage?.content) : null;
+
+      if (usesGatewayNativeCommands && nativeResetCommand) {
+        clearLocalSessionConversation?.(sessionUser);
+        clearLocalSessionFileEntries?.(sessionUser);
+      }
+
+      if (usesGatewayNativeCommands && (nativeFastCommand?.action === 'on' || nativeFastCommand?.action === 'off')) {
+        setSessionPreferences(sessionUser, {
+          ...getSessionPreferences(sessionUser),
+          fastMode: nativeFastCommand.action === 'on',
+        });
+      } else if (usesGatewayNativeCommands && nativeDirectiveState?.kind === 'thinkMode') {
+        setSessionPreferences(sessionUser, {
+          ...getSessionPreferences(sessionUser),
+          thinkMode: nativeDirectiveState.value,
+        });
+      }
+
       appendLocalSessionConversation(sessionUser, [
         ...(latestUserMessage
           ? [
@@ -356,6 +479,21 @@ function createChatHandler({
       ]);
 
       const snapshot = await buildDashboardSnapshot(sessionUser);
+      if (usesGatewayNativeCommands && (nativeModelCommand || nativeResetCommand)) {
+        const authoritativeModel = snapshot.session?.model || snapshot.model || '';
+        if (authoritativeModel) {
+          const defaultModelForCurrentAgent = getDefaultModelForAgent(resolveSessionAgentId(sessionUser));
+          const shouldPersistModel = authoritativeModel !== defaultModelForCurrentAgent;
+          setSessionPreferences(sessionUser, {
+            ...getSessionPreferences(sessionUser),
+            model: shouldPersistModel ? authoritativeModel : undefined,
+          });
+          snapshot.session = {
+            ...(snapshot.session || {}),
+            selectedModel: authoritativeModel,
+          };
+        }
+      }
       snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
       const resolvedModel = snapshot.session?.model || config.model;
       const responsePayload = {

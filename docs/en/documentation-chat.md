@@ -70,6 +70,15 @@ If a reply is still in progress when the page reloads:
 
 ## Slash Commands
 
+In `openclaw` mode, command text is forwarded to the OpenClaw gateway natively.
+That includes:
+
+- standalone slash commands such as `/status` or `/model`
+- inline shortcuts and inline directives inside a normal prompt
+- host-style bang commands such as `! <command>`, `!poll`, and `!stop`
+
+In `mock` mode, LalaClaw keeps a small local fallback for the built-in session controls below.
+
 ### `/fast`
 
 Supported forms:
@@ -81,8 +90,8 @@ Supported forms:
 
 Behavior:
 
-- `status` reports the current fast-mode state
-- `on/off` persists the fast-mode preference for the current session
+- In `openclaw` mode, this uses the native OpenClaw command flow
+- In `mock` mode, `status` reports the current fast-mode state and `on/off` persists the local session preference
 
 ### `/think <mode>`
 
@@ -98,16 +107,30 @@ Supported modes:
 
 Behavior:
 
-- Updates the current session's thinking depth
-- In `openclaw` mode, also patches the remote session
+- In `openclaw` mode, this uses the native OpenClaw command flow
+- In `mock` mode, it updates the current session's thinking depth locally
 
-### `/new [prompt]` and `/reset [prompt]`
+### `/model [id]` and `/models`
+
+Supported forms:
+
+- `/model`
+- `/model status`
+- `/model <id>`
+- `/model list`
+- `/models`
 
 Behavior:
 
-- Creates a new `sessionUser`
-- Carries over the current model, agent, fast mode, and thinking mode preferences
-- If a trailing prompt is provided, immediately continues with that prompt in the fresh session
+- In `openclaw` mode, this uses the native OpenClaw command flow
+- In `mock` mode, `status` reports the current model, `list` shows the available model list, and `/model <id>` switches the local session model
+
+### `/new ...` and `/reset ...`
+
+Behavior:
+
+- In `openclaw` mode, these use the native OpenClaw session-management flow
+- In `mock` mode, they create a fresh local `sessionUser` and carry over the current model, agent, fast mode, and thinking mode preferences
 
 Good use cases:
 

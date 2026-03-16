@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, memo, Suspense } from "react";
 import { cn } from "@/lib/utils";
 
 const markdownShellClassName =
@@ -17,11 +17,29 @@ const markdownShellClassName =
 
 const LazyMarkdownRenderer = lazy(() => import("@/components/command-center/markdown-renderer"));
 
-export function MarkdownContent({
+function areTrackedFilesEqual(previousFiles = [], nextFiles = []) {
+  if (previousFiles === nextFiles) {
+    return true;
+  }
+
+  if (!Array.isArray(previousFiles) || !Array.isArray(nextFiles) || previousFiles.length !== nextFiles.length) {
+    return false;
+  }
+
+  return previousFiles.every((file, index) => {
+    const nextFile = nextFiles[index];
+    return file?.path === nextFile?.path
+      && file?.fullPath === nextFile?.fullPath
+      && file?.name === nextFile?.name;
+  });
+}
+
+export const MarkdownContent = memo(function MarkdownContent({
   content,
   files,
   headingScopeId,
   resolvedTheme = "light",
+  streaming = false,
   className,
   onOpenFilePreview,
   onOpenImagePreview,
@@ -41,6 +59,7 @@ export function MarkdownContent({
         files={files}
         headingScopeId={headingScopeId}
         resolvedTheme={resolvedTheme}
+        streaming={streaming}
         className={className}
         shellClassName={markdownShellClassName}
         onOpenFilePreview={onOpenFilePreview}
@@ -48,4 +67,13 @@ export function MarkdownContent({
       />
     </Suspense>
   );
-}
+}, (previousProps, nextProps) => {
+  return previousProps.content === nextProps.content
+    && previousProps.headingScopeId === nextProps.headingScopeId
+    && previousProps.resolvedTheme === nextProps.resolvedTheme
+    && previousProps.streaming === nextProps.streaming
+    && previousProps.className === nextProps.className
+    && previousProps.onOpenFilePreview === nextProps.onOpenFilePreview
+    && previousProps.onOpenImagePreview === nextProps.onOpenImagePreview
+    && areTrackedFilesEqual(previousProps.files || [], nextProps.files || []);
+});

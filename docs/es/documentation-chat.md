@@ -42,6 +42,11 @@ Si la pestana ya esta ocupada:
 - `/fast status`
 - `/fast on`
 - `/fast off`
+- `/model`
+- `/model status`
+- `/model <id>`
+- `/model list`
+- `/models`
 - `/think <mode>`
 - `/new [prompt]`
 - `/reset [prompt]`

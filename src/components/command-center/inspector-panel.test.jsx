@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
@@ -85,6 +85,8 @@ function getToolCard(name, toggleLabel = "收起详情") {
 describe("InspectorPanel", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
     window.localStorage.removeItem(localeStorageKey);
   });
 
@@ -246,6 +248,40 @@ describe("InspectorPanel", () => {
     expect(screen.getByRole("tab", { name: "文件" })).toHaveTextContent(/^文件$/);
   });
 
+  it("hides the session files section when there are no session files", () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /本次会话文件/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "过滤本次会话文件" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /workspace 文件/ })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "过滤 workspace 文件" })).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+  });
+
   it("collapses inspector tab labels down to icons when the panel gets narrow", () => {
     mockResizeObserver(360);
     const [activeTab, setActiveTab] = ["timeline", () => {}];
@@ -346,7 +382,15 @@ describe("InspectorPanel", () => {
     expect(within(getToolCard("edit_file", "查看详情")).queryByText("输入")).not.toBeInTheDocument();
   });
 
-  it("clips workspace-root paths in file displays while keeping external paths full", async () => {
+  it("renders session files as a directory tree and compacts single-directory paths", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      })),
+    );
+
     const [activeTab, setActiveTab] = ["files", () => {}];
 
     renderWithTooltip(
@@ -359,7 +403,7 @@ describe("InspectorPanel", () => {
           { path: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", fullPath: "/Users/marila/.openclaw/workspace-writer/TOOLS.md", kind: "文件", primaryAction: "viewed" },
           { path: "/Users/marila/projects/lalaclaw/src/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/App.jsx", kind: "文件", primaryAction: "viewed" },
         ]}
-        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        peeks={{ workspace: { summary: "工作区摘要", items: [], entries: [] }, terminal: null, browser: null, environment: null }}
         renderPeek={(_, fallback) => fallback}
         setActiveTab={setActiveTab}
         taskTimeline={[]}
@@ -367,10 +411,19 @@ describe("InspectorPanel", () => {
     );
 
     expect(screen.getByText("TOOLS.md")).toBeInTheDocument();
-    expect(screen.getByText("~/projects/lalaclaw/src/App.jsx")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "projects / lalaclaw / src 收起详情" })).toBeInTheDocument();
+    expect(screen.getByText("App.jsx")).toBeInTheDocument();
   });
 
   it("sorts file groups alphabetically by display path", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      })),
+    );
+
     const [activeTab, setActiveTab] = ["files", () => {}];
 
     renderWithTooltip(
@@ -392,7 +445,8 @@ describe("InspectorPanel", () => {
     );
 
     const links = screen.getAllByTitle(/\/Users\/marila\/projects\/lalaclaw\//);
-    expect(links.map((element) => element.textContent)).toEqual(["alpha.md", "folder/beta.md", "zeta.md"]);
+    expect(links.map((element) => element.textContent)).toEqual(["beta.md", "alpha.md", "zeta.md"]);
+    expect(screen.getByRole("button", { name: "folder 收起详情" })).toBeInTheDocument();
   });
 
   it("supports collapsing file action groups", async () => {
@@ -444,7 +498,675 @@ describe("InspectorPanel", () => {
       />,
     );
 
-    expect(screen.getByText("这里会列出本次会话 Agent 创建、修改与查看所有文件，方便你检阅")).toBeInTheDocument();
+    expect(screen.getByText("这里会分组列出本次会话涉及文件与当前 workspace 文件，方便你检阅")).toBeInTheDocument();
+  });
+
+  it("renders a separate collapsible workspace files section", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/alpha.md", fullPath: "/Users/marila/projects/lalaclaw/alpha.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            totalCount: 42,
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+              { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toHaveTextContent("42");
+    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
+  });
+
+  it("renders workspace files as a collapsible tree", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc%2Fcomponents")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/src/components/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/components/App.jsx", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc%2Flib")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/src/lib/utils.js", fullPath: "/Users/marila/projects/lalaclaw/src/lib/utils.js", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/src/components", fullPath: "/Users/marila/projects/lalaclaw/src/components", kind: "目录", hasChildren: true },
+                { path: "/Users/marila/projects/lalaclaw/src/lib", fullPath: "/Users/marila/projects/lalaclaw/src/lib", kind: "目录", hasChildren: true },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+              { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "src 查看详情" }));
+    expect(await screen.findByRole("button", { name: "components 查看详情" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "lib 查看详情" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "components 查看详情" }));
+    expect(await screen.findByText("App.jsx")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "lib 查看详情" }));
+    expect(await screen.findByText("utils.js")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "src 收起详情" }));
+
+    expect(screen.queryByText("App.jsx")).not.toBeInTheDocument();
+    expect(screen.queryByText("utils.js")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
+  });
+
+  it.each(["zh", "en", "ja", "fr", "es", "pt"])("renders the files inspector without crashing for locale %s", (locale) => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/README.md", fullPath: "/Users/marila/projects/lalaclaw/README.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{
+          workspace: {
+            summary: "workspace summary",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+              { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+      locale,
+    );
+
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+    expect(screen.getAllByRole("textbox")).toHaveLength(2);
+    expect(screen.getByText("README.md")).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+  });
+
+  it("filters session files locally by text and glob patterns", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/docs/guide.md", fullPath: "/Users/marila/projects/lalaclaw/docs/guide.md", kind: "文件", primaryAction: "created" },
+          { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件", primaryAction: "modified" },
+          { path: "/Users/marila/projects/lalaclaw/tests/test01.js", fullPath: "/Users/marila/projects/lalaclaw/tests/test01.js", kind: "文件", primaryAction: "viewed" },
+          { path: "/Users/marila/projects/lalaclaw/tests/testA.js", fullPath: "/Users/marila/projects/lalaclaw/tests/testA.js", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: { summary: "工作区摘要", items: [], entries: [] }, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const filterInput = screen.getByRole("textbox", { name: "过滤本次会话文件" });
+
+    expect(screen.queryByRole("button", { name: "清空本次会话文件过滤" })).not.toBeInTheDocument();
+
+    await user.type(filterInput, ".md");
+
+    expect(screen.getByRole("button", { name: "清空本次会话文件过滤" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "docs 收起详情" })).toBeInTheDocument();
+    expect(screen.getByText("guide.md")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.queryByText("package.json")).not.toBeInTheDocument();
+      expect(screen.queryByText("test01.js")).not.toBeInTheDocument();
+      expect(screen.queryByText("testA.js")).not.toBeInTheDocument();
+    });
+
+    await user.clear(filterInput);
+    await user.type(filterInput, "test??.*");
+
+    expect(screen.getByRole("button", { name: "tests 收起详情" })).toBeInTheDocument();
+    expect(screen.getByText("test01.js")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("guide.md")).not.toBeInTheDocument();
+      expect(screen.queryByText("package.json")).not.toBeInTheDocument();
+      expect(screen.queryByText("testA.js")).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "清空本次会话文件过滤" }));
+
+    expect(screen.queryByRole("button", { name: "清空本次会话文件过滤" })).not.toBeInTheDocument();
+    expect(screen.getByText("guide.md")).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(screen.getByText("test01.js")).toBeInTheDocument();
+    expect(screen.getByText("testA.js")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("filters workspace files by text and glob patterns", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("filter=.md")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                {
+                  path: "/Users/marila/projects/lalaclaw/docs",
+                  fullPath: "/Users/marila/projects/lalaclaw/docs",
+                  kind: "目录",
+                  hasChildren: true,
+                  children: [
+                    { path: "/Users/marila/projects/lalaclaw/docs/guide.md", fullPath: "/Users/marila/projects/lalaclaw/docs/guide.md", kind: "文件" },
+                  ],
+                },
+                { path: "/Users/marila/projects/lalaclaw/README.md", fullPath: "/Users/marila/projects/lalaclaw/README.md", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        if (url.includes("filter=test")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                {
+                  path: "/Users/marila/projects/lalaclaw/tests",
+                  fullPath: "/Users/marila/projects/lalaclaw/tests",
+                  kind: "目录",
+                  hasChildren: true,
+                  children: [
+                    { path: "/Users/marila/projects/lalaclaw/tests/test01.js", fullPath: "/Users/marila/projects/lalaclaw/tests/test01.js", kind: "文件" },
+                  ],
+                },
+              ],
+            }),
+          };
+        }
+        if (url.includes("filter=missing")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [],
+            }),
+          };
+        }
+        if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fdocs")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/docs/guide.md", fullPath: "/Users/marila/projects/lalaclaw/docs/guide.md", kind: "文件" },
+                { path: "/Users/marila/projects/lalaclaw/docs/notes.txt", fullPath: "/Users/marila/projects/lalaclaw/docs/notes.txt", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Ftests")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/tests/test01.js", fullPath: "/Users/marila/projects/lalaclaw/tests/test01.js", kind: "文件" },
+                { path: "/Users/marila/projects/lalaclaw/tests/testA.js", fullPath: "/Users/marila/projects/lalaclaw/tests/testA.js", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/docs", fullPath: "/Users/marila/projects/lalaclaw/docs", kind: "目录", hasChildren: true },
+              { path: "/Users/marila/projects/lalaclaw/tests", fullPath: "/Users/marila/projects/lalaclaw/tests", kind: "目录", hasChildren: true },
+              { path: "/Users/marila/projects/lalaclaw/README.md", fullPath: "/Users/marila/projects/lalaclaw/README.md", kind: "文件" },
+              { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "docs 查看详情" }));
+    await user.click(screen.getByRole("button", { name: "tests 查看详情" }));
+
+    expect(await screen.findByText("guide.md")).toBeInTheDocument();
+    expect(await screen.findByText("test01.js")).toBeInTheDocument();
+
+    const filterInput = screen.getByRole("textbox", { name: "过滤 workspace 文件" });
+    await user.clear(filterInput);
+    await user.type(filterInput, ".md");
+
+    expect(await screen.findByText("README.md")).toBeInTheDocument();
+    expect(await screen.findByText("guide.md")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /docs .*详情/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("package.json")).not.toBeInTheDocument();
+      expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "tests 收起详情" })).not.toBeInTheDocument();
+    });
+
+    await user.clear(filterInput);
+    await user.type(filterInput, "test??.*");
+
+    expect(await screen.findByText("test01.js")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("testA.js")).not.toBeInTheDocument();
+      expect(screen.queryByText("README.md")).not.toBeInTheDocument();
+      expect(screen.queryByText("guide.md")).not.toBeInTheDocument();
+    });
+
+    await user.clear(filterInput);
+    await user.type(filterInput, "missing");
+
+    expect(await screen.findByText("没有匹配“missing”的 workspace 文件。")).toBeInTheDocument();
+  });
+
+  it("shows a clear button for the workspace filter and resets results", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("filter=.md")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/README.md", fullPath: "/Users/marila/projects/lalaclaw/README.md", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/README.md", fullPath: "/Users/marila/projects/lalaclaw/README.md", kind: "文件" },
+              { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const filterInput = screen.getByRole("textbox", { name: "过滤 workspace 文件" });
+    expect(screen.queryByRole("button", { name: "清空 workspace 过滤" })).not.toBeInTheDocument();
+
+    await user.type(filterInput, ".md");
+
+    expect(await screen.findByRole("button", { name: "清空 workspace 过滤" })).toBeInTheDocument();
+    expect(await screen.findByText("README.md")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("package.json")).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "清空 workspace 过滤" }));
+
+    expect(screen.queryByRole("button", { name: "清空 workspace 过滤" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "过滤 workspace 文件" })).toHaveValue("");
+    expect(screen.getByText("README.md")).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+  });
+
+  it("debounces workspace filter requests by 150ms", async () => {
+    vi.useFakeTimers();
+
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("filter=lesson")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            items: [{ path: "/Users/marila/projects/lalaclaw/lesson.md", fullPath: "/Users/marila/projects/lalaclaw/lesson.md", kind: "文件" }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{ workspace: { summary: "工作区摘要", items: [], entries: [] }, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const filterInput = screen.getByRole("textbox", { name: "过滤 workspace 文件" });
+    await act(async () => {
+      fireEvent.change(filterInput, { target: { value: "lesson" } });
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(149);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("filter=lesson");
+    expect(screen.getByText("lesson.md")).toBeInTheDocument();
+  });
+
+  it("loads workspace root items lazily when initial entries are unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          items: [
+            { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+            { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+          ],
+        }),
+      })),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{ workspace: { summary: "工作区摘要", items: [] }, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(await screen.findByText("package.json")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
+  });
+
+  it("keeps expanded workspace directories open when fresh root snapshots arrive", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/src/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/App.jsx", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+    const initialPeeks = {
+      workspace: {
+        summary: "工作区摘要",
+        items: [],
+        entries: [{ path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true }],
+      },
+      terminal: null,
+      browser: null,
+      environment: null,
+    };
+
+    const { rerender } = renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={initialPeeks}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "src 查看详情" }));
+
+    expect(await screen.findByText("App.jsx")).toBeInTheDocument();
+
+    rerender(
+      <I18nProvider>
+        <TooltipProvider delayDuration={0}>
+          <InspectorPanel
+            activeTab={activeTab}
+            agents={[]}
+            artifacts={[]}
+            currentAgentId="main"
+            currentSessionUser="command-center"
+            currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+            files={[]}
+            peeks={{
+              ...initialPeeks,
+              workspace: {
+                ...initialPeeks.workspace,
+                entries: [
+                  { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+                  { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+                ],
+              },
+            }}
+            renderPeek={(_, fallback) => fallback}
+            setActiveTab={setActiveTab}
+            taskTimeline={[]}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("App.jsx")).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "src 收起详情" })).toBeInTheDocument();
+  });
+
+  it("shows empty workspace copy when no workspace files are available", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{ workspace: { summary: "工作区摘要", items: [], entries: [] }, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByText("当前 workspace 中检测到的文件会显示在这里。")).toBeInTheDocument();
   });
 
   it("opens a full-screen markdown preview when clicking a file", async () => {
@@ -522,7 +1244,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "src/App.jsx" }));
+    await user.click(screen.getByRole("button", { name: "App.jsx" }));
 
     expect(await screen.findByText("jsx")).toBeInTheDocument();
     expect(document.querySelector("pre")?.textContent).toContain("export default function App() { return null; }");
@@ -562,7 +1284,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "scripts/init.lua" }));
+    await user.click(screen.getByRole("button", { name: "init.lua" }));
 
     expect(await screen.findByText("lua")).toBeInTheDocument();
     expect(document.querySelector("pre")?.textContent).toContain("local answer = 42");
@@ -597,7 +1319,7 @@ describe("InspectorPanel", () => {
       content: "value <- 42\nprint(value)\n",
       expectedSnippet: "value <- 42",
     },
-  ])("renders $language text previews with syntax highlighting", async ({ label, path, language, content, expectedSnippet }) => {
+  ])("renders $language text previews with syntax highlighting", async ({ path, language, content, expectedSnippet }) => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
@@ -629,13 +1351,13 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: label }));
+    await user.click(screen.getByRole("button", { name: path.split("/").pop() }));
 
     expect(await screen.findByText(language)).toBeInTheDocument();
     expect(document.querySelector("pre")?.textContent).toContain(expectedSnippet);
   });
 
-  it("opens a context menu on right click and shows copy path", async () => {
+  it("opens a context menu on right click and shows preview above copy path", async () => {
     const [activeTab, setActiveTab] = ["files", () => {}];
 
     renderWithTooltip(
@@ -663,6 +1385,290 @@ describe("InspectorPanel", () => {
     ]);
 
     expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "预览" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["预览", "复制路径"]);
+  });
+
+  it("shows refresh in the context menu for workspace directories", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "src 查看详情" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+
+    expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "刷新" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "预览" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["刷新", "复制路径"]);
+  });
+
+  it("refreshes workspace directory contents from the context menu", async () => {
+    const fetchMock = vi.fn();
+    let srcFetchCount = 0;
+
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc")) {
+        srcFetchCount += 1;
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            items: srcFetchCount === 1
+              ? [{ path: "/Users/marila/projects/lalaclaw/src/old.txt", fullPath: "/Users/marila/projects/lalaclaw/src/old.txt", kind: "文件" }]
+              : [{ path: "/Users/marila/projects/lalaclaw/src/new.txt", fullPath: "/Users/marila/projects/lalaclaw/src/new.txt", kind: "文件" }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "src 查看详情" }));
+    expect(await screen.findByText("old.txt")).toBeInTheDocument();
+
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "src 收起详情" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+    await user.click(await screen.findByRole("menuitem", { name: "刷新" }));
+
+    expect(await screen.findByText("new.txt")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("old.txt")).not.toBeInTheDocument();
+    });
+    expect(srcFetchCount).toBe(2);
+  });
+
+  it.each([
+    { label: "slides/demo.pptx", path: "/Users/marila/projects/lalaclaw/slides/demo.pptx" },
+    { label: "docs/spec.docx", path: "/Users/marila/projects/lalaclaw/docs/spec.docx" },
+    { label: "sheets/report.xlsm", path: "/Users/marila/projects/lalaclaw/sheets/report.xlsm" },
+    { label: "photos/cover.heic", path: "/Users/marila/projects/lalaclaw/photos/cover.heic" },
+  ])("enables preview in the context menu for $label", async ({ path }) => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path, fullPath: path, kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: path.split("/").pop() }),
+        keys: "[MouseRight]",
+      },
+    ]);
+
+    expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "预览" })).toBeEnabled();
+  });
+
+  it("shows a localized LibreOffice hint when an office preview cannot be converted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        json: async () => ({
+          ok: false,
+          error: "Office preview requires LibreOffice.",
+          errorCode: "office_preview_requires_libreoffice",
+          installCommand: "brew install --cask libreoffice",
+        }),
+      })),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/docs/spec.doc", fullPath: "/Users/marila/projects/lalaclaw/docs/spec.doc", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "spec.doc" }));
+
+    expect(await screen.findByText("安装 LibreOffice 后即可预览 DOC、PPT 和 PPTX 文件。可打开终端执行：brew install --cask libreoffice")).toBeInTheDocument();
+  });
+
+  it("disables preview in the context menu for unsupported files", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/archive.bin", fullPath: "/Users/marila/projects/lalaclaw/archive.bin", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "archive.bin" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+
+    expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "预览" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
+  });
+
+  it("repositions the context menu to stay inside the viewport near the bottom edge", async () => {
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function mockRect() {
+      if (this.getAttribute?.("role") === "menu") {
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 180,
+          bottom: 96,
+          width: 180,
+          height: 96,
+          toJSON() {
+            return this;
+          },
+        };
+      }
+      return originalGetBoundingClientRect.call(this);
+    });
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "AGENTS.md" }), {
+      clientX: 790,
+      clientY: 590,
+    });
+
+    const menu = await screen.findByRole("menu", { name: "文件菜单" });
+    await waitFor(() => {
+      expect(menu.style.left).toBe("612px");
+      expect(menu.style.top).toBe("496px");
+    });
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalInnerWidth });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: originalInnerHeight });
   });
 });

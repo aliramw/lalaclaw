@@ -268,6 +268,91 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("drops all transient assistant fragments before an auto-replayed user turn", () => {
+    const projector = createProjector();
+    const wrappedPrompt = [
+      "Sender (untrusted metadata):",
+      "```json",
+      '{"label":"LalaClaw (gateway-client)","id":"gateway-client"}',
+      "```",
+      "",
+      "[Tue 2026-03-17 04:02 GMT+8] 详细给我一个关于AI ag'ne't未来10年的预测报告",
+    ].join("\n");
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1000,
+          content: [{ type: "text", text: wrappedPrompt }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2000,
+          stopReason: "toolUse",
+          content: [{ type: "text", text: "我先给你做一版“能拿去判断方向”的，不讲空话。" }],
+        },
+      },
+      {
+        type: "custom",
+        customType: "openclaw:prompt-error",
+        timestamp: 3,
+        data: {
+          timestamp: 2500,
+          error: "aborted",
+        },
+      },
+      {
+        type: "message",
+        timestamp: 4,
+        message: {
+          role: "assistant",
+          timestamp: 2600,
+          stopReason: "aborted",
+          errorMessage: "This operation was aborted",
+          content: [{ type: "text", text: "[[reply_to_current]] 先给结论：未来 10 年，AI Agent 会变成新的软件基础设施。" }],
+        },
+      },
+      {
+        type: "custom",
+        customType: "model-snapshot",
+        timestamp: 5,
+        data: {
+          timestamp: 3000,
+          modelId: "openai/gpt-5.4",
+        },
+      },
+      {
+        type: "message",
+        timestamp: 6,
+        message: {
+          role: "user",
+          timestamp: 3100,
+          content: [{ type: "text", text: wrappedPrompt }],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 7,
+        message: {
+          role: "assistant",
+          timestamp: 4500,
+          content: [{ type: "text", text: "[[reply_to_current]] 我是 Tom Cruise，模型：openrouter/openai/gpt-5.4。" }],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "user", content: "详细给我一个关于AI ag'ne't未来10年的预测报告", timestamp: 1000 },
+      { role: "assistant", content: "我是 Tom Cruise，模型：openrouter/openai/gpt-5.4。", timestamp: 4500 },
+    ]);
+  });
+
   it("drops a stopped partial assistant reply from conversation artifacts and snapshots", () => {
     const projector = createProjector();
     const entries = [

@@ -395,6 +395,43 @@ describe("server helpers", () => {
       },
     ]);
   });
+
+  it("collapses an immediate duplicate assistant echo even when the snapshot only has one user turn", () => {
+    const merged = __test.mergeConversationMessages(
+      [
+        {
+          role: "assistant",
+          content: "Help\n\nSession /new | /reset | /compact [instructions] | /stop",
+          timestamp: 2_000,
+        },
+      ],
+      [
+        {
+          role: "user",
+          content: "/help",
+          timestamp: 1_000,
+        },
+        {
+          role: "assistant",
+          content: "Help\n\nSession /new | /reset | /compact [instructions] | /stop",
+          timestamp: 2_001,
+        },
+      ],
+    );
+
+    expect(merged).toEqual([
+      {
+        role: "user",
+        content: "/help",
+        timestamp: 1_000,
+      },
+      {
+        role: "assistant",
+        content: "Help\n\nSession /new | /reset | /compact [instructions] | /stop",
+        timestamp: 2_000,
+      },
+    ]);
+  });
 });
 
 describe("server routes", () => {
@@ -606,11 +643,19 @@ describe("server routes", () => {
     });
   });
 
-  it("returns markdown/pdf preview payloads and serves raw media content", async () => {
+  it("returns markdown/spreadsheet/pdf preview payloads and serves raw media content", async () => {
     const markdownPath = path.join(tempDir, "TOOLS.md");
+    const csvPath = path.join(tempDir, "preview.csv");
+    const xlsxPath = path.join(tempDir, "preview.xlsx");
     const pdfPath = path.join(tempDir, "preview.pdf");
     const imagePath = path.join(tempDir, "preview.png");
+    const XLSX = require("xlsx");
     await fs.writeFile(markdownPath, "# Hello\n\nPreview body");
+    await fs.writeFile(csvPath, "name,score\nalice,95\nbob,88\n");
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([["name", "score"], ["alice", 95], ["bob", 88]]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Summary");
+    await fs.writeFile(xlsxPath, XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
     await fs.writeFile(pdfPath, Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF", "utf8"));
     await fs.writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 
@@ -623,6 +668,37 @@ describe("server routes", () => {
       kind: "markdown",
       name: "TOOLS.md",
       content: "# Hello\n\nPreview body",
+    });
+
+    const csvResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(csvPath)}`);
+    const csvPayload = await readJson(csvResponse);
+
+    expect(csvResponse.ok).toBe(true);
+    expect(csvPayload).toMatchObject({
+      ok: true,
+      kind: "spreadsheet",
+      name: "preview.csv",
+      spreadsheet: {
+        sheetName: "preview.csv",
+        totalRows: 3,
+        totalColumns: 2,
+        rows: [["name", "score"], ["alice", "95"], ["bob", "88"]],
+      },
+    });
+
+    const xlsxResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(xlsxPath)}`);
+    const xlsxPayload = await readJson(xlsxResponse);
+
+    expect(xlsxResponse.ok).toBe(true);
+    expect(xlsxPayload).toMatchObject({
+      ok: true,
+      kind: "spreadsheet",
+      name: "preview.xlsx",
+      spreadsheet: {
+        sheetName: "Summary",
+        totalRows: 3,
+        totalColumns: 2,
+      },
     });
 
     const pdfResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(pdfPath)}`);

@@ -498,7 +498,19 @@ function createTranscriptProjector({
     let lastVisibleUserFingerprint = '';
     let lastVisibleUserTimestamp = 0;
     let sawTransientAssistantFailureAfterLastUser = false;
-    let lastAssistantConversationIndexAfterLastUser = -1;
+    let assistantConversationIndicesAfterLastUser = [];
+
+    const removeAssistantMessagesAfterLastUser = () => {
+      if (!assistantConversationIndicesAfterLastUser.length) {
+        return;
+      }
+
+      const indicesToRemove = new Set(assistantConversationIndicesAfterLastUser);
+      const nextConversation = conversation.filter((_, index) => !indicesToRemove.has(index));
+      conversation.length = 0;
+      conversation.push(...nextConversation);
+      assistantConversationIndicesAfterLastUser = [];
+    };
 
     entries.forEach((entry) => {
       if (isTransientPromptErrorEntry(entry)) {
@@ -529,15 +541,13 @@ function createTranscriptProjector({
           && timestamp - lastVisibleUserTimestamp <= TRANSIENT_USER_REPLAY_WINDOW_MS;
 
         if (isTransientReplay) {
-          if (
-            lastAssistantConversationIndexAfterLastUser >= 0
-            && conversation[lastAssistantConversationIndexAfterLastUser]?.role === 'assistant'
-          ) {
-            conversation.splice(lastAssistantConversationIndexAfterLastUser, 1);
-          }
-          lastAssistantConversationIndexAfterLastUser = -1;
+          removeAssistantMessagesAfterLastUser();
           sawTransientAssistantFailureAfterLastUser = false;
           return;
+        }
+
+        if (sawTransientAssistantFailureAfterLastUser) {
+          removeAssistantMessagesAfterLastUser();
         }
 
         conversation.push({
@@ -547,15 +557,16 @@ function createTranscriptProjector({
         });
         lastVisibleUserFingerprint = fingerprint;
         lastVisibleUserTimestamp = timestamp;
-        lastAssistantConversationIndexAfterLastUser = -1;
+        assistantConversationIndicesAfterLastUser = [];
         sawTransientAssistantFailureAfterLastUser = false;
         return;
       }
 
       if (payload.role === 'assistant') {
         const content = cleanAssistantReply(extractPlainTextSegments(payload.content).join('\n\n'));
+        const isTransientAssistantMessage = sawTransientAssistantFailureAfterLastUser || isTransientAssistantFailure(payload);
         if (!content) {
-          if (isTransientAssistantFailure(payload)) {
+          if (isTransientAssistantMessage) {
             sawTransientAssistantFailureAfterLastUser = true;
           }
           return;
@@ -569,17 +580,13 @@ function createTranscriptProjector({
           timestamp,
           ...(tokenBadge ? { tokenBadge } : {}),
         });
-        lastAssistantConversationIndexAfterLastUser = conversation.length - 1;
-        sawTransientAssistantFailureAfterLastUser = false;
+        assistantConversationIndicesAfterLastUser.push(conversation.length - 1);
+        sawTransientAssistantFailureAfterLastUser = isTransientAssistantMessage;
       }
     });
 
-    if (
-      sawTransientAssistantFailureAfterLastUser
-      && lastAssistantConversationIndexAfterLastUser >= 0
-      && conversation[lastAssistantConversationIndexAfterLastUser]?.role === 'assistant'
-    ) {
-      conversation.splice(lastAssistantConversationIndexAfterLastUser, 1);
+    if (sawTransientAssistantFailureAfterLastUser) {
+      removeAssistantMessagesAfterLastUser();
     }
 
     return conversation.slice(-80);

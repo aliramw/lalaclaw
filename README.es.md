@@ -33,6 +33,11 @@ lalaclaw init
 
 Despues abre [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
+Notas:
+
+- La vista previa de archivos `doc`, `ppt` y `pptx` requiere LibreOffice
+- En macOS puedes ejecutar `lalaclaw doctor --fix` o `brew install --cask libreoffice`
+
 Para desarrollo local:
 
 ```bash
@@ -56,7 +61,7 @@ lalaclaw init
 Instalar una version concreta:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-4
+npm install -g lalaclaw@2026.3.17-5
 lalaclaw init
 ```
 
@@ -66,10 +71,11 @@ lalaclaw init
 - Usa `npm run lalaclaw:start` o `npm start` solo cuando dependas del build en `dist/`
 - La app detecta automaticamente un OpenClaw local cuando esta disponible
 - Para forzar el modo `mock`, usa `COMMANDCENTER_FORCE_MOCK=1`
+- `npm run doctor -- --fix` instala LibreOffice automaticamente en macOS cuando falta el soporte de vista previa basado en LibreOffice
 
 ## Versiones
 
 LalaClaw usa versionado de calendario compatible con npm.
 
 - Actualiza [CHANGELOG.md](./CHANGELOG.md) cada vez que cambie la version
-- Si hay varias releases el mismo dia, usa `YYYY.M.D-N`, por ejemplo `2026.3.17-4`
+- Si hay varias releases el mismo dia, usa `YYYY.M.D-N`, por ejemplo `2026.3.17-5`

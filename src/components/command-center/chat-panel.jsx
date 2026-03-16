@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, Copy, Paperclip, RotateCcw, Send, Square, X } from "lucide-react";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +25,8 @@ const userBubbleClassName = "ring-0";
 const assistantBubbleClassName = "";
 const artifactFocusScrollDurationMs = 320;
 const focusHighlightDurationMs = 1400;
+const messageOutlineViewportBottomGapPx = 20;
+const messageOutlineMinHeightPx = 96;
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -69,11 +72,98 @@ const chatFontSizeButtonClassNames = {
   large: "text-[16px]",
 };
 
+function unwrapAssistantEnvelope(content = "", role = "") {
+  const text = String(content || "");
+  if (role !== "assistant") {
+    return text;
+  }
+
+  const match = text.trim().match(/^<final>([\s\S]*?)<\/final>$/i);
+  if (!match) {
+    return text;
+  }
+
+  const unwrapped = match[1].trim();
+  return unwrapped || text;
+}
+
 function formatAttachmentSize(size = 0) {
   const numeric = Number(size) || 0;
   if (numeric < 1024) return `${numeric} B`;
   if (numeric < 1024 * 1024) return `${(numeric / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
   return `${(numeric / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
+}
+
+function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const cancelButtonRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    cancelButtonRef.current?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel?.();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onCancel, open]);
+
+  if (!open || typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="w-full max-w-[30rem] rounded-2xl border border-border/80 bg-card p-5 shadow-2xl sm:p-6"
+      >
+        <div className="space-y-2">
+          <h2 id={titleId} className="text-lg font-semibold leading-7 text-foreground">
+            {messages.title}
+          </h2>
+          <p id={descriptionId} className="text-sm leading-6 text-muted-foreground">
+            {messages.description}
+          </p>
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <Button
+            ref={cancelButtonRef}
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+          >
+            {messages.cancel}
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            onClick={onConfirm}
+          >
+            {messages.confirm}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 function isImageAttachment(attachment) {
@@ -521,13 +611,98 @@ function MessageMeta({
   );
 }
 
-function MessageOutline({ headingScopeId, items, onSelect }) {
+function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }) {
   const { messages } = useI18n();
+  const outlineRef = useRef(null);
+  const appliedMaxHeightRef = useRef(0);
+
+  useLayoutEffect(() => {
+    const outline = outlineRef.current;
+    if (!outline) {
+      appliedMaxHeightRef.current = 0;
+      return undefined;
+    }
+
+    const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
+    let frameId = 0;
+    let resizeObserver = null;
+    let activeViewport = null;
+    let attachRetryTimeoutId = 0;
+    let attachRetryCount = 0;
+
+    const cleanupListeners = () => {
+      activeViewport?.removeEventListener("scroll", scheduleOutlineMaxHeightUpdate);
+      activeViewport = null;
+      window.removeEventListener("resize", scheduleOutlineMaxHeightUpdate);
+      resizeObserver?.disconnect?.();
+      resizeObserver = null;
+    };
+
+    const updateOutlineMaxHeight = () => {
+      const latestViewport = messageViewportRef?.current;
+      const latestOutline = outlineRef.current;
+      if (!latestViewport || !latestOutline) {
+        return;
+      }
+
+      const viewportRect = latestViewport.getBoundingClientRect();
+      const outlineRect = latestOutline.getBoundingClientRect();
+      const availableHeight = Math.floor(viewportRect.bottom - outlineRect.top - messageOutlineViewportBottomGapPx);
+      const nextMaxHeight = Math.max(messageOutlineMinHeightPx, availableHeight);
+      if (nextMaxHeight === appliedMaxHeightRef.current) {
+        return;
+      }
+
+      latestOutline.style.maxHeight = `${nextMaxHeight}px`;
+      appliedMaxHeightRef.current = nextMaxHeight;
+    };
+
+    const scheduleOutlineMaxHeightUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(updateOutlineMaxHeight);
+    };
+
+    const attachViewportObservers = () => {
+      const latestViewport = messageViewportRef?.current;
+      const latestOutline = outlineRef.current;
+      if (!latestViewport || !latestOutline) {
+        if (attachRetryCount < 12) {
+          attachRetryCount += 1;
+          attachRetryTimeoutId = window.setTimeout(attachViewportObservers, 0);
+        }
+        return;
+      }
+
+      activeViewport = latestViewport;
+      updateOutlineMaxHeight();
+      latestViewport.addEventListener("scroll", scheduleOutlineMaxHeightUpdate, { passive: true });
+      window.addEventListener("resize", scheduleOutlineMaxHeightUpdate);
+
+      if (ResizeObserverCtor) {
+        resizeObserver = new ResizeObserverCtor(() => {
+          scheduleOutlineMaxHeightUpdate();
+        });
+
+        [latestViewport, latestViewport.firstElementChild, latestOutline.parentElement, latestOutline]
+          .filter(Boolean)
+          .forEach((node) => resizeObserver.observe(node));
+      }
+    };
+
+    attachViewportObservers();
+
+    return () => {
+      cleanupListeners();
+      window.clearTimeout(attachRetryTimeoutId);
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [items.length, messageViewportRef]);
 
   return (
-    <aside className="max-h-[calc(100vh-6rem)] w-40 shrink-0 self-start overflow-y-auto rounded-[5px] border border-border/70 bg-muted/20 p-2">
+    <aside ref={outlineRef} className="flex max-h-[calc(100vh-6rem)] w-40 shrink-0 self-start flex-col overflow-hidden rounded-[5px] border border-border/70 bg-muted/20 p-2">
       <div className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{messages.chat.outline}</div>
-      <div className="grid gap-px">
+      <div data-message-outline-scroll-area className="min-h-0 overflow-y-auto pr-1">
+        <div className="grid gap-px">
         {items.map((item) => (
           <button
             key={`${headingScopeId}-${item.id}`}
@@ -543,6 +718,7 @@ function MessageOutline({ headingScopeId, items, onSelect }) {
             <span className="line-clamp-2">{item.text}</span>
           </button>
         ))}
+        </div>
       </div>
     </aside>
   );
@@ -616,16 +792,20 @@ const MessageBubble = memo(function MessageBubble({
   const bubbleRef = useRef(null);
   const isUser = message.role === "user";
   const isPending = Boolean(message.pending);
+  const renderedContent = useMemo(
+    () => unwrapAssistantEnvelope(message.content, message.role),
+    [message.content, message.role],
+  );
   const supportsBubbleTopJump = !messageHasVisualMedia(message);
   const useCompactAssistantBubble = useMemo(
-    () => !isUser && !isPending && shouldUseCompactAssistantBubble(message.content),
-    [isPending, isUser, message.content],
+    () => !isUser && !isPending && shouldUseCompactAssistantBubble(renderedContent),
+    [isPending, isUser, renderedContent],
   );
-  const visualLineCount = estimateVisualLineCount(message.content);
+  const visualLineCount = estimateVisualLineCount(renderedContent);
   const compactMeta = visualLineCount <= 1;
   const outlineItems = useMemo(
-    () => (!isUser && !isPending && !isStreamingAssistant ? extractHeadingOutline(message.content) : []),
-    [isPending, isStreamingAssistant, isUser, message.content],
+    () => (!isUser && !isPending && !isStreamingAssistant ? extractHeadingOutline(renderedContent) : []),
+    [isPending, isStreamingAssistant, isUser, renderedContent],
   );
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
@@ -743,7 +923,7 @@ const MessageBubble = memo(function MessageBubble({
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect?.();
     };
-  }, [isPending, isUser, messageViewportRef, message.content, message.pending, message.timestamp, supportsBubbleTopJump, useCompactAssistantBubble]);
+  }, [isPending, isUser, messageViewportRef, message.pending, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
 
   if (isUser) {
     return (
@@ -816,17 +996,18 @@ const MessageBubble = memo(function MessageBubble({
               {bubbleTopJumpButton}
               <CardContent className={bubbleContentClassName}>
                 <MarkdownContent
-                  content={message.content}
+                  content={renderedContent}
                   files={files}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
+                  streaming={isStreamingAssistant}
                   onOpenFilePreview={handleOpenFilePreview}
                   onOpenImagePreview={handleOpenImagePreview}
                   className={fontSizeStyles.pendingMarkdown}
                 />
               </CardContent>
             </Card>
-            <MessageMeta align="right" content={message.content} formatTime={formatTime} pending compact textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
+            <MessageMeta align="right" content={renderedContent} formatTime={formatTime} pending compact textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
           </div>
         </div>
       </div>
@@ -860,10 +1041,11 @@ const MessageBubble = memo(function MessageBubble({
               >
                 <CardContent className={bubbleContentClassName}>
                 <MarkdownContent
-                  content={message.content}
+                  content={renderedContent}
                   files={files}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
+                  streaming={isStreamingAssistant}
                   onOpenFilePreview={handleOpenFilePreview}
                   onOpenImagePreview={handleOpenImagePreview}
                   className={fontSizeStyles.markdown}
@@ -874,19 +1056,24 @@ const MessageBubble = memo(function MessageBubble({
               <div data-message-outline-meta-stack className="sticky top-1 hidden w-40 shrink-0 self-start xl:flex xl:flex-col xl:gap-2">
                 <MessageMeta
                   align="left"
-                  content={message.content}
+                  content={renderedContent}
                   formatTime={formatTime}
                   onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
                   textClassName={fontSizeStyles.meta}
                   timestamp={message.timestamp}
                 />
-                <MessageOutline headingScopeId={headingScopeId} items={outlineItems} onSelect={handleSelectHeading} />
+                <MessageOutline
+                  headingScopeId={headingScopeId}
+                  items={outlineItems}
+                  onSelect={handleSelectHeading}
+                  messageViewportRef={messageViewportRef}
+                />
               </div>
             </div>
             <div className="xl:hidden">
               <MessageMeta
                 align="right"
-                content={message.content}
+                content={renderedContent}
                 formatTime={formatTime}
                 onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
                 sticky
@@ -926,10 +1113,11 @@ const MessageBubble = memo(function MessageBubble({
             >
               <CardContent className={bubbleContentClassName}>
                   <MarkdownContent
-                    content={message.content}
+                    content={renderedContent}
                     files={files}
                     headingScopeId={headingScopeId}
                     resolvedTheme={resolvedTheme}
+                    streaming={isStreamingAssistant}
                     onOpenFilePreview={handleOpenFilePreview}
                     onOpenImagePreview={handleOpenImagePreview}
                     className={fontSizeStyles.compactMarkdown}
@@ -939,7 +1127,7 @@ const MessageBubble = memo(function MessageBubble({
             </div>
             <MessageMeta
               align="right"
-              content={message.content}
+              content={renderedContent}
               formatTime={formatTime}
               onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
               compact={compactMeta}
@@ -977,10 +1165,11 @@ const MessageBubble = memo(function MessageBubble({
           >
             <CardContent className={bubbleContentClassName}>
               <MarkdownContent
-                content={message.content}
+                content={renderedContent}
                 files={files}
                 headingScopeId={headingScopeId}
                 resolvedTheme={resolvedTheme}
+                streaming={isStreamingAssistant}
                 onOpenFilePreview={handleOpenFilePreview}
                 onOpenImagePreview={handleOpenImagePreview}
                 className={fontSizeStyles.markdown}
@@ -990,7 +1179,7 @@ const MessageBubble = memo(function MessageBubble({
           </div>
           <MessageMeta
             align="right"
-            content={message.content}
+            content={renderedContent}
             formatTime={formatTime}
             onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
             sticky
@@ -1818,29 +2007,17 @@ export function ChatPanel({
     previousLatestMessageCardKeyRef.current = latestMessageCardKey;
     const previousLatestUserMessageKey = previousLatestUserMessageKeyRef.current;
     previousLatestUserMessageKeyRef.current = latestUserMessageKey;
-    const shouldPreserveManualViewport = manualScrollLockRef.current
-      || autoScrollSuppressedRef.current
-      || !wasNearBottomRef.current;
-
     if (latestUserMessageKey && latestUserMessageKey !== previousLatestUserMessageKey) {
-      if (shouldPreserveManualViewport) {
-        pinTopAllowedForTurnRef.current = false;
-      } else {
-        pinTopAllowedForTurnRef.current = true;
-        resumeAutomaticLatestReplyFollow("follow-bottom");
-      }
+      pinTopAllowedForTurnRef.current = true;
+      resumeAutomaticLatestReplyFollow("force-bottom");
     }
 
     if (!latestMessage || latestMessage.role !== "user" || latestMessageCardKey === previousLatestMessageCardKey) {
       return;
     }
 
-    if (shouldPreserveManualViewport) {
-      return;
-    }
-
     const viewport = messageViewportRef?.current;
-    resumeAutomaticLatestReplyFollow("follow-bottom");
+    resumeAutomaticLatestReplyFollow("force-bottom");
     if (viewport) {
       const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
       scrollViewport(viewport, top, "auto");
@@ -2019,7 +2196,7 @@ export function ChatPanel({
         if (manualScrollLockRef.current && programmaticScrollRef.current) {
           return;
         }
-        if (persistentManualScrollLockRef.current && !markManual) {
+        if (persistentManualScrollLockRef.current) {
           autoScrollSuppressedRef.current = true;
           scrollModeRef.current = "manual";
           return;
@@ -2040,7 +2217,7 @@ export function ChatPanel({
 
     const handleViewportScroll = () => updateWasNearBottom(pointerScrollIntentRef.current);
     const markManualTakeover = () => {
-      markUserScrollTakeover();
+      markUserScrollTakeover({ lockAutoFollow: true });
     };
     const handlePointerDown = () => {
       pointerScrollIntentRef.current = true;
@@ -2057,7 +2234,7 @@ export function ChatPanel({
     const handleAnchorClick = (event) => {
       const target = event.target;
       if (target?.closest?.('a[href^="#"]')) {
-        markManualTakeover();
+        markUserScrollTakeover({ lockAutoFollow: true });
       }
     };
     viewport.addEventListener("click", handleAnchorClick, { passive: true, capture: true });
@@ -2065,7 +2242,7 @@ export function ChatPanel({
       if (isEditableTarget(event.target) || !isManualScrollKey(event)) {
         return;
       }
-      markManualTakeover();
+      markUserScrollTakeover({ lockAutoFollow: true });
     };
     const doc = viewport.ownerDocument || document;
     window.addEventListener("keydown", handleKeyDown, { passive: true });
@@ -2113,6 +2290,7 @@ export function ChatPanel({
     if (scrollModeRef.current === "force-bottom") {
       const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
       scrollViewport(viewport, top, "auto");
+      scrollModeRef.current = "follow-bottom";
       wasNearBottomRef.current = true;
       setShowLatestReplyButton(false);
       return true;
@@ -2272,15 +2450,21 @@ export function ChatPanel({
   }, [animateViewportScroll, markUserScrollTakeover, messageViewportRef, queueFocusHighlight]);
 
   const handleResetWithConfirm = () => {
-    const confirmed = window.confirm(i18n.chat.resetConversationConfirm);
-    if (!confirmed) {
-      return;
-    }
-    onReset?.();
+    setShowResetDialog(true);
   };
+  const [showResetDialog, setShowResetDialog] = useState(false);
 
   return (
     <>
+      <ResetConversationDialog
+        open={showResetDialog}
+        messages={i18n.chat.resetConversationDialog}
+        onCancel={() => setShowResetDialog(false)}
+        onConfirm={() => {
+          setShowResetDialog(false);
+          onReset?.();
+        }}
+      />
       <div className={cn("grid h-full min-h-0", showTabsStrip ? "grid-rows-[auto_minmax(0,1fr)] gap-2" : "grid-rows-[minmax(0,1fr)] gap-0")}>
         {showTabsStrip ? (
           <ChatTabsStrip
@@ -2361,8 +2545,8 @@ export function ChatPanel({
               <ScrollArea
                 className="h-full"
                 viewportRef={messageViewportRef}
-                onWheelCapture={markUserScrollTakeover}
-                onTouchMoveCapture={markUserScrollTakeover}
+                onWheelCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
+                onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
               >
                 <div className="grid gap-2 px-3 pt-2 pb-6">
                   {messages.length

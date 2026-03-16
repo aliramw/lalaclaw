@@ -4,6 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel, ChatTabsStrip, shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
 function createSession(overrides = {}) {
   return {
@@ -50,6 +51,7 @@ describe("ChatPanel", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    window.localStorage.removeItem(localeStorageKey);
   });
 
   it("shows the bubble-top jump trigger for a tall assistant card scrolled past the top edge", () => {
@@ -87,7 +89,6 @@ describe("ChatPanel", () => {
     const onReset = vi.fn();
     const onSend = vi.fn();
     const onPromptChange = vi.fn();
-    vi.stubGlobal("confirm", vi.fn(() => true));
 
     render(
       <TooltipProvider>
@@ -114,11 +115,78 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "检查运行状态");
     await user.click(screen.getByLabelText("开启新会话"));
+    expect(screen.getByRole("alertdialog", { name: "开启新的会话？" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确定" }));
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(onPromptChange).toHaveBeenCalled();
     expect(onReset).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels resetting the conversation when the custom dialog is dismissed", async () => {
+    const onReset = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={onReset}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("开启新会话"));
+    expect(screen.getByRole("alertdialog", { name: "开启新的会话？" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(screen.queryByRole("alertdialog", { name: "开启新的会话？" })).not.toBeInTheDocument();
+    expect(onReset).not.toHaveBeenCalled();
+  });
+
+  it("localizes the reset dialog for japanese UI", async () => {
+    window.localStorage.setItem(localeStorageKey, "ja");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <ChatPanel
+            busy={false}
+            formatTime={() => "10:00:00"}
+            messageViewportRef={null}
+            messages={[]}
+            onChatFontSizeChange={() => {}}
+            onPromptChange={() => {}}
+            onPromptKeyDown={() => {}}
+            onReset={() => {}}
+            onSend={() => {}}
+            prompt=""
+            promptRef={null}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("新しいセッションを開始"));
+
+    expect(screen.getByRole("alertdialog", { name: "新しいセッションを開始しますか？" })).toBeInTheDocument();
+    expect(screen.getByText("会話履歴とコンテキストは消去されます。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "キャンセル" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "確認" })).toBeInTheDocument();
   });
 
   it("locks the composer and send button until OpenClaw is connected", () => {
@@ -780,12 +848,13 @@ describe("ChatPanel", () => {
   });
 
   it("places the timestamp above the outline for assistant messages that render an outline", () => {
+    const messageViewportRef = { current: null };
     const { container } = render(
       <TooltipProvider>
         <ChatPanel
           busy={false}
           formatTime={() => "10:00:00"}
-          messageViewportRef={null}
+          messageViewportRef={messageViewportRef}
           messages={[
             {
               role: "assistant",
@@ -809,7 +878,63 @@ describe("ChatPanel", () => {
     expect(metaStack).toBeTruthy();
     expect(metaStack).toContainElement(screen.getByText("大纲"));
     expect(metaStack.querySelector("time")).toHaveTextContent("10:00:00");
-    expect(metaStack.querySelector("aside")).toHaveClass("max-h-[calc(100vh-6rem)]", "overflow-y-auto");
+    expect(metaStack.querySelector("aside")).toHaveClass("max-h-[calc(100vh-6rem)]", "overflow-hidden");
+    expect(metaStack.querySelector("[data-message-outline-scroll-area]")).toHaveClass("overflow-y-auto");
+  });
+
+  it("keeps the outline bottom 20px above the conversation viewport bottom", async () => {
+    const messageViewportRef = { current: null };
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={messageViewportRef}
+          messages={[
+            {
+              role: "assistant",
+              content: "# 第一部分\n内容\n## 第二部分\n更多内容",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const aside = screen.getByText("大纲").closest("aside");
+    expect(aside).toBeTruthy();
+    expect(messageViewportRef.current).toBeTruthy();
+
+    Object.defineProperty(messageViewportRef.current, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 100, bottom: 540, left: 0, right: 0, width: 0, height: 440 }),
+    });
+    Object.defineProperty(aside, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 140, bottom: 260, left: 0, right: 0, width: 0, height: 120 }),
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() => {
+      expect(aside.style.maxHeight).toBe("380px");
+    });
   });
 
   it("does not render the outline card while the latest assistant message is still streaming", () => {
@@ -881,6 +1006,32 @@ describe("ChatPanel", () => {
     expect(screen.getByText("ops - 当前会话")).toBeInTheDocument();
     expect(screen.getByText("思考中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "停止" })).toBeEnabled();
+  });
+
+  it("unwraps assistant final envelope tags before rendering the message", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "assistant", content: "<final>Hey 奥尘！👋 今晚好~ 有什么需要帮忙的吗？</final>", timestamp: 2 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("Hey 奥尘！👋 今晚好~ 有什么需要帮忙的吗？")).toBeInTheDocument();
+    expect(screen.queryByText(/<final>/i)).not.toBeInTheDocument();
   });
 
   it("keeps the header in busy mode while an assistant reply is still streaming", () => {
@@ -2234,7 +2385,7 @@ describe("ChatPanel", () => {
     expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
   });
 
-  it("keeps the manual scroll position when a new user message is sent", async () => {
+  it("returns to the bottom when a new user message is sent", async () => {
     const viewportRef = { current: null };
 
     const { rerender } = render(
@@ -2292,11 +2443,11 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(viewport.scrollTo).not.toHaveBeenCalled();
-    expect(viewport.scrollTop).toBe(180);
+    expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 720, behavior: "auto" });
+    expect(viewport.scrollTop).toBe(720);
   });
 
-  it("does not let a thinking card reclaim auto-follow after the user manually scrolled away", async () => {
+  it("restores bottom-follow for the next turn's thinking card after manual takeover", async () => {
     const viewportRef = { current: null };
     vi.stubGlobal("requestAnimationFrame", (callback) => {
       callback();
@@ -2385,38 +2536,13 @@ describe("ChatPanel", () => {
       toJSON: () => ({}),
     });
 
-    expect(viewport.scrollTo).not.toHaveBeenCalled();
-    viewport.scrollHeight = 1040;
-
-    rerender(
-      <TooltipProvider>
-        <ChatPanel
-          busy={false}
-          formatTime={() => "10:00:00"}
-          messageViewportRef={viewportRef}
-          messages={[
-            { role: "assistant", content: "旧回复", timestamp: 1 },
-            { role: "user", content: "新问题", timestamp: 2 },
-            { id: "msg-assistant-stream", role: "assistant", content: "第一段\n第二段", timestamp: 3, streaming: true },
-          ]}
-          onPromptChange={() => {}}
-          onPromptKeyDown={() => {}}
-          onReset={() => {}}
-          onSend={() => {}}
-          prompt=""
-          promptRef={null}
-          session={createSession()}
-        />
-      </TooltipProvider>,
-    );
-
     await waitFor(() => {
-      expect(viewport.scrollTo).not.toHaveBeenCalled();
+      expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 720, behavior: "auto" });
     });
-    expect(viewport.scrollTop).toBe(180);
+    expect(viewport.scrollTop).toBe(720);
   });
 
-  it("hands control back to automatic follow once the user manually scrolls back to the bottom", async () => {
+  it("keeps manual takeover even after the user manually scrolls back to the bottom", async () => {
     const viewportRef = { current: null };
     vi.stubGlobal("requestAnimationFrame", (callback) => {
       callback();
@@ -2513,11 +2639,9 @@ describe("ChatPanel", () => {
     );
 
     await waitFor(() => {
-      expect(viewport.scrollTo).toHaveBeenCalled();
+      expect(viewport.scrollTo).not.toHaveBeenCalled();
     });
-    const [{ top, behavior }] = viewport.scrollTo.mock.calls.at(-1);
-    expect(behavior).toBe("auto");
-    expect(top).toBeGreaterThan(720);
+    expect(viewport.scrollTop).toBe(720);
   });
 
   it("does not re-enter the top-20% pin for the same turn after the user manually intervenes", async () => {
@@ -2636,11 +2760,200 @@ describe("ChatPanel", () => {
     });
 
     await waitFor(() => {
+      expect(viewport.scrollTo).not.toHaveBeenCalled();
+    });
+    expect(viewport.scrollTop).toBe(740);
+  });
+
+  it("starts a fresh bottom-follow cycle for a new user turn after the previous turn was manually interrupted", async () => {
+    const viewportRef = { current: null };
+    vi.stubGlobal("requestAnimationFrame", (callback) => {
+      callback();
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "上一轮问题", timestamp: 1 },
+            { id: "msg-assistant-stream-1", role: "assistant", content: "第一段", timestamp: 2, streaming: true },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 980 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 700 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+    });
+
+    let latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: 40,
+      left: 0,
+      right: 560,
+      bottom: 360,
+      width: 560,
+      height: 320,
+      x: 0,
+      y: 40,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.scroll(viewport);
+    fireEvent.wheel(viewport);
+    viewport.scrollTop = 420;
+    fireEvent.scroll(viewport);
+    viewport.scrollTo.mockClear();
+
+    viewport.scrollHeight = 1200;
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "上一轮问题", timestamp: 1 },
+            { id: "msg-assistant-stream-1", role: "assistant", content: "第一段\n第二段", timestamp: 2, streaming: true },
+            { role: "user", content: "新问题", timestamp: 3 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    await waitFor(() => {
+      expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 960, behavior: "auto" });
+    });
+
+    viewport.scrollTo.mockClear();
+    viewport.scrollHeight = 1400;
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "上一轮问题", timestamp: 1 },
+            { id: "msg-assistant-stream-1", role: "assistant", content: "第一段\n第二段", timestamp: 2 },
+            { role: "user", content: "新问题", timestamp: 3 },
+            { id: "msg-assistant-stream-2", role: "assistant", content: "第一段\n第二段\n第三段\n第四段", timestamp: 4, streaming: true },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: 40,
+      left: 0,
+      right: 560,
+      bottom: 360,
+      width: 560,
+      height: 320,
+      x: 0,
+      y: 40,
+      toJSON: () => ({}),
+    });
+
+    await waitFor(() => {
       expect(viewport.scrollTo).toHaveBeenCalled();
     });
     const [{ top, behavior }] = viewport.scrollTo.mock.calls.at(-1);
     expect(behavior).toBe("auto");
-    expect(top).toBe(800);
+    expect(top).toBe(1160);
+
+    viewport.scrollTo.mockClear();
+    viewport.scrollHeight = 1520;
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "上一轮问题", timestamp: 1 },
+            { id: "msg-assistant-stream-1", role: "assistant", content: "第一段\n第二段", timestamp: 2 },
+            { role: "user", content: "新问题", timestamp: 3 },
+            { id: "msg-assistant-stream-2", role: "assistant", content: "第一段\n第二段\n第三段\n第四段\n第五段\n第六段", timestamp: 4, streaming: true },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: 40,
+      left: 0,
+      right: 560,
+      bottom: 400,
+      width: 560,
+      height: 360,
+      x: 0,
+      y: 40,
+      toJSON: () => ({}),
+    });
+
+    await waitFor(() => {
+      expect(viewport.scrollTo).toHaveBeenCalled();
+    });
+    const [{ top: pinnedTop, behavior: pinnedBehavior }] = viewport.scrollTo.mock.calls.at(-1);
+    expect(pinnedBehavior).toBe("auto");
+    expect(pinnedTop).toBeGreaterThan(900);
+    expect(pinnedTop).toBeLessThan(1280);
   });
 
   it("keeps lightly compensating around the top pin after layout growth changes the card height", async () => {

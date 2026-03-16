@@ -21,6 +21,7 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleRuntime,
     handleSession,
     handleSessionUpdate,
+    handleWorkspaceTree,
     getStaticDir: resolveStaticDir,
     helpers: appHelpers,
   } = appContext;
@@ -50,6 +51,11 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if (req.method === 'GET' && url.pathname === '/api/file-preview/content') {
       handleFilePreviewContent(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/workspace-tree') {
+      handleWorkspaceTree(req, res);
       return;
     }
 

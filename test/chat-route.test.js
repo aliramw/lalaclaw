@@ -28,6 +28,8 @@ function createHandler(overrides = {}) {
       conversation: [],
     })),
     callOpenClawGateway: vi.fn(async () => ({})),
+    clearLocalSessionConversation: vi.fn(),
+    clearLocalSessionFileEntries: vi.fn(),
     clip: (value, length = 999) => String(value || "").slice(0, length),
     config: {
       mode: "mock",
@@ -44,6 +46,7 @@ function createHandler(overrides = {}) {
     normalizeChatMessage: vi.fn((message) => String(message?.content || "")),
     normalizeSessionUser: vi.fn((value) => String(value || "command-center")),
     parseFastCommand: vi.fn(() => null),
+    parseModelCommand: vi.fn(() => null),
     parseRequestBody: vi.fn(async () => ({})),
     parseSessionResetCommand: vi.fn(() => null),
     parseSlashCommandState: vi.fn(() => null),
@@ -76,9 +79,10 @@ describe("createChatHandler", () => {
     vi.restoreAllMocks();
   });
 
-  it("patches session model in openclaw mode and persists think mode from slash commands", async () => {
+  it("forwards native think commands to openclaw and mirrors the persisted think mode locally", async () => {
     const harness = createHandler({
       config: { mode: "openclaw", model: "gpt-5" },
+      getSessionPreferences: vi.fn(() => ({ agentId: "worker", fastMode: false, model: "openai/gpt-5-mini", thinkMode: "off" })),
       parseRequestBody: vi.fn(async () => ({
         sessionUser: "api-user",
         agentId: "worker",
@@ -98,6 +102,7 @@ describe("createChatHandler", () => {
       buildDashboardSnapshot: vi.fn(async () => ({
         session: {
           model: "openai/gpt-5-mini",
+          thinkMode: "high",
         },
         conversation: [],
       })),
@@ -109,11 +114,14 @@ describe("createChatHandler", () => {
       key: "agent:worker:api-user",
       model: "openai/gpt-5-mini",
     });
-    expect(harness.callOpenClawGateway).toHaveBeenNthCalledWith(2, "sessions.patch", {
-      key: "agent:worker:api-user",
-      thinkingLevel: "high",
+    expect(harness.callOpenClawGateway).toHaveBeenCalledTimes(1);
+    expect(harness.setSessionPreferences).toHaveBeenNthCalledWith(1, "api-user", {
+      agentId: "worker",
+      fastMode: false,
+      model: "openai/gpt-5-mini",
+      thinkMode: "off",
     });
-    expect(harness.setSessionPreferences).toHaveBeenCalledWith("api-user", {
+    expect(harness.setSessionPreferences).toHaveBeenNthCalledWith(2, "api-user", {
       agentId: "worker",
       fastMode: false,
       model: "openai/gpt-5-mini",
@@ -129,7 +137,7 @@ describe("createChatHandler", () => {
       ],
       false,
       "api-user",
-      { commandBody: "/think high", thinkMode: "high" },
+      { commandBody: "/think high", thinkMode: "off" },
     );
     expect(harness.responseRecorder.calls[0]).toMatchObject({
       statusCode: 200,
@@ -204,6 +212,152 @@ describe("createChatHandler", () => {
       commandHandled: "fast",
       outputText: "已开启 fast。",
     });
+  });
+
+  it("handles model status and list commands locally in mock mode", async () => {
+    const harness = createHandler({
+      config: { mode: "mock", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        messages: [{ role: "user", content: "/models" }],
+      })),
+      parseModelCommand: vi.fn(() => ({ kind: "model", action: "list" })),
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {
+          model: "openai/gpt-5",
+          selectedModel: "openai/gpt-5",
+          availableModels: ["openai/gpt-5", "openai/gpt-5-mini"],
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.dispatchOpenClaw).not.toHaveBeenCalled();
+    expect(harness.setSessionPreferences).not.toHaveBeenCalled();
+    expect(harness.appendLocalSessionConversation).toHaveBeenCalledWith("api-user", [
+      { role: "user", content: "/models", timestamp: Date.now() - 1 },
+      {
+        role: "assistant",
+        content: "当前模型：openai/gpt-5。\n可用模型：\n- openai/gpt-5 (当前)\n- openai/gpt-5-mini",
+        timestamp: Date.now(),
+      },
+    ]);
+    expect(harness.responseRecorder.calls[0].payload).toMatchObject({
+      commandHandled: "models",
+      model: "openai/gpt-5",
+    });
+  });
+
+  it("forwards native /model commands to openclaw and mirrors the selected model locally", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      getSessionPreferences: vi.fn(() => ({ fastMode: false, thinkMode: "minimal" })),
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "/model mini" }],
+      })),
+      parseModelCommand: vi.fn(() => ({ kind: "model", action: "set", value: "mini" })),
+      resolveSessionModel: vi.fn(() => "openai/gpt-5"),
+      getDefaultModelForAgent: vi.fn(() => "openai/gpt-5"),
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {
+          model: "openai/gpt-5-mini",
+          availableModels: ["openai/gpt-5", "openai/gpt-5-mini"],
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.callOpenClawGateway).not.toHaveBeenCalled();
+    expect(harness.dispatchOpenClaw).toHaveBeenCalledWith(
+      [{ role: "user", content: "/model mini" }],
+      false,
+      "api-user",
+      { commandBody: "/model mini", thinkMode: "off" },
+    );
+    expect(harness.setSessionPreferences).toHaveBeenCalledWith("api-user", {
+      fastMode: false,
+      thinkMode: "minimal",
+      model: "openai/gpt-5-mini",
+    });
+    expect(harness.responseRecorder.calls[0].payload).toMatchObject({
+      model: "openai/gpt-5-mini",
+      session: {
+        selectedModel: "openai/gpt-5-mini",
+      },
+    });
+  });
+
+  it("forwards bang commands to openclaw through commandBody", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "!poll" }],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.dispatchOpenClaw).toHaveBeenCalledWith(
+      [{ role: "user", content: "!poll" }],
+      false,
+      "api-user",
+      { commandBody: "!poll", thinkMode: "off" },
+    );
+  });
+
+  it("forwards inline slash directives to openclaw without local prepatches", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "继续处理这个任务 /status /queue debounce:2s" }],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.callOpenClawGateway).toHaveBeenCalledTimes(1);
+    expect(harness.callOpenClawGateway).toHaveBeenCalledWith("sessions.patch", {
+      key: "agent:worker:api-user",
+      model: "default-worker",
+    });
+    expect(harness.dispatchOpenClaw).toHaveBeenCalledWith(
+      [{ role: "user", content: "继续处理这个任务 /status /queue debounce:2s" }],
+      false,
+      "api-user",
+      { commandBody: "继续处理这个任务 /status /queue debounce:2s", thinkMode: "off" },
+    );
+  });
+
+  it("clears local session caches before appending the native /reset follow-up turn", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseSessionResetCommand: vi.fn(() => ({ kind: "reset", tail: "" })),
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "/reset" }],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.clearLocalSessionConversation).toHaveBeenCalledWith("api-user");
+    expect(harness.clearLocalSessionFileEntries).toHaveBeenCalledWith("api-user");
   });
 
   it("persists a normal chat turn to the local session conversation before building the snapshot", async () => {

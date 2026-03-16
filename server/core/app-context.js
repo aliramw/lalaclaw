@@ -28,6 +28,7 @@ const {
 } = require('../formatters/chat-format');
 const {
   parseFastCommand,
+  parseModelCommand,
   parseSessionResetCommand,
   parseSlashCommandState,
 } = require('../formatters/chat-commands');
@@ -40,6 +41,7 @@ const { createFileManagerHandler } = require('../routes/file-manager');
 const { createFilePreviewHandlers } = require('../routes/file-preview');
 const { createRuntimeHandler } = require('../routes/runtime');
 const { createSessionHandlers } = require('../routes/session');
+const { createWorkspaceTreeHandler } = require('../routes/workspace-tree');
 const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require('./session-store');
 const { createTranscriptProjector } = require('../services/transcript');
 const {
@@ -111,6 +113,8 @@ function createAppContext() {
   const {
     appendLocalSessionFileEntries,
     appendLocalSessionConversation,
+    clearLocalSessionConversation,
+    clearLocalSessionFileEntries,
     clearSessionPreferences,
     getLocalSessionFileEntries,
     getLocalSessionConversation,
@@ -259,6 +263,8 @@ function createAppContext() {
     appendLocalSessionConversation,
     buildDashboardSnapshot,
     callOpenClawGateway,
+    clearLocalSessionConversation,
+    clearLocalSessionFileEntries,
     clip,
     config,
     delay,
@@ -273,6 +279,7 @@ function createAppContext() {
     normalizeChatMessage,
     normalizeSessionUser,
     parseFastCommand,
+    parseModelCommand,
     parseRequestBody,
     parseSessionResetCommand,
     parseSlashCommandState: parseChatSlashCommandState,
@@ -313,6 +320,13 @@ function createAppContext() {
     sendJson,
   });
 
+  const handleWorkspaceTree = createWorkspaceTreeHandler({
+    normalizeSessionUser,
+    resolveAgentWorkspace: getAgentWorkspace,
+    resolveSessionAgentId,
+    sendJson,
+  });
+
   const { handleSession, handleSessionUpdate } = createSessionHandlers({
     buildDashboardSnapshot,
     callOpenClawGateway,
@@ -350,7 +364,10 @@ function createAppContext() {
     handleRuntime,
     handleSession,
     handleSessionUpdate,
+    handleWorkspaceTree,
     helpers: {
+      clearLocalSessionConversation,
+      clearLocalSessionFileEntries,
       clearSessionPreferences,
       cleanAssistantReply,
       cleanUserMessage,

@@ -62,27 +62,45 @@ function createServerHarness({ chatDependencyOverrides = {} } = {}) {
     };
   });
   const parseFastCommand = vi.fn((content) => {
-    const match = /^\/fast(?:\s+(status|on|off))?\s*$/i.exec(String(content || "").trim());
+    const match = /^\/fast(?:\s*:?\s*(status|on|off))?\s*$/i.exec(String(content || "").trim());
     return match ? { action: String(match[1] || "status").toLowerCase() } : null;
+  });
+  const parseModelCommand = vi.fn((content) => {
+    const trimmed = String(content || "").trim();
+    if (/^\/models\s*$/i.test(trimmed)) {
+      return { kind: "model", action: "list" };
+    }
+    const match = /^\/model(?:\s*:?\s*([\s\S]+))?\s*$/i.exec(trimmed);
+    if (!match) {
+      return null;
+    }
+    const tail = String(match[1] || "").trim();
+    if (!tail || /^status$/i.test(tail)) {
+      return { kind: "model", action: "status" };
+    }
+    if (/^(list|ls)$/i.test(tail)) {
+      return { kind: "model", action: "list" };
+    }
+    return { kind: "model", action: "set", value: tail };
   });
   const parseSessionResetCommand = vi.fn((content) => {
     const trimmed = String(content || "").trim();
-    if (/^\/new(?:\s+.*)?$/i.test(trimmed)) {
-      return { kind: "new", tail: trimmed.slice(4).trim() };
+    if (/^\/new(?:\s*:?\s*.*)?$/i.test(trimmed)) {
+      return { kind: "new", tail: trimmed.slice(4).trim().replace(/^:\s*/, "") };
     }
-    if (/^\/reset(?:\s+.*)?$/i.test(trimmed)) {
-      return { kind: "reset", tail: trimmed.slice(6).trim() };
+    if (/^\/reset(?:\s*:?\s*.*)?$/i.test(trimmed)) {
+      return { kind: "reset", tail: trimmed.slice(6).trim().replace(/^:\s*/, "") };
     }
     return null;
   });
   const parseSlashCommandState = vi.fn((content) => {
     const trimmed = String(content || "").trim();
-    const thinkMatch = /^\/think\s+(\S+)\s*$/i.exec(trimmed);
+    const thinkMatch = /^\/(?:think|thinking|t)\s*:?\s*(\S+)\s*$/i.exec(trimmed);
     if (thinkMatch) {
       return { kind: "thinkMode", value: normalizeThinkModeValue(thinkMatch[1]) || "off" };
     }
 
-    const fastMatch = /^\/fast\s+(on|off)\s*$/i.exec(trimmed);
+    const fastMatch = /^\/fast\s*:?\s*(on|off)\s*$/i.exec(trimmed);
     if (fastMatch) {
       return { kind: "fastMode", value: fastMatch[1].toLowerCase() === "on" };
     }
@@ -95,6 +113,8 @@ function createServerHarness({ chatDependencyOverrides = {} } = {}) {
     appendLocalSessionConversation: vi.fn(),
     buildDashboardSnapshot,
     callOpenClawGateway: vi.fn(async () => ({})),
+    clearLocalSessionConversation: vi.fn(),
+    clearLocalSessionFileEntries: vi.fn(),
     clip: (value, length = 999) => String(value || "").slice(0, length),
     config: {
       mode: "openclaw",
@@ -111,6 +131,7 @@ function createServerHarness({ chatDependencyOverrides = {} } = {}) {
     normalizeChatMessage: vi.fn((message) => String(message?.content || "")),
     normalizeSessionUser,
     parseFastCommand,
+    parseModelCommand,
     parseRequestBody,
     parseSessionResetCommand,
     parseSlashCommandState,
@@ -197,7 +218,7 @@ describe("server HTTP integration", () => {
     }
   });
 
-  it("applies think mode before dispatching an openclaw chat turn over HTTP", async () => {
+  it("forwards native think commands over HTTP without prepatching the openclaw session", async () => {
     const harness = createServerHarness();
     harness.chatDependencies.parseSlashCommandState.mockReturnValue({ kind: "thinkMode", value: "high" });
     server = createAppServer(harness.appContext);
@@ -223,15 +244,12 @@ describe("server HTTP integration", () => {
       key: "agent:worker:api-user",
       model: "openai/gpt-5-mini",
     });
-    expect(harness.chatDependencies.callOpenClawGateway).toHaveBeenNthCalledWith(2, "sessions.patch", {
-      key: "agent:worker:api-user",
-      thinkingLevel: "high",
-    });
+    expect(harness.chatDependencies.callOpenClawGateway).toHaveBeenCalledTimes(1);
     expect(harness.chatDependencies.dispatchOpenClaw).toHaveBeenCalledWith(
       [{ role: "user", content: "/think high" }],
       false,
       "api-user",
-      { commandBody: "/think high", thinkMode: "high" },
+      { commandBody: "/think high", thinkMode: "off" },
     );
     expect(payload.ok).toBe(true);
     expect(payload.metadata.summary).toBe("summary");
@@ -378,7 +396,7 @@ describe("server HTTP integration", () => {
       [{ role: "user", content: "继续整理项目结构" }],
       true,
       "api-user",
-      { commandBody: "", thinkMode: "high" },
+      { commandBody: "继续整理项目结构", thinkMode: "high" },
     );
     expect(harness.chatDependencies.callOpenClawGateway).not.toHaveBeenCalled();
     expect(chatPayload.session).toMatchObject({
@@ -389,7 +407,7 @@ describe("server HTTP integration", () => {
     });
   });
 
-  it("carries session preferences into a new HTTP session created by /new", async () => {
+  it("forwards native /new commands over HTTP and clears local caches before appending the follow-up turn", async () => {
     const harness = createServerHarness();
     vi.spyOn(Date, "now").mockReturnValue(1700000000000);
     server = createAppServer(harness.appContext);
@@ -420,37 +438,14 @@ describe("server HTTP integration", () => {
     const resetPayload = await readJson(resetResponse);
 
     expect(resetResponse.ok).toBe(true);
-    expect(resetPayload.resetSessionUser).toBe("api-user-1700000000000");
-    expect(harness.readSessionPreferences("api-user-1700000000000")).toEqual({
-      agentId: "worker",
-      model: "openai/gpt-5-mini",
-      fastMode: false,
-      thinkMode: "medium",
-    });
-
-    const followUpResponse = await fetch(`${baseUrl}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionUser: resetPayload.resetSessionUser,
-        fastMode: false,
-        stream: false,
-        messages: [{ role: "user", content: "继续" }],
-      }),
-    });
-    const followUpPayload = await readJson(followUpResponse);
-
-    expect(followUpResponse.ok).toBe(true);
-    expect(harness.chatDependencies.dispatchOpenClaw).toHaveBeenLastCalledWith(
-      [{ role: "user", content: "继续" }],
+    expect(harness.chatDependencies.dispatchOpenClaw).toHaveBeenCalledWith(
+      [{ role: "user", content: "/new 继续拆分测试" }],
       false,
-      "api-user-1700000000000",
-      { commandBody: "", thinkMode: "medium" },
+      "api-user",
+      { commandBody: "/new 继续拆分测试", thinkMode: "medium" },
     );
-    expect(followUpPayload.session).toMatchObject({
-      agentId: "worker",
-      selectedModel: "openai/gpt-5-mini",
-      thinkMode: "medium",
-    });
+    expect(harness.chatDependencies.clearLocalSessionConversation).toHaveBeenCalledWith("api-user");
+    expect(harness.chatDependencies.clearLocalSessionFileEntries).toHaveBeenCalledWith("api-user");
+    expect(resetPayload.session.sessionUser).toBe("api-user");
   });
 });

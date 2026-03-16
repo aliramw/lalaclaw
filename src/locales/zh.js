@@ -171,6 +171,12 @@ const zh = {
     resetConversationHotkey: "开启新会话 (Cmd + N)",
     resetConversationTooltipHint: "开启新会话后，当前会话的内容将重置",
     resetConversationConfirm: "是否要开启新的会话，对话历史和上下文将清空",
+    resetConversationDialog: {
+      title: "开启新的会话？",
+      description: "对话历史和上下文将被清空。",
+      cancel: "取消",
+      confirm: "确定",
+    },
     waitingFirstPrompt: "等待第一条指令",
     conversationWillAppear: "这里会显示你和 Agent 的对话过程。",
     thinkingPlaceholder: "正在思考…",
@@ -235,7 +241,11 @@ const zh = {
       sessionSpawn: "Session Spawn",
       childAgent: "子 Agent",
     },
-    filesHint: "这里会列出本次会话 Agent 创建、修改与查看所有文件，方便你检阅",
+    filesHint: "这里会分组列出本次会话涉及文件与当前 workspace 文件，方便你检阅",
+    fileCollections: {
+      session: "本次会话文件",
+      workspace: "workspace 文件",
+    },
     tabs: {
       timeline: "运行记录",
       files: "文件",
@@ -251,7 +261,32 @@ const zh = {
     },
     fileMenu: {
       label: "文件菜单",
+      preview: "预览",
+      refresh: "刷新",
       copyPath: "复制路径",
+    },
+    spreadsheet: {
+      sheet: "工作表",
+      empty: "这个表格当前没有可显示的数据。",
+      truncated: (rows, columns) => `当前只显示前 ${rows} 行和 ${columns} 列。`,
+    },
+    workspaceTree: {
+      loading: "正在加载 workspace 文件…",
+      loadingFolder: "正在加载目录内容…",
+      loadFailed: "加载 workspace 文件失败，请重试。",
+      emptyFolder: "此目录为空。",
+    },
+    workspaceFilter: {
+      label: "过滤 workspace 文件",
+      placeholder: "过滤，如 .md / test*",
+      clear: "清空 workspace 过滤",
+      empty: (pattern) => `没有匹配“${pattern}”的 workspace 文件。`,
+    },
+    sessionFilter: {
+      label: "过滤本次会话文件",
+      placeholder: "过滤，如 .md / test*",
+      clear: "清空本次会话文件过滤",
+      empty: (pattern) => `没有匹配“${pattern}”的本次会话文件。`,
     },
     timelineHint: "查看 Agent 执行记录的明细",
     artifactsHint: "这里列出本次会话的回复摘要，点击可以直接定位到会话位置",
@@ -259,6 +294,7 @@ const zh = {
     artifactJumpTo: "定位到",
     empty: {
       files: "当前会话中检测到的文件会显示在这里。",
+      workspaceFiles: "当前 workspace 中检测到的文件会显示在这里。",
       timeline: "每次任务执行后，这里会按时间线聚合展示工具链路。",
       artifacts: "助手的回复摘要会显示在这里。",
       environment: "这里会列出 Gateway 与当前会话的环境信息，便于排查与检阅。",
@@ -290,6 +326,15 @@ const zh = {
       terminal: "终端",
       browser: "浏览器",
     },
+    previewErrors: {
+      loadFailed: "文件预览失败。",
+      officeFailed: "Office 文档预览失败，请稍后重试。",
+      officeRequiresLibreOffice: "安装 LibreOffice 后即可预览 DOC、PPT 和 PPTX 文件。",
+      officeRequiresLibreOfficeWithCommand: (command) => `安装 LibreOffice 后即可预览 DOC、PPT 和 PPTX 文件。可打开终端执行：${command}`,
+      docxFailed: "DOCX 预览失败，请稍后重试。",
+      heicUnavailable: "当前系统暂不支持 HEIC 预览。",
+      heicFailed: "HEIC 预览失败，请稍后重试。",
+    },
     previewActions: {
       maximize: "铺满预览窗",
       restore: "还原预览窗",
@@ -301,6 +346,8 @@ const zh = {
       imageRotateLeft: "向左旋转",
       imageRotateRight: "向右旋转",
       imageZoomIn: "放大图片",
+      previewFontSizeOptionTooltip: (label) => `预览字号：${label}`,
+      renderingDocx: "正在渲染 DOCX 预览…",
       frontMatter: "Front Matter",
       fileManagers: {
         finder: "访达",
@@ -314,6 +361,11 @@ const zh = {
     copiedCode: "代码已复制",
     copyCodeShort: "复制",
     copiedCodeShort: "已复制",
+    previewMermaid: "预览 Mermaid 图",
+    mermaidDiagramAlt: "Mermaid 图",
+    languageLabels: {
+      markdown: "Markdown",
+    },
   },
 };
 

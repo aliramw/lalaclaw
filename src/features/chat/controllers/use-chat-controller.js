@@ -15,7 +15,7 @@ function isNdjsonStreamResponse(response) {
 }
 
 function shouldSuppressPendingPlaceholder(entry) {
-  return /^\s*\//.test(String(entry?.content || ""));
+  return /^\s*(\/|!)/.test(String(entry?.content || ""));
 }
 
 function isAbortError(error) {

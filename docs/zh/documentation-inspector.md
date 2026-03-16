@@ -22,18 +22,26 @@
 
 ## Files
 
-`Files` 标签会按动作分组：
+`Files` 标签现在分成两个区域：
 
-- Created
-- Modified
-- Viewed
+- `本次会话文件`：继续按 `Created`、`Modified`、`Viewed` 分组展示当前会话涉及的文件
+- `workspace 文件`：参考 VS Code 的目录树，从当前 workspace 根目录开始浏览
+
+说明：
+
+- workspace 目录树按层懒加载，不会在首屏递归扫描整个 workspace
+- 两个区域在折叠时也会保留数量徽标
+- 当没有会话文件时，`本次会话文件` 整块会自动隐藏
+- 会话文件和 workspace 文件都支持普通文本与简单 glob 过滤
+- 如果目录链只有单一路径，会像 VS Code 的 compact folders 那样合并显示
 
 交互：
 
 - 点击文件打开预览
 - 右键文件复制绝对路径
+- 右键 workspace 目录可只刷新该目录下一层内容
 
-文件列表不仅来自 OpenClaw transcript，也会合并本地附件和乐观状态中的文件线索。
+文件数据不仅来自 OpenClaw transcript，也会合并本地附件、乐观状态中的文件线索，以及当前 workspace 根目录快照。
 
 ## Summaries
 
@@ -87,6 +95,11 @@
 
 - 文本、JSON 和 Markdown 语法高亮
 - Markdown front matter 单独渲染
+- 已完成 Markdown 回复中的 Mermaid 图渲染，并可通过统一图片预览入口查看
+- `csv`、`xls`、`xlsx`、`xlsm` 表格预览
+- 在预览层中直接渲染 DOCX
+- 当系统装有 LibreOffice 时，把 DOC、PPT、PPTX 转成可预览的 PDF
+- 在支持的平台上把 HEIC、HEIF 转成图片预览
 - 图片缩放、旋转和重置
 - 视频、音频和 PDF 内嵌预览
 - 在 VS Code 中打开

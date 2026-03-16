@@ -78,6 +78,14 @@ function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolv
     sessionPreferences.delete(normalizeSessionUser(sessionUser));
   }
 
+  function clearLocalSessionConversation(sessionUser = 'command-center') {
+    localSessionConversation.delete(normalizeSessionUser(sessionUser));
+  }
+
+  function clearLocalSessionFileEntries(sessionUser = 'command-center') {
+    localSessionFileEntries.delete(normalizeSessionUser(sessionUser));
+  }
+
   function getLocalSessionConversation(sessionUser = 'command-center') {
     return localSessionConversation.get(normalizeSessionUser(sessionUser)) || [];
   }
@@ -160,6 +168,8 @@ function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolv
   return {
     appendLocalSessionFileEntries,
     appendLocalSessionConversation,
+    clearLocalSessionConversation,
+    clearLocalSessionFileEntries,
     clearSessionPreferences,
     getLocalSessionFileEntries,
     getLocalSessionConversation,

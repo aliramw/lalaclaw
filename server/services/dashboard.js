@@ -1,6 +1,10 @@
+const fs = require('node:fs');
+const path = require('node:path');
+
 const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
+const DEFAULT_WORKSPACE_FILE_LIMIT = 200;
 
 function normalizeConversationContent(content = '') {
   return String(content || '')
@@ -13,6 +17,7 @@ function collapseDuplicateConversationTurns(entries = []) {
   let lastUserFingerprint = '';
   let lastUserTimestamp = 0;
   let lastAssistantTimestamp = 0;
+  let lastAssistantFingerprint = '';
   let assistantSeenForCurrentTurn = false;
   let pendingReplayBeforeAssistant = false;
   let suppressAssistantReplay = false;
@@ -57,16 +62,34 @@ function collapseDuplicateConversationTurns(entries = []) {
       lastUserFingerprint = fingerprint;
       lastUserTimestamp = timestamp;
       assistantSeenForCurrentTurn = false;
+      lastAssistantFingerprint = '';
       pendingReplayBeforeAssistant = false;
       suppressAssistantReplay = false;
       continue;
     }
 
     if (entry.role === 'assistant') {
+      const fingerprint = normalizeConversationContent(entry.content);
+      const timestamp = Number(entry.timestamp || 0);
+      const isImmediateDuplicateAssistant =
+        assistantSeenForCurrentTurn
+        && !pendingReplayBeforeAssistant
+        && !suppressAssistantReplay
+        && Boolean(fingerprint)
+        && fingerprint === lastAssistantFingerprint
+        && timestamp > 0
+        && lastAssistantTimestamp > 0
+        && timestamp - lastAssistantTimestamp <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS;
+
+      if (isImmediateDuplicateAssistant) {
+        continue;
+      }
+
       if (pendingReplayBeforeAssistant) {
         collapsed.push(entry);
         assistantSeenForCurrentTurn = true;
-        lastAssistantTimestamp = Number(entry.timestamp || 0);
+        lastAssistantTimestamp = timestamp;
+        lastAssistantFingerprint = fingerprint;
         pendingReplayBeforeAssistant = false;
         suppressAssistantReplay = true;
         continue;
@@ -75,13 +98,15 @@ function collapseDuplicateConversationTurns(entries = []) {
       if (suppressAssistantReplay) {
         suppressAssistantReplay = false;
         assistantSeenForCurrentTurn = true;
-        lastAssistantTimestamp = Number(entry.timestamp || 0);
+        lastAssistantTimestamp = timestamp;
+        lastAssistantFingerprint = fingerprint;
         continue;
       }
 
       collapsed.push(entry);
       assistantSeenForCurrentTurn = true;
-      lastAssistantTimestamp = Number(entry.timestamp || 0);
+      lastAssistantTimestamp = timestamp;
+      lastAssistantFingerprint = fingerprint;
       continue;
     }
 
@@ -131,6 +156,89 @@ function serializeEnvironmentValue(value) {
   }
 
   return String(value);
+}
+
+function directoryHasVisibleChildren(targetPath) {
+  try {
+    const entries = fs.readdirSync(targetPath, { withFileTypes: true });
+    return entries.some((entry) => entry?.name && !entry.name.startsWith('.') && entry.name !== 'node_modules' && entry.name !== '.git');
+  } catch {
+    return false;
+  }
+}
+
+function defaultListWorkspaceFiles(rootDir, {
+  limit = DEFAULT_WORKSPACE_FILE_LIMIT,
+} = {}) {
+  const normalizedRoot = String(rootDir || '').trim();
+  if (!normalizedRoot || !path.isAbsolute(normalizedRoot)) {
+    return [];
+  }
+
+  try {
+    return fs
+      .readdirSync(normalizedRoot, { withFileTypes: true })
+      .filter((entry) => entry?.name && !entry.name.startsWith('.') && entry.name !== 'node_modules' && entry.name !== '.git')
+      .sort((left, right) => {
+        if (left.isDirectory() !== right.isDirectory()) {
+          return left.isDirectory() ? -1 : 1;
+        }
+        return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' });
+      })
+      .slice(0, limit)
+      .map((entry) => {
+        const fullPath = path.join(normalizedRoot, entry.name);
+        return {
+          name: entry.name,
+          path: fullPath,
+          fullPath,
+          kind: entry.isDirectory() ? '目录' : '文件',
+          hasChildren: entry.isDirectory() ? directoryHasVisibleChildren(fullPath) : false,
+          source: 'workspace',
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+function defaultCountWorkspaceFiles(rootDir) {
+  const normalizedRoot = String(rootDir || '').trim();
+  if (!normalizedRoot || !path.isAbsolute(normalizedRoot)) {
+    return 0;
+  }
+
+  let total = 0;
+  const pendingDirectories = [normalizedRoot];
+
+  while (pendingDirectories.length) {
+    const currentDirectory = pendingDirectories.pop();
+    let entries = [];
+
+    try {
+      entries = fs.readdirSync(currentDirectory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry?.name || entry.name.startsWith('.') || entry.name === '.git' || entry.name === 'node_modules') {
+        continue;
+      }
+
+      const fullPath = path.join(currentDirectory, entry.name);
+      if (entry.isDirectory()) {
+        pendingDirectories.push(fullPath);
+        continue;
+      }
+
+      if (entry.isFile()) {
+        total += 1;
+      }
+    }
+  }
+
+  return total;
 }
 
 function flattenEnvironmentObject(value, prefix = '', items = []) {
@@ -199,7 +307,9 @@ function createDashboardService({
   getLocalSessionConversation,
   getTranscriptPath,
   invokeOpenClawTool,
+  countWorkspaceFiles = defaultCountWorkspaceFiles,
   listDirectoryPreview,
+  listWorkspaceFiles = defaultListWorkspaceFiles,
   normalizeSessionUser,
   findLatestSessionForAgent,
   parseSessionStatusText,
@@ -249,15 +359,17 @@ function createDashboardService({
     return config.localConfig;
   }
 
-  function buildWorkspacePeek() {
+  function buildWorkspacePeek(workspaceRoot = config.workspaceRoot) {
     const projectEntries = listDirectoryPreview(PROJECT_ROOT);
-    const agentEntries = listDirectoryPreview(config.workspaceRoot);
+    const agentEntries = listDirectoryPreview(workspaceRoot);
 
     return {
       summary: '当前项目目录与 OpenClaw 主工作区的只读预览。',
+      entries: listWorkspaceFiles(workspaceRoot),
+      totalCount: countWorkspaceFiles(workspaceRoot),
       items: [
         { label: '当前项目', value: PROJECT_ROOT },
-        { label: 'Agent 工作区', value: config.workspaceRoot },
+        { label: 'Agent 工作区', value: workspaceRoot },
         { label: '项目内容', value: projectEntries.map((item) => `${item.kind === 'dir' ? '目录' : '文件'} ${item.name}`).join(' · ') || '暂无内容' },
         { label: '工作区内容', value: agentEntries.map((item) => `${item.kind === 'dir' ? '目录' : '文件'} ${item.name}`).join(' · ') || '暂无内容' },
       ],
@@ -428,7 +540,7 @@ function createDashboardService({
         { id: agentId, label: agentId, state: 'active', detail: `主 Agent · ${clip(model, 42)}`, updatedAt: now, sessionCount: 1 },
       ],
       peeks: {
-        workspace: buildWorkspacePeek(),
+        workspace: buildWorkspacePeek(workspaceRoot),
         terminal: buildTerminalPeek(),
         browser: { summary: 'mock 模式未接入浏览器控制。', items: [{ label: '状态', value: '未连接 OpenClaw' }] },
         environment: buildEnvironmentPeek({
@@ -573,7 +685,7 @@ function createDashboardService({
       snapshots: collectSnapshots(entries, sessionRecord),
       agents: buildAgentGraph(),
       peeks: {
-        workspace: buildWorkspacePeek(),
+        workspace: buildWorkspacePeek(workspaceRoot),
         terminal: buildTerminalPeek(),
         browser: browserPeek,
         environment: buildEnvironmentPeek({

@@ -6,6 +6,7 @@ This folder contains a reusable `launchd` template and a helper script for runni
 
 - `ai.lalaclaw.app.plist.example`: template launch agent plist
 - `generate-launchd-plist.sh`: generates a ready-to-load plist for your local checkout
+- `install-libreoffice.sh`: installs LibreOffice with Homebrew for LibreOffice-backed preview support
 
 ## Generate The Plist
 
@@ -17,6 +18,13 @@ npm run doctor
 npm run lalaclaw:init
 npm run build
 ./deploy/macos/generate-launchd-plist.sh
+```
+
+If LibreOffice-backed preview support is missing, you can install LibreOffice with either of these:
+
+```bash
+lalaclaw doctor --fix
+./deploy/macos/install-libreoffice.sh
 ```
 
 By default this writes:

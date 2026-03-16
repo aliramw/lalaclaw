@@ -10,6 +10,7 @@
 ## 亮点
 
 - 基于 React + Vite 的 command center 界面，包含对话、时间线、检查器、主题、语言和附件工作流
+- 参考 VS Code 的文件探索体验，内置会话/工作区双树视图、预览操作和更丰富的文档媒体预览
 - 内置中文、English、日本語、Français、Español 和 Português 界面支持
 - Node.js 后端既可以连接本地 OpenClaw 网关，也可以连接远端 OpenClaw 网关
 - 前后端结构模块化，配有针对性的 hook 和模块级测试
@@ -69,6 +70,7 @@ lalaclaw init
 - 如果你只想写配置、不自动后台启动，可以使用 `lalaclaw init --no-background`
 - 在 Linux 上，或者你关闭了自动后台启动时，再继续执行 `lalaclaw doctor` 和 `lalaclaw start`
 - 在 macOS 上可以用 `lalaclaw status` 查看后台服务状态，用 `lalaclaw restart` 重启它，用 `lalaclaw stop` 停止它
+- 预览 `doc`、`ppt`、`pptx` 文件需要 LibreOffice。在 macOS 上可执行 `lalaclaw doctor --fix`，或者运行 `brew install --cask libreoffice`
 
 ### 从 GitHub 安装
 
@@ -120,10 +122,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-4`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-5`：
 
 ```bash
-npm install -g lalaclaw@2026.3.17-4
+npm install -g lalaclaw@2026.3.17-5
 lalaclaw init
 ```
 
@@ -139,12 +141,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-4`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-5`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-4
+git checkout 2026.3.17-5
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -209,6 +211,7 @@ tail -f ./logs/lalaclaw-launchd.err.log
 - `npm run dev:backend` 仅启动后端服务
 - `npm run doctor` 检查 Node.js、OpenClaw 探测、端口和本地配置
   对 `remote-gateway` 模式，它还会探测配置的网关 URL，并发送最小 API 请求验证模型和 Agent 配置
+- `npm run doctor -- --fix` 会在 macOS 上自动安装缺失的 LibreOffice，以启用依赖 LibreOffice 的文档预览
 - `npm run doctor -- --json` 以机器可读的 JSON 形式输出同样的诊断结果，包含 `summary.status` 和 `summary.exitCode`
 - `npm run lalaclaw:init` 写入本地 `.env.local` 引导配置
 - `npm run lalaclaw:init -- --write-example` 把 [`.env.local.example`](./.env.local.example) 复制到目标配置路径，不会进入交互提示
@@ -248,7 +251,7 @@ tail -f ./logs/lalaclaw-launchd.err.log
 LalaClaw 使用 npm 兼容的日历版本格式。
 
 - 每次项目版本变化时更新 [CHANGELOG.md](./CHANGELOG.md)
-- 使用 npm 兼容的日历版本格式。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-4`，不要使用 `YYYY.M.D.N`
+- 使用 npm 兼容的日历版本格式。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-5`，不要使用 `YYYY.M.D.N`
 - 破坏性变更应在 release notes 和迁移文档里明确标注
 - 当前仓库目标 Node.js 版本是 [`.nvmrc`](./.nvmrc) 中的 `22`
 

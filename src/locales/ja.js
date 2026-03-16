@@ -171,6 +171,12 @@ const ja = {
     resetConversationHotkey: "新しいセッションを開始 (Cmd + N)",
     resetConversationTooltipHint: "新しいセッションを開始すると、現在の会話内容はリセットされます。",
     resetConversationConfirm: "新しいセッションを開始しますか？ 会話履歴とコンテキストは消去されます。",
+    resetConversationDialog: {
+      title: "新しいセッションを開始しますか？",
+      description: "会話履歴とコンテキストは消去されます。",
+      cancel: "キャンセル",
+      confirm: "確認",
+    },
     waitingFirstPrompt: "最初の指示を待機中",
     conversationWillAppear: "ここに Agent との会話が表示されます。",
     thinkingPlaceholder: "考えています…",
@@ -236,6 +242,10 @@ const ja = {
       childAgent: "子 Agent",
     },
     filesHint: "ここには、このセッションで Agent が作成・変更・閲覧したすべてのファイルが一覧表示され、確認しやすくなります。",
+    fileCollections: {
+      session: "このセッションのファイル",
+      workspace: "workspace ファイル",
+    },
     tabs: {
       timeline: "実行記録",
       files: "ファイル",
@@ -251,7 +261,32 @@ const ja = {
     },
     fileMenu: {
       label: "ファイルメニュー",
+      preview: "プレビュー",
+      refresh: "更新",
       copyPath: "パスをコピー",
+    },
+    workspaceFilter: {
+      label: "workspace ファイルを絞り込む",
+      placeholder: "例: .md / test*",
+      clear: "workspace フィルターをクリア",
+      empty: (pattern) => `「${pattern}」に一致する workspace ファイルはありません。`,
+    },
+    sessionFilter: {
+      label: "このセッションのファイルを絞り込む",
+      placeholder: "例: .md / test*",
+      clear: "セッションのフィルターをクリア",
+      empty: (pattern) => `「${pattern}」に一致するセッションファイルはありません。`,
+    },
+    spreadsheet: {
+      sheet: "Sheet",
+      empty: "This spreadsheet is empty.",
+      truncated: (rows, columns) => `Showing the first ${rows} rows and ${columns} columns.`,
+    },
+    workspaceTree: {
+      loading: "workspace ファイルを読み込み中…",
+      loadingFolder: "フォルダ内容を読み込み中…",
+      loadFailed: "workspace ファイルの読み込みに失敗しました。再試行してください。",
+      emptyFolder: "このフォルダは空です。",
     },
     timelineHint: "Agent の実行記録の詳細を確認できます。",
     artifactsHint: "このセッションの返信要約をここに表示します。クリックすると会話内の位置へ直接移動できます。",
@@ -259,6 +294,7 @@ const ja = {
     artifactJumpTo: "移動",
     empty: {
       files: "現在のセッションで検出されたファイルがここに表示されます。",
+      workspaceFiles: "現在の workspace で検出されたファイルがここに表示されます。",
       timeline: "各実行はここでタイムラインとしてまとめて表示されます。",
       artifacts: "Assistant の返信要約がここに表示されます。",
       environment: "Gateway と現在のセッション環境情報をここに一覧表示します。",
@@ -290,6 +326,15 @@ const ja = {
       terminal: "Terminal",
       browser: "Browser",
     },
+    previewErrors: {
+      loadFailed: "File preview failed.",
+      officeFailed: "Office document preview failed. Please try again.",
+      officeRequiresLibreOffice: "DOC、PPT、PPTX ファイルをプレビューするには LibreOffice が必要です。",
+      officeRequiresLibreOfficeWithCommand: (command) => `DOC、PPT、PPTX ファイルをプレビューするには LibreOffice が必要です。ターミナルを開いて次を実行してください: ${command}`,
+      docxFailed: "DOCX プレビューに失敗しました。もう一度お試しください。",
+      heicUnavailable: "HEIC preview is unavailable on this system.",
+      heicFailed: "HEIC preview failed. Please try again.",
+    },
     previewActions: {
       maximize: "プレビューを拡大",
       restore: "プレビューを戻す",
@@ -301,6 +346,8 @@ const ja = {
       imageRotateLeft: "左に回転",
       imageRotateRight: "右に回転",
       imageZoomIn: "画像を拡大",
+      previewFontSizeOptionTooltip: (label) => `プレビュー文字サイズ: ${label}`,
+      renderingDocx: "DOCX プレビューを描画中…",
       frontMatter: "Front Matter",
       fileManagers: {
         finder: "Finder",
@@ -314,6 +361,9 @@ const ja = {
     copiedCode: "コードをコピーしました",
     copyCodeShort: "コピー",
     copiedCodeShort: "コピー済み",
+    languageLabels: {
+      markdown: "Markdown",
+    },
   },
 };
 

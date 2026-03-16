@@ -17,6 +17,13 @@ describe("LalaClaw CLI helpers", () => {
     expect(parsed.options.configFile).toBe(path.resolve(process.cwd(), "./tmp/dev.env"));
   });
 
+  it("parses doctor fix mode", () => {
+    const parsed = cli.parseArgs(["doctor", "--fix"]);
+
+    expect(parsed.command).toBe("doctor");
+    expect(parsed.options.fix).toBe(true);
+  });
+
   it("parses status and stop commands without extra options", () => {
     expect(cli.parseArgs(["status"]).command).toBe("status");
     expect(cli.parseArgs(["stop"]).command).toBe("stop");
@@ -683,6 +690,9 @@ describe("LalaClaw CLI helpers", () => {
         workspaceRoot: "/Users/example/.openclaw/workspace",
       },
       openclawBinary: "/usr/local/bin/openclaw",
+      sofficeBinary: "/opt/homebrew/bin/soffice",
+      libreOfficeInstallCommand: "brew install --cask libreoffice",
+      libreOfficeFixSupported: true,
       frontendPortFree: true,
       backendPortFree: false,
       config: {
@@ -722,6 +732,12 @@ describe("LalaClaw CLI helpers", () => {
       localOpenClaw: {
         exists: true,
         tokenDetected: true,
+      },
+      presentationPreview: {
+        available: true,
+        binaryPath: "/opt/homebrew/bin/soffice",
+        installCommand: "brew install --cask libreoffice",
+        fixSupported: true,
       },
       ports: {
         backend: {
@@ -769,6 +785,9 @@ describe("LalaClaw CLI helpers", () => {
         workspaceRoot: "",
       },
       openclawBinary: "",
+      sofficeBinary: "",
+      libreOfficeInstallCommand: "brew install --cask libreoffice",
+      libreOfficeFixSupported: true,
       frontendPortFree: true,
       backendPortFree: true,
       config: {
@@ -801,9 +820,10 @@ describe("LalaClaw CLI helpers", () => {
     expect(report.summary).toMatchObject({
       status: "error",
       exitCode: 1,
-      warningCount: 0,
+      warningCount: 1,
       errorCount: 1,
     });
+    expect(report.summary.warnings[0]).toContain("LibreOffice-backed preview is unavailable");
     expect(report.summary.errors[0]).toContain("Remote runtime validation failed");
   });
 });

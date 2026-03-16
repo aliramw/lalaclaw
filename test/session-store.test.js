@@ -109,4 +109,23 @@ describe("session-store", () => {
     ]);
     expect(store.getLocalSessionFileEntries("demo")).toEqual(merged);
   });
+
+  it("clears local conversation and file caches independently from preferences", () => {
+    const store = createSessionStore({
+      getDefaultAgentId: () => "main",
+      getDefaultModelForAgent: () => "gpt-5",
+      resolveCanonicalModelId: (value) => value,
+    });
+
+    store.setSessionPreferences("demo", { fastMode: true, thinkMode: "high" });
+    store.appendLocalSessionConversation("demo", [{ role: "assistant", content: "hello", timestamp: 1 }]);
+    store.appendLocalSessionFileEntries("demo", [{ role: "user", content: "touch notes.md", timestamp: 2, attachments: [] }]);
+
+    store.clearLocalSessionConversation("demo");
+    store.clearLocalSessionFileEntries("demo");
+
+    expect(store.getLocalSessionConversation("demo")).toEqual([]);
+    expect(store.getLocalSessionFileEntries("demo")).toEqual([]);
+    expect(store.getSessionPreferences("demo")).toEqual({ fastMode: true, thinkMode: "high" });
+  });
 });

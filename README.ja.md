@@ -33,6 +33,11 @@ lalaclaw init
 
 その後 [http://127.0.0.1:3000](http://127.0.0.1:3000) を開きます。
 
+補足:
+
+- `doc`、`ppt`、`pptx` ファイルのプレビューには LibreOffice が必要です
+- macOS では `lalaclaw doctor --fix` または `brew install --cask libreoffice` を実行できます
+
 ローカルで開発したい場合:
 
 ```bash
@@ -56,7 +61,7 @@ lalaclaw init
 特定バージョンへ切り替え:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-4
+npm install -g lalaclaw@2026.3.17-5
 lalaclaw init
 ```
 
@@ -66,10 +71,11 @@ lalaclaw init
 - ビルド済み `dist/` を使う確認だけ `npm run lalaclaw:start` または `npm start` を使います
 - 既定ではローカル OpenClaw を自動検出します
 - UI を安定して確認したい場合は `COMMANDCENTER_FORCE_MOCK=1` で `mock` モードを強制できます
+- `npm run doctor -- --fix` は macOS で不足している LibreOffice を自動インストールし、LibreOffice 依存のプレビューを有効にします
 
 ## バージョン
 
 LalaClaw は npm 互換のカレンダーバージョニングを使います。
 
 - バージョン変更時は [CHANGELOG.md](./CHANGELOG.md) を更新します
-- 同日の複数リリースは `YYYY.M.D-N` 形式を使います。例: `2026.3.17-4`
+- 同日の複数リリースは `YYYY.M.D-N` 形式を使います。例: `2026.3.17-5`

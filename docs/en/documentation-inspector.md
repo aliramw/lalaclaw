@@ -22,18 +22,26 @@ It is the best place to answer:
 
 ## Files
 
-The `Files` tab groups activity by action:
+The `Files` tab now has two separate surfaces:
 
-- Created
-- Modified
-- Viewed
+- `Session Files`: files touched in the current conversation, still grouped by `Created`, `Modified`, and `Viewed`
+- `Workspace Files`: a VS Code-style tree rooted at the current workspace
+
+Notable behavior:
+
+- The workspace tree loads one directory level at a time instead of scanning the whole workspace up front
+- Both sections keep their count badges even while collapsed
+- Empty `Session Files` sections stay hidden
+- Session and workspace filters support plain-text matching and simple glob patterns
+- Single-directory chains are compacted into one row, similar to VS Code compact folders
 
 Interactions:
 
 - Click a file to open preview
 - Right-click a file to copy the absolute path
+- Right-click a workspace directory to refresh just that directory level
 
-The file list is not only built from OpenClaw transcripts. It also merges locally tracked file hints from attachments and optimistic session state.
+The file data is not only built from OpenClaw transcripts. It also merges locally tracked file hints from attachments, optimistic session state, and the current workspace root snapshot.
 
 ## Summaries
 
@@ -87,6 +95,11 @@ When you open preview from the file list, markdown links, or image thumbnails, t
 
 - Syntax-highlighted text, JSON, and Markdown
 - Separate rendering of Markdown front matter
+- Mermaid diagram rendering in completed markdown replies, with diagram preview through the shared image-preview flow
+- Spreadsheet tables for `csv`, `xls`, `xlsx`, and `xlsm`
+- DOCX rendering inside the preview overlay
+- DOC, PPT, and PPTX conversion to previewable PDF output when LibreOffice is available
+- HEIC and HEIF image conversion on supported systems
 - Image preview with zoom, rotation, and reset
 - Embedded video, audio, and PDF preview
 - Open in VS Code

@@ -46,6 +46,12 @@ function createService(overrides = {}) {
         ? [{ name: "src", kind: "dir" }]
         : [{ name: "agent.log", kind: "file" }],
     ),
+    countWorkspaceFiles: vi.fn((root) => (root === "/workspace/agents/main" ? 12 : 5)),
+    listWorkspaceFiles: vi.fn((root) =>
+      root === "/workspace/agents/main"
+        ? [{ path: "/workspace/agents/main/src/App.jsx", fullPath: "/workspace/agents/main/src/App.jsx", kind: "文件" }]
+        : [{ path: `${root}/agent.log`, fullPath: `${root}/agent.log`, kind: "文件" }],
+    ),
     normalizeSessionUser: vi.fn((value) => String(value || "")),
     parseSessionStatusText: vi.fn(() => null),
     readJsonLines: vi.fn(() => []),
@@ -100,6 +106,10 @@ describe("createDashboardService", () => {
     });
     expect(snapshot.conversation).toEqual(localConversation);
     expect(snapshot.peeks.workspace.items[2].value).toContain("目录 src");
+    expect(snapshot.peeks.workspace.entries).toEqual([
+      { path: "/workspace/openclaw/agent.log", fullPath: "/workspace/openclaw/agent.log", kind: "文件" },
+    ]);
+    expect(snapshot.peeks.workspace.totalCount).toBe(5);
     expect(snapshot.peeks.terminal.items[2].value).toContain("line-1");
   });
 
@@ -209,6 +219,10 @@ describe("createDashboardService", () => {
       summary: "浏览器状态暂时不可用。",
       items: [{ label: "状态", value: "读取失败" }],
     });
+    expect(snapshot.peeks.workspace.entries).toEqual([
+      { path: "/workspace/agents/main/src/App.jsx", fullPath: "/workspace/agents/main/src/App.jsx", kind: "文件" },
+    ]);
+    expect(snapshot.peeks.workspace.totalCount).toBe(12);
     expect(snapshot.taskTimeline).toEqual([{ id: "run-1" }]);
     expect(snapshot.taskRelationships).toEqual([{ id: "rel-1", type: "child_agent", sourceAgentId: "main", targetAgentId: "expert" }]);
     expect(snapshot.agents).toEqual([{ id: "main" }]);

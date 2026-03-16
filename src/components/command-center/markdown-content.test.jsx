@@ -1,7 +1,18 @@
+import { useState } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
+
+const mermaidInitializeMock = vi.fn();
+const mermaidRenderMock = vi.fn();
+
+vi.mock("mermaid", () => ({
+  default: {
+    initialize: mermaidInitializeMock,
+    render: mermaidRenderMock,
+  },
+}));
 
 describe("MarkdownContent", () => {
   it("renders headings, links, and inline code", async () => {
@@ -27,6 +38,147 @@ describe("MarkdownContent", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "代码已复制" })).toBeInTheDocument();
+    });
+  });
+
+  it("renders md fenced code block titles as Markdown", async () => {
+    const { container } = render(<MarkdownContent content={"```md\n# Title\n```"} />);
+
+    expect(await screen.findByText("Markdown")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector("pre pre")?.textContent).toBe("# Title");
+    });
+  });
+
+  it("renders mermaid fenced blocks as diagrams", async () => {
+    mermaidInitializeMock.mockReset();
+    mermaidRenderMock.mockReset();
+    mermaidRenderMock.mockResolvedValue({
+      svg: "<svg><text>Flow</text></svg>",
+      bindFunctions: vi.fn(),
+    });
+
+    const { container } = render(<MarkdownContent content={"```mermaid\ngraph TD\nA-->B\n```"} />);
+
+    await waitFor(() => {
+      expect(mermaidInitializeMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "default",
+        }),
+      );
+    });
+    expect(mermaidRenderMock).toHaveBeenCalledWith(expect.stringMatching(/^cc-mermaid-/), "graph TD\nA-->B");
+    expect(container.querySelector("[data-mermaid-diagram] svg")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "复制代码" })).toBeInTheDocument();
+  });
+
+  it("stabilizes Mermaid tooltip nodes so they do not create page-level overflow", async () => {
+    mermaidInitializeMock.mockReset();
+    mermaidRenderMock.mockReset();
+    mermaidRenderMock.mockResolvedValue({
+      svg: "<svg><text>Tooltip</text></svg>",
+      bindFunctions: () => {
+        const tooltip = document.createElement("div");
+        tooltip.className = "mermaidTooltip";
+        tooltip.style.opacity = "0";
+        tooltip.style.position = "absolute";
+        document.body.appendChild(tooltip);
+      },
+    });
+
+    render(<MarkdownContent content={"```mermaid\ngraph TD\nA-->B\n```"} />);
+
+    await waitFor(() => {
+      const tooltip = document.querySelector(".mermaidTooltip");
+      expect(tooltip).toBeTruthy();
+      expect(tooltip.style.position).toBe("fixed");
+      expect(tooltip.style.top).toBe("0px");
+      expect(tooltip.style.left).toBe("0px");
+    });
+  });
+
+  it("keeps mermaid fenced blocks as plain code while content is still streaming", async () => {
+    mermaidInitializeMock.mockReset();
+    mermaidRenderMock.mockReset();
+
+    const { container } = render(<MarkdownContent streaming content={"```mermaid\ngraph TD\nA-->"} />);
+
+    await waitFor(() => {
+      expect(container.querySelector("pre pre")?.textContent).toContain("graph TD");
+      expect(container.querySelector("pre pre")?.textContent).toContain("A-->");
+    });
+    expect(mermaidInitializeMock).not.toHaveBeenCalled();
+    expect(mermaidRenderMock).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-mermaid-diagram]")).toBeNull();
+  });
+
+  it("keeps rendered mermaid diagrams stable across unrelated parent rerenders", async () => {
+    mermaidInitializeMock.mockReset();
+    mermaidRenderMock.mockReset();
+    mermaidRenderMock.mockResolvedValue({
+      svg: "<svg><text>Stable</text></svg>",
+      bindFunctions: vi.fn(),
+    });
+
+    function Harness() {
+      const [count, setCount] = useState(0);
+
+      return (
+        <div>
+          <button type="button" onClick={() => setCount((value) => value + 1)}>
+            rerender
+          </button>
+          <span>{count}</span>
+          <MarkdownContent content={"```mermaid\ngraph TD\nA-->B\n```"} />
+        </div>
+      );
+    }
+
+    const user = userEvent.setup();
+    const { container } = render(<Harness />);
+
+    await waitFor(() => {
+      expect(container.querySelector("[data-mermaid-diagram] svg")).toBeTruthy();
+    });
+
+    const initialSvgNode = container.querySelector("[data-mermaid-diagram] svg");
+    expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "rerender" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("1")).toBeInTheDocument();
+    });
+
+    expect(container.querySelector("[data-mermaid-diagram] svg")).toBe(initialSvgNode);
+    expect(mermaidRenderMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens mermaid diagrams in the shared image preview flow", async () => {
+    mermaidInitializeMock.mockReset();
+    mermaidRenderMock.mockReset();
+    mermaidRenderMock.mockResolvedValue({
+      svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>Preview</text></svg>",
+      bindFunctions: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    const onOpenImagePreview = vi.fn();
+
+    render(
+      <MarkdownContent
+        content={"```mermaid\ngraph TD\nA-->B\n```"}
+        onOpenImagePreview={onOpenImagePreview}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "预览 Mermaid 图" }));
+
+    expect(onOpenImagePreview).toHaveBeenCalledWith({
+      src: expect.stringMatching(/^data:image\/svg\+xml;charset=utf-8,/),
+      alt: "Mermaid 图",
     });
   });
 
@@ -143,6 +295,43 @@ describe("MarkdownContent", () => {
       behavior: "smooth",
       block: "start",
       inline: "nearest",
+    });
+  });
+
+  it("scrolls the nearest chat viewport for scoped anchor links inside a scroll area", async () => {
+    const user = userEvent.setup();
+    const scrollTo = vi.fn();
+    const rect = (top, height = 24) => ({
+      top,
+      bottom: top + height,
+      left: 0,
+      right: 0,
+      width: 320,
+      height,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    });
+
+    const { container } = render(
+      <div data-radix-scroll-area-viewport="" style={{ overflowY: "auto", maxHeight: 120 }}>
+        <MarkdownContent headingScopeId="message-1" content={`[跳到尾声](#尾声)\n\n${Array.from({ length: 10 }, (_, index) => `段落 ${index + 1}`).join("\n\n")}\n\n## 尾声`} />
+      </div>,
+    );
+
+    const viewport = container.querySelector("[data-radix-scroll-area-viewport]");
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 120 });
+    viewport.scrollTo = scrollTo;
+    viewport.getBoundingClientRect = () => rect(0, 120);
+
+    const heading = await screen.findByRole("heading", { name: "尾声" });
+    heading.getBoundingClientRect = () => rect(420);
+
+    await user.click(await screen.findByRole("link", { name: "跳到尾声" }));
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 408,
+      behavior: "smooth",
     });
   });
 

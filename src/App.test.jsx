@@ -1110,6 +1110,7 @@ describe("App", () => {
     expect(await screen.findByText("这是待清空的回复。")).toBeInTheDocument();
 
     await user.click(screen.getByLabelText("开启新会话"));
+    await user.click(await screen.findByRole("button", { name: "确定" }));
 
     await waitFor(() => {
       expect(screen.queryByText("需要被重置")).not.toBeInTheDocument();
@@ -1837,6 +1838,7 @@ describe("App", () => {
     expect(await screen.findByText("已记录。")).toBeInTheDocument();
 
     await user.click(screen.getByLabelText("开启新会话"));
+    await user.click(await screen.findByRole("button", { name: "确定" }));
     await waitFor(() => {
       expect(screen.queryByText("旧会话消息")).not.toBeInTheDocument();
     });

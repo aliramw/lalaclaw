@@ -80,6 +80,14 @@ Modes pris en charge :
 - `xhigh`
 - `adaptive`
 
+### `/model [id]` et `/models`
+
+- `/model`
+- `/model status`
+- `/model <id>`
+- `/model list`
+- `/models`
+
 ### `/new [prompt]` et `/reset [prompt]`
 
 - Créent un nouveau `sessionUser`

@@ -1,4 +1,4 @@
-import { Children, useEffect, useMemo, useState } from "react";
+import { Children, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
@@ -14,6 +14,43 @@ const codeTheme = themes.dracula;
 const homePrefix = "/Users/marila";
 const trackedFileLinkButtonClassName =
   "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
+let mermaidLibraryPromise = null;
+
+async function loadMermaid() {
+  if (!mermaidLibraryPromise) {
+    mermaidLibraryPromise = import("mermaid").then((module) => module.default || module);
+  }
+
+  return mermaidLibraryPromise;
+}
+
+function stabilizeMermaidTooltips() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.querySelectorAll(".mermaidTooltip").forEach((node) => {
+    if (!(node instanceof HTMLElement)) {
+      return;
+    }
+
+    // Mermaid appends a global absolute tooltip node to <body>, which can add page-level overflow.
+    node.style.position = "fixed";
+
+    if (node.style.opacity === "0" && !node.style.top && !node.style.left) {
+      node.style.top = "0px";
+      node.style.left = "0px";
+    }
+  });
+}
+
+function encodeSvgDataUrl(svg = "") {
+  if (!svg) {
+    return "";
+  }
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
 
 function getInlineCodeClassName(interactive = false) {
   return cn(
@@ -273,6 +310,29 @@ function resolveScopedHashTarget(href = "", headingScopeId = "message") {
   return slug ? `${headingScopeId}-${slug}` : "";
 }
 
+function findScrollableContainer(element) {
+  let current = element?.parentElement || null;
+
+  while (current) {
+    if (current.hasAttribute("data-radix-scroll-area-viewport")) {
+      return current;
+    }
+
+    if (typeof window !== "undefined") {
+      const computedStyle = window.getComputedStyle(current);
+      const canScrollY = /(auto|scroll)/.test(computedStyle.overflowY || "")
+        && current.scrollHeight > current.clientHeight;
+      if (canScrollY) {
+        return current;
+      }
+    }
+
+    current = current.parentElement;
+  }
+
+  return null;
+}
+
 function flattenChildrenText(children) {
   return Children.toArray(children)
     .map((child) => {
@@ -324,6 +384,17 @@ function LinkRenderer({ href, children, files, headingScopeId, onOpenFilePreview
           return;
         }
         event.preventDefault();
+        const scrollContainer = findScrollableContainer(element);
+        if (scrollContainer && typeof scrollContainer.scrollTo === "function") {
+          const elementRect = element.getBoundingClientRect();
+          const containerRect = scrollContainer.getBoundingClientRect();
+          const targetTop = scrollContainer.scrollTop + (elementRect.top - containerRect.top) - 12;
+          scrollContainer.scrollTo({
+            top: Math.max(targetTop, 0),
+            behavior: "smooth",
+          });
+          return;
+        }
         element.scrollIntoView({
           behavior: "smooth",
           block: "start",
@@ -369,7 +440,7 @@ async function copyTextToClipboard(text = "") {
   }
 }
 
-function CopyButton({ code }) {
+function CopyButton({ code, className = "" }) {
   const { messages } = useI18n();
   const [copied, setCopied] = useState(false);
 
@@ -395,7 +466,10 @@ function CopyButton({ code }) {
         event.stopPropagation();
       }}
       onClick={handleCopy}
-      className="relative z-10 inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded border border-white/10 bg-white/5 px-1.5 text-[9px] font-medium text-zinc-300 transition hover:border-white/15 hover:bg-white/10"
+      className={cn(
+        "relative z-10 inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded border border-white/10 bg-white/5 px-1.5 text-[9px] font-medium text-zinc-300 transition hover:border-white/15 hover:bg-white/10",
+        className,
+      )}
       aria-label={copied ? messages.markdown.copiedCode : messages.markdown.copyCode}
     >
       {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
@@ -405,11 +479,14 @@ function CopyButton({ code }) {
 }
 
 function CodeBlock({ code, language, scrollAnchorId = "" }) {
+  const { messages } = useI18n();
   const normalizedLanguage = String(language || "text").toLowerCase();
-  const languageLabel = normalizedLanguage
-    .split("-")
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join("-");
+  const aliasedLanguage = normalizedLanguage === "md" ? "markdown" : normalizedLanguage;
+  const languageLabel = messages.markdown.languageLabels?.[aliasedLanguage]
+    || aliasedLanguage
+      .split("-")
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join("-");
 
   return (
     <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 overflow-hidden rounded-[5px] border border-zinc-700 bg-zinc-900">
@@ -440,8 +517,145 @@ function CodeBlock({ code, language, scrollAnchorId = "" }) {
   );
 }
 
-function CodeRenderer({ className, children, files, onOpenFilePreview, scrollAnchorId = "", ...props }) {
+const MermaidBlock = memo(function MermaidBlock({
+  code,
+  resolvedTheme = "light",
+  scrollAnchorId = "",
+  onOpenImagePreview,
+}) {
+  const { messages } = useI18n();
+  const [svg, setSvg] = useState("");
+  const [failed, setFailed] = useState(false);
+  const containerRef = useRef(null);
+  const instanceId = useId();
+  const isDarkTheme = resolvedTheme === "dark";
+  const frameClassName = isDarkTheme
+    ? "border-zinc-700 bg-zinc-900/80"
+    : "border-zinc-200 bg-zinc-50/85";
+  const headerClassName = isDarkTheme
+    ? "border-white/10 bg-zinc-800/90 text-zinc-100"
+    : "border-zinc-200 bg-zinc-100/90 text-zinc-700";
+  const diagramBodyClassName = isDarkTheme
+    ? "bg-zinc-950/30"
+    : "bg-white/70";
+  const copyButtonClassName = isDarkTheme
+    ? ""
+    : "border-transparent bg-transparent text-zinc-600 hover:border-transparent hover:bg-zinc-200/60 hover:text-zinc-900";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderDiagram = async () => {
+      try {
+        const mermaid = await loadMermaid();
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: resolvedTheme === "dark" ? "dark" : "default",
+        });
+        const renderId = `cc-mermaid-${instanceId.replace(/[:]/g, "")}`;
+        const { svg: nextSvg, bindFunctions } = await mermaid.render(renderId, code);
+
+        if (cancelled) {
+          return;
+        }
+
+        setSvg(nextSvg);
+        setFailed(false);
+        stabilizeMermaidTooltips();
+
+        window.requestAnimationFrame(() => {
+          if (cancelled) {
+            return;
+          }
+          bindFunctions?.(containerRef.current);
+          stabilizeMermaidTooltips();
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        console.error("Failed to render Mermaid diagram.", error);
+        setFailed(true);
+        setSvg("");
+      }
+    };
+
+    setSvg("");
+    setFailed(false);
+    void renderDiagram();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, instanceId, resolvedTheme]);
+
+  if (failed) {
+    return <CodeBlock code={code} language="mermaid" scrollAnchorId={scrollAnchorId} />;
+  }
+
+  const handlePreviewDiagram = () => {
+    if (!svg) {
+      return;
+    }
+
+    onOpenImagePreview?.({
+      src: encodeSvgDataUrl(svg),
+      alt: messages.markdown.mermaidDiagramAlt,
+    });
+  };
+
+  return (
+    <div
+      data-scroll-anchor-id={scrollAnchorId || undefined}
+      className={cn("my-2 overflow-hidden rounded-[5px] border", frameClassName)}
+    >
+      <div className={cn("flex items-center justify-between border-b px-2 py-1", headerClassName)}>
+        <span className="text-[9px] font-medium tracking-[0.06em]">
+          Mermaid
+        </span>
+        <CopyButton code={code} className={copyButtonClassName} />
+      </div>
+      <button
+        type="button"
+        className={cn(
+          "block w-full text-left transition",
+          svg ? "cursor-zoom-in" : "cursor-default",
+          isDarkTheme ? "hover:bg-white/5" : "hover:bg-zinc-100/70",
+        )}
+        aria-label={messages.markdown.previewMermaid}
+        onClick={handlePreviewDiagram}
+        disabled={!svg}
+      >
+        <div
+          ref={containerRef}
+          data-mermaid-diagram=""
+          className={cn("overflow-x-auto px-3 py-3 [&_svg]:h-auto [&_svg]:max-w-full", diagramBodyClassName)}
+          dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
+        />
+      </button>
+    </div>
+  );
+}, (previousProps, nextProps) => {
+  return previousProps.code === nextProps.code
+    && previousProps.resolvedTheme === nextProps.resolvedTheme
+    && previousProps.scrollAnchorId === nextProps.scrollAnchorId
+    && previousProps.onOpenImagePreview === nextProps.onOpenImagePreview;
+});
+
+function CodeRenderer({
+  className,
+  children,
+  files,
+  onOpenFilePreview,
+  onOpenImagePreview,
+  resolvedTheme = "light",
+  scrollAnchorId = "",
+  streaming = false,
+  ...props
+}) {
   const match = /language-([\w-]+)/.exec(className || "");
+  const normalizedLanguage = String(match?.[1] || "text").toLowerCase();
   const code = String(children || "").replace(/\n$/, "");
   const isBlock = Boolean(match) || code.includes("\n");
 
@@ -481,7 +695,18 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, scrollAnc
     );
   }
 
-  return <CodeBlock code={code} language={match?.[1] || "text"} scrollAnchorId={scrollAnchorId} />;
+  if (normalizedLanguage === "mermaid" && !streaming) {
+    return (
+      <MermaidBlock
+        code={code}
+        resolvedTheme={resolvedTheme}
+        scrollAnchorId={scrollAnchorId}
+        onOpenImagePreview={onOpenImagePreview}
+      />
+    );
+  }
+
+  return <CodeBlock code={code} language={normalizedLanguage} scrollAnchorId={scrollAnchorId} />;
 }
 
 function TableRenderer({ children, scrollAnchorId = "" }) {
@@ -492,7 +717,17 @@ function TableRenderer({ children, scrollAnchorId = "" }) {
   );
 }
 
-export default function MarkdownRenderer({ content, files, headingScopeId = "message", resolvedTheme = "light", className, shellClassName, onOpenFilePreview, onOpenImagePreview }) {
+export default function MarkdownRenderer({
+  content,
+  files,
+  headingScopeId = "message",
+  resolvedTheme = "light",
+  streaming = false,
+  className,
+  shellClassName,
+  onOpenFilePreview,
+  onOpenImagePreview,
+}) {
   const { messages } = useI18n();
   const [previewImage, setPreviewImage] = useState(null);
   const normalizedContent = useMemo(
@@ -523,6 +758,15 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [previewImage]);
+
+  const handleOpenInlineImagePreview = useCallback((image) => {
+    if (onOpenImagePreview) {
+      onOpenImagePreview(image);
+      return;
+    }
+
+    setPreviewImage(image);
+  }, [onOpenImagePreview]);
 
   const nextScrollAnchorId = () => `${headingScopeId}-block-${blockRenderIndex++}`;
 
@@ -599,7 +843,9 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
                 {...props}
                 files={files}
                 resolvedTheme={resolvedTheme}
+                streaming={streaming}
                 onOpenFilePreview={onOpenFilePreview}
+                onOpenImagePreview={handleOpenInlineImagePreview}
                 scrollAnchorId={nextScrollAnchorId()}
               />
             ),
@@ -626,15 +872,11 @@ export default function MarkdownRenderer({ content, files, headingScopeId = "mes
                   data-scroll-anchor-id={nextScrollAnchorId()}
                   className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/40"
                   onClick={() => {
-                    if (onOpenImagePreview) {
-                      onOpenImagePreview({
-                        src: resolvedSrc,
-                        alt: alt || "",
-                        path: resolvedPath,
-                      });
-                      return;
-                    }
-                    setPreviewImage({ src: resolvedSrc, alt: alt || "" });
+                    handleOpenInlineImagePreview({
+                      src: resolvedSrc,
+                      alt: alt || "",
+                      path: resolvedPath,
+                    });
                   }}
                 >
                   <img

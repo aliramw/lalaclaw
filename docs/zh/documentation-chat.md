@@ -70,6 +70,14 @@
 
 ## Slash 命令
 
+在 `openclaw` 模式下，命令文本会原样交给 OpenClaw gateway 处理，包含：
+
+- `/status`、`/model` 这类独立 slash 命令
+- 普通消息里的 inline shortcuts 和 inline directives
+- `! <command>`、`!poll`、`!stop` 这类 bang 命令
+
+在 `mock` 模式下，LalaClaw 仍然保留下面这些内建会话控制命令的本地兜底行为。
+
 ### `/fast`
 
 支持：
@@ -81,8 +89,8 @@
 
 行为：
 
-- `status` 返回当前 fast mode 状态
-- `on/off` 会把 fast mode 偏好持久化到当前会话
+- 在 `openclaw` 模式下，走 OpenClaw 原生命令流
+- 在 `mock` 模式下，`status` 返回当前 fast mode 状态，`on/off` 会把本地会话偏好持久化
 
 ### `/think <mode>`
 
@@ -98,16 +106,30 @@
 
 行为：
 
-- 更新当前会话的思考深度
-- 在 `openclaw` 模式下，还会同步 patch 远端 session
+- 在 `openclaw` 模式下，走 OpenClaw 原生命令流
+- 在 `mock` 模式下，更新当前会话的本地思考深度
 
-### `/new [prompt]` 与 `/reset [prompt]`
+### `/model [id]` 与 `/models`
+
+支持：
+
+- `/model`
+- `/model status`
+- `/model <id>`
+- `/model list`
+- `/models`
 
 行为：
 
-- 创建新的 `sessionUser`
-- 继承当前模型、Agent、fast mode 和 think mode 偏好
-- 如果带尾随 prompt，会在新会话里立即继续执行
+- 在 `openclaw` 模式下，走 OpenClaw 原生命令流
+- 在 `mock` 模式下，`status` 返回当前模型，`list` 与 `/models` 展示可用模型列表，`/model <id>` 会切换本地会话模型
+
+### `/new ...` 与 `/reset ...`
+
+行为：
+
+- 在 `openclaw` 模式下，走 OpenClaw 原生会话管理流程
+- 在 `mock` 模式下，创建新的本地 `sessionUser`，并继承当前模型、Agent、fast mode 和 think mode 偏好
 
 适用场景：
 

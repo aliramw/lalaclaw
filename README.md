@@ -10,6 +10,7 @@ A better way to co-create with agents.
 ## Highlights
 
 - React + Vite command center UI with chat, timeline, inspector, theme, locale, and attachment flows
+- VS Code-style file exploration with separate session/workspace trees, preview actions, and richer document/media handling
 - Built-in locale support for 中文, English, 日本語, Français, Español, and Português
 - Node.js backend that can connect to local or remote OpenClaw gateways
 - Modular frontend and backend boundaries with focused hook- and module-level tests
@@ -69,6 +70,7 @@ Notes:
 - If you want config only on macOS, run `lalaclaw init --no-background`
 - On Linux, or when you opt out of background startup, continue with `lalaclaw doctor` and `lalaclaw start`
 - Use `lalaclaw status` to check the background service, `lalaclaw restart` to restart it, and `lalaclaw stop` to stop it on macOS
+- Previewing `doc`, `ppt`, and `pptx` files requires LibreOffice. On macOS, run `lalaclaw doctor --fix` or `brew install --cask libreoffice`
 
 ### Install From GitHub
 
@@ -120,10 +122,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-4`:
+If you want a specific published version instead, such as `2026.3.17-5`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-4
+npm install -g lalaclaw@2026.3.17-5
 lalaclaw init
 ```
 
@@ -139,12 +141,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-4`:
+If you want a specific released version instead, such as `2026.3.17-5`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-4
+git checkout 2026.3.17-5
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -209,6 +211,7 @@ More detail lives in [deploy/macos/README.md](./deploy/macos/README.md).
 - `npm run dev:backend` starts only the backend server
 - `npm run doctor` checks Node.js, OpenClaw discovery, ports, and local config
   For `remote-gateway`, it also probes the configured gateway URL and sends a minimal API request to validate the configured model and agent.
+- `npm run doctor -- --fix` installs LibreOffice automatically on macOS when LibreOffice-backed preview support is missing
 - `npm run doctor -- --json` prints the same diagnosis as machine-readable JSON with `summary.status` and `summary.exitCode`
 - `npm run lalaclaw:init` writes a local `.env.local` bootstrap file
 - `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
@@ -248,7 +251,7 @@ For the full contribution checklist and project structure notes, see [CONTRIBUTI
 LalaClaw uses npm-compatible calendar versioning for releases.
 
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes.
-- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-4`, not `YYYY.M.D.N`.
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-5`, not `YYYY.M.D.N`.
 - Call out breaking changes explicitly in release notes and migration-facing docs.
 - The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
 

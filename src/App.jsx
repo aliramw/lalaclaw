@@ -797,6 +797,8 @@ function AppContent() {
                   activeTab={activeTab}
                   agents={agents}
                   artifacts={artifacts}
+                  currentAgentId={session.agentId}
+                  currentSessionUser={session.sessionUser}
                   currentWorkspaceRoot={session.workspaceRoot}
                   files={files}
                   onSelectArtifact={handleArtifactSelect}

@@ -19,6 +19,7 @@ const EXAMPLE_ENV_FILE = path.join(PROJECT_ROOT, '.env.local.example');
 const PACKAGE_NAME = 'lalaclaw';
 const LEGACY_ENV_FILE = path.join(PROJECT_ROOT, '.env.local');
 const MACOS_LAUNCHD_LABEL = 'ai.lalaclaw.app';
+const MACOS_LIBREOFFICE_INSTALL_SCRIPT = path.join(PROJECT_ROOT, 'deploy', 'macos', 'install-libreoffice.sh');
 const ANSI_RED = '\u001B[31m';
 const ANSI_RESET = '\u001B[0m';
 const OPTION_ALIASES = {
@@ -88,7 +89,7 @@ function printHelp() {
 
 Usage:
   lalaclaw init [--defaults] [--write-example] [--no-background] [--config-file <path>] [--profile <name>] [--base-url <url>]
-  lalaclaw doctor [--config-file <path>] [--json]
+  lalaclaw doctor [--config-file <path>] [--json] [--fix]
   lalaclaw status
   lalaclaw stop
   lalaclaw restart
@@ -99,7 +100,7 @@ Usage:
 
 Commands:
   init      Create or refresh local config, and auto-start the macOS packaged app in the background.
-  doctor    Check Node.js, OpenClaw discovery, ports, and local config.
+  doctor    Check Node.js, OpenClaw discovery, ports, local config, and Office preview dependencies.
   status    Show macOS background service status for npm installs.
   stop      Stop the macOS background service for npm installs.
   restart   Restart the macOS background service for npm installs.
@@ -136,6 +137,11 @@ function parseArgs(argv) {
 
     if (token === '--json') {
       options.json = true;
+      continue;
+    }
+
+    if (token === '--fix') {
+      options.fix = true;
       continue;
     }
 
@@ -925,6 +931,9 @@ function buildDoctorReport({
   nodeMatches,
   localOpenClaw,
   openclawBinary,
+  sofficeBinary = '',
+  libreOfficeInstallCommand = '',
+  libreOfficeFixSupported = false,
   frontendPortFree,
   backendPortFree,
   config,
@@ -945,6 +954,14 @@ function buildDoctorReport({
 
   if (!backendPortFree) {
     warnings.push(`App port ${config.host}:${config.backendPort} is already in use.`);
+  }
+
+  if (!sofficeBinary) {
+    warnings.push(
+      libreOfficeInstallCommand
+        ? `LibreOffice-backed preview is unavailable because soffice was not found. Install LibreOffice with: ${libreOfficeInstallCommand}`
+        : 'LibreOffice-backed preview is unavailable because soffice was not found. Install LibreOffice to enable DOC and PowerPoint previews.',
+    );
   }
 
   if (gatewayProbe && !gatewayProbe.ok && !gatewayProbe.skipped) {
@@ -985,6 +1002,12 @@ function buildDoctorReport({
     openclawBinary: {
       found: Boolean(openclawBinary),
       path: openclawBinary || '',
+    },
+    presentationPreview: {
+      available: Boolean(sofficeBinary),
+      binaryPath: sofficeBinary || '',
+      installCommand: libreOfficeInstallCommand,
+      fixSupported: Boolean(libreOfficeFixSupported),
     },
     ports: {
       frontend: {
@@ -1031,6 +1054,17 @@ function buildDoctorReport({
   };
 }
 
+function resolveLibreOfficeInstallCommand({
+  platform = process.platform,
+  brewBinary = '',
+} = {}) {
+  if (platform === 'darwin' && brewBinary) {
+    return 'brew install --cask libreoffice';
+  }
+
+  return '';
+}
+
 async function collectDoctorData(envFilePath) {
   const envValues = readEnvFile(envFilePath);
   const localOpenClaw = detectLocalOpenClaw();
@@ -1039,6 +1073,12 @@ async function collectDoctorData(envFilePath) {
   const nodeMajor = Number(String(nodeVersion || '').split('.')[0] || 0);
   const nodeMatches = nodeMajor === REQUIRED_NODE_MAJOR;
   const openclawBinary = findExecutable(process.env.OPENCLAW_BIN || 'openclaw');
+  const sofficeBinary = findExecutable(process.env.SOFFICE_BIN || 'soffice');
+  const brewBinary = process.platform === 'darwin' ? findExecutable('brew') : '';
+  const libreOfficeInstallCommand = resolveLibreOfficeInstallCommand({
+    platform: process.platform,
+    brewBinary,
+  });
   const validation = validateConfig(config, localOpenClaw, openclawBinary);
   const frontendPortFree = await checkPortAvailable(config.frontendHost, config.frontendPort);
   const backendPortFree = await checkPortAvailable(config.host, config.backendPort);
@@ -1057,6 +1097,9 @@ async function collectDoctorData(envFilePath) {
     nodeMatches,
     localOpenClaw,
     openclawBinary,
+    sofficeBinary,
+    libreOfficeInstallCommand,
+    libreOfficeFixSupported: process.platform === 'darwin' && fs.existsSync(MACOS_LIBREOFFICE_INSTALL_SCRIPT),
     frontendPortFree,
     backendPortFree,
     config,
@@ -1082,6 +1125,15 @@ function printDoctorReport(report) {
   }
 
   console.log(`${report.openclawBinary.found ? 'OK   ' : 'WARN '} OpenClaw CLI ${report.openclawBinary.found ? `found at ${report.openclawBinary.path}` : 'not found on PATH'}`);
+  console.log(
+    `${report.presentationPreview.available ? 'OK   ' : 'WARN '} LibreOffice-backed preview ${report.presentationPreview.available ? `enabled via ${report.presentationPreview.binaryPath}` : 'disabled because soffice was not found'}`,
+  );
+  if (!report.presentationPreview.available && report.presentationPreview.installCommand) {
+    console.log(`INFO  Install LibreOffice with: ${report.presentationPreview.installCommand}`);
+  }
+  if (!report.presentationPreview.available && report.presentationPreview.fixSupported) {
+    console.log('INFO  Run lalaclaw doctor --fix to install LibreOffice automatically.');
+  }
   console.log(`${report.ports.frontend.available ? 'OK   ' : 'WARN '} Dev frontend ${report.ports.frontend.host}:${report.ports.frontend.port} ${report.ports.frontend.available ? 'is available' : 'is already in use'}`);
   console.log(`${report.ports.backend.available ? 'OK   ' : 'WARN '} App ${report.ports.backend.host}:${report.ports.backend.port} ${report.ports.backend.available ? 'is available' : 'is already in use'}`);
   printConfigSummary(report.runtime);
@@ -1204,6 +1256,45 @@ function findExecutable(binName) {
     return firstLine || '';
   }
   return '';
+}
+
+function runCommand(command, args = [], options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      ...options,
+    });
+
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`${command} exited with code ${code}.`));
+    });
+  });
+}
+
+async function runDoctorFix(report) {
+  if (report.presentationPreview.available) {
+    console.log('INFO  LibreOffice-backed preview is already enabled.');
+    return false;
+  }
+
+  if (process.platform !== 'darwin' || !fs.existsSync(MACOS_LIBREOFFICE_INSTALL_SCRIPT)) {
+    throw new Error(
+      report.presentationPreview.installCommand
+        ? `Automatic LibreOffice install is not available on this platform. Install it manually with: ${report.presentationPreview.installCommand}`
+        : 'Automatic LibreOffice install is not available on this platform.',
+    );
+  }
+
+  console.log('INFO  Installing LibreOffice for LibreOffice-backed preview...');
+  await runCommand('/bin/zsh', [MACOS_LIBREOFFICE_INSTALL_SCRIPT], { cwd: PROJECT_ROOT });
+  console.log('OK    LibreOffice installation finished.');
+  return true;
 }
 
 function checkPortAvailable(host, port) {
@@ -1449,7 +1540,13 @@ async function main() {
   }
 
   if (command === 'doctor') {
-    const report = await collectDoctorData(envFilePath);
+    let report = await collectDoctorData(envFilePath);
+    if (options.fix) {
+      const changed = await runDoctorFix(report);
+      if (changed) {
+        report = await collectDoctorData(envFilePath);
+      }
+    }
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));
     } else {
@@ -1545,6 +1642,8 @@ module.exports = {
   canPromptInteractively,
   buildDoctorReport,
   collectDoctorData,
+  resolveLibreOfficeInstallCommand,
+  runDoctorFix,
   openExternalUrl,
   promptToOpenApp,
 };

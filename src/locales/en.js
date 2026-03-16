@@ -171,6 +171,12 @@ const en = {
     resetConversationHotkey: "Start new session (Cmd + N)",
     resetConversationTooltipHint: "Starting a new session will reset the current conversation.",
     resetConversationConfirm: "Start a new session? Conversation history and context will be cleared.",
+    resetConversationDialog: {
+      title: "Start a new session?",
+      description: "Conversation history and context will be cleared.",
+      cancel: "Cancel",
+      confirm: "Confirm",
+    },
     waitingFirstPrompt: "Waiting for the first prompt",
     conversationWillAppear: "Your conversation with the Agent will appear here.",
     thinkingPlaceholder: "Thinking…",
@@ -235,7 +241,11 @@ const en = {
       sessionSpawn: "Session Spawn",
       childAgent: "Child Agent",
     },
-    filesHint: "This list shows every file the Agent created, modified, or viewed in this session for quick review.",
+    filesHint: "This view groups files touched in the current session alongside files already present in the workspace.",
+    fileCollections: {
+      session: "Session files",
+      workspace: "Workspace files",
+    },
     tabs: {
       timeline: "Run Log",
       files: "Files",
@@ -251,7 +261,32 @@ const en = {
     },
     fileMenu: {
       label: "File menu",
+      preview: "Preview",
+      refresh: "Refresh",
       copyPath: "Copy path",
+    },
+    spreadsheet: {
+      sheet: "Sheet",
+      empty: "This spreadsheet is empty.",
+      truncated: (rows, columns) => `Showing the first ${rows} rows and ${columns} columns.`,
+    },
+    workspaceTree: {
+      loading: "Loading workspace files…",
+      loadingFolder: "Loading folder contents…",
+      loadFailed: "Could not load workspace files. Please try again.",
+      emptyFolder: "This folder is empty.",
+    },
+    workspaceFilter: {
+      label: "Filter workspace files",
+      placeholder: "Filter, e.g. .md / test*",
+      clear: "Clear workspace filter",
+      empty: (pattern) => `No workspace files match "${pattern}".`,
+    },
+    sessionFilter: {
+      label: "Filter session files",
+      placeholder: "Filter, e.g. .md / test*",
+      clear: "Clear session file filter",
+      empty: (pattern) => `No session files match "${pattern}".`,
     },
     timelineHint: "Review detailed records of the agent execution.",
     artifactsHint: "This session's reply summaries are listed here. Click one to jump to that part of the conversation.",
@@ -259,6 +294,7 @@ const en = {
     artifactJumpTo: "Jump to",
     empty: {
       files: "Detected files for the current session will appear here.",
+      workspaceFiles: "Detected files from the current workspace will appear here.",
       timeline: "Each run will be grouped here as an execution timeline.",
       artifacts: "Assistant reply summaries will appear here.",
       environment: "Gateway and session environment details are listed here for quick inspection.",
@@ -290,6 +326,15 @@ const en = {
       terminal: "Terminal",
       browser: "Browser",
     },
+    previewErrors: {
+      loadFailed: "File preview failed.",
+      officeFailed: "Office document preview failed. Please try again.",
+      officeRequiresLibreOffice: "Install LibreOffice to preview DOC, PPT, and PPTX files.",
+      officeRequiresLibreOfficeWithCommand: (command) => `Install LibreOffice to preview DOC, PPT, and PPTX files. Open a terminal and run: ${command}`,
+      docxFailed: "DOCX preview failed. Please try again.",
+      heicUnavailable: "HEIC preview is unavailable on this system.",
+      heicFailed: "HEIC preview failed. Please try again.",
+    },
     previewActions: {
       maximize: "Expand preview",
       restore: "Restore preview",
@@ -301,6 +346,8 @@ const en = {
       imageRotateLeft: "Rotate left",
       imageRotateRight: "Rotate right",
       imageZoomIn: "Zoom in",
+      previewFontSizeOptionTooltip: (label) => `Preview font size: ${label}`,
+      renderingDocx: "Rendering DOCX preview...",
       frontMatter: "Front Matter",
       fileManagers: {
         finder: "Finder",
@@ -314,6 +361,11 @@ const en = {
     copiedCode: "Code copied",
     copyCodeShort: "Copy",
     copiedCodeShort: "Copied",
+    previewMermaid: "Preview Mermaid diagram",
+    mermaidDiagramAlt: "Mermaid diagram",
+    languageLabels: {
+      markdown: "Markdown",
+    },
   },
 };
 

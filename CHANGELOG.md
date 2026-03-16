@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17-5]
+
+### Added
+
+- VS Code-style file exploration in the inspector with separate `Session Files` and `Workspace Files` sections, lazy-loaded workspace folders, path filtering, compact single-folder chains, and directory refresh actions
+- Spreadsheet preview for `csv`, `xls`, `xlsx`, and `xlsm` files, plus richer Office/media preview handling for `doc`, `docx`, `ppt`, `pptx`, `heic`, and `heif`
+- Mermaid diagram rendering for completed fenced `mermaid` code blocks, including diagram preview from chat messages
+- Native `/model` and `/models` handling across runtime modes, with mock-mode status/list/set fallbacks and openclaw-mode forwarding that mirrors the selected model back into local session state
+- A custom new-session confirmation dialog instead of the browser-native confirm prompt
+- `lalaclaw doctor --fix` on macOS to install LibreOffice automatically when Office preview dependencies are missing
+
+### Changed
+
+- Reworked the inspector `Files` tab so collapsed sections keep their count badges, workspace counts show the total file count, and empty `Session Files` sections stay hidden
+- Updated file preview controls with preview font-size options, better Office dependency guidance, and DOCX rendering inside the shared preview overlay
+- Forwarded native OpenClaw slash and bang commands without local prepatches while still syncing local fast/thinking/reset/session metadata from authoritative runtime snapshots
+
+### Fixed
+
+- Prevented raw top-level `<final>...</final>` assistant envelopes from leaking into the visible chat transcript
+- Improved conversation replay dedupe so transient assistant fragments and duplicate merged echoes collapse back to a single authoritative turn
+
 ## [2026.3.17-4]
 
 ### Fixed

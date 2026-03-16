@@ -59,10 +59,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Si vous préférez une version publiée précise, comme `2026.3.17-4` :
+Si vous préférez une version publiée précise, comme `2026.3.17-5` :
 
 ```bash
-npm install -g lalaclaw@2026.3.17-4
+npm install -g lalaclaw@2026.3.17-5
 lalaclaw init
 ```
 
@@ -78,12 +78,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Si vous préférez une version publiée précise, comme `2026.3.17-4` :
+Si vous préférez une version publiée précise, comme `2026.3.17-5` :
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-4
+git checkout 2026.3.17-5
 npm ci
 npm run build
 npm run lalaclaw:start

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  --default-mono-font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --background: #fbfbf6;
   --foreground: oklch(0.238 0.014 253.1);
   --card: oklch(1 0 0);
@@ -58,6 +59,7 @@
 }
 
 @theme inline {
+  --font-mono: var(--default-mono-font-family);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FolderOpen, LoaderCircle, Maximize2, Minimize2, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,24 @@ import { cn } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
 const filePreviewCodeTheme = themes.dracula;
+const defaultSpreadsheetPreviewLimitRows = 200;
+const defaultSpreadsheetPreviewLimitColumns = 50;
+const filePreviewFontSizeStorageKey = "file-preview-font-size";
+const filePreviewFontSizeOptions = [
+  { value: "small", glyphClassName: "text-[14px]" },
+  { value: "medium", glyphClassName: "text-[18px]" },
+  { value: "large", glyphClassName: "text-[22px]" },
+];
+const richTextPreviewFontSizeClassNames = {
+  small: "text-[12px] leading-5 [&_p]:!leading-5 [&_li]:!leading-5 [&_blockquote]:!leading-5 [&_td]:!leading-5 [&_th]:!leading-5 [&_p]:!mb-1.5 [&_ul]:!my-1.5 [&_ol]:!my-1.5",
+  medium: "text-[14px] leading-6 [&_p]:!leading-6 [&_li]:!leading-6 [&_blockquote]:!leading-6 [&_td]:!leading-6 [&_th]:!leading-6 [&_p]:!mb-2 [&_ul]:!my-2 [&_ol]:!my-2",
+  large: "text-[16px] leading-7 [&_p]:!leading-7 [&_li]:!leading-7 [&_blockquote]:!leading-7 [&_td]:!leading-7 [&_th]:!leading-7 [&_p]:!mb-2.5 [&_ul]:!my-2.5 [&_ol]:!my-2.5",
+};
+const codePreviewFontSizeClassNames = {
+  small: "text-[12px] leading-5 [&_.token-line]:min-h-5 [&_.token-line]:text-[12px]",
+  medium: "text-[13px] leading-6 [&_.token-line]:min-h-6 [&_.token-line]:text-[13px]",
+  large: "text-[15px] leading-7 [&_.token-line]:min-h-7 [&_.token-line]:text-[15px]",
+};
 const frontMatterDarkTheme = {
   plain: {
     color: "#f5f7ff",
@@ -125,6 +143,19 @@ function compactHomePath(filePath = "") {
   return filePath.startsWith(homePrefix) ? `~${filePath.slice(homePrefix.length)}` : filePath;
 }
 
+function loadStoredFilePreviewFontSize() {
+  if (typeof window === "undefined") {
+    return "medium";
+  }
+
+  try {
+    const value = window.localStorage.getItem(filePreviewFontSizeStorageKey);
+    return filePreviewFontSizeOptions.some((option) => option.value === value) ? value : "medium";
+  } catch {
+    return "medium";
+  }
+}
+
 function getVsCodeHref(filePath) {
   if (!filePath) {
     return "#";
@@ -202,9 +233,17 @@ function splitMarkdownFrontMatter(content = "") {
   };
 }
 
-function FilePreviewCodeBlock({ content = "", language = "text", resolvedTheme = "dark", syntaxTheme, variant = "default" }) {
+function FilePreviewCodeBlock({
+  content = "",
+  language = "text",
+  resolvedTheme = "dark",
+  syntaxTheme,
+  variant = "default",
+  fontSize = "medium",
+}) {
   const isSubtle = variant === "subtle";
   const theme = syntaxTheme || filePreviewCodeTheme;
+  const fontSizeClassName = codePreviewFontSizeClassNames[fontSize] || codePreviewFontSizeClassNames.medium;
 
   return (
     <div
@@ -227,7 +266,8 @@ function FilePreviewCodeBlock({ content = "", language = "text", resolvedTheme =
         {({ tokens, getLineProps, getTokenProps }) => (
           <pre
             className={cn(
-              "overflow-auto px-0 text-[13px] leading-6",
+              "overflow-auto px-0",
+              fontSizeClassName,
               isSubtle
                 ? resolvedTheme === "dark"
                   ? "py-2.5 text-zinc-50"
@@ -236,7 +276,7 @@ function FilePreviewCodeBlock({ content = "", language = "text", resolvedTheme =
             )}
           >
             {tokens.map((line, lineIndex) => (
-              <div key={lineIndex} {...getLineProps({ line })} className={cn("min-h-6 px-4 font-mono", isSubtle && "text-[12.5px]")}>
+              <div key={lineIndex} {...getLineProps({ line })} className={cn("token-line px-4 font-mono", isSubtle && "text-[12.5px]")}>
                 {line.length ? line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />) : <span>&nbsp;</span>}
               </div>
             ))}
@@ -247,16 +287,202 @@ function FilePreviewCodeBlock({ content = "", language = "text", resolvedTheme =
   );
 }
 
+function DocxPreviewContent({ preview, resolvedTheme = "light" }) {
+  const { messages } = useI18n();
+  const containerRef = useRef(null);
+  const [status, setStatus] = useState("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    const container = containerRef.current;
+
+    async function renderDocxPreview() {
+      if (!preview?.contentUrl || !container) {
+        setStatus("error");
+        return;
+      }
+
+      setStatus("loading");
+
+      try {
+        const [response, docxPreviewModule] = await Promise.all([
+          fetch(preview.contentUrl),
+          import("docx-preview"),
+        ]);
+
+        if (!response.ok) {
+          throw new Error("DOCX content request failed");
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        if (cancelled) {
+          return;
+        }
+
+        container.innerHTML = "";
+        await docxPreviewModule.renderAsync(arrayBuffer, container, undefined, {
+          className: "cc-docx",
+          inWrapper: true,
+          ignoreLastRenderedPageBreak: false,
+          breakPages: true,
+          renderHeaders: true,
+          renderFooters: true,
+          renderFootnotes: true,
+          renderEndnotes: true,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        setStatus("ready");
+      } catch {
+        if (!cancelled) {
+          setStatus("error");
+        }
+      }
+    }
+
+    renderDocxPreview();
+
+    return () => {
+      cancelled = true;
+      if (container) {
+        container.innerHTML = "";
+      }
+    };
+  }, [preview?.contentUrl]);
+
+  if (status === "error") {
+    return (
+      <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-200">
+        {messages.inspector.previewErrors.docxFailed}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "overflow-auto rounded-xl border",
+        resolvedTheme === "dark" ? "border-white/10 bg-[#111318]" : "border-slate-200 bg-slate-100/80",
+      )}
+    >
+      {status === "loading" ? (
+        <div className={cn("flex min-h-[40vh] items-center justify-center px-6 py-10 text-sm", resolvedTheme === "dark" ? "text-zinc-300" : "text-slate-600")}>
+          <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+          {messages.inspector.previewActions.renderingDocx}
+        </div>
+      ) : null}
+      <div
+        ref={containerRef}
+        data-testid="docx-preview-content"
+        className={cn(
+          "min-h-[40vh] overflow-auto px-4 py-5",
+          status === "loading" && "hidden",
+          "[&_.cc-docx-wrapper]:bg-transparent [&_.cc-docx-wrapper]:p-0",
+          "[&_.cc-docx]:mx-auto [&_.cc-docx]:max-w-[900px] [&_.cc-docx]:shadow-[0_18px_60px_rgba(15,23,42,0.12)]",
+          "[&_.cc-docx]:rounded-[18px] [&_.cc-docx]:overflow-hidden",
+          "[&_.cc-docx]:!bg-white [&_.cc-docx]:text-slate-900",
+          "[&_.cc-docx_a]:text-sky-700 [&_.cc-docx_table]:max-w-full",
+        )}
+      />
+    </div>
+  );
+}
+
+function SpreadsheetPreview({ preview, resolvedTheme = "light" }) {
+  const { messages } = useI18n();
+  const isDark = resolvedTheme === "dark";
+  const rows = preview?.spreadsheet?.rows || [];
+  const sheetName = preview?.spreadsheet?.sheetName || preview?.name || "";
+  const totalRows = Number(preview?.spreadsheet?.totalRows || 0);
+  const totalColumns = Number(preview?.spreadsheet?.totalColumns || 0);
+  const previewRowLimit = Number(preview?.spreadsheet?.previewRowLimit || defaultSpreadsheetPreviewLimitRows);
+  const previewColumnLimit = Number(preview?.spreadsheet?.previewColumnLimit || defaultSpreadsheetPreviewLimitColumns);
+  const truncatedRows = Boolean(preview?.spreadsheet?.truncatedRows);
+  const truncatedColumns = Boolean(preview?.spreadsheet?.truncatedColumns);
+
+  if (!rows.length) {
+    return (
+      <div className={cn("rounded-xl border p-4 text-sm", isDark ? "border-border/70 bg-background/80 text-zinc-300" : "border-slate-200 bg-white text-slate-600")}>
+        {messages.inspector.spreadsheet.empty}
+      </div>
+    );
+  }
+
+  const columnHeaders = Array.from({ length: Math.max(...rows.map((row) => row.length), 0) }, (_, index) => String(index + 1));
+
+  return (
+    <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-border/70 bg-background/80" : "border-slate-200 bg-white")}>
+      <div className={cn("flex items-center justify-between gap-3 border-b px-4 py-2 text-[11px]", isDark ? "border-border/70 text-zinc-400" : "border-slate-200 text-slate-500")}>
+        <div className="truncate">
+          {messages.inspector.spreadsheet.sheet}: {sheetName}
+        </div>
+        <div className="shrink-0">
+          {totalRows} x {totalColumns}
+        </div>
+      </div>
+      <ScrollArea className="max-h-[70vh]">
+        <div className="min-w-max">
+          <table className="w-full border-collapse text-left text-[12px] leading-5">
+            <thead className={cn(isDark ? "bg-zinc-900/60 text-zinc-300" : "bg-slate-50 text-slate-600")}>
+              <tr>
+                <th className={cn("sticky left-0 z-10 border-b px-3 py-2 font-medium", isDark ? "border-border/60 bg-zinc-900/95" : "border-slate-200 bg-slate-50")}>#</th>
+                {columnHeaders.map((header) => (
+                  <th key={header} className={cn("border-b px-3 py-2 font-medium", isDark ? "border-border/60" : "border-slate-200")}>
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={`${sheetName}-${rowIndex}`} className={cn(isDark ? "odd:bg-zinc-950/20" : "odd:bg-slate-50/70")}>
+                  <td className={cn("sticky left-0 z-10 border-b px-3 py-2 align-top font-medium", isDark ? "border-border/50 bg-[#16181d]" : "border-slate-200 bg-white")}>
+                    {rowIndex + 1}
+                  </td>
+                  {columnHeaders.map((header, columnIndex) => (
+                    <td key={`${sheetName}-${rowIndex}-${header}`} className={cn("max-w-[22rem] border-b px-3 py-2 align-top whitespace-pre-wrap break-words", isDark ? "border-border/50 text-zinc-100" : "border-slate-200 text-slate-800")}>
+                      {row[columnIndex] || ""}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </ScrollArea>
+      {truncatedRows || truncatedColumns ? (
+        <div className={cn("border-t px-4 py-2 text-[11px]", isDark ? "border-border/60 text-zinc-400" : "border-slate-200 text-slate-500")}>
+          {messages.inspector.spreadsheet.truncated(previewRowLimit, previewColumnLimit)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ImagePreviewOverlay({ image, onClose }) {
   const { messages } = useI18n();
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
+  const imageRef = useRef(null);
+  const dragStateRef = useRef({
+    active: false,
+    pointerId: null,
+    lastX: 0,
+    lastY: 0,
+  });
 
   useEffect(() => {
     if (!image?.src) {
       setScale(1);
       setRotation(0);
+      setOffset({ x: 0, y: 0 });
+      setIsDraggingImage(false);
     }
   }, [image?.src]);
 
@@ -282,16 +508,105 @@ export function ImagePreviewOverlay({ image, onClose }) {
   }
 
   const clampScale = (value) => Math.min(4, Math.max(0.5, value));
-  const handleZoomIn = () => setScale((current) => clampScale(current + 0.25));
-  const handleZoomOut = () => setScale((current) => clampScale(current - 0.25));
-  const handleReset = () => setScale(1);
-  const handleRotateLeft = () => setRotation((current) => current - 90);
-  const handleRotateRight = () => setRotation((current) => current + 90);
+  const clampOffset = (candidate, nextScale = scale, nextRotation = rotation) => {
+    if (nextScale <= 1) {
+      return { x: 0, y: 0 };
+    }
+
+    const imageNode = imageRef.current;
+    if (!imageNode) {
+      return candidate;
+    }
+
+    const baseWidth = imageNode.offsetWidth || 0;
+    const baseHeight = imageNode.offsetHeight || 0;
+    const normalizedQuarterTurns = Math.abs(Math.round(nextRotation / 90)) % 2;
+    const effectiveWidth = normalizedQuarterTurns ? baseHeight : baseWidth;
+    const effectiveHeight = normalizedQuarterTurns ? baseWidth : baseHeight;
+    const maxX = Math.max(0, ((effectiveWidth * nextScale) - effectiveWidth) / 2);
+    const maxY = Math.max(0, ((effectiveHeight * nextScale) - effectiveHeight) / 2);
+
+    return {
+      x: Math.min(maxX, Math.max(-maxX, candidate.x)),
+      y: Math.min(maxY, Math.max(-maxY, candidate.y)),
+    };
+  };
+  const updateScale = (updater) => {
+    setScale((current) => {
+      const nextScale = clampScale(typeof updater === "function" ? updater(current) : updater);
+      setOffset((currentOffset) => clampOffset(currentOffset, nextScale, rotation));
+      return nextScale;
+    });
+  };
+  const handleZoomIn = () => updateScale((current) => current + 0.25);
+  const handleZoomOut = () => updateScale((current) => current - 0.25);
+  const handleReset = () => {
+    setOffset({ x: 0, y: 0 });
+    setScale(1);
+  };
+  const handleRotateLeft = () => {
+    setRotation((current) => {
+      const nextRotation = current - 90;
+      setOffset((currentOffset) => clampOffset(currentOffset, scale, nextRotation));
+      return nextRotation;
+    });
+  };
+  const handleRotateRight = () => {
+    setRotation((current) => {
+      const nextRotation = current + 90;
+      setOffset((currentOffset) => clampOffset(currentOffset, scale, nextRotation));
+      return nextRotation;
+    });
+  };
   const fileManagerLabel = resolveFileManagerLocaleLabel(messages, image.fileManagerLabel || "Folder");
   const handleWheel = (event) => {
     event.preventDefault();
     const delta = event.deltaY > 0 ? -0.1 : 0.1;
-    setScale((current) => clampScale(current + delta));
+    updateScale((current) => current + delta);
+  };
+  const handleImagePointerDown = (event) => {
+    if (scale <= 1) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    dragStateRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      lastX: event.clientX,
+      lastY: event.clientY,
+    };
+    setIsDraggingImage(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const handleImagePointerMove = (event) => {
+    if (!dragStateRef.current.active || dragStateRef.current.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const deltaX = event.clientX - dragStateRef.current.lastX;
+    const deltaY = event.clientY - dragStateRef.current.lastY;
+    dragStateRef.current.lastX = event.clientX;
+    dragStateRef.current.lastY = event.clientY;
+    setOffset((current) => clampOffset({ x: current.x + deltaX, y: current.y + deltaY }));
+  };
+  const endImageDrag = (event) => {
+    if (
+      Number.isInteger(dragStateRef.current.pointerId)
+      && event?.currentTarget?.hasPointerCapture?.(dragStateRef.current.pointerId)
+    ) {
+      event.currentTarget.releasePointerCapture(dragStateRef.current.pointerId);
+    }
+
+    dragStateRef.current = {
+      active: false,
+      pointerId: null,
+      lastX: 0,
+      lastY: 0,
+    };
+    setIsDraggingImage(false);
   };
   const handleRevealInFileManager = async () => {
     if (!image.path || openingInFileManager) {
@@ -327,10 +642,25 @@ export function ImagePreviewOverlay({ image, onClose }) {
       <div className="h-full overflow-auto p-6" onClick={(event) => event.stopPropagation()} onWheel={handleWheel}>
         <div className="flex min-h-full items-center justify-center">
           <img
+            ref={imageRef}
             src={image.src}
             alt={image.alt || ""}
-            className="max-h-[92vh] max-w-[92vw] object-contain shadow-2xl transition-transform duration-150 ease-out"
-            style={{ transform: `scale(${scale}) rotate(${rotation}deg)` }}
+            className={cn(
+              "max-h-[92vh] max-w-[92vw] object-contain shadow-2xl transition-transform duration-150 ease-out",
+              scale > 1 ? (isDraggingImage ? "cursor-grabbing" : "cursor-grab") : "cursor-default",
+            )}
+            style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale}) rotate(${rotation}deg)` }}
+            onPointerDown={handleImagePointerDown}
+            onPointerMove={handleImagePointerMove}
+            onPointerUp={endImageDrag}
+            onPointerCancel={endImageDrag}
+            onPointerLeave={(event) => {
+              if (dragStateRef.current.active) {
+                return;
+              }
+              endImageDrag(event);
+            }}
+            draggable={false}
           />
         </div>
       </div>
@@ -428,6 +758,13 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   const { messages } = useI18n();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
+  const [filePreviewFontSize, setFilePreviewFontSize] = useState(() => loadStoredFilePreviewFontSize());
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(filePreviewFontSizeStorageKey, filePreviewFontSize);
+    } catch {}
+  }, [filePreviewFontSize]);
 
   useEffect(() => {
     if (!preview) {
@@ -463,6 +800,8 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   const showVsCodeButton = isCodeLikePreviewTarget(title, preview.kind);
   const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || "Folder");
   const isPdfPreview = preview.kind === "pdf" && Boolean(preview.contentUrl);
+  const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
+  const showPreviewFontSizeControls = preview.kind === "markdown" || preview.kind === "text";
 
   const handleRevealInFileManager = async () => {
     if (!title || openingInFileManager) {
@@ -510,30 +849,38 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
               resolvedTheme={resolvedTheme}
               syntaxTheme={resolvedTheme === "dark" ? frontMatterDarkTheme : frontMatterLightTheme}
               variant="subtle"
+              fontSize={filePreviewFontSize}
             />
           </div>
         ) : null}
         {markdownBody.trim() ? (
-          <MarkdownContent
-            content={markdownBody}
-            files={files}
-            headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
-            resolvedTheme={resolvedTheme}
-            onOpenFilePreview={onOpenFilePreview}
-          />
+          <div data-testid="markdown-preview-content">
+            <MarkdownContent
+              content={markdownBody}
+              files={files}
+              headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
+              resolvedTheme={resolvedTheme}
+              className={richTextPreviewFontSizeClassName}
+              onOpenFilePreview={onOpenFilePreview}
+            />
+          </div>
         ) : null}
       </div>
     );
+  } else if (preview.kind === "docx" && preview.contentUrl) {
+    body = <DocxPreviewContent preview={preview} resolvedTheme={resolvedTheme} />;
   } else if (preview.kind === "json") {
-    body = <FilePreviewCodeBlock content={preview.content} language="json" />;
+    body = <FilePreviewCodeBlock content={preview.content} language="json" fontSize={filePreviewFontSize} />;
   } else if (preview.kind === "text") {
     body = isCodeLikePreviewTarget(title, preview.kind)
-      ? <FilePreviewCodeBlock content={preview.content} language={inferPreviewLanguage(title, preview.kind)} />
+      ? <FilePreviewCodeBlock content={preview.content} language={inferPreviewLanguage(title, preview.kind)} fontSize={filePreviewFontSize} />
       : (
         <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-border/70 bg-background/80" : "border-slate-200 bg-white")}>
-          <pre className="overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[13px] leading-6 text-foreground">{preview.content}</pre>
+          <pre className={cn("overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-foreground", richTextPreviewFontSizeClassName)}>{preview.content}</pre>
         </div>
       );
+  } else if (preview.kind === "spreadsheet") {
+    body = <SpreadsheetPreview preview={preview} resolvedTheme={resolvedTheme} />;
   } else if (preview.kind === "image" && preview.contentUrl) {
     body = <img src={preview.contentUrl} alt={preview.name || ""} className="mx-auto max-h-[78vh] max-w-full rounded-xl object-contain shadow-2xl" />;
   } else if (preview.kind === "video" && preview.contentUrl) {
@@ -599,9 +946,42 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {showPreviewFontSizeControls ? (
+                <>
+                  <div
+                    className={cn(
+                      "flex h-[34px] items-center gap-0.5 rounded-full border px-0.5",
+                      isDark ? "border-white/8 bg-white/[0.045]" : "border-slate-200 bg-slate-50/90",
+                    )}
+                  >
+                    {filePreviewFontSizeOptions.map((option) => {
+                      const active = option.value === filePreviewFontSize;
+                      const label = messages.chat.fontSizes?.[option.value] || option.value;
+                      return (
+                        <Tooltip key={option.value}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className={cn(
+                                "inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                                active && "bg-muted text-foreground",
+                              )}
+                              aria-label={messages.inspector.previewActions.previewFontSizeOptionTooltip(label)}
+                              onClick={() => setFilePreviewFontSize(option.value)}
+                            >
+                              <span className={cn("font-semibold leading-none", option.glyphClassName)}>A</span>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{messages.inspector.previewActions.previewFontSizeOptionTooltip(label)}</TooltipContent>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : null}
               <div
                 className={cn(
-                  "flex items-center overflow-hidden rounded-full border",
+                  "flex h-[34px] items-center overflow-hidden rounded-full border",
                   isDark ? "border-white/8 bg-white/[0.045]" : "border-slate-200 bg-slate-50/90",
                 )}
               >

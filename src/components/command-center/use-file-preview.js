@@ -1,9 +1,33 @@
 import { useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 export function useFilePreview() {
+  const { messages } = useI18n();
   const [filePreview, setFilePreview] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const previewRequestRef = useRef(0);
+
+  const resolvePreviewErrorMessage = (payload = {}, fallbackMessage = "") => {
+    if (payload?.errorCode === "office_preview_requires_libreoffice") {
+      return payload.installCommand
+        ? messages.inspector.previewErrors.officeRequiresLibreOfficeWithCommand(payload.installCommand)
+        : messages.inspector.previewErrors.officeRequiresLibreOffice;
+    }
+
+    if (payload?.errorCode === "office_preview_failed") {
+      return messages.inspector.previewErrors.officeFailed;
+    }
+
+    if (payload?.errorCode === "heic_preview_unavailable") {
+      return messages.inspector.previewErrors.heicUnavailable;
+    }
+
+    if (payload?.errorCode === "heic_preview_failed") {
+      return messages.inspector.previewErrors.heicFailed;
+    }
+
+    return fallbackMessage || payload?.error || messages.inspector.previewErrors.loadFailed;
+  };
 
   const openImagePreview = (image) => {
     const src = String(image?.src || image?.previewUrl || image?.dataUrl || "").trim();
@@ -40,7 +64,7 @@ export function useFilePreview() {
       const response = await fetch(`/api/file-preview?path=${encodeURIComponent(targetPath)}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "File preview failed");
+        throw new Error(resolvePreviewErrorMessage(payload));
       }
       if (requestId !== previewRequestRef.current) {
         return;
@@ -69,7 +93,7 @@ export function useFilePreview() {
         path: targetPath,
         name: targetPath.split("/").filter(Boolean).pop() || targetPath,
         loading: false,
-        error: error.message || "File preview failed",
+        error: error.message || messages.inspector.previewErrors.loadFailed,
       });
     }
   };

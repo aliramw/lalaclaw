@@ -171,6 +171,12 @@ const es = {
     resetConversationHotkey: "Iniciar nueva sesión (Cmd + N)",
     resetConversationTooltipHint: "Al iniciar una nueva sesion se reiniciara la conversacion actual.",
     resetConversationConfirm: "¿Iniciar una nueva sesión? El historial y el contexto se borrarán.",
+    resetConversationDialog: {
+      title: "¿Iniciar una nueva sesión?",
+      description: "Se borrarán el historial y el contexto de la conversación.",
+      cancel: "Cancelar",
+      confirm: "Confirmar",
+    },
     waitingFirstPrompt: "Esperando la primera instrucción",
     conversationWillAppear: "Aquí aparecerá tu conversación con el Agent.",
     thinkingPlaceholder: "Pensando…",
@@ -234,6 +240,10 @@ const es = {
       childAgent: "Agente hijo",
     },
     filesHint: "Esta lista muestra todos los archivos que el Agent creó, modificó o abrió en esta sesión para revisarlos rápidamente.",
+    fileCollections: {
+      session: "Archivos de la sesión",
+      workspace: "Archivos del workspace",
+    },
     tabs: {
       timeline: "Registro",
       files: "Archivos",
@@ -249,7 +259,32 @@ const es = {
     },
     fileMenu: {
       label: "Menú de archivo",
+      preview: "Vista previa",
+      refresh: "Actualizar",
       copyPath: "Copiar ruta",
+    },
+    workspaceFilter: {
+      label: "Filtrar archivos del workspace",
+      placeholder: "Filtra, p. ej. .md / test*",
+      clear: "Borrar filtro del workspace",
+      empty: (pattern) => `No hay archivos del workspace que coincidan con "${pattern}".`,
+    },
+    sessionFilter: {
+      label: "Filtrar archivos de la sesión",
+      placeholder: "Filtra, p. ej. .md / test*",
+      clear: "Borrar filtro de la sesión",
+      empty: (pattern) => `No hay archivos de la sesión que coincidan con "${pattern}".`,
+    },
+    spreadsheet: {
+      sheet: "Sheet",
+      empty: "This spreadsheet is empty.",
+      truncated: (rows, columns) => `Showing the first ${rows} rows and ${columns} columns.`,
+    },
+    workspaceTree: {
+      loading: "Cargando archivos del workspace…",
+      loadingFolder: "Cargando contenido de la carpeta…",
+      loadFailed: "No se pudieron cargar los archivos del workspace. Inténtalo de nuevo.",
+      emptyFolder: "Esta carpeta está vacía.",
     },
     timelineHint: "Consulta los detalles del registro de ejecución del agent.",
     artifactsHint: "Aquí se listan los resúmenes de respuesta de esta sesión. Haz clic para saltar a esa parte de la conversación.",
@@ -257,15 +292,17 @@ const es = {
     artifactJumpTo: "Ir a",
     empty: {
       files: "Los archivos detectados para la sesión actual aparecerán aquí.",
+      workspaceFiles: "Los archivos detectados del workspace actual aparecerán aquí.",
       timeline: "Cada ejecución se agrupará aquí como una línea de tiempo.",
       artifacts: "Aquí aparecerán los resúmenes de las respuestas del assistant.",
+      environment: "Aquí se muestran los detalles del Gateway y del entorno de la sesión actual.",
       agents: "La colaboración entre agentes aparecerá después de la primera ejecución.",
       workspace: "Esperando la vista previa del workspace…",
       terminal: "Esperando la vista previa de la terminal…",
       browser: "Esperando la vista previa del navegador…",
       noTools: "No se llamaron herramientas en este turno",
       noFiles: "No se detectaron cambios de archivos",
-      environment: "No hay detalles de entorno disponibles",
+      noEnvironment: "No hay detalles de entorno disponibles",
     },
     timeline: {
       runTitle: "Ejecución",
@@ -287,6 +324,15 @@ const es = {
       terminal: "Terminal",
       browser: "Browser",
     },
+    previewErrors: {
+      loadFailed: "File preview failed.",
+      officeFailed: "Office document preview failed. Please try again.",
+      officeRequiresLibreOffice: "Instala LibreOffice para previsualizar archivos DOC, PPT y PPTX.",
+      officeRequiresLibreOfficeWithCommand: (command) => `Instala LibreOffice para previsualizar archivos DOC, PPT y PPTX. Abre una terminal y ejecuta: ${command}`,
+      docxFailed: "La vista previa de DOCX fallo. Intentalo de nuevo.",
+      heicUnavailable: "HEIC preview is unavailable on this system.",
+      heicFailed: "HEIC preview failed. Please try again.",
+    },
     previewActions: {
       maximize: "Expandir vista previa",
       restore: "Restaurar vista previa",
@@ -298,6 +344,8 @@ const es = {
       imageRotateLeft: "Girar a la izquierda",
       imageRotateRight: "Girar a la derecha",
       imageZoomIn: "Acercar imagen",
+      previewFontSizeOptionTooltip: (label) => `Tamaño de fuente de vista previa: ${label}`,
+      renderingDocx: "Renderizando vista previa de DOCX...",
       frontMatter: "Front Matter",
       fileManagers: {
         finder: "Finder",
@@ -311,6 +359,9 @@ const es = {
     copiedCode: "Código copiado",
     copyCodeShort: "Copiar",
     copiedCodeShort: "Copiado",
+    languageLabels: {
+      markdown: "Markdown",
+    },
   },
 };
 
