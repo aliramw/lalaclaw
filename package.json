@@ -23,15 +23,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aliramw/CommandCenter.git"
+    "url": "git+https://github.com/aliramw/lalaclaw.git"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/aliramw/CommandCenter/issues"
+    "url": "https://github.com/aliramw/lalaclaw/issues"
   },
-  "homepage": "https://github.com/aliramw/CommandCenter#readme",
+  "homepage": "https://github.com/aliramw/lalaclaw#readme",
   "dependencies": {
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-scroll-area": "^1.2.10",

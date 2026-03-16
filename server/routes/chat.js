@@ -103,9 +103,8 @@ function createChatHandler({
   }
 
   return async function handleChat(req, res) {
-    let sessionKey = '';
-    let replySettled = false;
     let clientDisconnected = false;
+    let assistantMessageId = '';
     const markClientDisconnected = () => {
       clientDisconnected = true;
     };
@@ -119,7 +118,7 @@ function createChatHandler({
       const shouldStream = body.stream !== false;
       const fastMode = Boolean(body.fastMode);
       const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
-      const assistantMessageId = typeof body.assistantMessageId === 'string' && body.assistantMessageId.trim()
+      assistantMessageId = typeof body.assistantMessageId === 'string' && body.assistantMessageId.trim()
         ? body.assistantMessageId.trim()
         : `msg-assistant-${Date.now()}`;
       const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
@@ -261,7 +260,6 @@ function createChatHandler({
       const currentPreferences = getSessionPreferences(sessionUser);
       const currentAgentId = resolveSessionAgentId(sessionUser);
       const nextAgentId = body.agentId ? String(body.agentId).trim() || currentAgentId : currentAgentId;
-      sessionKey = getCommandCenterSessionKey(nextAgentId, sessionUser);
       const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
       const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
       const nextThinkMode = slashCommandState?.kind === 'thinkMode' ? slashCommandState.value : resolveSessionThinkMode(sessionUser);
@@ -376,7 +374,6 @@ function createChatHandler({
       };
 
       if (shouldStream) {
-        replySettled = true;
         if (!clientDisconnected && !res.destroyed && !res.writableEnded) {
           writeChatStreamEvent(res, {
             type: 'message.complete',
@@ -412,10 +409,8 @@ function createChatHandler({
         return;
       }
 
-      replySettled = true;
       sendJson(res, 200, responsePayload);
     } catch (error) {
-      replySettled = true;
       if (res.headersSent) {
         if (!clientDisconnected && !res.destroyed && !res.writableEnded) {
           writeChatStreamEvent(res, {

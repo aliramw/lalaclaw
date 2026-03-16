@@ -350,22 +350,6 @@ function getConversationMessageId(message = {}, index = 0) {
   return `${message?.timestamp || "message"}-${index}`;
 }
 
-function calculateLatestBubbleScrollTop(viewport, bubble) {
-  if (!viewport || !bubble) {
-    return 0;
-  }
-
-  const viewportRect = viewport.getBoundingClientRect();
-  const bubbleRect = bubble.getBoundingClientRect();
-  const bubbleTop = viewport.scrollTop + (bubbleRect.top - viewportRect.top);
-  const bubbleHeight = bubbleRect.height || 0;
-  const middleOffset = viewport.clientHeight * 0.42;
-  const topOffset = 8;
-  const targetTop = bubbleHeight >= Math.max(140, viewport.clientHeight * 0.3) ? bubbleTop - middleOffset : bubbleTop - topOffset;
-
-  return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
-}
-
 function calculatePinnedLatestBubbleScrollTop(viewport, bubble, ratio = 0.2) {
   if (!viewport || !bubble) {
     return 0;
@@ -501,7 +485,6 @@ function BubbleTopJumpButton({ onClick }) {
 }
 
 function MessageMeta({
-  align = "left",
   content,
   copyFirst = false,
   formatTime,
@@ -626,7 +609,6 @@ const MessageBubble = memo(function MessageBubble({
   onJumpPreviousMessage,
   previousMessageId,
   resolvedTheme,
-  separated,
   chatFontSize,
   userLabel,
 }) {

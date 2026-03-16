@@ -13,7 +13,7 @@
 If OpenClaw is already installed on the machine and `~/.openclaw/openclaw.json` is available:
 
 ```bash
-git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+git clone https://github.com/aliramw/lalaclaw.git lalaclaw
 cd lalaclaw
 npm ci
 npm run doctor

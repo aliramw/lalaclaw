@@ -13,7 +13,7 @@
 如果这台机器已经安装好 OpenClaw，并且 `~/.openclaw/openclaw.json` 可用，推荐直接执行：
 
 ```bash
-git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+git clone https://github.com/aliramw/lalaclaw.git lalaclaw
 cd lalaclaw
 npm ci
 npm run doctor

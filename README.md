@@ -1,6 +1,6 @@
 # LalaClaw
 
-[![CI](https://github.com/aliramw/CommandCenter/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/CommandCenter/actions/workflows/ci.yml)
+[![CI](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 A better way to co-create with agents.
@@ -53,7 +53,7 @@ flowchart LR
 On a fresh machine with OpenClaw already installed:
 
 ```bash
-git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+git clone https://github.com/aliramw/lalaclaw.git lalaclaw
 cd lalaclaw
 npm ci
 npm run doctor
@@ -165,12 +165,12 @@ More detail lives in [deploy/macos/README.md](./deploy/macos/README.md).
 
 ## OpenClaw wiring
 
-If `~/.openclaw/openclaw.json` exists, CommandCenter will automatically detect your local OpenClaw gateway and reuse its loopback endpoint plus gateway token.
+If `~/.openclaw/openclaw.json` exists, LalaClaw will automatically detect your local OpenClaw gateway and reuse its loopback endpoint plus gateway token.
 
 For a fresh machine, the recommended production setup is:
 
 ```bash
-git clone https://github.com/aliramw/CommandCenter.git lalaclaw
+git clone https://github.com/aliramw/lalaclaw.git lalaclaw
 cd lalaclaw
 npm ci
 npm run doctor

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Keyboard, Languages, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownIcon,
   DropdownMenu,
@@ -209,18 +208,6 @@ function pickRandomEdgeStart(originRect) {
   };
 }
 
-function getStartSide(point, originRect) {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const distances = [
-    { side: "left", distance: Math.abs(point.x + originRect.width + LOBSTER_OFFSCREEN_PADDING) },
-    { side: "right", distance: Math.abs(point.x - (viewportWidth + LOBSTER_OFFSCREEN_PADDING)) },
-    { side: "top", distance: Math.abs(point.y + originRect.height + LOBSTER_OFFSCREEN_PADDING) },
-    { side: "bottom", distance: Math.abs(point.y - (viewportHeight + LOBSTER_OFFSCREEN_PADDING)) },
-  ];
-  return distances.sort((a, b) => a.distance - b.distance)[0]?.side || "left";
-}
-
 function getNearestEdgeExitPoint(point, originRect) {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
@@ -232,58 +219,6 @@ function getNearestEdgeExitPoint(point, originRect) {
   ];
 
   return candidates.sort((a, b) => a.distance - b.distance)[0].point;
-}
-
-function pickDiagonalExitPoint(startPoint, originRect) {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const startSide = getStartSide(startPoint, originRect);
-  const availableSides = startSide === "left" || startSide === "right"
-    ? ["top", "bottom"]
-    : ["left", "right"];
-  const chosenSide = availableSides[Math.floor(Math.random() * availableSides.length)];
-
-  if (chosenSide === "top") {
-    return {
-      x: clamp(
-        startPoint.x + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportWidth * 0.18, viewportWidth * 0.42),
-        LOBSTER_WALK_MARGIN,
-        viewportWidth - originRect.width - LOBSTER_WALK_MARGIN,
-      ),
-      y: -originRect.height - LOBSTER_OFFSCREEN_PADDING,
-    };
-  }
-
-  if (chosenSide === "bottom") {
-    return {
-      x: clamp(
-        startPoint.x + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportWidth * 0.18, viewportWidth * 0.42),
-        LOBSTER_WALK_MARGIN,
-        viewportWidth - originRect.width - LOBSTER_WALK_MARGIN,
-      ),
-      y: viewportHeight + LOBSTER_OFFSCREEN_PADDING,
-    };
-  }
-
-  if (chosenSide === "left") {
-    return {
-      x: -originRect.width - LOBSTER_OFFSCREEN_PADDING,
-      y: clamp(
-        startPoint.y + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportHeight * 0.18, viewportHeight * 0.42),
-        LOBSTER_WALK_MARGIN,
-        viewportHeight - originRect.height - LOBSTER_WALK_MARGIN,
-      ),
-    };
-  }
-
-  return {
-    x: viewportWidth + LOBSTER_OFFSCREEN_PADDING,
-    y: clamp(
-      startPoint.y + (Math.random() < 0.5 ? -1 : 1) * randomBetween(viewportHeight * 0.18, viewportHeight * 0.42),
-      LOBSTER_WALK_MARGIN,
-      viewportHeight - originRect.height - LOBSTER_WALK_MARGIN,
-    ),
-  };
 }
 
 function pickRandomInteriorPoint(originRect) {
@@ -830,67 +765,6 @@ function ContextTooltipContent({ messages }) {
       </div>
     </div>
   );
-}
-
-function formatUpdatedBadge(updatedLabel, updatedAt, intlLocale, messages) {
-  const timestamp = Number(updatedAt) || 0;
-  if (timestamp > 0) {
-    const diffSeconds = Math.round((timestamp - Date.now()) / 1000);
-    const absoluteSeconds = Math.abs(diffSeconds);
-
-    if (absoluteSeconds < 45) {
-      return messages.common.justNow;
-    }
-
-    if (absoluteSeconds < 3600) {
-      return new Intl.RelativeTimeFormat(intlLocale, { numeric: "always" }).format(
-        Math.round(diffSeconds / 60),
-        "minute",
-      );
-    }
-
-    if (absoluteSeconds < 86400) {
-      return new Intl.RelativeTimeFormat(intlLocale, { numeric: "always" }).format(
-        Math.round(diffSeconds / 3600),
-        "hour",
-      );
-    }
-
-    if (absoluteSeconds < 604800) {
-      return new Intl.RelativeTimeFormat(intlLocale, { numeric: "always" }).format(
-        Math.round(diffSeconds / 86400),
-        "day",
-      );
-    }
-
-    return new Intl.DateTimeFormat(intlLocale, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(timestamp));
-  }
-
-  const normalized = String(updatedLabel || "").trim();
-  if (!normalized) {
-    return messages.common.noUpdates;
-  }
-
-  if (/^(updated\s+)?just now$/i.test(normalized) || normalized === "刚刚" || normalized === "刚刚更新") {
-    return messages.common.justNow;
-  }
-
-  const minuteMatch = normalized.match(/^(\d+)\s*(?:m|min|mins|minute|minutes)\s+ago$/i) || normalized.match(/^(\d+)\s*分钟前$/);
-  if (minuteMatch) {
-    return new Intl.RelativeTimeFormat(intlLocale, { numeric: "always" }).format(-Number(minuteMatch[1]), "minute");
-  }
-
-  const hourMatch = normalized.match(/^(\d+)\s*(?:h|hr|hrs|hour|hours)\s+ago$/i) || normalized.match(/^(\d+)\s*小时前$/);
-  if (hourMatch) {
-    return new Intl.RelativeTimeFormat(intlLocale, { numeric: "always" }).format(-Number(hourMatch[1]), "hour");
-  }
-
-  return normalized;
 }
 
 function ThemeToggle({ onChange, resolvedTheme, value }) {
@@ -1531,9 +1405,8 @@ export function SessionOverview({
   session,
   theme,
 }) {
-  const { intlLocale, messages } = useI18n();
+  const { messages } = useI18n();
   const thinkModeLabels = messages.thinkModes;
-  const updatedBadgeLabel = formatUpdatedBadge(session.updatedLabel, session.updatedAt, intlLocale, messages);
   const getThinkModeLabel = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).value;
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
   const isThinkModeEnabled = (session.thinkMode || "off") !== "off";

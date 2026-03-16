@@ -254,7 +254,6 @@ const pt = {
       files: "Os arquivos detectados para a sessão atual aparecerão aqui.",
       timeline: "Cada execução será agrupada aqui como uma linha do tempo.",
       artifacts: "Os resumos das respostas do assistant aparecerão aqui.",
-      environment: "Os detalhes de ambiente do Gateway e da sessão atual aparecem aqui.",
       agents: "A colaboração entre agents aparecerá após a primeira execução.",
       workspace: "Aguardando visualização do workspace…",
       terminal: "Aguardando visualização do terminal…",

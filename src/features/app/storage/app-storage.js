@@ -833,7 +833,7 @@ function hasSnapshotAssistantReply(snapshotMessages = [], pendingEntry) {
   const startedAt = Number(pendingEntry?.startedAt || 0);
 
   const matchesAssistant = (message) => {
-    if (message?.role !== "assistant" || message?.pending || !Boolean(String(message.content || "").trim())) {
+    if (message?.role !== "assistant" || message?.pending || String(message.content || "").trim() === "") {
       return false;
     }
 
@@ -947,7 +947,7 @@ function findSnapshotPendingAssistantIndex(snapshotMessages = [], pendingEntry) 
   if (pendingUserIndex >= 0) {
     for (let index = snapshotMessages.length - 1; index > pendingUserIndex; index -= 1) {
       const message = snapshotMessages[index];
-      if (message?.role !== "assistant" || !Boolean(String(message.content || "").trim())) {
+      if (message?.role !== "assistant" || String(message.content || "").trim() === "") {
         continue;
       }
       return index;
@@ -958,7 +958,7 @@ function findSnapshotPendingAssistantIndex(snapshotMessages = [], pendingEntry) 
   const matchThreshold = expectedTimestamp || startedAt || 0;
   for (let index = snapshotMessages.length - 1; index >= 0; index -= 1) {
     const message = snapshotMessages[index];
-    if (message?.role !== "assistant" || !Boolean(String(message.content || "").trim())) {
+    if (message?.role !== "assistant" || String(message.content || "").trim() === "") {
       continue;
     }
     const timestamp = Number(message.timestamp || 0);

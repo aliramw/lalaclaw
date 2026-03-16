@@ -254,7 +254,6 @@ const es = {
       files: "Los archivos detectados para la sesión actual aparecerán aquí.",
       timeline: "Cada ejecución se agrupará aquí como una línea de tiempo.",
       artifacts: "Aquí aparecerán los resúmenes de las respuestas del assistant.",
-      environment: "Aquí se listan los detalles del entorno del Gateway y de la sesión actual.",
       agents: "La colaboración entre agentes aparecerá después de la primera ejecución.",
       workspace: "Esperando la vista previa del workspace…",
       terminal: "Esperando la vista previa de la terminal…",

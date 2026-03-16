@@ -52,7 +52,7 @@ function hasVisibleAssistantContent(content = "") {
 
   normalized = normalized
     .replace(/<\/?[A-Za-z][^>\n]*>?/g, " ")
-    .replace(/[`*_>#~\-]+/g, " ")
+    .replace(/[`*_>#~-]+/g, " ")
     .replace(/\s+/g, "");
 
   return normalized.length > 0;
@@ -661,51 +661,50 @@ export function useChatController({
       );
       updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.failed }));
     } finally {
-      if (navigationAwayRef.current) {
-        return;
+      if (!navigationAwayRef.current) {
+        if (Object.prototype.hasOwnProperty.call(inFlightTurnsRef.current, targetTabId)) {
+          const nextInFlightTurns = { ...inFlightTurnsRef.current };
+          delete nextInFlightTurns[targetTabId];
+          inFlightTurnsRef.current = nextInFlightTurns;
+        }
+        if (Object.prototype.hasOwnProperty.call(stopRequestedByTabRef.current, targetTabId)) {
+          const nextStopRequested = { ...stopRequestedByTabRef.current };
+          delete nextStopRequested[targetTabId];
+          stopRequestedByTabRef.current = nextStopRequested;
+        }
+        if (turnStopped) {
+          const stoppedEntry = {
+            ...nextPendingEntry,
+            stopped: true,
+            stoppedAt: Date.now(),
+            suppressPendingPlaceholder: true,
+          };
+          setPendingChatTurns((current) => ({
+            ...current,
+            [resolvedEntry.key]: stoppedEntry,
+          }));
+          persistOptimisticChatState({
+            tabId: targetTabId,
+            nextMessages: getMessagesForTab(targetTabId),
+            pendingEntry: stoppedEntry,
+          });
+        } else {
+          setPendingChatTurns((current) => {
+            if (!current[resolvedEntry.key]) {
+              return current;
+            }
+            const next = { ...current };
+            delete next[resolvedEntry.key];
+            return next;
+          });
+          persistOptimisticChatState({
+            tabId: targetTabId,
+            nextMessages: getMessagesForTab(targetTabId),
+            clearPendingKey: resolvedEntry.key,
+          });
+        }
+        setBusyForTab(targetTabId, false);
       }
-      if (Object.prototype.hasOwnProperty.call(inFlightTurnsRef.current, targetTabId)) {
-        const nextInFlightTurns = { ...inFlightTurnsRef.current };
-        delete nextInFlightTurns[targetTabId];
-        inFlightTurnsRef.current = nextInFlightTurns;
-      }
-      if (Object.prototype.hasOwnProperty.call(stopRequestedByTabRef.current, targetTabId)) {
-        const nextStopRequested = { ...stopRequestedByTabRef.current };
-        delete nextStopRequested[targetTabId];
-        stopRequestedByTabRef.current = nextStopRequested;
-      }
-      if (turnStopped) {
-        const stoppedEntry = {
-          ...nextPendingEntry,
-          stopped: true,
-          stoppedAt: Date.now(),
-          suppressPendingPlaceholder: true,
-        };
-        setPendingChatTurns((current) => ({
-          ...current,
-          [resolvedEntry.key]: stoppedEntry,
-        }));
-        persistOptimisticChatState({
-          tabId: targetTabId,
-          nextMessages: getMessagesForTab(targetTabId),
-          pendingEntry: stoppedEntry,
-        });
-      } else {
-        setPendingChatTurns((current) => {
-          if (!current[resolvedEntry.key]) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[resolvedEntry.key];
-          return next;
-        });
-        persistOptimisticChatState({
-          tabId: targetTabId,
-          nextMessages: getMessagesForTab(targetTabId),
-          clearPendingKey: resolvedEntry.key,
-        });
-      }
-      setBusyForTab(targetTabId, false);
     }
   }, [
     applySnapshot,

@@ -15,7 +15,7 @@ const homePrefix = "/Users/marila";
 const trackedFileLinkButtonClassName =
   "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
 
-function getInlineCodeClassName(resolvedTheme = "light", interactive = false) {
+function getInlineCodeClassName(interactive = false) {
   return cn(
     "cc-inline-code inline border-0 align-baseline font-mono font-normal",
     interactive && "cc-inline-code-link cursor-pointer appearance-none text-left no-underline",
@@ -344,7 +344,7 @@ function CodeBlock({ code, language, scrollAnchorId = "" }) {
   );
 }
 
-function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedTheme = "light", scrollAnchorId = "", ...props }) {
+function CodeRenderer({ className, children, files, onOpenFilePreview, scrollAnchorId = "", ...props }) {
   const match = /language-([\w-]+)/.exec(className || "");
   const code = String(children || "").replace(/\n$/, "");
   const isBlock = Boolean(match) || code.includes("\n");
@@ -357,7 +357,7 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedT
         return (
           <button
             type="button"
-            className={getInlineCodeClassName(resolvedTheme, true)}
+            className={getInlineCodeClassName(true)}
             onClick={() => onOpenFilePreview(matchedFile)}
           >
             {children}
@@ -368,7 +368,7 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedT
       return (
         <a
           href={getVsCodeHref(matchedFile.fullPath || matchedFile.path)}
-          className={getInlineCodeClassName(resolvedTheme, true)}
+          className={getInlineCodeClassName(true)}
         >
           {children}
         </a>
@@ -377,7 +377,7 @@ function CodeRenderer({ className, children, files, onOpenFilePreview, resolvedT
 
     return (
       <code
-        className={getInlineCodeClassName(resolvedTheme)}
+        className={getInlineCodeClassName()}
         {...props}
       >
         {children}
