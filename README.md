@@ -249,6 +249,7 @@ For the full contribution checklist and project structure notes, see [CONTRIBUTI
 LalaClaw follows Semantic Versioning for releases.
 
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes.
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-2`, not `YYYY.M.D.N`.
 - Call out breaking changes explicitly in release notes and migration-facing docs.
 - The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
 

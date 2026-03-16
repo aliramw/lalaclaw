@@ -249,6 +249,7 @@ tail -f ./logs/lalaclaw-launchd.err.log
 LalaClaw 使用语义化版本。
 
 - 每次项目版本变化时更新 [CHANGELOG.md](./CHANGELOG.md)
+- 使用 npm 兼容的日历版本格式。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-2`，不要使用 `YYYY.M.D.N`
 - 破坏性变更应在 release notes 和迁移文档里明确标注
 - 当前仓库目标 Node.js 版本是 [`.nvmrc`](./.nvmrc) 中的 `22`
 

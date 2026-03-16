@@ -86,6 +86,7 @@ If your change depends on built output, run `npm run build` and verify against `
 ## Versioning and Release Notes
 
 - LalaClaw follows Semantic Versioning for releases.
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-2`, not `YYYY.M.D.N`.
 - Breaking changes should be called out explicitly in release notes and migration-facing docs.
 - The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
 
