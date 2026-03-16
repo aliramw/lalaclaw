@@ -1,6 +1,6 @@
-# LalaClaw
+[查看不同语言的 README：English](./README.md) | [中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
 
-[English README](./README.md)
+# LalaClaw
 
 [![CI](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -120,10 +120,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-3`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-4`：
 
 ```bash
-npm install -g lalaclaw@2026.3.17-3
+npm install -g lalaclaw@2026.3.17-4
 lalaclaw init
 ```
 
@@ -139,12 +139,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-3`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-4`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-3
+git checkout 2026.3.17-4
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -245,10 +245,10 @@ tail -f ./logs/lalaclaw-launchd.err.log
 
 ## 版本约定
 
-LalaClaw 使用语义化版本。
+LalaClaw 使用 npm 兼容的日历版本格式。
 
 - 每次项目版本变化时更新 [CHANGELOG.md](./CHANGELOG.md)
-- 使用 npm 兼容的日历版本格式。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-3`，不要使用 `YYYY.M.D.N`
+- 使用 npm 兼容的日历版本格式。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-4`，不要使用 `YYYY.M.D.N`
 - 破坏性变更应在 release notes 和迁移文档里明确标注
 - 当前仓库目标 Node.js 版本是 [`.nvmrc`](./.nvmrc) 中的 `22`
 

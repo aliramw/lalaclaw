@@ -15,15 +15,13 @@
 ```bash
 npm install -g lalaclaw
 lalaclaw init
-lalaclaw doctor
-lalaclaw start
 ```
 
 補足:
 
 - `lalaclaw init` は macOS と Linux では `~/.config/lalaclaw/.env.local` にローカル設定を書き込みます
-- `lalaclaw doctor` は Node.js、ローカル OpenClaw の検出、ポート、設定を確認します
-- `lalaclaw start` は現在の terminal 上で動くため、その terminal を閉じると停止します
+- macOS の npm インストールでは、`lalaclaw init` が `launchd` バックグラウンドサービスも自動で起動します
+- Linux では、またはバックグラウンド起動を使わない場合は、その後に `lalaclaw doctor` と `lalaclaw start` を実行します
 
 ## GitHub からインストール
 
@@ -58,16 +56,14 @@ npm でインストールしていて最新版に更新したい場合:
 
 ```bash
 npm install -g lalaclaw@latest
-lalaclaw doctor
-lalaclaw start
+lalaclaw init
 ```
 
-`2026.3.17-3` のような特定の公開版を使いたい場合:
+`2026.3.17-4` のような特定の公開版を使いたい場合:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-3
-lalaclaw doctor
-lalaclaw start
+npm install -g lalaclaw@2026.3.17-4
+lalaclaw init
 ```
 
 GitHub からインストールした場合は次の手順で更新します。
@@ -82,12 +78,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-`2026.3.17-3` のような特定のリリース版を使いたい場合:
+`2026.3.17-4` のような特定のリリース版を使いたい場合:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-3
+git checkout 2026.3.17-4
 npm ci
 npm run build
 npm run lalaclaw:start

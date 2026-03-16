@@ -1,6 +1,6 @@
-# LalaClaw
+[Read this README in: English](./README.md) | [中文](./README.zh-CN.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
 
-[中文 README](./README.zh-CN.md)
+# LalaClaw
 
 [![CI](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -245,7 +245,7 @@ For the full contribution checklist and project structure notes, see [CONTRIBUTI
 
 ## Versioning
 
-LalaClaw follows Semantic Versioning for releases.
+LalaClaw uses npm-compatible calendar versioning for releases.
 
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes.
 - Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-4`, not `YYYY.M.D.N`.

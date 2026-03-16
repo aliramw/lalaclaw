@@ -15,15 +15,13 @@ Para la configuracion mas simple como usuario final:
 ```bash
 npm install -g lalaclaw
 lalaclaw init
-lalaclaw doctor
-lalaclaw start
 ```
 
 Notas:
 
 - `lalaclaw init` guarda tu configuracion local en `~/.config/lalaclaw/.env.local` en macOS y Linux
-- `lalaclaw doctor` verifica Node.js, OpenClaw local, puertos y configuracion
-- `lalaclaw start` se ejecuta en el terminal actual, asi que si cierras ese terminal el servicio se detiene
+- En instalaciones npm sobre macOS, `lalaclaw init` tambien inicia automaticamente un servicio `launchd`
+- En Linux, o si desactivas el arranque en segundo plano, continua con `lalaclaw doctor` y despues `lalaclaw start`
 
 ## Instalar desde GitHub
 
@@ -58,16 +56,14 @@ Si instalaste LalaClaw con npm y quieres la version mas reciente:
 
 ```bash
 npm install -g lalaclaw@latest
-lalaclaw doctor
-lalaclaw start
+lalaclaw init
 ```
 
-Si quieres una version publicada especifica, como `2026.3.17-3`:
+Si quieres una version publicada especifica, como `2026.3.17-4`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-3
-lalaclaw doctor
-lalaclaw start
+npm install -g lalaclaw@2026.3.17-4
+lalaclaw init
 ```
 
 Si instalaste LalaClaw desde GitHub, actualizalo asi:
@@ -82,12 +78,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Si prefieres una version publicada especifica, como `2026.3.17-3`:
+Si prefieres una version publicada especifica, como `2026.3.17-4`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-3
+git checkout 2026.3.17-4
 npm ci
 npm run build
 npm run lalaclaw:start
