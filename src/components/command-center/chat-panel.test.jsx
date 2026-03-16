@@ -717,6 +717,62 @@ describe("ChatPanel", () => {
     expect(textarea).toHaveClass("min-h-[3.35rem]");
   });
 
+  it("shows the enter-send hint and toggle button by default", async () => {
+    const onComposerSendModeToggle = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onComposerSendModeToggle={onComposerSendModeToggle}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+
+    expect(onComposerSendModeToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the double-enter hint after switching send mode", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          composerSendMode="double-enter-send"
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+  });
+
   it("places the timestamp above the outline for assistant messages that render an outline", () => {
     const { container } = render(
       <TooltipProvider>

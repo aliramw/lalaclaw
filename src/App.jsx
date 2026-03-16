@@ -416,6 +416,7 @@ function AppContent() {
     busy,
     chatFontSize,
     chatTabs,
+    composerSendMode,
     composerAttachments,
     files,
     fastMode,
@@ -426,6 +427,7 @@ function AppContent() {
     handleAgentChange,
     handleArtifactSelect,
     handleChatFontSizeChange,
+    handleComposerSendModeToggle,
     handleCloseChatTab,
     handleReorderChatTabs,
     handleFastModeChange,
@@ -698,6 +700,7 @@ function AppContent() {
                 busy={busy}
                 chatFontSize={chatFontSize}
                 chatTabs={chatTabs}
+                composerSendMode={composerSendMode}
                 composerAttachments={composerAttachments}
                 files={files}
                 focusMessageRequest={focusMessageRequest}
@@ -708,6 +711,7 @@ function AppContent() {
                 onAddAttachments={handleAddAttachments}
                 onChatFontSizeChange={handleChatFontSizeChange}
                 onCloseChatTab={handleCloseChatTab}
+                onComposerSendModeToggle={handleComposerSendModeToggle}
                 onReorderChatTab={handleReorderChatTabs}
                 interactionLocked={Boolean(switchingAgentOverlay || switchingModelOverlay)}
                 queuedMessages={activeQueuedMessages}

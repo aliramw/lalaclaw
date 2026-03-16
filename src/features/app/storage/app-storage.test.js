@@ -876,6 +876,33 @@ describe("loadStoredState", () => {
     expect(loadStoredState()?.chatFontSize).toBe("large");
   });
 
+  it("defaults the composer send mode to enter-send when storage does not have it", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      }),
+    );
+
+    expect(loadStoredState()?.composerSendMode).toBe("enter-send");
+  });
+
+  it("loads the stored composer send mode", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        composerSendMode: "double-enter-send",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      }),
+    );
+
+    expect(loadStoredState()?.composerSendMode).toBe("double-enter-send");
+  });
+
   it("falls back to the legacy per-session chat font size map when loading older storage", () => {
     window.localStorage.setItem(
       storageKey,

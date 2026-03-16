@@ -26,6 +26,7 @@ function createProps(overrides = {}) {
     activeChatTabId: "agent:main",
     activeTab: "timeline",
     chatFontSize: "small",
+    composerSendMode: "enter-send",
     chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
     dismissedTaskRelationshipIdsByConversation: {},
     fastMode: false,
@@ -94,6 +95,7 @@ describe("useAppPersistence", () => {
         activeChatTabId: "agent:main",
         activeTab: "timeline",
         chatFontSize: "medium",
+        composerSendMode: "double-enter-send",
         chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
@@ -150,6 +152,7 @@ describe("useAppPersistence", () => {
         activeChatTabId: "agent:main",
         activeTab: "timeline",
         chatFontSize: "medium",
+        composerSendMode: "double-enter-send",
         chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {
           "command-center:main": ["rel-agent-1"],
@@ -215,6 +218,7 @@ describe("useAppPersistence", () => {
         activeChatTabId: "agent:main",
         activeTab: "timeline",
         chatFontSize: "small",
+        composerSendMode: "enter-send",
         chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {},
         fastMode: false,

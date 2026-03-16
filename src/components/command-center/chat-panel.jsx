@@ -1024,7 +1024,7 @@ const MessageBubble = memo(function MessageBubble({
     && areMessageAttachmentsEqual(prevProps.message?.attachments || [], nextProps.message?.attachments || []);
 });
 
-function ConnectionStatus({ session }) {
+function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSendMode, session }) {
   const { messages } = useI18n();
   const isOffline = isOfflineStatus(session.status);
   const isOpenClaw = session.mode === "openclaw";
@@ -1034,7 +1034,14 @@ function ConnectionStatus({ session }) {
     : isOpenClaw
       ? messages.chat.connectionStatusConnected
       : messages.chat.connectionStatusLocal;
-  const statusHint = isOffline ? messages.chat.disconnectedPlaceholder : messages.chat.composerHint;
+  const statusHint = isOffline
+    ? messages.chat.disconnectedPlaceholder
+    : composerSendMode === "enter-send"
+      ? messages.chat.composerEnterToSendHint
+      : messages.chat.composerDoubleEnterHint;
+  const toggleLabel = composerSendMode === "enter-send"
+    ? messages.chat.composerSwitchToShiftEnterSend
+    : messages.chat.composerSwitchToEnterSend;
   const tooltipDetail = isOffline
     ? messages.chat.connectionStatusDisconnected
     : isOpenClaw
@@ -1058,7 +1065,21 @@ function ConnectionStatus({ session }) {
         </TooltipContent>
       </Tooltip>
       <span aria-hidden="true">-</span>
-      <span>{statusHint}</span>
+      <span className="inline-flex items-center gap-1.5">
+        <span>{statusHint}</span>
+        {!isOffline ? (
+          <>
+            <span aria-hidden="true">-</span>
+            <button
+              type="button"
+              onClick={onToggleComposerSendMode}
+              className="border-b border-current text-[#1677eb] transition-colors hover:text-[#0f5fc6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1677eb]/35 dark:text-[#78b7ff] dark:hover:text-[#a8d0ff]"
+            >
+              {toggleLabel}
+            </button>
+          </>
+        ) : null}
+      </span>
     </span>
   );
 }
@@ -1316,6 +1337,7 @@ export function ChatPanel({
   busy,
   chatFontSize = "small",
   chatTabs = [],
+  composerSendMode = "enter-send",
   composerAttachments,
   files,
   focusMessageRequest,
@@ -1327,6 +1349,7 @@ export function ChatPanel({
   onActivateChatTab,
   onChatFontSizeChange,
   onCloseChatTab,
+  onComposerSendModeToggle,
   onReorderChatTab,
   onRemoveAttachment,
   onPromptChange,
@@ -2557,7 +2580,11 @@ export function ChatPanel({
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <ConnectionStatus session={session} />
+              <ConnectionStatus
+                composerSendMode={composerSendMode}
+                onToggleComposerSendMode={onComposerSendModeToggle}
+                session={session}
+              />
             </div>
             <div className="flex items-center justify-end gap-1.5">
               <div className="relative flex items-center gap-px">

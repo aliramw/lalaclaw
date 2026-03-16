@@ -3,6 +3,7 @@ import { applyTextareaEnter, moveCaretToEnd, rapidEnterSendThresholdMs } from "@
 
 export function usePromptHistory({
   activeConversationKey,
+  composerSendMode,
   composerAttachments,
   handleSend,
   prompt,
@@ -75,7 +76,14 @@ export function usePromptHistory({
     }
 
     const isPlainEnter = event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
-    if (isPlainEnter && !event.isComposing) {
+    if (composerSendMode === "enter-send" && isPlainEnter && !event.isComposing) {
+      event.preventDefault();
+      lastPlainEnterRef.current = { timestamp: 0, expectedValue: "" };
+      handleSend();
+      return;
+    }
+
+    if (composerSendMode === "double-enter-send" && isPlainEnter && !event.isComposing) {
       const normalizedPrompt = prompt.replace(/\r\n/g, "\n");
       const expectedValue = applyTextareaEnter(normalizedPrompt, textarea.selectionStart, textarea.selectionEnd);
       const now = Date.now();
@@ -97,7 +105,7 @@ export function usePromptHistory({
       };
     }
 
-    if (event.key === "Enter" && event.shiftKey) {
+    if (composerSendMode === "double-enter-send" && event.key === "Enter" && event.shiftKey) {
       event.preventDefault();
       handleSend();
     }

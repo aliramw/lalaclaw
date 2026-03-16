@@ -6,6 +6,7 @@ import {
   createResetSessionUser,
   createConversationKey,
   defaultChatFontSize,
+  defaultComposerSendMode,
   defaultInspectorPanelWidth,
   defaultSessionUser,
   defaultTab,
@@ -337,6 +338,7 @@ export function useCommandCenter() {
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [inspectorPanelWidth, setInspectorPanelWidth] = useState(stored?.inspectorPanelWidth || defaultInspectorPanelWidth);
   const [chatFontSize, setChatFontSize] = useState(stored?.chatFontSize || defaultChatFontSize);
+  const [composerSendMode, setComposerSendMode] = useState(stored?.composerSendMode || defaultComposerSendMode);
   const [dismissedTaskRelationshipIdsByConversation, setDismissedTaskRelationshipIdsByConversation] = useState(
     stored?.dismissedTaskRelationshipIdsByConversation || {},
   );
@@ -365,6 +367,7 @@ export function useCommandCenter() {
   const activeTabRef = useRef(activeTab);
   const inspectorPanelWidthRef = useRef(inspectorPanelWidth);
   const chatFontSizeRef = useRef(chatFontSize);
+  const composerSendModeRef = useRef(composerSendMode);
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
   const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
   const runtimeRequestByTabIdRef = useRef({});
@@ -423,6 +426,7 @@ export function useCommandCenter() {
       activeTab: activeTabRef.current,
       chatTabs: chatTabsRef.current,
       chatFontSize: chatFontSizeRef.current,
+      composerSendMode: composerSendModeRef.current,
       dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
       fastMode: Boolean(activeMeta?.fastMode),
       inspectorPanelWidth: inspectorPanelWidthRef.current,
@@ -449,6 +453,7 @@ export function useCommandCenter() {
       activeTab: activeTabRef.current,
       chatTabs: chatTabsRef.current,
       chatFontSize: overrides.chatFontSize || chatFontSizeRef.current,
+      composerSendMode: overrides.composerSendMode || composerSendModeRef.current,
       dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
       fastMode: Boolean(activeMeta?.fastMode),
       inspectorPanelWidth: inspectorPanelWidthRef.current,
@@ -1113,6 +1118,10 @@ export function useCommandCenter() {
   }, [chatFontSize]);
 
   useEffect(() => {
+    composerSendModeRef.current = composerSendMode;
+  }, [composerSendMode]);
+
+  useEffect(() => {
     dismissedTaskRelationshipIdsByConversationRef.current = dismissedTaskRelationshipIdsByConversation;
   }, [dismissedTaskRelationshipIdsByConversation]);
 
@@ -1428,6 +1437,7 @@ export function useCommandCenter() {
     setPromptHistoryNavigation,
   } = usePromptHistory({
     activeConversationKey,
+    composerSendMode,
     composerAttachments,
     handleSend: sendCurrentPrompt,
     prompt,
@@ -1445,6 +1455,7 @@ export function useCommandCenter() {
     activeChatTabId,
     activeTab,
     chatFontSize,
+    composerSendMode,
     chatTabs,
     dismissedTaskRelationshipIdsByConversation,
     fastMode,
@@ -1484,6 +1495,14 @@ export function useCommandCenter() {
     setChatFontSize(nextSize);
     setRestoredChatScrollRevision((current) => current + 1);
   };
+
+  const handleComposerSendModeToggle = useCallback(() => {
+    const nextMode = composerSendModeRef.current === "enter-send" ? "double-enter-send" : "enter-send";
+    composerSendModeRef.current = nextMode;
+    resetRapidEnterState();
+    persistCurrentUiStateSnapshot({ composerSendMode: nextMode });
+    setComposerSendMode(nextMode);
+  }, [persistCurrentUiStateSnapshot, resetRapidEnterState]);
 
   const handleInspectorPanelWidthChange = (nextWidth) => {
     const normalizedWidth = sanitizeInspectorPanelWidth(nextWidth);
@@ -1953,6 +1972,7 @@ export function useCommandCenter() {
     busy,
     chatFontSize: activeChatFontSize,
     chatTabs: visibleChatTabs,
+    composerSendMode,
     composerAttachments,
     files,
     fastMode,
@@ -1963,6 +1983,7 @@ export function useCommandCenter() {
     handleAgentChange,
     handleArtifactSelect,
     handleChatFontSizeChange,
+    handleComposerSendModeToggle,
     handleCloseChatTab,
     handleReorderChatTabs,
     handleFastModeChange,

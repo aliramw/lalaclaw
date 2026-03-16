@@ -37,3 +37,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Standardized the project versioning format on calendar-style releases, starting with `2026.3.16`
 - Expanded the root README and all localized quick-start guides with step-by-step GitHub installation, initialization, and remote-gateway setup instructions
 - Standardized browser and localized product titles on `LalaClaw` instead of `LalaClaw.ai`
+- Added a composer send-mode toggle with a blue underlined link style and changed the default keyboard behavior to `Enter` send with `Shift + Enter` newline

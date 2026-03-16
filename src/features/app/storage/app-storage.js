@@ -10,6 +10,7 @@ export const defaultSessionUser = "command-center";
 export const defaultChatTabId = "agent:main";
 export const promptHistoryLimit = 50;
 export const defaultChatFontSize = "small";
+export const defaultComposerSendMode = "enter-send";
 export const minInspectorPanelWidth = 300;
 export const maxInspectorPanelWidth = 720;
 export const defaultInspectorPanelWidth = 380;
@@ -55,6 +56,10 @@ export function createResetSessionUser(agentId = "main") {
 
 function sanitizeChatFontSize(value) {
   return value === "medium" || value === "large" ? value : defaultChatFontSize;
+}
+
+function sanitizeComposerSendMode(value) {
+  return value === "double-enter-send" ? "double-enter-send" : defaultComposerSendMode;
 }
 
 export function sanitizeInspectorPanelWidth(value) {
@@ -441,6 +446,7 @@ function loadParsedStorageState(raw) {
     sessionUser: activeTab?.sessionUser || fallbackSessionUser || defaultSessionUser,
     inspectorPanelWidth: sanitizeInspectorPanelWidth(parsed?.inspectorPanelWidth),
     chatFontSize: resolveStoredChatFontSize(parsed),
+    composerSendMode: sanitizeComposerSendMode(parsed?.composerSendMode),
     dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(parsed?.dismissedTaskRelationshipIdsByConversation),
     promptDraftsByConversation: sanitizePromptDraftsMap(parsed?.promptDraftsByConversation),
   };
@@ -488,6 +494,7 @@ export function persistUiStateSnapshot(state = {}) {
       activeTab: state.activeTab || defaultTab,
       chatTabs: Array.isArray(state.chatTabs) ? state.chatTabs : [],
       chatFontSize: sanitizeChatFontSize(state.chatFontSize),
+      composerSendMode: sanitizeComposerSendMode(state.composerSendMode),
       dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(state.dismissedTaskRelationshipIdsByConversation),
       fastMode: Boolean(state.fastMode),
       inspectorPanelWidth: sanitizeInspectorPanelWidth(state.inspectorPanelWidth),
