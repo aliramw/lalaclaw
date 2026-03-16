@@ -1,3 +1,5 @@
+[English](../en/documentation-api-troubleshooting.md) | [中文](../zh/documentation-api-troubleshooting.md) | [日本語](../ja/documentation-api-troubleshooting.md) | [Français](../fr/documentation-api-troubleshooting.md) | [Español](../es/documentation-api-troubleshooting.md) | [Português](../pt/documentation-api-troubleshooting.md)
+
 [Volver al inicio](./documentation.md) | [Inicio rapido](./documentation-quick-start.md) | [Inspector, vista previa de archivos y trazas](./documentation-inspector.md) | [Sesiones, agentes y modos de ejecucion](./documentation-sessions.md)
 
 # API y solucion de problemas

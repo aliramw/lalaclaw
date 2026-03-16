@@ -1,3 +1,5 @@
+[English](../en/documentation-quick-start.md) | [中文](../zh/documentation-quick-start.md) | [日本語](../ja/documentation-quick-start.md) | [Français](../fr/documentation-quick-start.md) | [Español](../es/documentation-quick-start.md) | [Português](../pt/documentation-quick-start.md)
+
 [Volver al inicio](./documentation.md) | [Resumen de la interfaz](./documentation-interface.md) | [Sesiones, agentes y modos de ejecucion](./documentation-sessions.md) | [API y solucion de problemas](./documentation-api-troubleshooting.md)
 
 # Inicio rapido
@@ -112,13 +114,13 @@ npm run dev:all
 
 Si prefieres iniciarlos por separado:
 
-### Frontend
+### Frontend web
 
 ```bash
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-### Backend
+### Backend del servidor
 
 ```bash
 PORT=3000 HOST=127.0.0.1 node server.js

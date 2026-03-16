@@ -1,3 +1,5 @@
+[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md)
+
 [返回首页](./documentation.md) | [界面总览](./documentation-interface.md) | [对话、附件与命令](./documentation-chat.md) | [本地持久化与恢复](./documentation-persistence.md)
 
 # 快捷键说明

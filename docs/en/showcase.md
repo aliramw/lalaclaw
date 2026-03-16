@@ -1,3 +1,5 @@
+[English](../en/showcase.md) | [中文](../zh/showcase.md) | [日本語](../ja/showcase.md) | [Français](../fr/showcase.md) | [Español](../es/showcase.md) | [Português](../pt/showcase.md)
+
 # Product Showcase
 
 > Navigation: [Documentation Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Easter Egg](./documentation-easter-egg.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md) | [Architecture Overview](./architecture.md) | [Refactor Roadmap](./refactor-roadmap.md)

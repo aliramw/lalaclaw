@@ -1,3 +1,5 @@
+[English](../en/documentation.md) | [中文](../zh/documentation.md) | [日本語](../ja/documentation.md) | [Français](../fr/documentation.md) | [Español](../es/documentation.md) | [Português](../pt/documentation.md)
+
 # Documentacao do LalaClaw
 
 Esta documentacao foi criada a partir do frontend, backend, testes e configuracao atuais do repositorio. O objetivo e transformar o comportamento real do LalaClaw em uma arvore de documentos Markdown navegavel.

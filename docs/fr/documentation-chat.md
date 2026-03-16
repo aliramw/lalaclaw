@@ -1,3 +1,5 @@
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+
 [Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Sessions, agents et modes d'exécution](./documentation-sessions.md) | [Raccourcis clavier](./documentation-shortcuts.md) | [Persistance locale et reprise](./documentation-persistence.md)
 
 # Chat, pièces jointes et commandes
@@ -59,7 +61,7 @@ Si la page recharge pendant une réponse :
 - Au rechargement, il tente de restaurer ce tour en cours
 - Si le backend a déjà terminé, le placeholder est remplacé par la réponse finale
 
-## Slash commands
+## Commandes slash
 
 ### `/fast`
 

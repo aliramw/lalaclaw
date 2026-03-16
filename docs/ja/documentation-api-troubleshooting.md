@@ -1,3 +1,5 @@
+[English](../en/documentation-api-troubleshooting.md) | [中文](../zh/documentation-api-troubleshooting.md) | [日本語](../ja/documentation-api-troubleshooting.md) | [Français](../fr/documentation-api-troubleshooting.md) | [Español](../es/documentation-api-troubleshooting.md) | [Português](../pt/documentation-api-troubleshooting.md)
+
 [ホームへ戻る](./documentation.md) | [クイックスタート](./documentation-quick-start.md) | [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md)
 
 # API とトラブルシューティング
@@ -130,7 +132,7 @@ npm run doctor
 - `OpenClaw CLI found` が正常表示になる
 - そのあと最初のメッセージを再送する
 
-### Model や Agent を切り替えても変化しない
+### モデルやエージェントを切り替えても変化しない
 
 考えられる理由:
 
@@ -143,7 +145,7 @@ npm run doctor
 - [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md) の `Environment`
 - バックエンドのコンソール出力
 
-### ファイルが preview できない
+### ファイルがプレビューできない
 
 よくある原因:
 
@@ -164,7 +166,7 @@ npm run doctor
 
 大きすぎる内容で chat payload や preview が壊れないようにするためです。
 
-### リロード後に thinking 占位が一瞬見えるのはなぜか
+### リロード後に思考中プレースホルダーが一瞬見えるのはなぜか
 
 pending turn の復元フローによるものです。
 

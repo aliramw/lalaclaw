@@ -1,3 +1,5 @@
+[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md)
+
 [Back to Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [Local Persistence and Recovery](./documentation-persistence.md)
 
 # Keyboard Shortcuts

@@ -1,3 +1,5 @@
+[English](../en/documentation-easter-egg.md) | [中文](../zh/documentation-easter-egg.md) | [日本語](../ja/documentation-easter-egg.md) | [Français](../fr/documentation-easter-egg.md) | [Español](../es/documentation-easter-egg.md) | [Português](../pt/documentation-easter-egg.md)
+
 [Back to Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Keyboard Shortcuts](./documentation-shortcuts.md)
 
 # Easter Egg

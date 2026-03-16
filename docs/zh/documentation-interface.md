@@ -1,3 +1,5 @@
+[English](../en/documentation-interface.md) | [中文](../zh/documentation-interface.md) | [日本語](../ja/documentation-interface.md) | [Français](../fr/documentation-interface.md) | [Español](../es/documentation-interface.md) | [Português](../pt/documentation-interface.md)
+
 [返回首页](./documentation.md) | [快速开始](./documentation-quick-start.md) | [彩蛋](./documentation-easter-egg.md) | [对话、附件与命令](./documentation-chat.md) | [检查器、文件预览与追踪](./documentation-inspector.md)
 
 # 界面总览

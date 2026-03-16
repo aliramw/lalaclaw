@@ -1,4 +1,6 @@
-# Showcase produit
+[English](../en/showcase.md) | [中文](../zh/showcase.md) | [日本語](../ja/showcase.md) | [Français](../fr/showcase.md) | [Español](../es/showcase.md) | [Português](../pt/showcase.md)
+
+# Présentation produit
 
 > Navigation: [Documentation Home](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Easter egg](./documentation-easter-egg.md) | [Inspecteur, aperçu de fichiers et traçage](./documentation-inspector.md) | [Vue d'ensemble de l'architecture](./architecture.md) | [Feuille de route de refactorisation](./refactor-roadmap.md)
 

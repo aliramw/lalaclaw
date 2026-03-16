@@ -1,3 +1,5 @@
+[English](../en/documentation.md) | [中文](../zh/documentation.md) | [日本語](../ja/documentation.md) | [Français](../fr/documentation.md) | [Español](../es/documentation.md) | [Português](../pt/documentation.md)
+
 # LalaClaw Documentation
 
 This guide is built from the current frontend, backend, tests, and configuration in the repository. Its goal is to turn the real behavior of LalaClaw into a browsable Markdown documentation tree.

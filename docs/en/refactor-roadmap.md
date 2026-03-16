@@ -1,3 +1,5 @@
+[English](../en/refactor-roadmap.md) | [中文](../zh/refactor-roadmap.md) | [日本語](../ja/refactor-roadmap.md) | [Français](../fr/refactor-roadmap.md) | [Español](../es/refactor-roadmap.md) | [Português](../pt/refactor-roadmap.md)
+
 # Refactor Roadmap
 
 > Navigation: [Documentation Home](./documentation.md) | [Sessions, Agents, and Runtime Modes](./documentation-sessions.md) | [API and Troubleshooting](./documentation-api-troubleshooting.md) | [Architecture Overview](./architecture.md) | [Product Showcase](./showcase.md)

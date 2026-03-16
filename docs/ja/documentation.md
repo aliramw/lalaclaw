@@ -1,3 +1,5 @@
+[English](../en/documentation.md) | [中文](../zh/documentation.md) | [日本語](../ja/documentation.md) | [Français](../fr/documentation.md) | [Español](../es/documentation.md) | [Português](../pt/documentation.md)
+
 # LalaClaw ドキュメント
 
 このドキュメントは、現在のフロントエンド、バックエンド、テスト、設定をもとに作成したものです。LalaClaw の実際の挙動を、たどりやすい Markdown ドキュメントツリーとして整理しています。

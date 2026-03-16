@@ -1,3 +1,5 @@
+[English](../en/documentation-interface.md) | [中文](../zh/documentation-interface.md) | [日本語](../ja/documentation-interface.md) | [Français](../fr/documentation-interface.md) | [Español](../es/documentation-interface.md) | [Português](../pt/documentation-interface.md)
+
 [Back to Home](./documentation.md) | [Quick Start](./documentation-quick-start.md) | [Easter Egg](./documentation-easter-egg.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md)
 
 # Interface Overview

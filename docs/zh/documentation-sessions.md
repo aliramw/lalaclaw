@@ -1,6 +1,8 @@
+[English](../en/documentation-sessions.md) | [中文](../zh/documentation-sessions.md) | [日本語](../ja/documentation-sessions.md) | [Français](../fr/documentation-sessions.md) | [Español](../es/documentation-sessions.md) | [Português](../pt/documentation-sessions.md)
+
 [返回首页](./documentation.md) | [快速开始](./documentation-quick-start.md) | [对话、附件与命令](./documentation-chat.md) | [快捷键说明](./documentation-shortcuts.md) | [本地持久化与恢复](./documentation-persistence.md)
 
-# 会话、Agent 与运行模式
+# 会话、智能体与运行模式
 
 ## 会话如何标识
 
@@ -16,7 +18,7 @@
 
 同一个 Agent 可以对应多个 `sessionUser`，这也是应用在不切换 Agent 的情况下创建新上下文的方式。
 
-## Agent 会话标签
+## 智能体会话标签
 
 前端标签页按 Agent 组织：
 
@@ -78,7 +80,7 @@
 - `/api/runtime` 和检查器会读取 transcript、session 状态和浏览器控制信息
 - 切换模型和思考模式时可以 patch 远端 session
 
-## 可提及的 Agent 与 Skill 来自哪里
+## 可提及的智能体与技能来自哪里
 
 `@` 菜单不是写死的，而是从运行时配置派生出来：
 

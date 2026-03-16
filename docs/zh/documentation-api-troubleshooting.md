@@ -1,3 +1,5 @@
+[English](../en/documentation-api-troubleshooting.md) | [中文](../zh/documentation-api-troubleshooting.md) | [日本語](../ja/documentation-api-troubleshooting.md) | [Français](../fr/documentation-api-troubleshooting.md) | [Español](../es/documentation-api-troubleshooting.md) | [Português](../pt/documentation-api-troubleshooting.md)
+
 [返回首页](./documentation.md) | [快速开始](./documentation-quick-start.md) | [检查器、文件预览与追踪](./documentation-inspector.md) | [会话、Agent 与运行模式](./documentation-sessions.md)
 
 # API 与排障
@@ -129,7 +131,7 @@ npm run doctor
 - `OpenClaw CLI found` 不再报错
 - 再重新发送第一条消息
 
-### 切换模型或 Agent 后没有变化
+### 切换模型或智能体后没有变化
 
 可能原因：
 
@@ -163,7 +165,7 @@ npm run doctor
 
 这样可以避免超大内容拖垮聊天负载和预览渲染。
 
-### 为什么刷新后会短暂看到 thinking 占位
+### 为什么刷新后会短暂看到思考中占位
 
 这是 pending 恢复流程的一部分：
 

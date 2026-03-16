@@ -1,6 +1,8 @@
+[English](../en/documentation-easter-egg.md) | [中文](../zh/documentation-easter-egg.md) | [日本語](../ja/documentation-easter-egg.md) | [Français](../fr/documentation-easter-egg.md) | [Español](../es/documentation-easter-egg.md) | [Português](../pt/documentation-easter-egg.md)
+
 [Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Raccourcis clavier](./documentation-shortcuts.md)
 
-# Easter egg
+# Clin d'oeil
 
 ## Point d'entrée
 

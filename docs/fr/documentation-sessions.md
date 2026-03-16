@@ -1,3 +1,5 @@
+[English](../en/documentation-sessions.md) | [中文](../zh/documentation-sessions.md) | [日本語](../ja/documentation-sessions.md) | [Français](../fr/documentation-sessions.md) | [Español](../es/documentation-sessions.md) | [Português](../pt/documentation-sessions.md)
+
 [Retour à l'accueil](./documentation.md) | [Démarrage rapide](./documentation-quick-start.md) | [Chat, pièces jointes et commandes](./documentation-chat.md) | [Raccourcis clavier](./documentation-shortcuts.md) | [Persistance locale et reprise](./documentation-persistence.md)
 
 # Sessions, agents et modes d'exécution

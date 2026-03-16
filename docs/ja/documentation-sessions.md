@@ -1,6 +1,8 @@
+[English](../en/documentation-sessions.md) | [中文](../zh/documentation-sessions.md) | [日本語](../ja/documentation-sessions.md) | [Français](../fr/documentation-sessions.md) | [Español](../es/documentation-sessions.md) | [Português](../pt/documentation-sessions.md)
+
 [ホームへ戻る](./documentation.md) | [クイックスタート](./documentation-quick-start.md) | [チャット、添付、コマンド](./documentation-chat.md) | [キーボードショートカット](./documentation-shortcuts.md) | [ローカル保存と復元](./documentation-persistence.md)
 
-# セッション、Agent、ランタイムモード
+# セッション、エージェント、ランタイムモード
 
 ## セッション識別
 
@@ -16,7 +18,7 @@
 
 同じ agent でも複数の `sessionUser` を持てるため、agent を変えずに新しい context を作れます。
 
-## Agent セッションタブ
+## エージェントセッションタブ
 
 フロントエンドのチャットタブは agent 単位で整理されます。
 
@@ -78,7 +80,7 @@ context をクリアする主な方法は 3 つあります。
 - `/api/runtime` と inspector は transcript、session 状態、browser-control 情報を読む
 - model や thinking mode の変更はリモート session を patch できる
 
-## メンション可能な Agent / Skill の由来
+## メンション可能なエージェント / スキルの由来
 
 `@` メニューは固定ではなく、ランタイム設定から導出されます。
 

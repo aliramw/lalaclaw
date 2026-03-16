@@ -1,3 +1,5 @@
+[English](../en/documentation-persistence.md) | [中文](../zh/documentation-persistence.md) | [日本語](../ja/documentation-persistence.md) | [Français](../fr/documentation-persistence.md) | [Español](../es/documentation-persistence.md) | [Português](../pt/documentation-persistence.md)
+
 [Back to Home](./documentation.md) | [Keyboard Shortcuts](./documentation-shortcuts.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [Sessions, Agents, and Runtime Modes](./documentation-sessions.md)
 
 # Local Persistence and Recovery

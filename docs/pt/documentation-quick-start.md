@@ -1,3 +1,5 @@
+[English](../en/documentation-quick-start.md) | [中文](../zh/documentation-quick-start.md) | [日本語](../ja/documentation-quick-start.md) | [Français](../fr/documentation-quick-start.md) | [Español](../es/documentation-quick-start.md) | [Português](../pt/documentation-quick-start.md)
+
 [Voltar ao inicio](./documentation.md) | [Visao geral da interface](./documentation-interface.md) | [Sessoes, agentes e modos de execucao](./documentation-sessions.md) | [API e solucao de problemas](./documentation-api-troubleshooting.md)
 
 # Inicio rapido

@@ -1,3 +1,5 @@
+[English](../en/refactor-roadmap.md) | [中文](../zh/refactor-roadmap.md) | [日本語](../ja/refactor-roadmap.md) | [Français](../fr/refactor-roadmap.md) | [Español](../es/refactor-roadmap.md) | [Português](../pt/refactor-roadmap.md)
+
 # 重构路线图
 
 > 导航：[文档首页](./documentation.md) | [会话、Agent 与运行模式](./documentation-sessions.md) | [API 与排障](./documentation-api-troubleshooting.md) | [架构概览](./architecture.md) | [产品演示指南](./showcase.md)

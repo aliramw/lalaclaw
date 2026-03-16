@@ -1,3 +1,5 @@
+[English](../en/documentation-inspector.md) | [中文](../zh/documentation-inspector.md) | [日本語](../ja/documentation-inspector.md) | [Français](../fr/documentation-inspector.md) | [Español](../es/documentation-inspector.md) | [Português](../pt/documentation-inspector.md)
+
 [Back to Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [API and Troubleshooting](./documentation-api-troubleshooting.md)
 
 # Inspector, File Preview, and Tracing

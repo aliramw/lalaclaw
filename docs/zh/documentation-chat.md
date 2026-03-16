@@ -1,3 +1,5 @@
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+
 [返回首页](./documentation.md) | [界面总览](./documentation-interface.md) | [会话、Agent 与运行模式](./documentation-sessions.md) | [快捷键说明](./documentation-shortcuts.md) | [本地持久化与恢复](./documentation-persistence.md)
 
 # 对话、附件与命令
@@ -68,7 +70,7 @@
 - 页面重新加载后会尽量恢复这轮未完成任务
 - 如果后端已经完成，则会用最终回复替换占位
 
-## Slash 命令
+## 斜杠命令
 
 在 `openclaw` 模式下，命令文本会原样交给 OpenClaw gateway 处理，包含：
 

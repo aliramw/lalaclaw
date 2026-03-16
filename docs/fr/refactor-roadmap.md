@@ -1,3 +1,5 @@
+[English](../en/refactor-roadmap.md) | [中文](../zh/refactor-roadmap.md) | [日本語](../ja/refactor-roadmap.md) | [Français](../fr/refactor-roadmap.md) | [Español](../es/refactor-roadmap.md) | [Português](../pt/refactor-roadmap.md)
+
 # Feuille de route de refactorisation
 
 > Navigation: [Documentation Home](./documentation.md) | [Sessions, agents et modes d'exécution](./documentation-sessions.md) | [API et dépannage](./documentation-api-troubleshooting.md) | [Vue d'ensemble de l'architecture](./architecture.md) | [Showcase produit](./showcase.md)
@@ -10,7 +12,7 @@
 
 ## Forme cible
 
-### Frontend
+### Frontend applicatif
 
 - `src/app/bootstrap/`
 - `src/features/session/`
@@ -18,7 +20,7 @@
 - `src/features/inspector/`
 - `src/shared/`
 
-### Backend
+### Backend serveur
 
 - `server/config.js`
 - `server/session-store.js`

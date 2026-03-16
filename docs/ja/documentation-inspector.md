@@ -1,10 +1,12 @@
+[English](../en/documentation-inspector.md) | [中文](../zh/documentation-inspector.md) | [日本語](../ja/documentation-inspector.md) | [Français](../fr/documentation-inspector.md) | [Español](../es/documentation-inspector.md) | [Português](../pt/documentation-inspector.md)
+
 [ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [チャット、添付、コマンド](./documentation-chat.md) | [API とトラブルシューティング](./documentation-api-troubleshooting.md)
 
-# Inspector、ファイルプレビュー、トレース
+# インスペクター、ファイルプレビュー、トレース
 
 右側の inspector は LalaClaw を特徴づける重要な UI です。現在のセッションに関する実行履歴、ファイル活動、要約、環境情報を 1 か所に投影します。
 
-## Run Log
+## 実行ログ
 
 `Run Log` は実行ラウンド単位で以下を表示します。
 
@@ -20,7 +22,7 @@
 - 直前に agent はどんなツールを使ったか
 - ある結果はどのラウンドで発生したか
 
-## Files
+## ファイル
 
 `Files` は次の分類で表示されます。
 
@@ -35,14 +37,14 @@
 
 この一覧は OpenClaw transcript だけでなく、添付や楽観状態から拾ったローカルのファイル情報も含みます。
 
-## Summaries
+## 要約
 
 `Summaries` には現在セッションのアシスタント返信要約が並びます。
 
 - クリックすると対応するチャット位置へ戻れる
 - 長い会話の中で重要な返答を探すのに便利
 
-## Environment
+## 環境
 
 `Environment` には以下のような情報が集約されます。
 
@@ -53,7 +55,7 @@
 
 期待と違う挙動のとき、まずここを見るのが有効です。
 
-## Collab
+## 協調
 
 `Collab` は協調関係や派生作業を表示します。
 
@@ -65,7 +67,7 @@
 
 失敗した分岐は短時間表示が残るので、どこで問題が起きたか見つけやすくなっています。
 
-## Preview
+## プレビュー
 
 `Preview` は 4 種類の読み取り専用 peek を表示します。
 
@@ -92,7 +94,7 @@
 
 ファイルプレビュー API は絶対パスを必要とするため、絶対パスがない項目は表示のみで終わることがあります。
 
-## 先に Inspector を開くべき場面
+## 先にインスペクターを開くべき場面
 
 - 返信内容が怪しく、ツール履歴を確認したいとき
 - Agent がどのファイルを変更したか見たいとき

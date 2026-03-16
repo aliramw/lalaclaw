@@ -1,3 +1,5 @@
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+
 [Volver al inicio](./documentation.md) | [Resumen de la interfaz](./documentation-interface.md) | [Sesiones, agentes y modos de ejecucion](./documentation-sessions.md) | [Atajos de teclado](./documentation-shortcuts.md) | [Persistencia local y recuperacion](./documentation-persistence.md)
 
 # Chat, adjuntos y comandos
@@ -36,7 +38,7 @@ Si la pestana ya esta ocupada:
 - Texto: lectura y truncado a `120000` caracteres
 - Otros archivos: solo metadatos
 
-## Slash commands
+## Comandos slash
 
 - `/fast`
 - `/fast status`

@@ -1,3 +1,5 @@
+[English](../en/architecture.md) | [中文](../zh/architecture.md) | [日本語](../ja/architecture.md) | [Français](../fr/architecture.md) | [Español](../es/architecture.md) | [Português](../pt/architecture.md)
+
 # Architecture Overview
 
 > Navigation: [Documentation Home](./documentation.md) | [Quick Start](./documentation-quick-start.md) | [Interface Overview](./documentation-interface.md) | [Product Showcase](./showcase.md) | [Refactor Roadmap](./refactor-roadmap.md)

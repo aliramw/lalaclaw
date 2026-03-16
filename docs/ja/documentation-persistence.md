@@ -1,3 +1,5 @@
+[English](../en/documentation-persistence.md) | [中文](../zh/documentation-persistence.md) | [日本語](../ja/documentation-persistence.md) | [Français](../fr/documentation-persistence.md) | [Español](../es/documentation-persistence.md) | [Português](../pt/documentation-persistence.md)
+
 [ホームへ戻る](./documentation.md) | [キーボードショートカット](./documentation-shortcuts.md) | [チャット、添付、コマンド](./documentation-chat.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md)
 
 # ローカル保存と復元

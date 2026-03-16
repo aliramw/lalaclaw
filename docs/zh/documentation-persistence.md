@@ -1,3 +1,5 @@
+[English](../en/documentation-persistence.md) | [中文](../zh/documentation-persistence.md) | [日本語](../ja/documentation-persistence.md) | [Français](../fr/documentation-persistence.md) | [Español](../es/documentation-persistence.md) | [Português](../pt/documentation-persistence.md)
+
 [返回首页](./documentation.md) | [快捷键说明](./documentation-shortcuts.md) | [对话、附件与命令](./documentation-chat.md) | [会话、Agent 与运行模式](./documentation-sessions.md)
 
 # 本地持久化与恢复

@@ -1,3 +1,5 @@
+[English](../en/architecture.md) | [中文](../zh/architecture.md) | [日本語](../ja/architecture.md) | [Français](../fr/architecture.md) | [Español](../es/architecture.md) | [Português](../pt/architecture.md)
+
 # 架构概览
 
 > 导航：[文档首页](./documentation.md) | [快速开始](./documentation-quick-start.md) | [界面总览](./documentation-interface.md) | [产品演示指南](./showcase.md) | [重构路线图](./refactor-roadmap.md)

@@ -1,3 +1,5 @@
+[English](../en/documentation.md) | [中文](../zh/documentation.md) | [日本語](../ja/documentation.md) | [Français](../fr/documentation.md) | [Español](../es/documentation.md) | [Português](../pt/documentation.md)
+
 # LalaClaw 使用文档
 
 这套文档基于仓库当前的前端、后端、测试和配置整理而成，用来把 LalaClaw 的真实行为组织成一棵可浏览的 Markdown 文档树。

@@ -1,10 +1,12 @@
+[English](../en/documentation-inspector.md) | [中文](../zh/documentation-inspector.md) | [日本語](../ja/documentation-inspector.md) | [Français](../fr/documentation-inspector.md) | [Español](../es/documentation-inspector.md) | [Português](../pt/documentation-inspector.md)
+
 [返回首页](./documentation.md) | [界面总览](./documentation-interface.md) | [对话、附件与命令](./documentation-chat.md) | [API 与排障](./documentation-api-troubleshooting.md)
 
 # 检查器、文件预览与追踪
 
 右侧检查器是 LalaClaw 最有辨识度的部分之一。它把当前会话的运行轨迹、文件活动、摘要和环境信息集中投影到一个区域。
 
-## Run Log
+## 运行记录
 
 `Run Log` 会按执行轮次分组展示：
 
@@ -20,7 +22,7 @@
 - Agent 刚才调用了哪些工具？
 - 某个结果是在哪一轮里产生的？
 
-## Files
+## 文件
 
 `Files` 标签现在分成两个区域：
 
@@ -43,7 +45,7 @@
 
 文件数据不仅来自 OpenClaw transcript，也会合并本地附件、乐观状态中的文件线索，以及当前 workspace 根目录快照。
 
-## Summaries
+## 摘要
 
 `Summaries` 标签会列出当前会话的助手回复摘要。
 
@@ -52,7 +54,7 @@
 - 点击摘要跳回对应消息
 - 在长对话中快速定位关键回答
 
-## Environment
+## 环境
 
 `Environment` 聚合当前运行时信息，例如：
 
@@ -63,7 +65,7 @@
 
 如果行为和预期不符，这通常是最值得先看的面板。
 
-## Collab
+## 协作
 
 `Collab` 展示协作关系和派发出的任务：
 
@@ -75,7 +77,7 @@
 
 如果某个协作分支失败，界面会短暂保留该状态，方便识别问题。
 
-## Preview
+## 预览
 
 `Preview` 提供四类只读预览：
 

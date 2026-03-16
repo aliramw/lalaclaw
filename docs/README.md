@@ -1,3 +1,5 @@
+[English](./en/documentation.md) | [中文](./zh/documentation.md) | [日本語](./ja/documentation.md) | [Français](./fr/documentation.md) | [Español](./es/documentation.md) | [Português](./pt/documentation.md)
+
 # Documentation Languages
 
 This directory is organized by locale.

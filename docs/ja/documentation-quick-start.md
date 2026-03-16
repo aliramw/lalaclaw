@@ -1,3 +1,5 @@
+[English](../en/documentation-quick-start.md) | [中文](../zh/documentation-quick-start.md) | [日本語](../ja/documentation-quick-start.md) | [Français](../fr/documentation-quick-start.md) | [Español](../es/documentation-quick-start.md) | [Português](../pt/documentation-quick-start.md)
+
 [ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md) | [API とトラブルシューティング](./documentation-api-troubleshooting.md)
 
 # クイックスタート

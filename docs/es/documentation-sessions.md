@@ -1,3 +1,5 @@
+[English](../en/documentation-sessions.md) | [中文](../zh/documentation-sessions.md) | [日本語](../ja/documentation-sessions.md) | [Français](../fr/documentation-sessions.md) | [Español](../es/documentation-sessions.md) | [Português](../pt/documentation-sessions.md)
+
 [Volver al inicio](./documentation.md) | [Inicio rapido](./documentation-quick-start.md) | [Chat, adjuntos y comandos](./documentation-chat.md) | [Atajos de teclado](./documentation-shortcuts.md) | [Persistencia local y recuperacion](./documentation-persistence.md)
 
 # Sesiones, agentes y modos de ejecucion

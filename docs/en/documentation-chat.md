@@ -1,3 +1,5 @@
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+
 [Back to Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Sessions, Agents, and Runtime Modes](./documentation-sessions.md) | [Keyboard Shortcuts](./documentation-shortcuts.md) | [Local Persistence and Recovery](./documentation-persistence.md)
 
 # Chat, Attachments, and Commands

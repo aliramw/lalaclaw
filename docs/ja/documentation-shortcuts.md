@@ -1,3 +1,5 @@
+[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md)
+
 [ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [チャット、添付、コマンド](./documentation-chat.md) | [ローカル保存と復元](./documentation-persistence.md)
 
 # キーボードショートカット
@@ -16,7 +18,7 @@
 - `Shift + Cmd/Ctrl + L`: light theme に切替
 - `Shift + Cmd/Ctrl + D`: dark theme に切替
 
-## Composer
+## 入力欄
 
 - `Enter`: 改行
 - `Shift + Enter`: 送信
