@@ -7,6 +7,8 @@
 
 Agent と一緒に共同制作するための、より扱いやすいワークスペースです。
 
+著者: Marila Wang
+
 ## ハイライト
 
 - React + Vite ベースの command center UI。チャット、タイムライン、Inspector、テーマ、ロケール、添付ファイルに対応

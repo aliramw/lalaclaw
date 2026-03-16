@@ -2,6 +2,8 @@
 
 Esta documentacao foi criada a partir do frontend, backend, testes e configuracao atuais do repositorio. O objetivo e transformar o comportamento real do LalaClaw em uma arvore de documentos Markdown navegavel.
 
+Autora: Marila Wang
+
 ## Arvore de documentos
 
 - [Inicio rapido](./documentation-quick-start.md)

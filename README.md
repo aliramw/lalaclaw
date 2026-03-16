@@ -7,6 +7,8 @@
 
 A better way to co-create with agents.
 
+Author: Marila Wang
+
 ## Highlights
 
 - React + Vite command center UI with chat, timeline, inspector, theme, locale, and attachment flows

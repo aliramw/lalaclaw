@@ -2,6 +2,8 @@
 
 Cette documentation est produite à partir du frontend, du backend, des tests et de la configuration actuels du dépôt. Son but est de transformer le comportement réel de LalaClaw en un arbre de documents Markdown facile à parcourir.
 
+Auteur : Marila Wang
+
 ## Arbre documentaire
 
 - [Démarrage rapide](./documentation-quick-start.md)

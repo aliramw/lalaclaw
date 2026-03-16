@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
 const cli = require("../bin/lalaclaw.js");
+const sourceCheckoutRoot = path.resolve(process.cwd());
 
 describe("LalaClaw CLI helpers", () => {
   it("parses commands, config-file options, and JSON output mode", () => {
@@ -289,7 +290,7 @@ describe("LalaClaw CLI helpers", () => {
   });
 
   it("detects source checkouts for local development commands", () => {
-    expect(cli.isSourceCheckout("/Users/marila/projects/lalaclaw2")).toBe(true);
+    expect(cli.isSourceCheckout(sourceCheckoutRoot)).toBe(true);
     expect(cli.isSourceCheckout(path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
   });
 
@@ -528,7 +529,7 @@ describe("LalaClaw CLI helpers", () => {
     expect(cli.shouldAutoStartBackgroundService({}, "darwin", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(true);
     expect(cli.shouldAutoStartBackgroundService({ noBackground: true }, "darwin", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
     expect(cli.shouldAutoStartBackgroundService({}, "linux", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
-    expect(cli.shouldAutoStartBackgroundService({}, "darwin", "/Users/marila/projects/lalaclaw2")).toBe(false);
+    expect(cli.shouldAutoStartBackgroundService({}, "darwin", sourceCheckoutRoot)).toBe(false);
   });
 
   it("colors the ERROR label red only when terminal colors are supported", () => {

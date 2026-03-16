@@ -15,6 +15,8 @@ Use the root-level guides for repository workflow and project policy:
 
 This `docs/` tree focuses on product behavior, usage, architecture, and troubleshooting.
 
+Author: Marila Wang
+
 ## Available Locales
 
 - [English](./en/documentation.md)

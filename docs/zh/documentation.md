@@ -2,6 +2,8 @@
 
 这套文档基于仓库当前的前端、后端、测试和配置整理而成，用来把 LalaClaw 的真实行为组织成一棵可浏览的 Markdown 文档树。
 
+作者：Marila Wang
+
 ## 文档树
 
 - [快速开始](./documentation-quick-start.md)

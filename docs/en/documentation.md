@@ -2,6 +2,8 @@
 
 This guide is built from the current frontend, backend, tests, and configuration in the repository. Its goal is to turn the real behavior of LalaClaw into a browsable Markdown documentation tree.
 
+Author: Marila Wang
+
 ## Documentation Tree
 
 - [Quick Start](./documentation-quick-start.md)

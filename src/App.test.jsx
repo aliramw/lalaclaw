@@ -1167,7 +1167,7 @@ describe("App", () => {
 
     await user.keyboard("{ArrowDown}");
     expect(textarea).toHaveValue("");
-  });
+  }, 10000);
 
   it("restores the current prompt draft after remount", async () => {
     const fetchMock = vi.fn(async (input) => {

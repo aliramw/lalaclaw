@@ -7,6 +7,8 @@
 
 Une meilleure façon de co-créer avec des agents.
 
+Auteur : Marila Wang
+
 ## Points forts
 
 - Interface command center en React + Vite avec chat, timeline, inspector, thèmes, langues et pièces jointes

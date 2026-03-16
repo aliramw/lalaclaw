@@ -2,6 +2,8 @@
 
 Esta documentacion se basa en el frontend, backend, tests y configuracion actuales del repositorio. Su objetivo es convertir el comportamiento real de LalaClaw en un arbol de documentos Markdown navegable.
 
+Autor: Marila Wang
+
 ## Arbol de documentos
 
 - [Inicio rapido](./documentation-quick-start.md)

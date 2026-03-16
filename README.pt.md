@@ -7,6 +7,8 @@
 
 Uma forma melhor de co-criar com agentes.
 
+Autora: Marila Wang
+
 ## Destaques
 
 - Interface command center em React + Vite com chat, timeline, inspector, temas, idiomas e anexos

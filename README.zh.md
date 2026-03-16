@@ -7,6 +7,8 @@
 
 一种更适合与 Agent 协作共创的方式。
 
+作者：Marila Wang
+
 ## 亮点
 
 - 基于 React + Vite 的 command center 界面，包含对话、时间线、检查器、主题、语言和附件工作流

@@ -7,6 +7,8 @@
 
 Una mejor forma de co-crear con agentes.
 
+Autor: Marila Wang
+
 ## Puntos clave
 
 - UI tipo command center con React + Vite, chat, timeline, inspector, temas, idiomas y adjuntos
