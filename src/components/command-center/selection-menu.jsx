@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 export function SelectionMenu({
   children,
   contentClassName,
+  disabled = false,
   emptyText,
   getItemDescription,
   getItemLabel,
@@ -39,12 +40,16 @@ export function SelectionMenu({
   }, []);
 
   const handleMenuOpenChange = useCallback((nextOpen) => {
+    if (disabled && nextOpen) {
+      setMenuOpen(false);
+      return;
+    }
     setMenuOpen(nextOpen);
     if (nextOpen) {
       setTooltipOpen(false);
       setTooltipSuppressed(true);
     }
-  }, []);
+  }, [disabled]);
 
   const handleTooltipOpenChange = useCallback((nextOpen) => {
     if (menuOpen || tooltipSuppressed) {
@@ -62,6 +67,7 @@ export function SelectionMenu({
 
   const triggerChild = useMemo(() => {
     const triggerProps = {
+      disabled,
       onBlur: clearTooltipSuppression,
       onPointerDown: closeTooltip,
       onPointerLeave: clearTooltipSuppression,
@@ -69,6 +75,7 @@ export function SelectionMenu({
 
     if (children && isValidElement(children)) {
       return cloneElement(children, {
+        disabled: children.props.disabled ?? disabled,
         onBlur: (event) => {
           children.props.onBlur?.(event);
           clearTooltipSuppression();
@@ -95,7 +102,7 @@ export function SelectionMenu({
     <DropdownMenu onOpenChange={handleMenuOpenChange}>
       <Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
         <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>{triggerChild}</DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild disabled={disabled}>{triggerChild}</DropdownMenuTrigger>
         </TooltipTrigger>
         {tooltipContent ? <TooltipContent side="bottom">{tooltipContent}</TooltipContent> : null}
       </Tooltip>

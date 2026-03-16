@@ -9,6 +9,7 @@ function createSession(overrides = {}) {
   return {
     model: "openclaw",
     agentId: "main",
+    status: "空闲",
     contextUsed: 1200,
     contextMax: 16000,
     tokens: "12 in / 8 out",
@@ -18,7 +19,7 @@ function createSession(overrides = {}) {
     runtime: "mock",
     time: "10:00:00",
     sessionKey: "agent:main:openai-user:demo",
-    mode: "mock",
+    mode: "openclaw",
     thinkMode: "off",
     ...overrides,
   };
@@ -98,6 +99,55 @@ describe("SessionOverview", () => {
     await user.click(screen.getByLabelText("切换模型"));
 
     expect(screen.getByText("暂无可选模型")).toBeInTheDocument();
+  });
+
+  it("disables model, fast mode, think mode, and agent-session controls until OpenClaw is connected", () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    const onAgentChange = vi.fn();
+    const onFastModeChange = vi.fn();
+    const onModelChange = vi.fn();
+    const onThinkModeChange = vi.fn();
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <>
+            <SessionOverview
+              availableAgents={["main", "expert"]}
+              availableModels={["openai-codex/gpt-5.4", "openrouter/minimax/minimax-m2.5"]}
+              fastMode={false}
+              formatCompactK={(value) => `${value}`}
+              layout="status"
+              model="openai-codex/gpt-5.4"
+              onAgentChange={onAgentChange}
+              onFastModeChange={onFastModeChange}
+              onModelChange={onModelChange}
+              onThinkModeChange={onThinkModeChange}
+              session={createSession({ mode: "mock", status: "空闲" })}
+            />
+            <SessionOverview
+              availableAgents={["main", "expert"]}
+              availableModels={["openai-codex/gpt-5.4"]}
+              fastMode={false}
+              formatCompactK={(value) => `${value}`}
+              layout="agent-tab"
+              model="openai-codex/gpt-5.4"
+              onAgentChange={onAgentChange}
+              onFastModeChange={onFastModeChange}
+              onModelChange={onModelChange}
+              onThinkModeChange={onThinkModeChange}
+              openAgentIds={["main"]}
+              session={createSession({ mode: "mock", status: "空闲" })}
+            />
+          </>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByLabelText("切换模型")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "快速模式 已关闭" })).toBeDisabled();
+    expect(screen.getByLabelText("切换思考模式")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "切换 Agent" })).toBeDisabled();
   });
 
   it("shows context guidance in the tooltip", async () => {

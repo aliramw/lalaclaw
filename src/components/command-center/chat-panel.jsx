@@ -2341,7 +2341,7 @@ export function ChatPanel({
                     onClick={handleResetWithConfirm}
                     className="h-6 w-6 rounded-md"
                     aria-label={i18n.chat.resetConversation}
-                    disabled={interactionLocked}
+                    disabled={interactionLocked || !openClawConnected}
                   >
                     <RotateCcw className="h-3 w-3" />
                   </Button>

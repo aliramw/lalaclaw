@@ -142,6 +142,7 @@ describe("ChatPanel", () => {
     );
 
     expect(screen.getByPlaceholderText("Openclaw尚未连接，请稍候。")).toBeDisabled();
+    expect(screen.getByLabelText("开启新会话")).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 

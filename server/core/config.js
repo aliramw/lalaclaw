@@ -89,6 +89,7 @@ function resolveAgentModel(agent, localConfig = null) {
 function collectAvailableModels(localConfig, preferred = []) {
   const seen = new Set();
   const ordered = [];
+  const configuredModels = getConfiguredModelEntries(localConfig);
 
   function addModel(value) {
     const model = resolveCanonicalModelId(value, localConfig);
@@ -101,6 +102,7 @@ function collectAvailableModels(localConfig, preferred = []) {
 
   preferred.forEach(addModel);
   addModel(localConfig?.agents?.defaults?.model?.primary);
+  configuredModels.forEach(([modelId]) => addModel(modelId));
   (localConfig?.agents?.list || []).forEach((agent) => addModel(resolveAgentModel(agent, localConfig)));
   return ordered;
 }

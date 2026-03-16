@@ -80,6 +80,7 @@ describe("config", () => {
           models: {
             "openai/gpt-5": {},
             "openai/gpt-5-mini": { alias: "mini" },
+            "openrouter/minimax/minimax-m2.5": { alias: "minimax" },
           },
         },
         list: [
@@ -93,6 +94,7 @@ describe("config", () => {
     expect(collectAvailableModels(localConfig, ["mini", "openai/gpt-5"])).toEqual([
       "openai/gpt-5-mini",
       "openai/gpt-5",
+      "openrouter/minimax/minimax-m2.5",
     ]);
     expect(collectAvailableAgents(localConfig, ["worker", "main"])).toEqual(["worker", "main"]);
   });

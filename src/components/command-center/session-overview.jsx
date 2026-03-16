@@ -12,6 +12,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, formatShortcutForPlatform, isApplePlatform } from "@/lib/utils";
 import { SelectionMenu } from "@/components/command-center/selection-menu";
+import { isOfflineStatus } from "@/features/session/status-display";
 import { useI18n } from "@/lib/i18n";
 
 const thinkModeOptions = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
@@ -671,6 +672,7 @@ function BlockTooltipContent({ label, value }) {
 
 function SelectStatusPill({
   compact = false,
+  disabled = false,
   emptyText,
   getItemDescription,
   getItemLabel,
@@ -690,6 +692,7 @@ function SelectStatusPill({
   const isLightTheme = resolvedTheme === "light";
   return (
     <SelectionMenu
+      disabled={disabled}
       label={menuLabel || label}
       triggerLabel={triggerLabel || menuLabel || label}
       items={items}
@@ -702,11 +705,12 @@ function SelectStatusPill({
     >
       <button
         type="button"
+        disabled={disabled}
         aria-label={triggerLabel || menuLabel || label}
         className={cn(
           compact
-            ? "inline-flex h-9 min-w-[8.5rem] cursor-pointer items-center gap-2 rounded-md border px-2.5 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1"
-            : "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1",
+            ? "inline-flex h-9 min-w-[8.5rem] items-center gap-2 rounded-md border px-2.5 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55"
+            : "inline-flex h-14 min-w-[88px] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55",
           compact
             ? "border-border/45 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/30 focus-visible:border-border/70 focus-visible:bg-muted/30 focus-visible:ring-border/50"
             : isLightTheme
@@ -1421,6 +1425,7 @@ export function SessionOverview({
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
   const isThinkModeEnabled = (session.thinkMode || "off") !== "off";
   const isLightTheme = resolvedTheme === "light";
+  const openClawConnected = session.mode === "openclaw" && !isOfflineStatus(session.status);
   const selectedModel = model || session.selectedModel || session.model || "";
   const displayedModel = formatModelLabel(selectedModel) || messages.common.unknown;
   const normalizedOpenAgentIds = new Set(
@@ -1443,6 +1448,7 @@ export function SessionOverview({
     <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
       <div className="flex min-w-max items-center gap-2">
         <SelectStatusPill
+          disabled={!openClawConnected}
           label={messages.sessionOverview.labels.model}
           value={displayedModel}
           resolvedTheme={resolvedTheme}
@@ -1475,10 +1481,11 @@ export function SessionOverview({
           <TooltipTrigger asChild>
             <button
               type="button"
+              disabled={!openClawConnected}
               aria-pressed={fastMode}
               onClick={() => onFastModeChange(!fastMode)}
               className={cn(
-                "inline-flex h-14 min-w-[88px] cursor-pointer items-center gap-3 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+                "inline-flex h-14 min-w-[88px] items-center gap-3 rounded-lg border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55",
                 isLightTheme ? "border-border/70 bg-white hover:bg-accent/40" : "border-border/70 bg-background/80 hover:bg-accent/40",
               )}
             >
@@ -1504,6 +1511,7 @@ export function SessionOverview({
         </Tooltip>
 
         <SelectStatusPill
+          disabled={!openClawConnected}
           label={messages.sessionOverview.labels.thinkMode}
           value={getThinkModeDescription(session.thinkMode || "off")}
           resolvedTheme={resolvedTheme}
@@ -1570,6 +1578,7 @@ export function SessionOverview({
   if (layout === "agent-tab") {
     return (
       <SelectionMenu
+        disabled={!openClawConnected}
         label={messages.sessionOverview.menus.switchAgent}
         triggerLabel={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
         items={selectableAgents}
@@ -1582,9 +1591,10 @@ export function SessionOverview({
       >
         <button
           type="button"
+          disabled={!openClawConnected}
           aria-label={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
           className={cn(
-            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1",
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55",
             "border-border/45 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/30 focus-visible:border-border/70 focus-visible:bg-muted/30 focus-visible:ring-border/50",
           )}
         >
