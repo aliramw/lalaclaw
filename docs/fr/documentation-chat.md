@@ -1,4 +1,4 @@
-[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [繁體中文（香港）](../zh-hk/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [한국어](../ko/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md) | [Deutsch](../de/documentation-chat.md) | [Bahasa Melayu](../ms/documentation-chat.md) | [தமிழ்](../ta/documentation-chat.md)
 
 [Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Sessions, agents et modes d'exécution](./documentation-sessions.md) | [Raccourcis clavier](./documentation-shortcuts.md) | [Persistance locale et reprise](./documentation-persistence.md)
 
@@ -6,11 +6,18 @@
 
 ## Envoi de messages
 
-Le composer suit une logique "on écrit d'abord, on envoie vite si besoin" :
+Le composer propose désormais deux modes d'envoi commutables :
 
-- `Enter` : nouvelle ligne
-- `Shift + Enter` : envoi immédiat
-- Double `Enter` : envoi immédiat
+- `Entrée pour envoyer`
+  - `Enter` : envoyer immédiatement
+  - `Shift + Enter` : nouvelle ligne
+- `Double Entrée pour envoyer`
+  - Double `Enter` : envoyer immédiatement
+  - `Shift + Enter` : envoyer immédiatement
+  - `Enter` : nouvelle ligne
+
+Dans les deux modes :
+
 - `ArrowUp / ArrowDown` : historique de prompts de la conversation courante
 
 Après l'envoi :

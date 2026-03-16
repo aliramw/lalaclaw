@@ -1,4 +1,4 @@
-[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [繁體中文（香港）](../zh-hk/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [한국어](../ko/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md) | [Deutsch](../de/documentation-chat.md) | [Bahasa Melayu](../ms/documentation-chat.md) | [தமிழ்](../ta/documentation-chat.md)
 
 [Back to Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Sessions, Agents, and Runtime Modes](./documentation-sessions.md) | [Keyboard Shortcuts](./documentation-shortcuts.md) | [Local Persistence and Recovery](./documentation-persistence.md)
 
@@ -6,11 +6,18 @@
 
 ## Sending Messages
 
-The composer is designed around a write-first flow with fast-send shortcuts:
+The composer now supports two switchable send modes:
 
-- `Enter`: insert a newline
-- `Shift + Enter`: send immediately
-- Double-tap `Enter`: send immediately
+- `Enter to send`
+  - `Enter`: send immediately
+  - `Shift + Enter`: insert a newline
+- `Double Enter to send`
+  - Double-tap `Enter`: send immediately
+  - `Shift + Enter`: send immediately
+  - `Enter`: insert a newline
+
+In both modes:
+
 - `ArrowUp / ArrowDown`: browse prompt history for the current conversation
 
 What happens after send:

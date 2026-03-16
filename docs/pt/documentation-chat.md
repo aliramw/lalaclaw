@@ -1,12 +1,21 @@
-[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [繁體中文（香港）](../zh-hk/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [한국어](../ko/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md) | [Deutsch](../de/documentation-chat.md) | [Bahasa Melayu](../ms/documentation-chat.md) | [தமிழ்](../ta/documentation-chat.md)
 
 [Voltar ao inicio](./documentation.md) | [Visao geral da interface](./documentation-interface.md) | [Sessoes, agentes e modos de execucao](./documentation-sessions.md) | [Atalhos de teclado](./documentation-shortcuts.md) | [Persistencia local e recuperacao](./documentation-persistence.md)
 
 # Chat, anexos e comandos
 
-- `Enter`: nova linha
-- `Shift + Enter`: enviar
-- Duplo `Enter`: enviar
+O composer suporta dois modos de envio alternaveis:
+
+- `Enter para enviar`
+  - `Enter`: enviar
+  - `Shift + Enter`: nova linha
+- `Enter duplo para enviar`
+  - Duplo `Enter`: enviar
+  - `Shift + Enter`: enviar
+  - `Enter`: nova linha
+
+Nos dois modos:
+
 - `ArrowUp / ArrowDown`: historico de prompts
 
 O frontend insere mensagem otimista, placeholder de thinking quando aplicavel e recebe resposta em NDJSON por streaming.

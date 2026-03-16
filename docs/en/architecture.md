@@ -1,4 +1,4 @@
-[English](../en/architecture.md) | [中文](../zh/architecture.md) | [日本語](../ja/architecture.md) | [Français](../fr/architecture.md) | [Español](../es/architecture.md) | [Português](../pt/architecture.md)
+[English](../en/architecture.md) | [中文](../zh/architecture.md) | [繁體中文（香港）](../zh-hk/architecture.md) | [日本語](../ja/architecture.md) | [한국어](../ko/architecture.md) | [Français](../fr/architecture.md) | [Español](../es/architecture.md) | [Português](../pt/architecture.md) | [Deutsch](../de/architecture.md) | [Bahasa Melayu](../ms/architecture.md) | [தமிழ்](../ta/architecture.md)
 
 # Architecture Overview
 

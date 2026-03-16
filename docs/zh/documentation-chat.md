@@ -1,4 +1,4 @@
-[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [繁體中文（香港）](../zh-hk/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [한국어](../ko/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md) | [Deutsch](../de/documentation-chat.md) | [Bahasa Melayu](../ms/documentation-chat.md) | [தமிழ்](../ta/documentation-chat.md)
 
 [返回首页](./documentation.md) | [界面总览](./documentation-interface.md) | [会话、Agent 与运行模式](./documentation-sessions.md) | [快捷键说明](./documentation-shortcuts.md) | [本地持久化与恢复](./documentation-persistence.md)
 
@@ -6,11 +6,18 @@
 
 ## 发送消息
 
-输入框采用“写作优先，快捷发送补充”的交互方式：
+输入框现在支持两种可切换的发送模式：
 
-- `Enter`：插入换行
-- `Shift + Enter`：立即发送
-- 连按两次 `Enter`：立即发送
+- `回车发送`
+  - `Enter`：立即发送
+  - `Shift + Enter`：插入换行
+- `连按两次回车发送`
+  - 连按两次 `Enter`：立即发送
+  - `Shift + Enter`：立即发送
+  - `Enter`：插入换行
+
+两种模式下都支持：
+
 - `ArrowUp / ArrowDown`：浏览当前会话的历史输入
 
 发送后会发生：

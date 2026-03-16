@@ -14,6 +14,11 @@ const zh = {
       fr: "Français",
       es: "Español",
       pt: "Português",
+      de: "Deutsch",
+      ms: "Bahasa Melayu",
+      ta: "தமிழ்",
+      ko: "한국어",
+      "zh-hk": "繁體中文（香港）",
     },
   },
   theme: {

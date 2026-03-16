@@ -1,4 +1,4 @@
-[English](../en/documentation-interface.md) | [中文](../zh/documentation-interface.md) | [日本語](../ja/documentation-interface.md) | [Français](../fr/documentation-interface.md) | [Español](../es/documentation-interface.md) | [Português](../pt/documentation-interface.md)
+[English](../en/documentation-interface.md) | [中文](../zh/documentation-interface.md) | [繁體中文（香港）](../zh-hk/documentation-interface.md) | [日本語](../ja/documentation-interface.md) | [한국어](../ko/documentation-interface.md) | [Français](../fr/documentation-interface.md) | [Español](../es/documentation-interface.md) | [Português](../pt/documentation-interface.md) | [Deutsch](../de/documentation-interface.md) | [Bahasa Melayu](../ms/documentation-interface.md) | [தமிழ்](../ta/documentation-interface.md)
 
 [Volver al inicio](./documentation.md) | [Inicio rapido](./documentation-quick-start.md) | [Easter egg](./documentation-easter-egg.md) | [Chat, adjuntos y comandos](./documentation-chat.md) | [Inspector, vista previa de archivos y trazas](./documentation-inspector.md)
 

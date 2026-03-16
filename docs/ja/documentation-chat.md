@@ -1,4 +1,4 @@
-[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [繁體中文（香港）](../zh-hk/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [한국어](../ko/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md) | [Deutsch](../de/documentation-chat.md) | [Bahasa Melayu](../ms/documentation-chat.md) | [தமிழ்](../ta/documentation-chat.md)
 
 [ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md) | [キーボードショートカット](./documentation-shortcuts.md) | [ローカル保存と復元](./documentation-persistence.md)
 
@@ -6,11 +6,18 @@
 
 ## メッセージ送信
 
-Composer は「まず書く、必要なら素早く送る」という流れで設計されています。
+Composer は 2 つの送信モードを切り替えられます。
 
-- `Enter`: 改行
-- `Shift + Enter`: 送信
-- `Enter` を素早く 2 回: 送信
+- `Enter で送信`
+  - `Enter`: 送信
+  - `Shift + Enter`: 改行
+- `Enter を 2 回で送信`
+  - `Enter` を素早く 2 回: 送信
+  - `Shift + Enter`: 送信
+  - `Enter`: 改行
+
+どちらのモードでも:
+
 - `ArrowUp / ArrowDown`: 現在の会話の prompt history を移動
 
 送信後の流れ:

@@ -1,4 +1,4 @@
-[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md)
+[English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [繁體中文（香港）](../zh-hk/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [한국어](../ko/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md) | [Deutsch](../de/documentation-chat.md) | [Bahasa Melayu](../ms/documentation-chat.md) | [தமிழ்](../ta/documentation-chat.md)
 
 [Volver al inicio](./documentation.md) | [Resumen de la interfaz](./documentation-interface.md) | [Sesiones, agentes y modos de ejecucion](./documentation-sessions.md) | [Atajos de teclado](./documentation-shortcuts.md) | [Persistencia local y recuperacion](./documentation-persistence.md)
 
@@ -6,9 +6,18 @@
 
 ## Envio de mensajes
 
-- `Enter`: nueva linea
-- `Shift + Enter`: enviar
-- Doble `Enter`: enviar
+El composer admite dos modos de envio intercambiables:
+
+- `Enter para enviar`
+  - `Enter`: enviar
+  - `Shift + Enter`: nueva linea
+- `Doble Enter para enviar`
+  - Doble `Enter`: enviar
+  - `Shift + Enter`: enviar
+  - `Enter`: nueva linea
+
+En ambos modos:
+
 - `ArrowUp / ArrowDown`: historial de prompts
 
 Despues de enviar:

@@ -1,4 +1,4 @@
-[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md)
+[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [繁體中文（香港）](../zh-hk/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [한국어](../ko/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md) | [Deutsch](../de/documentation-shortcuts.md) | [Bahasa Melayu](../ms/documentation-shortcuts.md) | [தமிழ்](../ta/documentation-shortcuts.md)
 
 [Back to Home](./documentation.md) | [Interface Overview](./documentation-interface.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [Local Persistence and Recovery](./documentation-persistence.md)
 
@@ -20,9 +20,15 @@
 
 ## Composer
 
-- `Enter`: insert a newline
-- `Shift + Enter`: send
-- Double-tap `Enter`: send
+The composer shortcuts depend on the selected send mode:
+
+- `Enter to send`
+  - `Enter`: send
+  - `Shift + Enter`: insert a newline
+- `Double Enter to send`
+  - Double-tap `Enter`: send
+  - `Shift + Enter`: send
+  - `Enter`: insert a newline
 - `ArrowUp`: previous prompt history entry
 - `ArrowDown`: next prompt history entry
 

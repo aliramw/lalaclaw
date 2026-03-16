@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionOverview } from "@/components/command-center/session-overview";
+import { lobsterWalkTuning } from "@/components/command-center/lobster-walk-tuning";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
@@ -34,6 +35,7 @@ describe("SessionOverview", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -598,5 +600,13 @@ describe("SessionOverview", () => {
     expect(menu).toHaveClass("w-[300px]");
     expect(menu).toHaveTextContent("可以和主 Agent 对话让他帮你创建新的 Agent，比如：");
     expect(menu).toHaveTextContent("帮我创建一个新的 Agent，名字叫 Developer（中文名：程序员），他的职责是...");
+  });
+
+  it("keeps the lobster easter egg performance tuning tightened", () => {
+    expect(lobsterWalkTuning).toEqual({
+      companionCount: 6,
+      rerouteCooldownMs: 900,
+      primaryFontSizePx: 48,
+    });
   });
 });

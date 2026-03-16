@@ -1,4 +1,4 @@
-[English](../en/documentation.md) | [中文](../zh/documentation.md) | [日本語](../ja/documentation.md) | [Français](../fr/documentation.md) | [Español](../es/documentation.md) | [Português](../pt/documentation.md)
+[English](../en/documentation.md) | [中文](../zh/documentation.md) | [繁體中文（香港）](../zh-hk/documentation.md) | [日本語](../ja/documentation.md) | [한국어](../ko/documentation.md) | [Français](../fr/documentation.md) | [Español](../es/documentation.md) | [Português](../pt/documentation.md) | [Deutsch](../de/documentation.md) | [Bahasa Melayu](../ms/documentation.md) | [தமிழ்](../ta/documentation.md)
 
 # LalaClaw ドキュメント
 

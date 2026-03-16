@@ -1,4 +1,4 @@
-[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md)
+[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [繁體中文（香港）](../zh-hk/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [한국어](../ko/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md) | [Deutsch](../de/documentation-shortcuts.md) | [Bahasa Melayu](../ms/documentation-shortcuts.md) | [தமிழ்](../ta/documentation-shortcuts.md)
 
 [ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [チャット、添付、コマンド](./documentation-chat.md) | [ローカル保存と復元](./documentation-persistence.md)
 
@@ -20,9 +20,15 @@
 
 ## 入力欄
 
-- `Enter`: 改行
-- `Shift + Enter`: 送信
-- `Enter` 2 連打: 送信
+入力欄のショートカットは現在の送信モードで変わります。
+
+- `Enter で送信`
+  - `Enter`: 送信
+  - `Shift + Enter`: 改行
+- `Enter を 2 回で送信`
+  - `Enter` 2 連打: 送信
+  - `Shift + Enter`: 送信
+  - `Enter`: 改行
 - `ArrowUp`: 1 つ前の prompt history
 - `ArrowDown`: 次の prompt history
 

@@ -1,4 +1,4 @@
-[Lire ce README dans une autre langue : English](./README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
+[Lire ce README dans une autre langue : English](./README.md) | [中文](./README.zh.md) | [繁體中文（香港）](./README.zh-hk.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md) | [Deutsch](./README.de.md) | [Bahasa Melayu](./README.ms.md) | [தமிழ்](./README.ta.md)
 
 # LalaClaw
 
@@ -13,7 +13,7 @@ Auteur : Marila Wang
 
 - Interface command center en React + Vite avec chat, timeline, inspector, thèmes, langues et pièces jointes
 - Backend Node.js capable de se connecter à un gateway OpenClaw local ou distant
-- Interface disponible en anglais, chinois, japonais, français, espagnol et portugais
+- Interface disponible en anglais, chinois simplifié, chinois traditionnel (Hong Kong), japonais, coréen, français, espagnol, portugais, allemand, malais et tamoul
 - Tests, CI, lint, couverture et documentation de contribution déjà intégrés
 
 ## Documentation

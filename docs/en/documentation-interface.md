@@ -1,4 +1,4 @@
-[English](../en/documentation-interface.md) | [中文](../zh/documentation-interface.md) | [日本語](../ja/documentation-interface.md) | [Français](../fr/documentation-interface.md) | [Español](../es/documentation-interface.md) | [Português](../pt/documentation-interface.md)
+[English](../en/documentation-interface.md) | [中文](../zh/documentation-interface.md) | [繁體中文（香港）](../zh-hk/documentation-interface.md) | [日本語](../ja/documentation-interface.md) | [한국어](../ko/documentation-interface.md) | [Français](../fr/documentation-interface.md) | [Español](../es/documentation-interface.md) | [Português](../pt/documentation-interface.md) | [Deutsch](../de/documentation-interface.md) | [Bahasa Melayu](../ms/documentation-interface.md) | [தமிழ்](../ta/documentation-interface.md)
 
 [Back to Home](./documentation.md) | [Quick Start](./documentation-quick-start.md) | [Easter Egg](./documentation-easter-egg.md) | [Chat, Attachments, and Commands](./documentation-chat.md) | [Inspector, File Preview, and Tracing](./documentation-inspector.md)
 
@@ -14,7 +14,7 @@ The top area is driven by `SessionOverview` and includes:
 - Context usage display for current vs maximum context
 - A one-click fast mode toggle
 - Thinking mode selection across `off / minimal / low / medium / high / xhigh / adaptive`
-- Language switching for `中文 / English / 日本語 / Français / Español / Português`
+- Language switching for `中文 / 繁體中文（香港） / English / 日本語 / 한국어 / Français / Español / Português / Deutsch / Bahasa Melayu / தமிழ்`
 - Theme switching for `system / light / dark`
 - A keyboard shortcut help dialog in the upper-right
 - A clickable lobster brand easter egg in the upper-left, documented in [Easter Egg](./documentation-easter-egg.md)

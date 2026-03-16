@@ -1,4 +1,4 @@
-[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md)
+[English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [繁體中文（香港）](../zh-hk/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [한국어](../ko/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md) | [Deutsch](../de/documentation-shortcuts.md) | [Bahasa Melayu](../ms/documentation-shortcuts.md) | [தமிழ்](../ta/documentation-shortcuts.md)
 
 [返回首页](./documentation.md) | [界面总览](./documentation-interface.md) | [对话、附件与命令](./documentation-chat.md) | [本地持久化与恢复](./documentation-persistence.md)
 
@@ -20,9 +20,15 @@
 
 ## 输入框
 
-- `Enter`：插入换行
-- `Shift + Enter`：发送
-- 连按两次 `Enter`：发送
+输入框快捷键会跟随当前发送模式变化：
+
+- `回车发送`
+  - `Enter`：发送
+  - `Shift + Enter`：插入换行
+- `连按两次回车发送`
+  - 连按两次 `Enter`：发送
+  - `Shift + Enter`：发送
+  - `Enter`：插入换行
 - `ArrowUp`：上一条输入历史
 - `ArrowDown`：下一条输入历史
 

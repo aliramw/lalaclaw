@@ -1,4 +1,4 @@
-[查看不同语言的 README：English](./README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
+[查看不同语言的 README： English](./README.md) | [中文](./README.zh.md) | [繁體中文（香港）](./README.zh-hk.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md) | [Deutsch](./README.de.md) | [Bahasa Melayu](./README.ms.md) | [தமிழ்](./README.ta.md)
 
 # LalaClaw
 
@@ -13,7 +13,7 @@
 
 - 基于 React + Vite 的 command center 界面，包含对话、时间线、检查器、主题、语言和附件工作流
 - 参考 VS Code 的文件探索体验，内置会话/工作区双树视图、预览操作和更丰富的文档媒体预览
-- 内置中文、English、日本語、Français、Español 和 Português 界面支持
+- 内置中文、繁體中文（香港）、English、日本語、한국어、Français、Español、Português、Deutsch、Bahasa Melayu 和 தமிழ் 界面支持
 - Node.js 后端既可以连接本地 OpenClaw 网关，也可以连接远端 OpenClaw 网关
 - 前后端结构模块化，配有针对性的 hook 和模块级测试
 - 内置 CI、lint、覆盖率阈值、贡献文档、安全策略和 issue 模板
@@ -32,10 +32,15 @@
 - 语言索引：[docs/README.md](./docs/README.md)
 - English: [docs/en/documentation.md](./docs/en/documentation.md)
 - 中文: [docs/zh/documentation.md](./docs/zh/documentation.md)
+- 繁體中文（香港）: [docs/zh-hk/documentation.md](./docs/zh-hk/documentation.md)
 - 日本語: [docs/ja/documentation.md](./docs/ja/documentation.md)
+- 한국어: [docs/ko/documentation.md](./docs/ko/documentation.md)
 - Français: [docs/fr/documentation.md](./docs/fr/documentation.md)
 - Español: [docs/es/documentation.md](./docs/es/documentation.md)
 - Português: [docs/pt/documentation.md](./docs/pt/documentation.md)
+- Deutsch: [docs/de/documentation.md](./docs/de/documentation.md)
+- Bahasa Melayu: [docs/ms/documentation.md](./docs/ms/documentation.md)
+- தமிழ்: [docs/ta/documentation.md](./docs/ta/documentation.md)
 
 ## 架构
 

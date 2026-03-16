@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, formatShortcutForPlatform, isApplePlatform } from "@/lib/utils";
+import { chooseCollisionRerouteTarget, findNearbyCollisionPairs } from "@/components/command-center/lobster-collision";
 import { SelectionMenu } from "@/components/command-center/selection-menu";
+import { lobsterWalkTuning } from "@/components/command-center/lobster-walk-tuning";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { useI18n } from "@/lib/i18n";
 
@@ -21,20 +23,17 @@ const LOBSTER_SPEED_PX_PER_SECOND = 150;
 const LOBSTER_MIN_DURATION_MS = 5000;
 const LOBSTER_MAX_DURATION_MS = 15000;
 const LOBSTER_COMPANION_SPAWN_PROBABILITY = 0.9;
-const LOBSTER_COMPANION_COUNT = 10;
+const LOBSTER_COMPANION_COUNT = lobsterWalkTuning.companionCount;
 const CRAB_SPAWN_PROBABILITY = 0.05;
 const OCTOPUS_SPAWN_PROBABILITY = 0.01;
 const LOBSTER_OFFSCREEN_PADDING = 56;
 const LOBSTER_COLLISION_DISTANCE_PX = 54;
-const LOBSTER_REROUTE_COOLDOWN_MS = 450;
+const LOBSTER_REROUTE_COOLDOWN_MS = lobsterWalkTuning.rerouteCooldownMs;
 const LOBSTER_COMPANION_MIN_FONT_SIZE_PX = 10;
 const LOBSTER_COMPANION_MAX_FONT_SIZE_PX = 180;
 const LOBSTER_COMPANION_MEAN_FONT_SIZE_PX = 72;
 const LOBSTER_COMPANION_STD_DEV_FONT_SIZE_PX = 28;
-const LOBSTER_BASE_FONT_SIZE_PX = 24;
-const LOBSTER_MAX_FONT_SIZE_PX = 48;
-const LOBSTER_GROW_PROGRESS = 0.14;
-const LOBSTER_SHRINK_PROGRESS = 0.9;
+const LOBSTER_MAX_FONT_SIZE_PX = lobsterWalkTuning.primaryFontSizePx;
 const LOBSTER_MIN_RANDOM_POINT_COUNT = 5;
 const LOBSTER_MAX_RANDOM_POINT_COUNT = 10;
 const WALKER_TURN_STEP_DEGREES = 6;
@@ -494,30 +493,6 @@ function getPointAtDistance(samples, targetDistance) {
   return { dx: last.x - previous.x, dy: last.y - previous.y, x: last.x, y: last.y };
 }
 
-function getLobsterFontSize(progress, walker) {
-  const minFontSize = walker?.minFontSize ?? LOBSTER_BASE_FONT_SIZE_PX;
-  const maxFontSize = walker?.maxFontSize ?? LOBSTER_MAX_FONT_SIZE_PX;
-  let fontSize = maxFontSize;
-
-  if (progress <= LOBSTER_GROW_PROGRESS) {
-    const localProgress = progress / LOBSTER_GROW_PROGRESS;
-    fontSize = minFontSize + ((maxFontSize - minFontSize) * localProgress);
-  } else if (progress >= LOBSTER_SHRINK_PROGRESS) {
-    const localProgress = (progress - LOBSTER_SHRINK_PROGRESS) / (1 - LOBSTER_SHRINK_PROGRESS);
-    fontSize = maxFontSize - ((maxFontSize - minFontSize) * localProgress);
-  }
-
-  return fontSize;
-}
-
-function getWalkerFontProgress(walker, now) {
-  if (!walker.totalDurationMs) {
-    return 1;
-  }
-
-  return clamp((now - walker.animationStartedAt) / walker.totalDurationMs, 0, 1);
-}
-
 function getWalkerTransform(point, walker) {
   if (walker?.species === "octopus") {
     const breathProgress = ((walker.breathTimeMs || 0) % OCTOPUS_BREATH_CYCLE_MS) / OCTOPUS_BREATH_CYCLE_MS;
@@ -576,12 +551,11 @@ function createPrimaryWalker(originRect, avoidPoints = []) {
   return {
     animationStartedAt: 0,
     emoji: "🦞",
+    fontSize: LOBSTER_MAX_FONT_SIZE_PX,
     height: originRect.height,
     homePoint: startPoint,
     id: createWalkerId("main-lobster"),
     left: startPoint.x,
-    maxFontSize: LOBSTER_MAX_FONT_SIZE_PX,
-    minFontSize: LOBSTER_BASE_FONT_SIZE_PX,
     motionAngle: 0,
     path,
     species: "lobster",
@@ -603,11 +577,10 @@ function createEdgeWalker(originRect, avoidPoints = [], emoji = "🦞", idPrefix
     animationStartedAt: 0,
     breathTimeMs: 0,
     emoji,
+    fontSize,
     height: originRect.height,
     id: createWalkerId(idPrefix),
     left: startPoint.x,
-    maxFontSize: fontSize,
-    minFontSize: fontSize,
     motionAngle: 0,
     path,
     species,
@@ -1133,7 +1106,7 @@ function LobsterBrand({ compact = false, subtitle }) {
       return undefined;
     }
 
-    const rerouteWalker = (walker, currentLeft, currentTop, currentRotation, currentEmojiTransform, currentFontSize, avoidPoints, now) => {
+    const rerouteWalker = (walker, currentLeft, currentTop, currentRotation, currentEmojiTransform, avoidPoints, now) => {
       const currentRect = {
         height: walker.height,
         left: currentLeft,
@@ -1168,7 +1141,6 @@ function LobsterBrand({ compact = false, subtitle }) {
 
       const emojiNode = walkerEmojiRefs.current[walker.id];
       if (emojiNode) {
-        emojiNode.style.fontSize = `${currentFontSize}px`;
         emojiNode.style.transform = currentEmojiTransform || "";
       }
     };
@@ -1190,7 +1162,6 @@ function LobsterBrand({ compact = false, subtitle }) {
 
         walker.breathTimeMs = now - walker.animationStartedAt;
         const frame = interpolateLobsterFrame(progress, walker.path, walker);
-        const fontSize = getLobsterFontSize(getWalkerFontProgress(walker, now), walker);
         const motionNode = walkerMotionRefs.current[walker.id];
         const emojiNode = walkerEmojiRefs.current[walker.id];
 
@@ -1199,7 +1170,6 @@ function LobsterBrand({ compact = false, subtitle }) {
         }
 
         if (emojiNode) {
-          emojiNode.style.fontSize = `${fontSize}px`;
           emojiNode.style.transform = frame.emojiTransform || "";
         }
 
@@ -1211,53 +1181,56 @@ function LobsterBrand({ compact = false, subtitle }) {
           centerY: currentTop + (walker.height / 2),
           currentLeft,
           currentTop,
-          fontSize,
+          fontSize: walker.fontSize,
           emojiTransform: frame.emojiTransform,
           rotation: frame.rotation,
           walker,
         });
       });
 
-      for (let index = 0; index < positions.length; index += 1) {
-        for (let otherIndex = index + 1; otherIndex < positions.length; otherIndex += 1) {
-          const current = positions[index];
-          const other = positions[otherIndex];
+      const collisionPairs = findNearbyCollisionPairs(positions, {
+        baseCollisionDistance: LOBSTER_COLLISION_DISTANCE_PX,
+      });
+      const reroutedWalkerIds = new Set();
+
+      collisionPairs.forEach(([currentIndex, otherIndex]) => {
+        const current = positions[currentIndex];
+        const other = positions[otherIndex];
+        if (!current || !other) {
+          return;
+        }
+
           const distance = Math.hypot(current.centerX - other.centerX, current.centerY - other.centerY);
           const collisionDistance = Math.max(
             LOBSTER_COLLISION_DISTANCE_PX,
             ((current.fontSize + other.fontSize) * 0.42),
           );
           if (distance >= collisionDistance) {
-            continue;
+            return;
           }
 
-          if (now - (current.walker.lastRerouteAt || 0) >= LOBSTER_REROUTE_COOLDOWN_MS) {
-            rerouteWalker(
-              current.walker,
-              current.currentLeft,
-              current.currentTop,
-              current.rotation,
-              current.emojiTransform,
-              current.fontSize,
-              positions.filter((entry) => entry.walker.id !== current.walker.id).map((entry) => ({ x: entry.currentLeft, y: entry.currentTop })),
-              now,
-            );
-          }
-
-          if (now - (other.walker.lastRerouteAt || 0) >= LOBSTER_REROUTE_COOLDOWN_MS) {
-            rerouteWalker(
-              other.walker,
-              other.currentLeft,
-              other.currentTop,
-              other.rotation,
-              other.emojiTransform,
-              other.fontSize,
-              positions.filter((entry) => entry.walker.id !== other.walker.id).map((entry) => ({ x: entry.currentLeft, y: entry.currentTop })),
-              now,
-            );
-          }
+        const rerouteTarget = chooseCollisionRerouteTarget(current, other, {
+          now,
+          cooldownMs: LOBSTER_REROUTE_COOLDOWN_MS,
+          reroutedWalkerIds,
+        });
+        if (!rerouteTarget) {
+          return;
         }
-      }
+
+        reroutedWalkerIds.add(rerouteTarget.walker.id);
+        rerouteWalker(
+          rerouteTarget.walker,
+          rerouteTarget.currentLeft,
+          rerouteTarget.currentTop,
+          rerouteTarget.rotation,
+          rerouteTarget.emojiTransform,
+          positions
+            .filter((entry) => entry.walker.id !== rerouteTarget.walker.id)
+            .map((entry) => ({ x: entry.currentLeft, y: entry.currentTop })),
+          now,
+        );
+      });
 
       if (visibleWalkers.length) {
         activeWalkersRef.current = visibleWalkers;
@@ -1387,7 +1360,7 @@ function LobsterBrand({ compact = false, subtitle }) {
                 <span
                   ref={setWalkerEmojiRef(walker.id)}
                   className="inline-block leading-none"
-                  style={{ fontSize: `${walker.minFontSize}px` }}
+                  style={{ fontSize: `${walker.fontSize}px` }}
                   aria-hidden="true"
                 >
                   {walker.emoji || "🦞"}

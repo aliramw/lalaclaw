@@ -15,11 +15,26 @@ function LocaleProbe() {
       <button type="button" onClick={() => setLocale("zh")}>
         Chinese
       </button>
+      <button type="button" onClick={() => setLocale("zh-hk")}>
+        Chinese Hong Kong
+      </button>
       <button type="button" onClick={() => setLocale("es")}>
         Spanish
       </button>
+      <button type="button" onClick={() => setLocale("ko")}>
+        Korean
+      </button>
       <button type="button" onClick={() => setLocale("pt")}>
         Portuguese
+      </button>
+      <button type="button" onClick={() => setLocale("de")}>
+        German
+      </button>
+      <button type="button" onClick={() => setLocale("ms")}>
+        Malay
+      </button>
+      <button type="button" onClick={() => setLocale("ta")}>
+        Tamil
       </button>
     </div>
   );
@@ -65,6 +80,27 @@ describe("I18nProvider", () => {
     expect(document.documentElement.lang).toBe("zh-CN");
   });
 
+  it("supports traditional chinese (hong kong) as a stored and interactive locale", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh-hk");
+
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("locale")).toHaveTextContent("zh-hk");
+    expect(document.title).toBe("LalaClaw | OpenClaw 指揮中心");
+    expect(document.documentElement.lang).toBe("zh-HK");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "Chinese Hong Kong" }));
+
+    expect(document.title).toBe("LalaClaw | OpenClaw 指揮中心");
+    expect(document.documentElement.lang).toBe("zh-HK");
+  });
+
   it("supports spanish as a stored and interactive locale", async () => {
     window.localStorage.setItem(localeStorageKey, "es");
 
@@ -105,5 +141,89 @@ describe("I18nProvider", () => {
 
     expect(document.title).toBe("LalaClaw | Central de Comando OpenClaw");
     expect(document.documentElement.lang).toBe("pt-BR");
+  });
+
+  it("supports german as a stored and interactive locale", async () => {
+    window.localStorage.setItem(localeStorageKey, "de");
+
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("locale")).toHaveTextContent("de");
+    expect(document.title).toBe("LalaClaw | OpenClaw-Kommandozentrale");
+    expect(document.documentElement.lang).toBe("de-DE");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "German" }));
+
+    expect(document.title).toBe("LalaClaw | OpenClaw-Kommandozentrale");
+    expect(document.documentElement.lang).toBe("de-DE");
+  });
+
+  it("supports korean as a stored and interactive locale", async () => {
+    window.localStorage.setItem(localeStorageKey, "ko");
+
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("locale")).toHaveTextContent("ko");
+    expect(document.title).toBe("LalaClaw | OpenClaw 커맨드 센터");
+    expect(document.documentElement.lang).toBe("ko-KR");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "Korean" }));
+
+    expect(document.title).toBe("LalaClaw | OpenClaw 커맨드 센터");
+    expect(document.documentElement.lang).toBe("ko-KR");
+  });
+
+  it("supports malay as a stored and interactive locale", async () => {
+    window.localStorage.setItem(localeStorageKey, "ms");
+
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("locale")).toHaveTextContent("ms");
+    expect(document.title).toBe("LalaClaw | Pusat Arahan OpenClaw");
+    expect(document.documentElement.lang).toBe("ms-MY");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "Malay" }));
+
+    expect(document.title).toBe("LalaClaw | Pusat Arahan OpenClaw");
+    expect(document.documentElement.lang).toBe("ms-MY");
+  });
+
+  it("supports tamil as a stored and interactive locale", async () => {
+    window.localStorage.setItem(localeStorageKey, "ta");
+
+    render(
+      <I18nProvider>
+        <LocaleProbe />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("locale")).toHaveTextContent("ta");
+    expect(document.title).toBe("LalaClaw | OpenClaw கட்டளை மையம்");
+    expect(document.documentElement.lang).toBe("ta-IN");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "English" }));
+    await user.click(screen.getByRole("button", { name: "Tamil" }));
+
+    expect(document.title).toBe("LalaClaw | OpenClaw கட்டளை மையம்");
+    expect(document.documentElement.lang).toBe("ta-IN");
   });
 });

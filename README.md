@@ -1,4 +1,4 @@
-[Read this README in: English](./README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md)
+[Read this README in: English](./README.md) | [中文](./README.zh.md) | [繁體中文（香港）](./README.zh-hk.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md) | [Deutsch](./README.de.md) | [Bahasa Melayu](./README.ms.md) | [தமிழ்](./README.ta.md)
 
 # LalaClaw
 
@@ -13,7 +13,7 @@ Author: Marila Wang
 
 - React + Vite command center UI with chat, timeline, inspector, theme, locale, and attachment flows
 - VS Code-style file exploration with separate session/workspace trees, preview actions, and richer document/media handling
-- Built-in locale support for 中文, English, 日本語, Français, Español, and Português
+- Built-in locale support for 中文, 繁體中文（香港）, English, 日本語, 한국어, Français, Español, Português, Deutsch, Bahasa Melayu, and தமிழ்
 - Node.js backend that can connect to local or remote OpenClaw gateways
 - Modular frontend and backend boundaries with focused hook- and module-level tests
 - CI, linting, coverage thresholds, contribution docs, security policy, and issue templates
@@ -32,10 +32,15 @@ Author: Marila Wang
 - Language index: [docs/README.md](./docs/README.md)
 - English: [docs/en/documentation.md](./docs/en/documentation.md)
 - 中文: [docs/zh/documentation.md](./docs/zh/documentation.md)
+- 繁體中文（香港）: [docs/zh-hk/documentation.md](./docs/zh-hk/documentation.md)
 - 日本語: [docs/ja/documentation.md](./docs/ja/documentation.md)
+- 한국어: [docs/ko/documentation.md](./docs/ko/documentation.md)
 - Français: [docs/fr/documentation.md](./docs/fr/documentation.md)
 - Español: [docs/es/documentation.md](./docs/es/documentation.md)
 - Português: [docs/pt/documentation.md](./docs/pt/documentation.md)
+- Deutsch: [docs/de/documentation.md](./docs/de/documentation.md)
+- Bahasa Melayu: [docs/ms/documentation.md](./docs/ms/documentation.md)
+- தமிழ்: [docs/ta/documentation.md](./docs/ta/documentation.md)
 
 ## Architecture
 
