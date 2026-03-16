@@ -120,10 +120,10 @@ lalaclaw doctor
 lalaclaw start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17.2`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-2`：
 
 ```bash
-npm install -g lalaclaw@2026.3.17.2
+npm install -g lalaclaw@2026.3.17-2
 lalaclaw doctor
 lalaclaw start
 ```
@@ -140,12 +140,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17.2`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-2`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17.2
+git checkout 2026.3.17-2
 npm ci
 npm run build
 npm run lalaclaw:start
