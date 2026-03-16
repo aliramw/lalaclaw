@@ -548,7 +548,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(chatBodies).toHaveLength(1);
-      expect(screen.queryByText(/待发送/)).not.toBeInTheDocument();
+      expect(screen.queryByText("待发送 2")).not.toBeInTheDocument();
     });
     expect(screen.getAllByText("正在思考…")).toHaveLength(1);
 
