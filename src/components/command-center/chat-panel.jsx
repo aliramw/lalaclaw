@@ -13,7 +13,6 @@ import { createConversationKey } from "@/features/app/storage";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useI18n } from "@/lib/i18n";
-import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
 
 const bubbleBaseClassName =
   "min-w-0 transition-[border-color,background-color,box-shadow,color] duration-200";
@@ -375,6 +374,21 @@ function calculateBubbleTopFocusScrollTop(viewport, bubble) {
   const targetTop = bubbleTop - viewport.clientHeight * 0.3;
 
   return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
+}
+
+export function shouldShowBubbleTopJumpButton({ viewportRect, bubbleRect, viewportClientHeight = 0 }) {
+  if (!viewportRect || !bubbleRect) {
+    return false;
+  }
+
+  const bubbleHeight = Number(bubbleRect.height) || Math.max(0, Number(bubbleRect.bottom || 0) - Number(bubbleRect.top || 0));
+  const minTallHeight = Math.min(96, Math.max(56, viewportClientHeight * 0.18));
+  const bubbleTallEnough = bubbleHeight >= minTallHeight;
+  const bubbleTopHidden = bubbleRect.top <= viewportRect.top - 8;
+  const bubbleNotFullyVisible = bubbleTopHidden || bubbleRect.bottom >= viewportRect.bottom - 8;
+  const bubbleStillVisible = bubbleRect.bottom > viewportRect.top + 24;
+
+  return bubbleTallEnough && bubbleTopHidden && bubbleNotFullyVisible && bubbleStillVisible;
 }
 
 function isEditableTarget(target) {
@@ -1490,7 +1504,7 @@ export function ChatPanel({
     setHighlightedAgentIndex(0);
   };
 
-  const applyMention = useCallback((value) => {
+  const applyMention = (value) => {
     if (!activeMention) {
       return;
     }
@@ -1512,7 +1526,7 @@ export function ChatPanel({
       composerTextareaRef.current?.focus();
       composerTextareaRef.current?.setSelectionRange?.(nextCaret, nextCaret);
     });
-  }, [activeMention, onPromptChange, prompt]);
+  };
 
   const handleMentionPointerSelect = useCallback((event, value) => {
     if (event.button !== 0) {
@@ -1963,7 +1977,7 @@ export function ChatPanel({
       resizeObserver?.disconnect?.();
       cleanupImageListeners.forEach((cleanup) => cleanup());
     };
-  }, [messageViewportRef, messages, restoredScrollKey, restoredScrollRevision, restoredScrollState, session?.agentId, session?.sessionUser, visibleConversationKey]);
+  }, [messageViewportRef, messages, restoredScrollKey, restoredScrollRevision, restoredScrollState, session?.agentId, session?.sessionUser]);
 
   useEffect(() => {
     const viewport = messageViewportRef?.current;

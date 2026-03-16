@@ -10,8 +10,6 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
-
-const availableInspectorTabKeys = ["files", "artifacts", "timeline", "environment"];
 import { Prism } from "@/lib/prism-languages";
 import { cn, stripMarkdownForDisplay } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -714,19 +712,20 @@ export function InspectorPanel({ activeTab, artifacts, currentWorkspaceRoot = ""
   const tabsListRef = useRef(null);
   const [showTabLabels, setShowTabLabels] = useState(true);
   const [tooltipTabKey, setTooltipTabKey] = useState("");
+  const availableTabKeys = ["files", "artifacts", "timeline", "environment"];
   const tabDefinitions = [
     { key: "files", icon: FolderOpen, label: messages.inspector.tabs.files, count: files.length },
     { key: "artifacts", icon: FileText, label: messages.inspector.tabs.artifacts },
     { key: "timeline", icon: Hammer, label: messages.inspector.tabs.timeline },
     { key: "environment", icon: Monitor, label: messages.inspector.tabs.environment },
   ];
-  const resolvedActiveTab = availableInspectorTabKeys.includes(activeTab) ? activeTab : "files";
+  const resolvedActiveTab = availableTabKeys.includes(activeTab) ? activeTab : "files";
 
   useEffect(() => {
-    if (activeTab && !availableInspectorTabKeys.includes(activeTab)) {
+    if (activeTab && !availableTabKeys.includes(activeTab)) {
       setActiveTab("files");
     }
-  }, [activeTab, setActiveTab]);
+  }, [activeTab, availableTabKeys, setActiveTab]);
 
   useEffect(() => {
     const node = tabsListRef.current;

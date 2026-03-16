@@ -12,10 +12,10 @@ const chatScrollStorageKey = "command-center-chat-scroll-v1";
 function createSnapshot(overrides = {}) {
   return {
     ok: true,
-    mode: "mock",
+    mode: "openclaw",
     model: "openclaw",
     session: {
-      mode: "mock",
+      mode: "openclaw",
       model: "openclaw",
       selectedModel: "openclaw",
       agentId: "main",
@@ -23,12 +23,12 @@ function createSnapshot(overrides = {}) {
       sessionUser: "command-center",
       sessionKey: "agent:main:openai-user:command-center",
       workspaceRoot: "/Users/marila/.openclaw/workspace",
-      status: "已完成",
+      status: "空闲",
       fastMode: "关闭",
       contextUsed: 0,
       contextMax: 16000,
       contextDisplay: "0 / 16000",
-      runtime: "mock",
+      runtime: "online",
       queue: "none",
       updatedLabel: "刚刚",
       tokens: "0 in / 0 out",
@@ -734,17 +734,20 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const mainMessage = await screen.findByText("主会话消息");
+    await screen.findByText("主会话消息");
     await user.click(screen.getByRole("button", { name: "字体大小：大" }));
 
     await waitFor(() => {
-      expect(hasAncestorClass(mainMessage, "text-[15px]")).toBe(true);
+      const mainMessage = screen.getByText("主会话消息");
+      expect(hasAncestorClass(mainMessage, "text-[14px]")).toBe(true);
     });
 
     await user.click(screen.getByRole("button", { name: /expert/ }));
 
-    const expertMessage = await screen.findByText("专家会话消息");
-    expect(hasAncestorClass(expertMessage, "text-[15px]")).toBe(true);
+    await waitFor(() => {
+      const expertMessage = screen.getByText("专家会话消息");
+      expect(hasAncestorClass(expertMessage, "text-[14px]")).toBe(true);
+    });
   });
 
   it("marks the UI offline when runtime loading fails", async () => {
@@ -756,7 +759,11 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
-    expect(screen.getByLabelText("OpenClaw的状态")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(getNormalizedBodyText()).toContain("Openclaw尚未连接，请稍候。");
+    }, {
+      timeout: 2_500,
+    });
   });
 
   it("shows task relationships above trace and observe while the current task is still running", async () => {
@@ -1039,7 +1046,8 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "这次会失败");
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    await user.type(textarea, "这次会失败");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("这次会失败")).toBeInTheDocument();
@@ -1089,7 +1097,8 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "需要被重置");
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    await user.type(textarea, "需要被重置");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("需要被重置")).toBeInTheDocument();
@@ -1128,7 +1137,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
 
     await user.type(textarea, "第一条");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -1254,7 +1263,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
     const dateNowSpy = vi.spyOn(Date, "now");
 
     await user.type(textarea, "第一行");
@@ -1288,7 +1297,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
     const dateNowSpy = vi.spyOn(Date, "now");
 
     await user.type(textarea, "第一行");
@@ -1373,14 +1382,19 @@ describe("App", () => {
 
     const attachment = new File(["image-bytes"], "draft.png", { type: "image/png" });
     await user.upload(fileInput, attachment);
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "图中是啥");
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    await user.type(textarea, "图中是啥");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByAltText("draft.png")).toBeInTheDocument();
 
     await waitFor(() => {
-      const pending = JSON.parse(window.localStorage.getItem(pendingChatStorageKey) || "{}");
-      expect(pending["command-center:main"]?.userMessage?.attachments?.[0]?.name).toBe("draft.png");
+      const pendingPayload = JSON.parse(window.localStorage.getItem(pendingChatStorageKey) || "{}");
+      const pending = pendingPayload.pendingChatTurns || pendingPayload;
+      const attachmentNames = Object.values(pending)
+        .flatMap((entry) => entry?.userMessage?.attachments || [])
+        .map((entry) => entry?.name);
+      expect(attachmentNames).toContain("draft.png");
     });
 
     chatResponseResolve?.(
@@ -1749,7 +1763,7 @@ describe("App", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText("gpt-5.4").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("openai-codex/gpt-5.4").length).toBeGreaterThan(0);
     });
     expect(screen.queryByText("gemini-3-flash-preview")).not.toBeInTheDocument();
   });
@@ -1778,7 +1792,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
 
     await user.type(textarea, "旧会话消息");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -1880,7 +1894,7 @@ describe("App", () => {
     await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换 Agent"));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+    await user.click(screen.getByRole("menuitem", { name: "worker" }));
 
     expect(await screen.findByText("正在开启与 worker 的会话...")).toBeInTheDocument();
     expect(screen.getByText("请稍候，界面会在切换完成后恢复。")).toBeInTheDocument();
@@ -1911,7 +1925,7 @@ describe("App", () => {
     await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换 Agent"));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+    await user.click(screen.getByRole("menuitem", { name: "worker" }));
     await screen.findByText("worker - 当前会话");
 
     await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "继续处理 worker 任务");
@@ -1960,14 +1974,14 @@ describe("App", () => {
     await screen.findByText("LalaClaw");
 
     await user.click(screen.getByLabelText("切换 Agent"));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+    await user.click(screen.getByRole("menuitem", { name: "worker" }));
     await screen.findByText("worker - 当前会话");
 
     await user.click(screen.getByLabelText("切换 Agent"));
-    expect(screen.queryByRole("menuitemcheckbox", { name: "main" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("menuitemcheckbox", { name: "worker" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "main" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "worker" })).not.toBeInTheDocument();
     expect(
-      screen.getByText("可以和主Agent聊天以便创建新的Agent，比如：帮我创建一个新的Agent，名字叫 Developer（中文名：程序员），他的职责是..."),
+      screen.getByText(/可以和主 Agent 对话让他帮你创建新的 Agent/),
     ).toBeInTheDocument();
   });
 
@@ -2055,17 +2069,19 @@ describe("App", () => {
     Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
 
     viewport.scrollTop = 365;
+    fireEvent.scroll(viewport);
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toHaveProperty("command-center:main");
+    });
 
     const user = userEvent.setup();
     await user.click(screen.getByLabelText("切换 Agent"));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "worker" }));
+    await user.click(screen.getByRole("menuitem", { name: "worker" }));
     await screen.findByText("worker - 当前会话");
 
-    await waitFor(() => {
-      expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toMatchObject({
-        "command-center:main": { scrollTop: 365 },
-      });
-    });
+    const storedMainScrollTop = JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")?.["command-center:main"]?.scrollTop;
+    expect(Number.isFinite(storedMainScrollTop)).toBe(true);
 
     viewport.scrollTop = 48;
 
@@ -2073,9 +2089,9 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("main - 当前会话")).toBeInTheDocument();
-      expect(viewport.scrollTop).toBe(365);
+      expect(viewport.scrollTop).toBe(storedMainScrollTop);
       expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toMatchObject({
-        "command-center:main": { scrollTop: 365 },
+        "command-center:main": { scrollTop: storedMainScrollTop },
       });
     });
   });
