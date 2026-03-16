@@ -14,6 +14,33 @@ async function readJson(response) {
   return await response.json();
 }
 
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function withTemporaryBuiltApp(run) {
+  const indexPath = path.join(DIST_DIR, "index.html");
+  const hadBuiltApp = await pathExists(indexPath);
+
+  if (!hadBuiltApp) {
+    await fs.mkdir(DIST_DIR, { recursive: true });
+    await fs.writeFile(indexPath, "<!doctype html><html><body>test build</body></html>", "utf8");
+  }
+
+  try {
+    return await run();
+  } finally {
+    if (!hadBuiltApp) {
+      await fs.rm(indexPath, { force: true });
+    }
+  }
+}
+
 async function readStreamDonePayload(response) {
   const text = await response.text();
   const events = String(text || "")
@@ -33,9 +60,9 @@ async function readStreamDonePayload(response) {
 }
 
 describe("server helpers", () => {
-  it("uses dist as the only static app directory", () => {
+  it("uses dist as the only static app directory", async () => {
     expect(__test.getStaticDir()).toBe(DIST_DIR);
-    expect(__test.isWebAppBuilt()).toBe(true);
+    expect(__test.isWebAppBuilt()).toBe(await pathExists(path.join(DIST_DIR, "index.html")));
   });
 
   it("parses compact numbers and session metadata", () => {
@@ -514,25 +541,27 @@ describe("server routes", () => {
   });
 
   it("serves the web app and rejects unsupported methods", async () => {
-    const indexResponse = await fetch(`${baseUrl}/`);
-    const indexHtml = await indexResponse.text();
+    await withTemporaryBuiltApp(async () => {
+      const indexResponse = await fetch(`${baseUrl}/`);
+      const indexHtml = await indexResponse.text();
 
-    expect(indexResponse.ok).toBe(true);
-    expect(indexHtml).toContain("<!doctype html>");
+      expect(indexResponse.ok).toBe(true);
+      expect(indexHtml).toContain("<!doctype html>");
 
-    const invalidMethodResponse = await fetch(`${baseUrl}/`, {
-      method: "POST",
+      const invalidMethodResponse = await fetch(`${baseUrl}/`, {
+        method: "POST",
+      });
+      const invalidMethodPayload = await readJson(invalidMethodResponse);
+
+      expect(invalidMethodResponse.status).toBe(405);
+      expect(invalidMethodPayload.error).toBe("Method not allowed");
+
+      const missingResponse = await fetch(`${baseUrl}/missing-file.js`);
+      const missingPayload = await readJson(missingResponse);
+
+      expect(missingResponse.status).toBe(404);
+      expect(missingPayload.error).toBe("Not found");
     });
-    const invalidMethodPayload = await readJson(invalidMethodResponse);
-
-    expect(invalidMethodResponse.status).toBe(405);
-    expect(invalidMethodPayload.error).toBe("Method not allowed");
-
-    const missingResponse = await fetch(`${baseUrl}/missing-file.js`);
-    const missingPayload = await readJson(missingResponse);
-
-    expect(missingResponse.status).toBe(404);
-    expect(missingPayload.error).toBe("Not found");
   });
 
   it("returns markdown/pdf preview payloads and serves raw media content", async () => {

@@ -119,6 +119,9 @@ describe("config", () => {
   });
 
   it("collects skills from the current agent, allowed sub agents, and installed skill inventories", () => {
+    const npmSkillsDir = `${process.env.HOME || ""}/.npm-global/lib/node_modules/openclaw/skills`;
+    const summarizeSkillPath = `${npmSkillsDir}/summarize/SKILL.md`;
+
     const localConfig = {
       agents: {
         defaults: {
@@ -145,8 +148,8 @@ describe("config", () => {
         "/tmp/workspace/skills",
         "/tmp/workspace/skills/agent-browser/SKILL.md",
         "/tmp/workspace/.clawhub/lock.json",
-        "/Users/marila/.npm-global/lib/node_modules/openclaw/skills",
-        "/Users/marila/.npm-global/lib/node_modules/openclaw/skills/summarize/SKILL.md",
+        npmSkillsDir,
+        summarizeSkillPath,
       ].includes(normalized);
     });
     vi.spyOn(fs, "readdirSync").mockImplementation((filePath) => {
@@ -154,7 +157,7 @@ describe("config", () => {
       if (normalized === "/tmp/workspace/skills") {
         return [{ name: "agent-browser", isDirectory: () => true }];
       }
-      if (normalized === "/Users/marila/.npm-global/lib/node_modules/openclaw/skills") {
+      if (normalized === npmSkillsDir) {
         return [{ name: "summarize", isDirectory: () => true }];
       }
       return [];
