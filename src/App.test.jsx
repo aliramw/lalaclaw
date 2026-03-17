@@ -1558,7 +1558,7 @@ describe("App", () => {
       expect(getNormalizedBodyText()).toContain("刷新后继续显示");
     });
     expect(await screen.findByText("正在思考…")).toBeInTheDocument();
-    expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
   });
 
   it("does not duplicate the latest user message when restoring a pending turn", async () => {

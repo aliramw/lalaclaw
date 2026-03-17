@@ -24,7 +24,7 @@ export function normalizeStatusKey(status = "") {
     return "established";
   }
 
-  if (/run|progress|进行|执行中|处理中|thinking|思考中/.test(value)) {
+  if (/run|progress|进行|执行中|处理中|thinking|思考中|消化 token 中/.test(value)) {
     return "running";
   }
 

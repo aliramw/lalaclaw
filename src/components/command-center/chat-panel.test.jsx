@@ -1280,7 +1280,7 @@ describe("ChatPanel", () => {
           onSend={() => {}}
           prompt=""
           promptRef={null}
-          session={createSession({ status: "思考中" })}
+          session={createSession({ status: "消化 Token 中" })}
         />
       </TooltipProvider>,
     );
