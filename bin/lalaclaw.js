@@ -99,7 +99,7 @@ Usage:
   lalaclaw backend [--config-file <path>]
 
 Commands:
-  init      Create or refresh local config, and auto-start the macOS packaged app in the background.
+  init      Create or refresh local config, and auto-start the macOS background service when available.
   doctor    Check Node.js, OpenClaw discovery, ports, local config, and Office preview dependencies.
   status    Show macOS background service status for npm installs.
   stop      Stop the macOS background service for npm installs.
@@ -713,8 +713,44 @@ function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, 
 `;
 }
 
-function shouldAutoStartBackgroundService(options = {}, platform = process.platform, projectRoot = PROJECT_ROOT) {
-  return platform === 'darwin' && !options.noBackground && !isSourceCheckout(projectRoot);
+function shouldAutoStartBackgroundService(options = {}, platform = process.platform) {
+  return platform === 'darwin' && !options.noBackground;
+}
+
+function ensureBackgroundServiceBuildReady(spawnSyncImpl = spawnSync, projectRoot = PROJECT_ROOT) {
+  if (fs.existsSync(path.join(projectRoot, 'dist', 'index.html'))) {
+    return {
+      ready: true,
+      built: false,
+    };
+  }
+
+  if (!isSourceCheckout(projectRoot)) {
+    throw new Error(`Build output is missing at ${path.join(projectRoot, 'dist')}. Reinstall the published package or run \`npm run build\` before starting the background service.`);
+  }
+
+  if (!fs.existsSync(path.join(projectRoot, 'node_modules'))) {
+    throw new Error('Source checkout detected, but node_modules is missing. Run `npm ci` before `lalaclaw init` can start the background service.');
+  }
+
+  const result = spawnSyncImpl(npmCommand(), ['run', 'build'], {
+    cwd: projectRoot,
+    env: process.env,
+    stdio: 'inherit',
+  });
+
+  if (result.status !== 0) {
+    throw new Error('`npm run build` failed, so the background service was not started. Fix the build and rerun `lalaclaw init`, or use `--no-background`.');
+  }
+
+  if (!fs.existsSync(path.join(projectRoot, 'dist', 'index.html'))) {
+    throw new Error(`Build completed but ${path.join(projectRoot, 'dist', 'index.html')} is still missing.`);
+  }
+
+  return {
+    ready: true,
+    built: true,
+  };
 }
 
 function runLaunchctl(args, spawnSyncImpl = spawnSync) {
@@ -1222,6 +1258,10 @@ async function runInit(envFilePath, options = {}) {
   printConfigSummary(nextConfig);
   if (shouldAutoStartBackgroundService(options)) {
     try {
+      const buildStatus = ensureBackgroundServiceBuildReady();
+      if (buildStatus.built) {
+        console.log('INFO  Built the production app so the background service can serve the latest dist output.');
+      }
       const service = installLaunchdService(envFilePath);
       const appUrl = `http://${nextConfig.host}:${nextConfig.backendPort}`;
       console.log(`OK    Started macOS background service ${service.label}`);
@@ -1633,6 +1673,7 @@ module.exports = {
   validateRemoteRuntimeConfig,
   getRuntimeUrls,
   shouldAutoStartBackgroundService,
+  ensureBackgroundServiceBuildReady,
   installLaunchdService,
   readLaunchdServiceStatus,
   stopLaunchdService,

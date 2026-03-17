@@ -525,11 +525,66 @@ describe("LalaClaw CLI helpers", () => {
     });
   });
 
-  it("uses launchd background startup only for packaged macOS installs", () => {
+  it("uses launchd background startup on macOS unless it is explicitly disabled", () => {
     expect(cli.shouldAutoStartBackgroundService({}, "darwin", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(true);
     expect(cli.shouldAutoStartBackgroundService({ noBackground: true }, "darwin", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
     expect(cli.shouldAutoStartBackgroundService({}, "linux", path.join(os.tmpdir(), "lalaclaw-packed-app"))).toBe(false);
-    expect(cli.shouldAutoStartBackgroundService({}, "darwin", sourceCheckoutRoot)).toBe(false);
+    expect(cli.shouldAutoStartBackgroundService({}, "darwin", sourceCheckoutRoot)).toBe(true);
+  });
+
+  it("builds the production app before starting the background service from a source checkout", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-build-ready-"));
+    const srcDir = path.join(tempRoot, "src");
+    const nodeModulesDir = path.join(tempRoot, "node_modules");
+    const distDir = path.join(tempRoot, "dist");
+
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.mkdirSync(nodeModulesDir, { recursive: true });
+    fs.writeFileSync(path.join(srcDir, "main.jsx"), "export default null;\n", "utf8");
+
+    const calls = [];
+    try {
+      const status = cli.ensureBackgroundServiceBuildReady((command, args, options) => {
+        calls.push({ command, args, options });
+        fs.mkdirSync(distDir, { recursive: true });
+        fs.writeFileSync(path.join(distDir, "index.html"), "<!doctype html>", "utf8");
+        return { status: 0 };
+      }, tempRoot);
+
+      expect(status).toEqual({
+        ready: true,
+        built: true,
+      });
+      expect(calls).toEqual([
+        {
+          command: process.platform === "win32" ? "npm.cmd" : "npm",
+          args: ["run", "build"],
+          options: {
+            cwd: tempRoot,
+            env: process.env,
+            stdio: "inherit",
+          },
+        },
+      ]);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails background startup preparation when a source checkout is missing node_modules", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-build-missing-modules-"));
+    const srcDir = path.join(tempRoot, "src");
+
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.writeFileSync(path.join(srcDir, "main.jsx"), "export default null;\n", "utf8");
+
+    try {
+      expect(() => cli.ensureBackgroundServiceBuildReady(() => ({ status: 0 }), tempRoot)).toThrow(
+        "Source checkout detected, but node_modules is missing. Run `npm ci` before `lalaclaw init` can start the background service.",
+      );
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("colors the ERROR label red only when terminal colors are supported", () => {

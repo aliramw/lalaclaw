@@ -72,7 +72,8 @@ Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 Notes:
 
 - `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
-- On npm installs for macOS, `lalaclaw init` also starts a `launchd` background service automatically
+- On macOS, `lalaclaw init` also starts a `launchd` background service automatically
+- In a source checkout on macOS, `lalaclaw init` builds `dist/` first when needed so the background service can run the production app
 - After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
 - If you want config only on macOS, run `lalaclaw init --no-background`
 - On Linux, or when you opt out of background startup, continue with `lalaclaw doctor` and `lalaclaw start`
@@ -91,14 +92,13 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run build
-npm run lalaclaw:start
 ```
 
 Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 Important:
 
+- On macOS, `npm run lalaclaw:init` now tries to build and install the background service for you unless you pass `--no-background`
 - `npm run lalaclaw:start` runs in the current terminal and is not a daemon
 - If you close that terminal, the service stops and `http://127.0.0.1:3000` becomes unavailable
 

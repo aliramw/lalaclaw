@@ -11,6 +11,35 @@ const {
   helpers,
 } = defaultAppContext;
 
+function respondToHandlerError(res, error) {
+  if (res.headersSent || res.writableEnded || res.destroyed) {
+    try {
+      res.end();
+    } catch {}
+    return;
+  }
+
+  sendJson(res, 500, {
+    ok: false,
+    error: error?.message || 'Unknown server error',
+  });
+}
+
+function runRouteHandler(handler, req, res) {
+  try {
+    const result = handler(req, res);
+    if (result && typeof result.then === 'function') {
+      result.catch((error) => {
+        console.error('[server] Route handler failed', error);
+        respondToHandlerError(res, error);
+      });
+    }
+  } catch (error) {
+    console.error('[server] Route handler failed', error);
+    respondToHandlerError(res, error);
+  }
+}
+
 function createRequestHandler(appContext = defaultAppContext) {
   const {
     handleChat,
@@ -31,52 +60,52 @@ function createRequestHandler(appContext = defaultAppContext) {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
     if (req.method === 'GET' && url.pathname === '/api/session') {
-      handleSession(req, res);
+      runRouteHandler(handleSession, req, res);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/session') {
-      handleSessionUpdate(req, res);
+      runRouteHandler(handleSessionUpdate, req, res);
       return;
     }
 
     if (req.method === 'GET' && url.pathname === '/api/runtime') {
-      handleRuntime(req, res);
+      runRouteHandler(handleRuntime, req, res);
       return;
     }
 
     if (req.method === 'GET' && url.pathname === '/api/file-preview') {
-      handleFilePreview(req, res);
+      runRouteHandler(handleFilePreview, req, res);
       return;
     }
 
     if (req.method === 'GET' && url.pathname === '/api/file-preview/content') {
-      handleFilePreviewContent(req, res);
+      runRouteHandler(handleFilePreviewContent, req, res);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/file-preview/save') {
-      handleFilePreviewSave(req, res);
+      runRouteHandler(handleFilePreviewSave, req, res);
       return;
     }
 
     if (req.method === 'GET' && url.pathname === '/api/workspace-tree') {
-      handleWorkspaceTree(req, res);
+      runRouteHandler(handleWorkspaceTree, req, res);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/file-manager/reveal') {
-      handleFileManagerReveal(req, res);
+      runRouteHandler(handleFileManagerReveal, req, res);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/chat') {
-      handleChat(req, res);
+      runRouteHandler(handleChat, req, res);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/chat/stop') {
-      handleChatStop(req, res);
+      runRouteHandler(handleChatStop, req, res);
       return;
     }
 

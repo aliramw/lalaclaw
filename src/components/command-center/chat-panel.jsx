@@ -567,7 +567,7 @@ function BubbleTopJumpButton({ onClick }) {
           <button
             type="button"
             onClick={onClick}
-            className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-background/92 text-muted-foreground backdrop-blur transition hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="pointer-events-none inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-background/92 text-muted-foreground opacity-0 backdrop-blur transition hover:bg-background hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100"
             aria-label={messages.chat.jumpToMessageTop}
           >
             <ArrowUpToLine className="h-3.5 w-3.5" />
@@ -792,6 +792,7 @@ const MessageBubble = memo(function MessageBubble({
 }) {
   const [showBubbleTopJump, setShowBubbleTopJump] = useState(false);
   const bubbleRef = useRef(null);
+  const bubbleSurfaceRef = useRef(null);
   const isUser = message.role === "user";
   const isPending = Boolean(message.pending);
   const renderedContent = useMemo(
@@ -853,9 +854,13 @@ const MessageBubble = memo(function MessageBubble({
     bubbleAnchorRef.current = node;
   };
 
+  const setBubbleSurfaceNode = (node) => {
+    bubbleSurfaceRef.current = node;
+  };
+
   const handleJumpBubbleTop = () => {
     const viewport = messageViewportRef?.current;
-    const bubble = bubbleRef.current;
+    const bubble = bubbleSurfaceRef.current || bubbleRef.current;
     if (!viewport || !bubble) {
       return;
     }
@@ -884,7 +889,7 @@ const MessageBubble = memo(function MessageBubble({
     }
 
     const viewport = messageViewportRef?.current;
-    const bubble = bubbleRef.current;
+    const bubble = bubbleSurfaceRef.current || bubbleRef.current;
     if (!viewport || !bubble) {
       setShowBubbleTopJump(false);
       return undefined;
@@ -982,7 +987,7 @@ const MessageBubble = memo(function MessageBubble({
                 textClassName={fontSizeStyles.meta}
                 timestamp={message.timestamp}
               />
-              <Card data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName, focusBubbleClassName)}>
+              <Card ref={setBubbleSurfaceNode} data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName, focusBubbleClassName)}>
                 {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
                 <CardContent className={cn(bubbleContentClassName, message.attachments?.length && "space-y-2")}>
                   <MessageAttachments
@@ -1019,6 +1024,7 @@ const MessageBubble = memo(function MessageBubble({
           <AgentLabel value={agentLabel} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-center gap-2">
             <Card
+              ref={setBubbleSurfaceNode}
               data-bubble-layout="compact"
               className={cn(
                 bubbleBaseClassName,
@@ -1063,6 +1069,7 @@ const MessageBubble = memo(function MessageBubble({
               <div className="min-w-0 shrink-0">
                 {bubbleTopJumpButton}
               <Card
+                ref={setBubbleSurfaceNode}
                 data-bubble-layout="full"
               className={cn(
                 bubbleBaseClassName,
@@ -1135,6 +1142,7 @@ const MessageBubble = memo(function MessageBubble({
             <div className="min-w-0 shrink-0">
               {bubbleTopJumpButton}
             <Card
+              ref={setBubbleSurfaceNode}
               data-bubble-layout="compact"
               className={cn(
                 bubbleBaseClassName,
@@ -1187,6 +1195,7 @@ const MessageBubble = memo(function MessageBubble({
           <div className="min-w-0 shrink-0">
             {bubbleTopJumpButton}
           <Card
+            ref={setBubbleSurfaceNode}
             data-bubble-layout="full"
             className={cn(
               bubbleBaseClassName,
@@ -1254,10 +1263,10 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
   const isOpenClaw = session.mode === "openclaw";
   const toneClassName = isOffline ? "bg-rose-500" : isOpenClaw ? "bg-emerald-500" : "bg-slate-400";
   const statusLabel = isOffline
-    ? messages.chat.connectionStatusDisconnected
+    ? (messages.chat.connectionStatusDisconnectedDisplay || messages.chat.connectionStatusDisconnected)
     : isOpenClaw
       ? (messages.chat.connectionStatusConnectedDisplay || messages.chat.connectionStatusConnected)
-      : messages.chat.connectionStatusLocal;
+      : (messages.chat.connectionStatusLocalDisplay || messages.chat.connectionStatusLocal);
   const statusHint = isOffline
     ? messages.chat.disconnectedPlaceholder
     : composerSendMode === "enter-send"

@@ -35,6 +35,10 @@ lalaclaw init
 
 說明：
 
+- 在 macOS 上，`lalaclaw init` 也會自動透過 `launchd` 啟動背景服務
+- 在 macOS 的原始碼倉庫裡，如果缺少 `dist/`，`lalaclaw init` 會先建置生產包，再啟動背景服務
+- 如果你只想寫入設定、不自動背景啟動，可以使用 `lalaclaw init --no-background`
+- 在 Linux 上，或你關閉了自動背景啟動時，再繼續執行 `lalaclaw doctor` 和 `lalaclaw start`
 - 預覽 doc、ppt、pptx 檔案需要 LibreOffice
 - 在 macOS 上可執行 lalaclaw doctor --fix，或使用 brew install --cask libreoffice
 
@@ -48,6 +52,8 @@ npm run dev:all
 ~~~
 
 開發模式請使用 [http://127.0.0.1:5173](http://127.0.0.1:5173)。
+
+如果你想在 macOS 的原始碼倉庫裡使用生產背景服務，可先執行 `npm run doctor`，再執行 `npm run lalaclaw:init`。
 
 ## 更新
 

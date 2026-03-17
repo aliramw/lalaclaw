@@ -346,6 +346,49 @@ describe("server HTTP integration", () => {
     expect(harness.sessionDependencies.setSessionPreferences).not.toHaveBeenCalled();
   });
 
+  it("keeps the server alive when an async route handler rejects unexpectedly", async () => {
+    const harness = createServerHarness();
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    harness.appContext.handleRuntime = async () => {
+      throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:18789"), {
+        code: "ECONNREFUSED",
+      });
+    };
+
+    server = createAppServer(harness.appContext);
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+    const failedResponse = await fetch(`${baseUrl}/api/runtime`);
+    const failedPayload = await readJson(failedResponse);
+
+    expect(failedResponse.status).toBe(500);
+    expect(failedPayload).toEqual({
+      ok: false,
+      error: "connect ECONNREFUSED 127.0.0.1:18789",
+    });
+
+    const recoveredResponse = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionUser: "api-user",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "继续" }],
+      }),
+    });
+    const recoveredPayload = await readJson(recoveredResponse);
+
+    expect(recoveredResponse.ok).toBe(true);
+    expect(recoveredPayload).toMatchObject({
+      ok: true,
+      mode: "openclaw",
+      outputText: "完成",
+    });
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
   it("persists session settings over HTTP and reuses them on the next chat turn", async () => {
     const harness = createServerHarness();
     server = createAppServer(harness.appContext);

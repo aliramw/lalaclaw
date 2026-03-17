@@ -35,6 +35,10 @@ lalaclaw init
 
 குறிப்புகள்:
 
+- macOS இல் `lalaclaw init` தானாகவே `launchd` பின்னணி சேவையையும் தொடங்கும்
+- macOS source checkout இல், production சேவையை தொடங்க வேண்டுமெனில் `lalaclaw init` தேவையாயின் முதலில் `dist/` ஐ build செய்யும்
+- configuration மட்டும் எழுத வேண்டுமெனில் `lalaclaw init --no-background` பயன்படுத்தவும்
+- Linux இல், அல்லது background startup ஐ நிறுத்தினால், `lalaclaw doctor` மற்றும் `lalaclaw start` ஐ தொடரவும்
 - doc, ppt, pptx preview க்கு LibreOffice தேவை
 - macOS இல் lalaclaw doctor --fix அல்லது brew install --cask libreoffice இயக்கலாம்
 
@@ -48,6 +52,8 @@ npm run dev:all
 ~~~
 
 வளர்ச்சி முறையில் [http://127.0.0.1:5173](http://127.0.0.1:5173) ஐ பயன்படுத்தவும்.
+
+macOS source checkout இலிருந்து production background service வேண்டும் என்றால் `npm run doctor` பிறகு `npm run lalaclaw:init` இயக்கவும்.
 
 ## புதுப்பிப்பு
 

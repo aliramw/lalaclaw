@@ -35,6 +35,10 @@ lalaclaw init
 
 참고:
 
+- macOS에서는 `lalaclaw init` 이 `launchd` 백그라운드 서비스도 자동으로 시작합니다
+- macOS 소스 체크아웃에서는 `lalaclaw init` 이 필요하면 먼저 `dist/` 를 빌드한 뒤 프로덕션 서비스를 시작합니다
+- 설정만 저장하려면 `lalaclaw init --no-background` 를 사용하세요
+- Linux 이거나 백그라운드 시작을 끄면 `lalaclaw doctor` 와 `lalaclaw start` 를 이어서 실행하세요
 - doc, ppt, pptx 미리보기에는 LibreOffice가 필요합니다
 - macOS에서는 lalaclaw doctor --fix 또는 brew install --cask libreoffice 를 실행할 수 있습니다
 
@@ -48,6 +52,8 @@ npm run dev:all
 ~~~
 
 개발 모드에서는 [http://127.0.0.1:5173](http://127.0.0.1:5173) 을 사용합니다.
+
+macOS 소스 체크아웃에서 프로덕션 백그라운드 서비스를 쓰려면 `npm run doctor` 다음에 `npm run lalaclaw:init` 을 실행하세요.
 
 ## 업데이트
 

@@ -35,6 +35,10 @@ Kemudian buka [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 Nota:
 
+- Di macOS, `lalaclaw init` juga memulakan servis latar belakang `launchd` secara automatik
+- Dalam source checkout di macOS, `lalaclaw init` akan membina `dist/` dahulu jika perlu supaya servis pengeluaran boleh bermula
+- Jika anda hanya mahu menulis konfigurasi, gunakan `lalaclaw init --no-background`
+- Di Linux, atau jika anda mematikan permulaan latar belakang, teruskan dengan `lalaclaw doctor` dan `lalaclaw start`
 - Pratonton fail doc, ppt dan pptx memerlukan LibreOffice
 - Di macOS anda boleh jalankan lalaclaw doctor --fix atau brew install --cask libreoffice
 
@@ -48,6 +52,8 @@ npm run dev:all
 ~~~
 
 Dalam mod pembangunan gunakan [http://127.0.0.1:5173](http://127.0.0.1:5173).
+
+Jika anda mahu servis pengeluaran latar belakang daripada source checkout di macOS, jalankan `npm run doctor` kemudian `npm run lalaclaw:init`.
 
 ## Kemas Kini
 

@@ -46,6 +46,8 @@ function createClient(overrides = {}) {
 describe("createOpenClawClient", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("dispatches image attachments through the direct HTTP API", async () => {
@@ -140,6 +142,37 @@ describe("createOpenClawClient", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(execFileAsync).not.toHaveBeenCalled();
+  });
+
+  it("retries a transient gateway connection refusal before succeeding", async () => {
+    vi.useFakeTimers();
+    const connectionError = new TypeError("fetch failed");
+    connectionError.cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:18789"), {
+      code: "ECONNREFUSED",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(connectionError)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ output_text: "重连成功", usage: { total_tokens: 3 } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createClient();
+    const resultPromise = client.dispatchOpenClaw(
+      [{ role: "user", content: "快一点" }],
+      true,
+      "command-center",
+    );
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    await expect(resultPromise).resolves.toEqual({
+      outputText: "重连成功",
+      usage: { total_tokens: 3 },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("streams text-only conversations through gateway chat events", async () => {

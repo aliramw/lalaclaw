@@ -72,7 +72,8 @@ lalaclaw init
 说明：
 
 - `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
-- 在 macOS 的 npm 安装场景下，`lalaclaw init` 还会自动通过 `launchd` 启动后台服务
+- 在 macOS 上，`lalaclaw init` 还会自动通过 `launchd` 启动后台服务
+- 在 macOS 的源码仓库里，如果缺少 `dist/`，`lalaclaw init` 会先构建生产包，再启动后台服务
 - macOS 后台服务启动后，`lalaclaw init` 会提示你按 Enter，并自动在浏览器里打开 App URL
 - 如果你只想写配置、不自动后台启动，可以使用 `lalaclaw init --no-background`
 - 在 Linux 上，或者你关闭了自动后台启动时，再继续执行 `lalaclaw doctor` 和 `lalaclaw start`
@@ -91,14 +92,13 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run build
-npm run lalaclaw:start
 ```
 
 然后打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)。
 
 注意：
 
+- 在 macOS 上，`npm run lalaclaw:init` 现在默认会尝试先构建再安装后台服务，除非你显式传 `--no-background`
 - `npm run lalaclaw:start` 会占用当前终端运行，不是后台守护进程
 - 如果你关闭这个终端，服务会停止，`http://127.0.0.1:3000` 也会不可用
 

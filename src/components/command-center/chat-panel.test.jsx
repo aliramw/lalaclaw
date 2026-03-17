@@ -1205,7 +1205,7 @@ describe("ChatPanel", () => {
     expect(screen.getByText("你好")).toBeInTheDocument();
     expect(screen.getByText(/\*?\*?已收到\*?\*?/)).toBeInTheDocument();
     expect(screen.getByText("ops - 当前会话")).toBeInTheDocument();
-    expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "停止" })).toBeEnabled();
   });
 
@@ -1258,7 +1258,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
     expect(screen.queryByText("待命")).not.toBeInTheDocument();
   });
 
@@ -1286,7 +1286,7 @@ describe("ChatPanel", () => {
     );
 
     expect(screen.getByText("待命")).toBeInTheDocument();
-    expect(screen.queryByText("思考中")).not.toBeInTheDocument();
+    expect(screen.queryByText("消化 Token 中")).not.toBeInTheDocument();
   });
 
   it("adds a breathing class to the latest streaming assistant bubble without reusing the pending card style", () => {
@@ -2040,7 +2040,23 @@ describe("ChatPanel", () => {
 
     const latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
     expect(latestAssistantAnchor).toBeTruthy();
+    const latestAssistantCard = latestAssistantAnchor.querySelector('[data-bubble-layout="full"]');
+    expect(latestAssistantCard).toBeTruthy();
     latestAssistantAnchor.getBoundingClientRect = () => {
+      const top = 136 - viewport.scrollTop;
+      return {
+        top,
+        left: 0,
+        right: 560,
+        bottom: top + 320,
+        width: 560,
+        height: 320,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      };
+    };
+    latestAssistantCard.getBoundingClientRect = () => {
       const top = 136 - viewport.scrollTop;
       return {
         top,
@@ -2058,6 +2074,14 @@ describe("ChatPanel", () => {
     fireEvent.scroll(viewport);
 
     const jumpButton = await screen.findByRole("button", { name: "回到这条消息顶部" });
+    expect(jumpButton).toHaveClass(
+      "pointer-events-none",
+      "opacity-0",
+      "group-hover/message:pointer-events-auto",
+      "group-hover/message:opacity-100",
+      "group-focus-within/message:pointer-events-auto",
+      "group-focus-within/message:opacity-100",
+    );
     fireEvent.click(jumpButton);
 
     await waitFor(() => {
@@ -2218,6 +2242,83 @@ describe("ChatPanel", () => {
       height: 220,
       x: 0,
       y: -24,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.scroll(viewport);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "回到这条消息顶部" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not show the message-top jump button when the card top is still visible", async () => {
+    const viewportRef = { current: null };
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段\n\n第二段\n第三段\n第四段\n第五段\n第六段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 80 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    const latestAssistantCard = latestAssistantAnchor.querySelector('[data-bubble-layout="full"]');
+    expect(latestAssistantCard).toBeTruthy();
+
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: -24,
+      left: 0,
+      right: 560,
+      bottom: 316,
+      width: 560,
+      height: 340,
+      x: 0,
+      y: -24,
+      toJSON: () => ({}),
+    });
+    latestAssistantCard.getBoundingClientRect = () => ({
+      top: 12,
+      left: 0,
+      right: 560,
+      bottom: 332,
+      width: 560,
+      height: 320,
+      x: 0,
+      y: 12,
       toJSON: () => ({}),
     });
 

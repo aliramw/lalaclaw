@@ -37,6 +37,10 @@ Despues abre [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 Notas:
 
+- En macOS, `lalaclaw init` tambien inicia automaticamente un servicio `launchd`
+- En un checkout del codigo fuente en macOS, `lalaclaw init` construye `dist/` primero si hace falta para arrancar el servicio de produccion
+- Si solo quieres escribir la configuracion, usa `lalaclaw init --no-background`
+- En Linux, o si desactivas el inicio en segundo plano, sigue con `lalaclaw doctor` y `lalaclaw start`
 - La vista previa de archivos `doc`, `ppt` y `pptx` requiere LibreOffice
 - En macOS puedes ejecutar `lalaclaw doctor --fix` o `brew install --cask libreoffice`
 
@@ -50,6 +54,8 @@ npm run dev:all
 ```
 
 En desarrollo usa [http://127.0.0.1:5173](http://127.0.0.1:5173).
+
+Si quieres el servicio de produccion en segundo plano desde un checkout del codigo en macOS, ejecuta `npm run doctor` y luego `npm run lalaclaw:init`.
 
 ## Actualizacion
 

@@ -37,6 +37,10 @@ lalaclaw init
 
 補足:
 
+- macOS では `lalaclaw init` が `launchd` のバックグラウンドサービスも自動で起動します
+- macOS のソースチェックアウトでは、`lalaclaw init` が必要に応じて先に `dist/` をビルドしてから本番サービスを起動します
+- 設定ファイルだけ書きたい場合は `lalaclaw init --no-background` を使います
+- Linux やバックグラウンド起動を無効にした場合は、そのまま `lalaclaw doctor` と `lalaclaw start` を実行します
 - `doc`、`ppt`、`pptx` ファイルのプレビューには LibreOffice が必要です
 - macOS では `lalaclaw doctor --fix` または `brew install --cask libreoffice` を実行できます
 
@@ -50,6 +54,8 @@ npm run dev:all
 ```
 
 開発時のブラウザ入口は [http://127.0.0.1:5173](http://127.0.0.1:5173) です。
+
+macOS のソースチェックアウトで本番用の常駐サービスを使いたい場合は `npm run doctor` の後に `npm run lalaclaw:init` を実行してください。
 
 ## 更新
 

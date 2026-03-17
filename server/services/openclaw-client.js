@@ -4,6 +4,15 @@ const path = require('node:path');
 const { URL, pathToFileURL } = require('node:url');
 
 let gatewaySdkPromise = null;
+const GATEWAY_RETRY_DELAYS_MS = [250, 1000];
+const GATEWAY_RETRYABLE_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
 
 function createOpenClawClient({
   config,
@@ -23,6 +32,92 @@ function createOpenClawClient({
   tailLines,
   loadGatewaySdk,
 }) {
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function collectGatewayErrorSignals(error, signals = new Set()) {
+    if (!error || typeof error !== 'object' || signals.has(error)) {
+      return signals;
+    }
+
+    signals.add(error);
+
+    if (error.cause && typeof error.cause === 'object') {
+      collectGatewayErrorSignals(error.cause, signals);
+    }
+
+    if (error.errors && Array.isArray(error.errors)) {
+      error.errors.forEach((entry) => collectGatewayErrorSignals(entry, signals));
+    }
+
+    return signals;
+  }
+
+  function isRetryableGatewayError(error) {
+    const signals = [...collectGatewayErrorSignals(error)];
+
+    return signals.some((entry) => {
+      const code = String(entry?.code || entry?.errno || '').trim().toUpperCase();
+      const message = String(entry?.message || '').trim().toUpperCase();
+      if (code && GATEWAY_RETRYABLE_ERROR_CODES.has(code)) {
+        return true;
+      }
+
+      return (
+        message.includes('ECONNREFUSED')
+        || message.includes('ECONNRESET')
+        || message.includes('EHOSTUNREACH')
+        || message.includes('ENETUNREACH')
+        || message.includes('ETIMEDOUT')
+        || message.includes('CONNECT TIMEOUT')
+        || message.includes('FETCH FAILED')
+      );
+    });
+  }
+
+  function wrapGatewayUnavailableError(error, operation, attempts) {
+    const attemptLabel = attempts > 1 ? ` after ${attempts} attempts` : '';
+    const wrapped = new Error(`OpenClaw gateway unavailable during ${operation}${attemptLabel}: ${error?.message || 'Unknown gateway error'}`);
+    wrapped.name = 'GatewayUnavailableError';
+    wrapped.code = 'GATEWAY_UNAVAILABLE';
+    wrapped.retryable = true;
+    wrapped.cause = error;
+    return wrapped;
+  }
+
+  async function withGatewayRetry(operation, task, options = {}) {
+    const delays = Array.isArray(options.delays) && options.delays.length
+      ? options.delays
+      : GATEWAY_RETRY_DELAYS_MS;
+    const attempts = Math.max(1, Number(options.attempts) || (delays.length + 1));
+    let attempt = 0;
+    let lastError = null;
+
+    while (attempt < attempts) {
+      attempt += 1;
+      try {
+        return await task();
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableGatewayError(error)) {
+          throw error;
+        }
+
+        if (attempt >= attempts) {
+          throw wrapGatewayUnavailableError(error, operation, attempt);
+        }
+
+        const retryDelayMs = Number(delays[Math.min(attempt - 1, delays.length - 1)]) || 0;
+        if (retryDelayMs > 0) {
+          await wait(retryDelayMs);
+        }
+      }
+    }
+
+    throw wrapGatewayUnavailableError(lastError, operation, attempts);
+  }
+
   async function loadOpenClawGatewaySdk() {
     if (typeof loadGatewaySdk === 'function') {
       return await loadGatewaySdk();
@@ -107,11 +202,11 @@ function createOpenClawClient({
       payload.action = action;
     }
 
-    const response = await fetch(endpoint, {
+    const response = await withGatewayRetry('tool invocation', async () => await fetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-    });
+    }));
 
     if (!response.ok) {
       throw new Error(`Tool invoke failed: ${response.status}`);
@@ -164,11 +259,11 @@ function createOpenClawClient({
       args.push('--token', config.apiKey);
     }
 
-    const { stdout } = await execFileAsync(OPENCLAW_BIN, args, {
+    const { stdout } = await withGatewayRetry(`gateway RPC ${method}`, async () => await execFileAsync(OPENCLAW_BIN, args, {
       cwd: PROJECT_ROOT,
       env: process.env,
       maxBuffer: 1024 * 1024,
-    });
+    }));
 
     try {
       return JSON.parse(String(stdout || '').trim() || '{}');
@@ -221,11 +316,11 @@ function createOpenClawClient({
 
   async function callOpenClaw(messages, fastMode, sessionUser = 'command-center', options = {}) {
     const request = buildOpenClawRequest(messages, fastMode, sessionUser, options, false);
-    const response = await fetch(request.endpoint, {
+    const response = await withGatewayRetry('chat request', async () => await fetch(request.endpoint, {
       method: 'POST',
       headers: request.headers,
       body: JSON.stringify(request.payload),
-    });
+    }));
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -632,11 +727,11 @@ function createOpenClawClient({
   async function callOpenClawStream(messages, fastMode, sessionUser = 'command-center', options = {}) {
     const onDelta = typeof options.onDelta === 'function' ? options.onDelta : () => {};
     const request = buildOpenClawRequest(messages, fastMode, sessionUser, options, true);
-    const response = await fetch(request.endpoint, {
+    const response = await withGatewayRetry('streaming chat request', async () => await fetch(request.endpoint, {
       method: 'POST',
       headers: request.headers,
       body: JSON.stringify(request.payload),
-    });
+    }));
 
     if (!response.ok) {
       const errorText = await response.text();
