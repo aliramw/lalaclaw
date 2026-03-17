@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
-import { isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
+import { getImSessionDisplayName, isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
 import { isOfflineStatus, normalizeStatusKey } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/storage";
 import { maxPromptRows } from "@/features/chat/utils";
@@ -155,6 +155,22 @@ function splitImTabTitleForDisplay(title = "", agentId = "", sessionUser = "") {
     platformLabel,
     agentName: normalizedAgentId,
   };
+}
+
+function buildCurrentConversationTitle(agentId = "", sessionUser = "", currentConversationLabel = "", locale = "zh") {
+  const normalizedAgentId = String(agentId || "").trim();
+  const normalizedCurrentConversationLabel = String(currentConversationLabel || "").trim();
+  const imLabel = getImSessionDisplayName(sessionUser, { locale, shortWecom: true });
+
+  if (imLabel && normalizedAgentId && normalizedCurrentConversationLabel) {
+    return `${imLabel} - ${normalizedAgentId} - ${normalizedCurrentConversationLabel}`;
+  }
+
+  if (normalizedAgentId && normalizedCurrentConversationLabel) {
+    return `${normalizedAgentId} - ${normalizedCurrentConversationLabel}`;
+  }
+
+  return normalizedAgentId || normalizedCurrentConversationLabel;
 }
 
 function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
@@ -1728,7 +1744,7 @@ export function ChatPanel({
   showTabsStrip = true,
   userLabel = "marila",
 }) {
-  const { messages: i18n } = useI18n();
+  const { intlLocale, messages: i18n } = useI18n();
   const attachmentInputRef = useRef(null);
   const composerTextareaRef = useRef(null);
   const { filePreview, imagePreview, handleOpenPreview, openImagePreview, closeFilePreview, closeImagePreview } = useFilePreview();
@@ -1773,6 +1789,7 @@ export function ChatPanel({
   const previousLatestUserMessageKeyRef = useRef("");
   const pinTopAllowedForTurnRef = useRef(true);
   const currentAgentName = session.agentId || agentLabel || "main";
+  const currentConversationTitle = buildCurrentConversationTitle(currentAgentName, session.sessionUser, i18n.chat.title, intlLocale);
   const promptPlaceholder = useMemo(() => {
     if (typeof i18n.chat.promptPlaceholder === "function") {
       return i18n.chat.promptPlaceholder(currentAgentName);
@@ -2845,7 +2862,7 @@ export function ChatPanel({
         <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
           <div className="relative border-b border-border/70 bg-card/80 px-3 pt-2 pb-2 backdrop-blur">
             <div className="flex min-w-0 items-center gap-2 pr-28">
-              <div className="truncate text-sm font-semibold leading-none tracking-tight">{`${currentAgentName} - ${i18n.chat.title}`}</div>
+              <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge variant={showBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
@@ -2887,11 +2904,11 @@ export function ChatPanel({
                     variant="ghost"
                     size="icon"
                     onClick={handleResetWithConfirm}
-                    className="h-6 w-6 rounded-md"
+                    className="h-7 w-7 rounded-md text-muted-foreground/70 hover:text-foreground"
                     aria-label={i18n.chat.resetConversation}
                     disabled={interactionLocked || !openClawConnected}
                   >
-                    <RotateCcw className="h-3 w-3" />
+                    <RotateCcw className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent className="px-2.5 py-2 text-left">

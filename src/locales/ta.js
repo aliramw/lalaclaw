@@ -163,7 +163,7 @@ const ta = {
     },
     resetConversation: "புதிய அமர்வை தொடங்கு",
     resetConversationHotkey: "புதிய அமர்வை தொடங்கு (Cmd + N)",
-    resetConversationTooltipHint: "புதிய அமர்வைத் தொடங்கினால் தற்போதைய உரையாடல் மீட்டமைக்கப்படும்.",
+    resetConversationTooltipHint: "புதிய அமர்வைத் தொடங்கினால் தற்போதைய உரையாடல் மீட்டமைக்கப்படும், மேலும் சூழல் நீளமும் பூஜ்யமாகும்.",
     resetConversationConfirm: "புதிய அமர்வை தொடங்கவா? உரையாடல் வரலாறும் சூழலும் அழிக்கப்படும்.",
     resetConversationDialog: {
       title: "புதிய அமர்வை தொடங்கவா?",

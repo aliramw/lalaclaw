@@ -236,7 +236,7 @@ const zh = {
     },
     resetConversation: "开启新会话",
     resetConversationHotkey: "开启新会话 (Cmd + N)",
-    resetConversationTooltipHint: "开启新会话后，当前会话的内容将重置",
+    resetConversationTooltipHint: "开启新会话后，当前会话的内容将重置，上下文长度清零",
     resetConversationConfirm: "是否要开启新的会话，对话历史和上下文将清空",
     resetConversationDialog: {
       title: "开启新的会话？",

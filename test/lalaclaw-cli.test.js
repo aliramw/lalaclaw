@@ -2,6 +2,8 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import os from "node:os";
+import net from "node:net";
+import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -101,8 +103,8 @@ describe("LalaClaw CLI helpers", () => {
     expect(cli.resolveConfig({}, localOpenClaw)).toMatchObject({
       profile: "local-openclaw",
       host: "127.0.0.1",
-      backendPort: "3000",
-      frontendPort: "5173",
+      backendPort: "5678",
+      frontendPort: "4321",
       openclawAgentId: "planner",
       openclawModel: "openclaw-pro",
       openclawApiStyle: "chat",
@@ -592,10 +594,12 @@ describe("LalaClaw CLI helpers", () => {
     const srcDir = path.join(tempRoot, "src");
     const nodeModulesDir = path.join(tempRoot, "node_modules");
     const distDir = path.join(tempRoot, "dist");
+    const viteConfigPath = path.join(tempRoot, "vite.config.mjs");
 
     fs.mkdirSync(srcDir, { recursive: true });
     fs.mkdirSync(nodeModulesDir, { recursive: true });
     fs.writeFileSync(path.join(srcDir, "main.jsx"), "export default null;\n", "utf8");
+    fs.writeFileSync(viteConfigPath, "export default {};\n", "utf8");
 
     const calls = [];
     try {
@@ -629,9 +633,11 @@ describe("LalaClaw CLI helpers", () => {
   it("fails background startup preparation when a source checkout is missing node_modules", () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-build-missing-modules-"));
     const srcDir = path.join(tempRoot, "src");
+    const viteConfigPath = path.join(tempRoot, "vite.config.mjs");
 
     fs.mkdirSync(srcDir, { recursive: true });
     fs.writeFileSync(path.join(srcDir, "main.jsx"), "export default null;\n", "utf8");
+    fs.writeFileSync(viteConfigPath, "export default {};\n", "utf8");
 
     try {
       expect(() => cli.ensureBackgroundServiceBuildReady(() => ({ status: 0 }), tempRoot)).toThrow(
@@ -663,6 +669,77 @@ describe("LalaClaw CLI helpers", () => {
     expect(cli.canPromptInteractively({ isTTY: true }, { isTTY: true })).toBe(true);
     expect(cli.canPromptInteractively({ isTTY: false }, { isTTY: true })).toBe(false);
     expect(cli.canPromptInteractively({ isTTY: true }, { isTTY: false })).toBe(false);
+  });
+
+  it("waits until a port becomes occupied", async () => {
+    const probe = net.createServer();
+    await new Promise((resolve, reject) => {
+      probe.once("error", reject);
+      probe.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = probe.address();
+    await new Promise((resolve, reject) => {
+      probe.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    const server = net.createServer();
+    const startServer = setTimeout(() => {
+      server.listen(port, "127.0.0.1");
+    }, 100);
+
+    try {
+      await expect(cli.waitForPortInUse("Frontend port", "127.0.0.1", String(port), null, 2000)).resolves.toBeUndefined();
+    } finally {
+      clearTimeout(startServer);
+      await new Promise((resolve) => {
+        if (!server.listening) {
+          resolve();
+          return;
+        }
+        server.close(() => resolve());
+      });
+    }
+  });
+
+  it("fails fast when the watched process exits before the port is ready", async () => {
+    await expect(
+      cli.waitForPortInUse("Server port", "127.0.0.1", "65530", { exitCode: 1 }, 1000),
+    ).rejects.toThrow("Server port process exited before 127.0.0.1:65530 became ready (code 1).");
+  });
+
+  it("fails fast when the watched process emits a startup error", async () => {
+    const child = new EventEmitter();
+    child.exitCode = null;
+    setTimeout(() => {
+      child.emit("error", new Error("spawn failed"));
+    }, 20);
+
+    await expect(
+      cli.waitForPortInUse("Server port", "127.0.0.1", "65530", child, 1000),
+    ).rejects.toThrow("Server port process failed before 127.0.0.1:65530 became ready: spawn failed");
+  });
+
+  it("requires full dev markers before treating a folder as a source checkout", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-source-check-"));
+    try {
+      const srcDir = path.join(tempRoot, "src");
+      fs.mkdirSync(srcDir, { recursive: true });
+      fs.writeFileSync(path.join(srcDir, "main.jsx"), "export default null;\n", "utf8");
+
+      expect(cli.isSourceCheckout(tempRoot)).toBe(false);
+
+      fs.writeFileSync(path.join(tempRoot, "vite.config.mjs"), "export default {};\n", "utf8");
+
+      expect(cli.isSourceCheckout(tempRoot)).toBe(true);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("opens external URLs with the platform browser launcher", () => {

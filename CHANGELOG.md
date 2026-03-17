@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17-9]
+
+### Added
+
+- Added a remote-install quick-start path to the root README and localized README variants under `docs/`, including SSH port-forward access notes for OpenClaw-managed remote hosts
+- Surfaced the running `LALACLAW.VERSION` in the dashboard environment snapshot for easier runtime inspection and support/debugging
+
+### Changed
+
+- Updated the CLI and docs to use the current startup defaults of `PORT=5678` and `FRONTEND_PORT=4321`, while keeping repository development guidance on the fixed `5173/3000` dev ports
+- Consolidated localized root README variants under `docs/README.*.md` and refreshed internal links to match the new documentation layout
+- Synchronized localized `documentation-quick-start` guides with the latest install, update, remote-install, and development-mode guidance
+- Clarified new-session reset copy across locales to state that conversation content is reset and context length returns to zero
+- Updated published-version examples in `README` and localized documentation guides to `2026.3.17-9`
+
+### Fixed
+
+- Fixed the root English README after a localized remote-install section was accidentally merged into it
+- Fixed quick-start docs that still pointed users at outdated install/runtime defaults or old development port assumptions
+
 ## [2026.3.17-8]
 
 ### Added

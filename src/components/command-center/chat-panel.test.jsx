@@ -348,7 +348,7 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     await user.hover(screen.getByLabelText("开启新会话"));
     expect((await screen.findAllByText("开启新会话 (Ctrl + N)")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("开启新会话后，当前会话的内容将重置").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("开启新会话后，当前会话的内容将重置，上下文长度清零").length).toBeGreaterThan(0);
   });
 
   it("opens the mention picker from the @ button and inserts the selected item at the cursor", async () => {
@@ -888,6 +888,71 @@ describe("ChatPanel", () => {
 
     expect(agentNameLabel).toBeTruthy();
     expect(agentNameLabel).toHaveClass("text-[11px]");
+  });
+
+  it("renders the current conversation title with the IM platform prefix", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          activeChatTabId="agent:ops::wecom"
+          busy={false}
+          currentAgentId="ops"
+          formatTime={() => "10:00:00"}
+          messages={[
+            {
+              id: "assistant-im-title",
+              role: "assistant",
+              content: "已收到",
+              createdAt: 1710000000000,
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          resolvedTheme="light"
+          session={createSession({
+            agentId: "ops",
+            sessionUser: "agent:main:wecom:direct:marila",
+          })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("企微 - ops - 当前会话")).toBeInTheDocument();
+  });
+
+  it("renders English IM platform names outside Chinese locales", async () => {
+    window.localStorage.setItem(localeStorageKey, "en");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <ChatPanel
+            activeChatTabId="agent:ops::wecom"
+            busy={false}
+            currentAgentId="ops"
+            formatTime={() => "10:00:00"}
+            messages={[]}
+            onPromptChange={() => {}}
+            onPromptKeyDown={() => {}}
+            onReset={() => {}}
+            onSend={() => {}}
+            prompt=""
+            promptRef={null}
+            resolvedTheme="light"
+            session={createSession({
+              agentId: "ops",
+              sessionUser: "agent:main:wecom:direct:marila",
+            })}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("WeCom - ops - Current session")).toBeInTheDocument();
   });
 
   it("shows a platform-aware tooltip for inactive tab shortcuts", async () => {

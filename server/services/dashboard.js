@@ -5,6 +5,15 @@ const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_WORKSPACE_FILE_LIMIT = 200;
+const LALACLAW_VERSION = (() => {
+  try {
+    const packageJsonPath = path.resolve(__dirname, '..', '..', 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    return String(packageJson?.version || '').trim();
+  } catch {
+    return '';
+  }
+})();
 
 function normalizeConversationContent(content = '') {
   return String(content || '')
@@ -297,6 +306,7 @@ function createDashboardService({
   collectTaskTimeline,
   collectToolHistory,
   config,
+  lalaclawVersion = LALACLAW_VERSION,
   extractTextSegments,
   fetchBrowserPeek,
   formatTokenBadge,
@@ -437,6 +447,7 @@ function createDashboardService({
       sessionVersion ||
       '';
     const sessionItems = [
+      { label: 'LALACLAW.VERSION', value: lalaclawVersion },
       { label: 'OPENCLAW.VERSION', value: openClawVersion },
       { label: 'session.mode', value: config.mode },
       { label: 'session.agent', value: agentId },

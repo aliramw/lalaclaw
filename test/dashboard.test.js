@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
 const { createDashboardService } = require("../server/services");
+const { version: lalaclawVersion } = require("../package.json");
 
 function createService(overrides = {}) {
   return createDashboardService({
@@ -208,6 +209,10 @@ describe("createDashboardService", () => {
       availableSkills: [{ name: "coding", ownerAgentId: "expert" }],
     });
     expect(snapshot.peeks.environment.items[0]).toEqual({
+      label: "LALACLAW.VERSION",
+      value: lalaclawVersion,
+    });
+    expect(snapshot.peeks.environment.items[1]).toEqual({
       label: "OPENCLAW.VERSION",
       value: "1.2.3",
     });
@@ -257,6 +262,10 @@ describe("createDashboardService", () => {
 
     expect(snapshot.session.version).toBe("9.9.9");
     expect(snapshot.peeks.environment.items[0]).toEqual({
+      label: "LALACLAW.VERSION",
+      value: lalaclawVersion,
+    });
+    expect(snapshot.peeks.environment.items[1]).toEqual({
       label: "OPENCLAW.VERSION",
       value: "9.9.9",
     });

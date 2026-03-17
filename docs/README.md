@@ -6,15 +6,19 @@ This directory is organized by locale.
 
 ## Repository Entry Points
 
-Use the root-level guides for repository workflow and project policy:
+Use these guides as the main repository entry points:
 
-- [README.md](../README.md) for product overview, quick start, development notes, and versioning
-- [README.zh.md](../README.zh.md) for the Chinese root overview and quick start
-- [README.zh-hk.md](../README.zh-hk.md) for the Traditional Chinese (Hong Kong) root overview and quick start
-- [README.ko.md](../README.ko.md) for the Korean root overview and quick start
-- [README.de.md](../README.de.md) for the German root overview and quick start
-- [README.ms.md](../README.ms.md) for the Malay root overview and quick start
-- [README.ta.md](../README.ta.md) for the Tamil root overview and quick start
+- [README.md](../README.md) for the canonical English repository overview, installation guide, development notes, and versioning
+- [README.zh.md](./README.zh.md) for the Chinese repository overview and installation guide
+- [README.zh-hk.md](./README.zh-hk.md) for the Traditional Chinese (Hong Kong) repository overview and installation guide
+- [README.ja.md](./README.ja.md) for the Japanese repository overview and installation guide
+- [README.ko.md](./README.ko.md) for the Korean repository overview and installation guide
+- [README.fr.md](./README.fr.md) for the French repository overview and installation guide
+- [README.es.md](./README.es.md) for the Spanish repository overview and installation guide
+- [README.pt.md](./README.pt.md) for the Portuguese repository overview and installation guide
+- [README.de.md](./README.de.md) for the German repository overview and installation guide
+- [README.ms.md](./README.ms.md) for the Malay repository overview and installation guide
+- [README.ta.md](./README.ta.md) for the Tamil repository overview and installation guide
 - [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution workflow and PR expectations
 - [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) for community behavior expectations
 - [CHANGELOG.md](../CHANGELOG.md) for release notes and version history

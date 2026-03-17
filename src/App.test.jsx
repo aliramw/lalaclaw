@@ -306,6 +306,36 @@ describe("App", () => {
     });
   }, 10_000);
 
+  it("keeps the full app interactive after switching to a non-Chinese locale", async () => {
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      if (url.startsWith("/api/workspace-tree")) {
+        return mockJsonResponse({ ok: true, entries: [] });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    mockDesktopLayout();
+
+    render(<App />);
+
+    expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换语言" }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: "English" }));
+
+    expect(await screen.findByRole("button", { name: "Switch language" })).toBeInTheDocument();
+    expect(screen.getByText("main - Current session")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
   it("requests the initial runtime snapshot only once on first load", async () => {
     const fetchMock = vi.fn((input) => {
       const url = String(input);

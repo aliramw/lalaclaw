@@ -10,6 +10,38 @@
 - npm installation is recommended for normal local use
 - Use a GitHub source checkout only if you want development mode or local code changes
 
+## Install Through OpenClaw
+
+Use OpenClaw to install LalaClaw on a remote Mac or Linux machine, then access it locally through SSH port forwarding.
+
+If you already have a machine with OpenClaw installed and you can log in to that machine over SSH, you can ask OpenClaw to install this project from GitHub, start it on the remote host, and then forward the remote port back to your local computer.
+
+Tell OpenClaw:
+
+```text
+Install https://github.com/aliramw/lalaclaw
+```
+
+Typical flow:
+
+1. OpenClaw clones this repository on the remote machine.
+2. OpenClaw installs dependencies and starts LalaClaw.
+3. The app listens on `127.0.0.1:5678` on the remote machine.
+4. You forward that remote port to your local computer over SSH.
+5. You open the forwarded local address in your browser.
+
+Example SSH port forwarding:
+
+```bash
+ssh -N -L 3000:127.0.0.1:5678 root@your-remote-server-ip
+```
+
+Then open:
+
+```text
+http://127.0.0.1:3000
+```
+
 ## Install From npm
 
 For the simplest end-user setup:
@@ -19,21 +51,24 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
+Then open [http://127.0.0.1:5678](http://127.0.0.1:5678).
+
 Notes:
 
-- `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
-- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path and a launchd `PATH` that includes the current Node runtime, so non-interactive starts do not depend on shell `PATH`
-- On npm installs for macOS, `lalaclaw init` also starts a `launchd` background service automatically
-- After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
-- If you only want to write config on macOS, use `lalaclaw init --no-background`
-- On Linux, or when you opt out of background startup, continue with `lalaclaw doctor` and `lalaclaw start`
-- On macOS, use `lalaclaw status` to inspect the background service, `lalaclaw restart` to restart it, and `lalaclaw stop` to stop it
+- `lalaclaw init` writes local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
+- By default, `lalaclaw init` uses `HOST=127.0.0.1`, `PORT=5678`, and `FRONTEND_PORT=4321` unless you override them
+- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path and a `launchd` `PATH` that includes the current Node runtime
+- In a source checkout, `lalaclaw init` starts both Server and Vite Dev Server in the background, then prompts to open the Dev Server URL
+- On macOS npm installs, `lalaclaw init` installs and starts the Server `launchd` service, then prompts to open the Server URL
+- On Linux npm installs, `lalaclaw init` starts the Server in the background, then prompts to open the Server URL
+- Use `lalaclaw init --no-background` if you only want to write config without auto-starting services
+- After `--no-background`, run `lalaclaw doctor`, then use `lalaclaw dev` for source checkouts or `lalaclaw start` for packaged installs
+- `lalaclaw status`, `lalaclaw restart`, and `lalaclaw stop` control the macOS `launchd` Server service only
+- Previewing `doc`, `ppt`, and `pptx` files requires LibreOffice. On macOS, run `lalaclaw doctor --fix` or `brew install --cask libreoffice`
 
 ## Install From GitHub
 
 Use this path if you want a source checkout for development or local modification.
-
-If OpenClaw is already installed on the machine and `~/.openclaw/openclaw.json` is available:
 
 ```bash
 git clone https://github.com/aliramw/lalaclaw.git lalaclaw
@@ -41,18 +76,16 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run build
-npm run lalaclaw:start
 ```
+
+Then open [http://127.0.0.1:4321](http://127.0.0.1:4321).
 
 Notes:
 
-- `npm run doctor` checks Node.js, local OpenClaw discovery, ports, and config
-- `npm run doctor -- --json` returns the same diagnosis as JSON with `summary.status` and `summary.exitCode`
-- `npm run lalaclaw:init` helps you create or refresh `.env.local`
-- `npm run lalaclaw:init -- --write-example` copies `.env.local.example` to the target config file without prompts
-- `npm run lalaclaw:start` is the recommended production entrypoint after `npm run build`
-- `npm run lalaclaw:start` runs in the current terminal, so closing that terminal stops the app
+- `npm run lalaclaw:init` starts both Server and Vite Dev Server in the background by default unless you pass `--no-background`
+- After background startup, it prompts to open the Dev Server URL, which defaults to `http://127.0.0.1:4321`
+- If you only want config generation, run `npm run lalaclaw:init -- --no-background`
+- `npm run lalaclaw:start` runs in the current terminal and stops when that terminal closes
 - If your setup is already ready, you can skip `npm run lalaclaw:init`
 - If you prefer manual setup, use [`.env.local.example`](../../.env.local.example) as a starting point
 
@@ -65,16 +98,14 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-8`:
+If you want a specific published version instead, such as `2026.3.17-9`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-8
+npm install -g lalaclaw@2026.3.17-9
 lalaclaw init
 ```
 
-If you installed LalaClaw from GitHub, update it like this:
-
-If you already installed LalaClaw from GitHub and want the latest version:
+If you installed LalaClaw from GitHub and want the latest version:
 
 ```bash
 cd /path/to/lalaclaw
@@ -84,12 +115,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-8`:
+If you want a specific released version instead, such as `2026.3.17-9`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-8
+git checkout 2026.3.17-9
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -108,48 +139,26 @@ Notes:
 
 Development mode requires a GitHub source checkout with `npm ci` already run.
 
-For development, run both the frontend and backend at the same time, and use the Vite entry page as the browser entrypoint.
+For normal repository development, use the fixed dev ports defined by the repo:
 
-You can do that with one command:
+```bash
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+PORT=3000 HOST=127.0.0.1 node server.js
+```
+
+You can also start both processes with:
 
 ```bash
 npm run dev:all
 ```
 
-Or run the two servers separately:
+Development URLs:
 
-### 1. Start the Frontend
+- Frontend: `http://127.0.0.1:5173`
+- Backend: `http://127.0.0.1:3000`
+- Browser entrypoint: `http://127.0.0.1:5173`
 
-Run this in the project root:
-
-```bash
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-```
-
-Frontend URL:
-
-```text
-http://127.0.0.1:5173
-```
-
-### 2. Start the Backend
-
-Run this in the project root:
-
-```bash
-PORT=3000 HOST=127.0.0.1 node server.js
-```
-
-Backend URL:
-
-```text
-http://127.0.0.1:3000
-```
-
-### 3. Open the App
-
-- Always use `http://127.0.0.1:5173` as the browser entrypoint in development
-- During development, `/api/*` requests are proxied by `vite.config.mjs` to `http://127.0.0.1:3000`
+During development, `/api/*` requests are proxied by `vite.config.mjs` to `http://127.0.0.1:3000`.
 
 ## Production Build Mode
 
@@ -164,7 +173,7 @@ Notes:
 
 - `npm run lalaclaw:start` depends on an existing `dist/`
 - If you skip `npm run build`, the backend returns `503 Web app build is missing`
-- Because of that, `npm start` is not the right choice for normal frontend development
+- `npm start` is not the right choice for normal frontend development
 
 ## Persistent Production Deploy On macOS
 
@@ -217,38 +226,14 @@ Force `mock` mode:
 COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
 ```
 
-The CLI writes the same values into `.env.local` when you run:
+If you use the CLI to initialize config:
 
 ```bash
 npm run lalaclaw:init
-```
-
-Then run:
-
-```bash
 npm run doctor
 ```
 
 In `remote-gateway` mode, `doctor` also performs a live probe against the configured gateway URL and sends a minimal API request to validate the configured model and agent.
-
-Explicitly configure a gateway:
-
-```bash
-export OPENCLAW_BASE_URL="https://your-openclaw-gateway"
-export OPENCLAW_API_KEY="..."
-export OPENCLAW_MODEL="openclaw"
-export OPENCLAW_AGENT_ID="main"
-export OPENCLAW_API_STYLE="chat"
-export OPENCLAW_API_PATH="/v1/chat/completions"
-node server.js
-```
-
-If your gateway is closer to the Responses API:
-
-```bash
-export OPENCLAW_API_STYLE="responses"
-export OPENCLAW_API_PATH="/v1/responses"
-```
 
 ## What You Should See
 
@@ -257,8 +242,3 @@ export OPENCLAW_API_PATH="/v1/responses"
 - A chat composer with attachment and send controls
 - Inspector tabs for `Run Log / Files / Summaries / Environment / Collab / Preview`
 - Working chat replies even in `mock` mode
-
-## Next
-
-- Read [Interface Overview](./documentation-interface.md) before exploring the UI
-- Read [Chat, Attachments, and Commands](./documentation-chat.md) if you want to jump straight into the interaction flow

@@ -38,6 +38,26 @@ export function isImSessionUser(sessionUser = "") {
   return Boolean(resolveImSessionType(sessionUser));
 }
 
+export function getImSessionDisplayName(sessionUser = "", { locale = "zh", shortWecom = false } = {}) {
+  const type = resolveImSessionType(sessionUser);
+  const normalizedLocale = String(locale || "").trim().toLowerCase();
+  const useChineseLabels = normalizedLocale.startsWith("zh");
+
+  if (type === "dingtalk") {
+    return useChineseLabels ? "钉钉" : "Dingtalk";
+  }
+  if (type === "feishu") {
+    return useChineseLabels ? "飞书" : "Feishu";
+  }
+  if (type === "wecom") {
+    if (!useChineseLabels) {
+      return "WeCom";
+    }
+    return shortWecom ? "企微" : "企业微信";
+  }
+  return "";
+}
+
 function stripImResetSuffix(value = "") {
   return String(value || "").trim().replace(/:reset:[^:]+$/i, "");
 }

@@ -163,7 +163,7 @@ const zhHk = {
     },
     resetConversation: "開始新工作階段",
     resetConversationHotkey: "開始新工作階段 (Cmd + N)",
-    resetConversationTooltipHint: "開始新工作階段會重設目前對話。",
+    resetConversationTooltipHint: "開始新工作階段會重設目前對話，上下文長度會清零。",
     resetConversationConfirm: "要開始新工作階段嗎？對話歷史與上下文都會被清除。",
     resetConversationDialog: {
       title: "要開始新工作階段嗎？",

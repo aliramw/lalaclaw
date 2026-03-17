@@ -9,8 +9,10 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_HOST = '127.0.0.1';
-const DEFAULT_FRONTEND_PORT = '5173';
-const DEFAULT_BACKEND_PORT = '3000';
+const DEFAULT_SERVER_PORT = '5678';
+const DEFAULT_DEV_SERVER_PORT = '4321';
+const DEFAULT_BACKEND_PORT = DEFAULT_SERVER_PORT;
+const DEFAULT_FRONTEND_PORT = DEFAULT_DEV_SERVER_PORT;
 const DEFAULT_MODEL = 'openclaw';
 const DEFAULT_AGENT_ID = 'main';
 const REQUIRED_NODE_MAJOR = 22;
@@ -99,11 +101,11 @@ Usage:
   lalaclaw backend [--config-file <path>]
 
 Commands:
-  init      Create or refresh local config, and auto-start the macOS background service when available.
+  init      Create or refresh local config, then start Server and Frontend in the background when available.
   doctor    Check Node.js, OpenClaw discovery, ports, local config, and Office preview dependencies.
-  status    Show macOS background service status for npm installs.
-  stop      Stop the macOS background service for npm installs.
-  restart   Restart the macOS background service for npm installs.
+  status    Show Server background service (launchd) status for npm installs.
+  stop      Stop the Server background service (launchd) for npm installs.
+  restart   Restart the Server background service (launchd) for npm installs.
   dev       Start both frontend and backend in development mode.
   start     Start the built backend server after checking dist/.
   frontend  Start only the Vite frontend server.
@@ -254,7 +256,15 @@ function readExampleEnvTemplate() {
 }
 
 function isSourceCheckout(projectRoot = PROJECT_ROOT) {
-  return fs.existsSync(path.join(projectRoot, '.git')) || fs.existsSync(path.join(projectRoot, 'src', 'main.jsx'));
+  if (fs.existsSync(path.join(projectRoot, '.git'))) {
+    return true;
+  }
+
+  const sourceMarkers = [
+    path.join(projectRoot, 'src', 'main.jsx'),
+    path.join(projectRoot, 'vite.config.mjs'),
+  ];
+  return sourceMarkers.every((filePath) => fs.existsSync(filePath));
 }
 
 function detectLocalOpenClaw() {
@@ -319,9 +329,9 @@ function resolveRuntimeProfile(envValues, localOpenClaw) {
 
 function resolveConfig(envValues, localOpenClaw) {
   const host = String(envValues.HOST || DEFAULT_HOST).trim() || DEFAULT_HOST;
-  const backendPort = String(envValues.PORT || DEFAULT_BACKEND_PORT).trim() || DEFAULT_BACKEND_PORT;
+  const backendPort = String(envValues.PORT || DEFAULT_SERVER_PORT).trim() || DEFAULT_SERVER_PORT;
   const frontendHost = String(envValues.FRONTEND_HOST || host).trim() || host;
-  const frontendPort = String(envValues.FRONTEND_PORT || DEFAULT_FRONTEND_PORT).trim() || DEFAULT_FRONTEND_PORT;
+  const frontendPort = String(envValues.FRONTEND_PORT || DEFAULT_DEV_SERVER_PORT).trim() || DEFAULT_DEV_SERVER_PORT;
   const profile = resolveRuntimeProfile(envValues, localOpenClaw);
   const apiStyle = normalizeApiStyle(envValues.OPENCLAW_API_STYLE || 'chat');
 
@@ -519,9 +529,9 @@ function getRuntimeUrls(config) {
 function printConfigSummary(config) {
   const urls = getRuntimeUrls(config);
   console.log(`INFO  Runtime profile: ${config.profile}`);
-  console.log(`INFO  App URL:           ${urls.appUrl}`);
+  console.log(`INFO  Server URL (App + API): ${urls.appUrl}`);
   console.log(`INFO  API URL:           ${urls.apiUrl}`);
-  console.log(`INFO  Dev frontend URL:  ${urls.devFrontendUrl}`);
+  console.log(`INFO  Dev Server URL (Vite): ${urls.devFrontendUrl}`);
   if (config.profile === 'remote-gateway') {
     console.log(`INFO  Gateway URL:  ${config.openclawBaseUrl}`);
     console.log(`INFO  API style:    ${config.openclawApiStyle}`);
@@ -1291,10 +1301,10 @@ async function runInit(envFilePath, options = {}) {
   if (!options.defaults) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     try {
-      nextConfig.host = await promptWithDefault(rl, 'App host', nextConfig.host);
-      nextConfig.backendPort = await promptWithDefault(rl, 'App port', nextConfig.backendPort);
-      nextConfig.frontendHost = await promptWithDefault(rl, 'Dev frontend host', nextConfig.frontendHost);
-      nextConfig.frontendPort = await promptWithDefault(rl, 'Dev frontend port', nextConfig.frontendPort);
+      nextConfig.host = await promptWithDefault(rl, 'Server host', nextConfig.host);
+      nextConfig.backendPort = await promptWithDefault(rl, 'Server port', nextConfig.backendPort);
+      nextConfig.frontendHost = await promptWithDefault(rl, 'Dev Server host (Vite)', nextConfig.frontendHost);
+      nextConfig.frontendPort = await promptWithDefault(rl, 'Dev Server port (Vite)', nextConfig.frontendPort);
       nextConfig.profile = await promptProfile(rl, nextConfig.profile);
       nextConfig.commandCenterForceMock = nextConfig.profile === 'mock' ? '1' : '0';
 
@@ -1336,32 +1346,48 @@ async function runInit(envFilePath, options = {}) {
   fs.writeFileSync(envFilePath, renderEnvFile(nextConfig), 'utf8');
   console.log(`OK    Wrote ${envFilePath}`);
   printConfigSummary(nextConfig);
-  if (shouldAutoStartBackgroundService(options)) {
+  const sourceCheckout = isSourceCheckout();
+
+  if (!options.noBackground) {
     try {
-      const buildStatus = ensureBackgroundServiceBuildReady();
-      if (buildStatus.built) {
-        console.log('INFO  Built the production app so the background service can serve the latest dist output.');
+      let ready = null;
+      if (sourceCheckout) {
+        ready = await startInitBackgroundServices(envFilePath);
+      } else if (shouldAutoStartBackgroundService(options)) {
+        const buildStatus = ensureBackgroundServiceBuildReady();
+        if (buildStatus.built) {
+          console.log('INFO  Built the production app so the background service can serve the latest dist output.');
+        }
+        const service = installLaunchdService(envFilePath);
+        console.log(`OK    Started Server background service (launchd) ${service.label}`);
+        console.log(`INFO  LaunchAgent: ${service.plistPath}`);
+        console.log(`INFO  Logs:        ${service.logDir}`);
+        ready = {
+          openUrl: `http://${nextConfig.host}:${nextConfig.backendPort}`,
+          openHint: `${nextConfig.host}:${nextConfig.backendPort}`,
+        };
+      } else {
+        ready = await startInitBackgroundServer(envFilePath);
       }
-      const service = installLaunchdService(envFilePath);
-      const appUrl = `http://${nextConfig.host}:${nextConfig.backendPort}`;
-      console.log(`OK    Started macOS background service ${service.label}`);
-      console.log(`INFO  LaunchAgent: ${service.plistPath}`);
-      console.log(`INFO  Logs:        ${service.logDir}`);
-      if (await promptToOpenApp(appUrl)) {
-        openExternalUrl(appUrl);
+
+      if (ready) {
+        if (await promptToOpenApp(ready.openHint)) {
+          openExternalUrl(ready.openUrl);
+        }
+        return;
       }
-      console.log('Next steps:');
-      console.log(`  1. Open ${appUrl}`);
-      console.log(`  2. Check status with launchctl print gui/$(id -u)/${service.label}`);
-      console.log(`  3. Stop it with launchctl bootout gui/$(id -u) ${service.plistPath}`);
-      return;
     } catch (error) {
-      console.log(`WARN  Could not start the macOS background service automatically: ${error.message}`);
+      console.log(`WARN  Could not start background services automatically: ${error.message}`);
+      console.log('Next steps:');
+      console.log('  1. lalaclaw doctor');
+      console.log(`  2. ${sourceCheckout ? 'lalaclaw dev' : 'lalaclaw start'}`);
+      return;
     }
   }
+
   console.log('Next steps:');
   console.log('  1. lalaclaw doctor');
-  console.log('  2. lalaclaw start');
+  console.log(`  2. ${sourceCheckout ? 'lalaclaw dev' : 'lalaclaw start'}`);
 }
 
 function findExecutable(binName) {
@@ -1433,6 +1459,115 @@ async function ensurePortAvailable(label, host, port) {
   if (!available) {
     throw new Error(`${label} ${host}:${port} is already in use.`);
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForPortInUse(label, host, port, child, timeoutMs = 30000) {
+  const childState = {
+    error: null,
+    exited: false,
+    exitCode: null,
+    signal: null,
+  };
+  const canSubscribe = Boolean(child && typeof child.once === 'function');
+  const onError = (error) => {
+    childState.error = error;
+  };
+  const onExit = (code, signal) => {
+    childState.exited = true;
+    childState.exitCode = code;
+    childState.signal = signal;
+  };
+  if (canSubscribe) {
+    child.once('error', onError);
+    child.once('exit', onExit);
+  }
+
+  const startedAt = Date.now();
+  try {
+    while (Date.now() - startedAt < timeoutMs) {
+      if (childState.error) {
+        throw new Error(`${label} process failed before ${host}:${port} became ready: ${childState.error.message}`);
+      }
+
+      if (childState.exited || (child && Number.isInteger(child.exitCode))) {
+        const exitCode = Number.isInteger(childState.exitCode) ? childState.exitCode : child.exitCode;
+        const signal = childState.signal;
+        if (Number.isInteger(exitCode)) {
+          throw new Error(`${label} process exited before ${host}:${port} became ready (code ${exitCode}).`);
+        }
+        throw new Error(`${label} process exited before ${host}:${port} became ready${signal ? ` (signal ${signal})` : ''}.`);
+      }
+
+      const available = await checkPortAvailable(host, port);
+      if (!available) {
+        return;
+      }
+
+      await sleep(150);
+    }
+
+    throw new Error(`${label} ${host}:${port} did not become ready within ${Math.ceil(timeoutMs / 1000)} seconds.`);
+  } finally {
+    if (canSubscribe && typeof child.off === 'function') {
+      child.off('error', onError);
+      child.off('exit', onExit);
+    }
+  }
+}
+
+function runDetachedChild(command, args, env) {
+  const child = spawn(command, args, {
+    cwd: PROJECT_ROOT,
+    env,
+    stdio: 'ignore',
+    detached: true,
+  });
+  if (typeof child.unref === 'function') {
+    child.unref();
+  }
+  return child;
+}
+
+async function startInitBackgroundServices(envFilePath) {
+  ensureDevelopmentAssetsAvailable();
+  const { childEnv, config } = buildChildEnv(envFilePath);
+  await ensurePortAvailable('Server port', config.host, config.backendPort);
+  await ensurePortAvailable('Frontend port', config.frontendHost, config.frontendPort);
+
+  console.log(`INFO  Starting Server in background at http://${config.host}:${config.backendPort}`);
+  const backend = runDetachedChild(process.execPath, ['server.js'], childEnv);
+  await waitForPortInUse('Server port', config.host, config.backendPort, backend);
+
+  console.log(`INFO  Starting Frontend in background at http://${config.frontendHost}:${config.frontendPort}`);
+  const frontend = runDetachedChild(
+    npmCommand(),
+    ['run', 'dev', '--', '--host', config.frontendHost, '--port', config.frontendPort, '--strictPort'],
+    childEnv,
+  );
+  await waitForPortInUse('Frontend port', config.frontendHost, config.frontendPort, frontend);
+
+  return {
+    openUrl: `http://${config.frontendHost}:${config.frontendPort}`,
+    openHint: `${config.frontendHost}:${config.frontendPort}`,
+  };
+}
+
+async function startInitBackgroundServer(envFilePath) {
+  const { childEnv, config } = buildChildEnv(envFilePath);
+  await ensurePortAvailable('Server port', config.host, config.backendPort);
+  console.log(`INFO  Starting Server in background at http://${config.host}:${config.backendPort}`);
+  const backend = runDetachedChild(process.execPath, ['server.js'], childEnv);
+  await waitForPortInUse('Server port', config.host, config.backendPort, backend);
+  return {
+    openUrl: `http://${config.host}:${config.backendPort}`,
+    openHint: `${config.host}:${config.backendPort}`,
+  };
 }
 
 
@@ -1609,19 +1744,19 @@ async function runStart(envFilePath) {
 
 function runStatus() {
   if (process.platform !== 'darwin') {
-    console.log('INFO  Background service status is only available on macOS.');
+    console.log('INFO  Server background service (launchd) status is only available on macOS.');
     return;
   }
 
   const status = readLaunchdServiceStatus();
   if (!status.installed) {
-    console.log(`INFO  No macOS background service is installed at ${status.plistPath}`);
+    console.log(`INFO  No Server background service (launchd) is installed at ${status.plistPath}`);
     return;
   }
 
   console.log(`INFO  LaunchAgent: ${status.plistPath}`);
   console.log(`INFO  Logs:        ${status.logDir}`);
-  console.log(`${status.running ? 'OK   ' : 'WARN '} Background service ${status.running ? 'is running' : 'is not running'}`);
+  console.log(`${status.running ? 'OK   ' : 'WARN '} Server background service (launchd) ${status.running ? 'is running' : 'is not running'}`);
   if (status.details) {
     console.log(status.details);
   }
@@ -1629,32 +1764,32 @@ function runStatus() {
 
 function runStop() {
   if (process.platform !== 'darwin') {
-    console.log('INFO  Background service stop is only available on macOS.');
+    console.log('INFO  Server background service (launchd) stop is only available on macOS.');
     return;
   }
 
   const result = stopLaunchdService();
   if (!result.installed) {
-    console.log(`INFO  No macOS background service is installed at ${result.plistPath}`);
+    console.log(`INFO  No Server background service (launchd) is installed at ${result.plistPath}`);
     return;
   }
 
-  console.log(`OK    Stopped macOS background service at ${result.plistPath}`);
+  console.log(`OK    Stopped Server background service (launchd) at ${result.plistPath}`);
 }
 
 function runRestart() {
   if (process.platform !== 'darwin') {
-    console.log('INFO  Background service restart is only available on macOS.');
+    console.log('INFO  Server background service (launchd) restart is only available on macOS.');
     return;
   }
 
   const result = restartLaunchdService();
   if (!result.installed) {
-    console.log(`INFO  No macOS background service is installed at ${result.plistPath}`);
+    console.log(`INFO  No Server background service (launchd) is installed at ${result.plistPath}`);
     return;
   }
 
-  console.log(`OK    Restarted macOS background service at ${result.plistPath}`);
+  console.log(`OK    Restarted Server background service (launchd) at ${result.plistPath}`);
 }
 
 async function main() {
@@ -1732,6 +1867,8 @@ async function main() {
 module.exports = {
   DEFAULT_ENV_FILE,
   DEFAULT_HOST,
+  DEFAULT_SERVER_PORT,
+  DEFAULT_DEV_SERVER_PORT,
   DEFAULT_FRONTEND_PORT,
   DEFAULT_BACKEND_PORT,
   DEFAULT_MODEL,
@@ -1781,6 +1918,8 @@ module.exports = {
   resolveLibreOfficeInstallCommand,
   runDoctorFix,
   buildChildEnv,
+  waitForPortInUse,
+  startInitBackgroundServices,
   findExecutable,
   openExternalUrl,
   promptToOpenApp,

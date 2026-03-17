@@ -163,7 +163,7 @@ const ms = {
     },
     resetConversation: "Mulakan sesi baharu",
     resetConversationHotkey: "Mulakan sesi baharu (Cmd + N)",
-    resetConversationTooltipHint: "Memulakan sesi baharu akan menetapkan semula perbualan semasa.",
+    resetConversationTooltipHint: "Memulakan sesi baharu akan menetapkan semula perbualan semasa dan panjang konteks akan kembali kepada sifar.",
     resetConversationConfirm: "Mulakan sesi baharu? Sejarah perbualan dan konteks akan dipadamkan.",
     resetConversationDialog: {
       title: "Mulakan sesi baharu?",

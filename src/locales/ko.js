@@ -160,7 +160,7 @@ const ko = {
     },
     resetConversation: "새 세션 시작",
     resetConversationHotkey: "새 세션 시작 (Cmd + N)",
-    resetConversationTooltipHint: "새 세션을 시작하면 현재 대화가 초기화됩니다.",
+    resetConversationTooltipHint: "새 세션을 시작하면 현재 대화가 초기화되고 컨텍스트 길이도 0으로 돌아갑니다.",
     resetConversationConfirm: "새 세션을 시작할까요? 대화 기록과 컨텍스트가 지워집니다.",
     resetConversationDialog: {
       title: "새 세션을 시작할까요?",

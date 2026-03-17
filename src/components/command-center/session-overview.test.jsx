@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionOverview } from "@/components/command-center/session-overview";
@@ -150,10 +150,11 @@ describe("SessionOverview", () => {
     expect(screen.getByText("IM 对话")).toBeInTheDocument();
     const dingTalkItem = screen.getByRole("menuitem", { name: "钉钉" });
     expect(screen.getByRole("menuitem", { name: "飞书" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "企业微信" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "企微" })).toBeInTheDocument();
     expect(dingTalkItem).toHaveClass("cursor-pointer");
-    const dingTalkIcon = dingTalkItem.querySelector('img[src="/dingtalk.svg"]');
+    const dingTalkIcon = within(dingTalkItem).getByText("钉");
     expect(dingTalkIcon).toHaveClass("self-center");
+    expect(dingTalkIcon).toHaveClass("bg-[#1677ff]");
     await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
 
     await waitFor(() => {
@@ -365,7 +366,7 @@ describe("SessionOverview", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "切换 Agent" }));
-    await user.click(screen.getByRole("menuitem", { name: "企业微信" }));
+    await user.click(screen.getByRole("menuitem", { name: "企微" }));
 
     expect(screen.getByText("定位企业微信会话")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "搜索" }));

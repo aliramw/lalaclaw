@@ -1,3 +1,5 @@
+import en from "@/locales/en";
+
 const es = {
   app: {
     title: "🦞 LalaClaw",
@@ -116,6 +118,7 @@ const es = {
     resizePanels: "Arrastra para ajustar el ancho del chat y del panel de seguimiento",
   },
   sessionOverview: {
+    ...en.sessionOverview,
     labels: {
       agent: "Agent",
       model: "Modelo",
@@ -174,7 +177,7 @@ const es = {
     },
     resetConversation: "Iniciar nueva sesión",
     resetConversationHotkey: "Iniciar nueva sesión (Cmd + N)",
-    resetConversationTooltipHint: "Al iniciar una nueva sesion se reiniciara la conversacion actual.",
+    resetConversationTooltipHint: "Al iniciar una nueva sesion se reiniciara la conversacion actual y la longitud del contexto volvera a cero.",
     resetConversationConfirm: "¿Iniciar una nueva sesión? El historial y el contexto se borrarán.",
     resetConversationDialog: {
       title: "¿Iniciar una nueva sesión?",

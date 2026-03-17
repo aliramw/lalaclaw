@@ -1,3 +1,5 @@
+import en from "@/locales/en";
+
 const pt = {
   app: {
     title: "🦞 LalaClaw",
@@ -116,6 +118,7 @@ const pt = {
     resizePanels: "Arraste para ajustar a largura do chat e do painel de rastreamento",
   },
   sessionOverview: {
+    ...en.sessionOverview,
     labels: {
       agent: "Agent",
       model: "Modelo",
@@ -174,7 +177,7 @@ const pt = {
     },
     resetConversation: "Iniciar nova sessao",
     resetConversationHotkey: "Iniciar nova sessao (Cmd + N)",
-    resetConversationTooltipHint: "Iniciar uma nova sessao redefine o conteudo da conversa atual.",
+    resetConversationTooltipHint: "Iniciar uma nova sessao redefine o conteudo da conversa atual e faz o comprimento do contexto voltar a zero.",
     resetConversationConfirm: "Iniciar uma nova sessão? O histórico e o contexto da conversa serão limpos.",
     resetConversationDialog: {
       title: "Iniciar uma nova sessão?",

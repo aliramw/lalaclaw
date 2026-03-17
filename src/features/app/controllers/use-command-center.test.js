@@ -132,7 +132,7 @@ describe("planSearchedSessionTabTarget", () => {
     ).toEqual(
       expect.objectContaining({
         create: true,
-        title: "企业微信 main",
+        title: "企微 main",
       }),
     );
   });
@@ -157,7 +157,13 @@ describe("buildChatTabTitle", () => {
   });
 
   it("formats WeCom tabs with the platform name prefix", () => {
-    expect(buildChatTabTitle("expert", "agent:main:wecom:direct:marila")).toBe("企业微信 expert");
+    expect(buildChatTabTitle("expert", "agent:main:wecom:direct:marila")).toBe("企微 expert");
+  });
+
+  it("formats IM tab titles with English platform names outside Chinese locales", () => {
+    expect(buildChatTabTitle("expert", '{"channel":"dingtalk-connector","peerid":"398058"}', { locale: "en-US" })).toBe("Dingtalk expert");
+    expect(buildChatTabTitle("expert", "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58", { locale: "en-US" })).toBe("Feishu expert");
+    expect(buildChatTabTitle("expert", "agent:main:wecom:direct:marila", { locale: "en-US" })).toBe("WeCom expert");
   });
 });
 

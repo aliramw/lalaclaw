@@ -18,6 +18,7 @@ import { SelectionMenu } from "@/components/command-center/selection-menu";
 import { lobsterWalkTuning, sampleLobsterCompanionCount, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { useI18n } from "@/lib/i18n";
+import { getImSessionDisplayName } from "@/features/session/im-session";
 
 const thinkModeOptions = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
 const LOBSTER_WALK_MARGIN = 32;
@@ -1651,7 +1652,7 @@ export function SessionOverview({
   session,
   theme,
 }) {
-  const { messages } = useI18n();
+  const { intlLocale, messages } = useI18n();
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [sessionSearchChannel, setSessionSearchChannel] = useState("dingtalk-connector");
   const thinkModeLabels = messages.thinkModes;
@@ -1675,6 +1676,9 @@ export function SessionOverview({
         ? messages.sessionOverview.wecomSessionSearch
         : messages.sessionOverview.sessionSearch
   ), [messages, sessionSearchChannel]);
+  const dingTalkLabel = getImSessionDisplayName("dingtalk-connector", { locale: intlLocale });
+  const feishuLabel = getImSessionDisplayName("feishu:direct:demo", { locale: intlLocale });
+  const wecomLabel = getImSessionDisplayName("wecom:direct:demo", { locale: intlLocale, shortWecom: true });
   const defaultModel = availableModels[0] || "";
   const getModelItemLabel = (modelId) => {
     const normalized = formatModelLabel(modelId);
@@ -1857,12 +1861,17 @@ export function SessionOverview({
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="px-1 pb-1 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                      {messages.sessionOverview.menus.imConversations || messages.sessionOverview.sessionSearch.title}
+                      {messages.sessionOverview.menus.imConversations || messages.sessionOverview.sessionSearch?.title || messages.sessionOverview.menus.switchAgent}
                     </DropdownMenuLabel>
                     <DropdownMenuItem onSelect={() => openSessionSearch("dingtalk-connector", suppressTooltip)}>
                       <div className="flex items-center gap-2 leading-none">
-                        <img src="/dingtalk.svg" alt="" aria-hidden="true" className="h-4 w-4 shrink-0 self-center object-contain" />
-                        <span className="self-center leading-none">{messages.sessionOverview.sessionSearch.trigger}</span>
+                        <div
+                          aria-hidden="true"
+                          className="flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] bg-[#1677ff] text-[10px] font-semibold leading-none text-white"
+                        >
+                          钉
+                        </div>
+                        <span className="self-center leading-none">{dingTalkLabel}</span>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => openSessionSearch("feishu", suppressTooltip)}>
@@ -1873,7 +1882,7 @@ export function SessionOverview({
                         >
                           飞
                         </div>
-                        <span className="self-center leading-none">{messages.sessionOverview.feishuSessionSearch.trigger}</span>
+                        <span className="self-center leading-none">{feishuLabel}</span>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => openSessionSearch("wecom", suppressTooltip)}>
@@ -1884,7 +1893,7 @@ export function SessionOverview({
                         >
                           企
                         </div>
-                        <span className="self-center leading-none">{messages.sessionOverview.wecomSessionSearch.trigger}</span>
+                        <span className="self-center leading-none">{wecomLabel}</span>
                       </div>
                     </DropdownMenuItem>
                   </>

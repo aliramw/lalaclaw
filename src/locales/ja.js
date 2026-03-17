@@ -1,3 +1,5 @@
+import en from "@/locales/en";
+
 const ja = {
   app: {
     title: "🦞 LalaClaw",
@@ -116,6 +118,7 @@ const ja = {
     resizePanels: "ドラッグしてチャットと追跡パネルの幅を調整",
   },
   sessionOverview: {
+    ...en.sessionOverview,
     labels: {
       agent: "Agent",
       model: "モデル",
@@ -174,7 +177,7 @@ const ja = {
     },
     resetConversation: "新しいセッションを開始",
     resetConversationHotkey: "新しいセッションを開始 (Cmd + N)",
-    resetConversationTooltipHint: "新しいセッションを開始すると、現在の会話内容はリセットされます。",
+    resetConversationTooltipHint: "新しいセッションを開始すると、現在の会話内容はリセットされ、コンテキスト長もゼロに戻ります。",
     resetConversationConfirm: "新しいセッションを開始しますか？ 会話履歴とコンテキストは消去されます。",
     resetConversationDialog: {
       title: "新しいセッションを開始しますか？",

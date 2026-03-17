@@ -1,31 +1,79 @@
 [English](../en/documentation-quick-start.md) | [中文](../zh/documentation-quick-start.md) | [繁體中文（香港）](../zh-hk/documentation-quick-start.md) | [日本語](../ja/documentation-quick-start.md) | [한국어](../ko/documentation-quick-start.md) | [Français](../fr/documentation-quick-start.md) | [Español](../es/documentation-quick-start.md) | [Português](../pt/documentation-quick-start.md) | [Deutsch](../de/documentation-quick-start.md) | [Bahasa Melayu](../ms/documentation-quick-start.md) | [தமிழ்](../ta/documentation-quick-start.md)
 
-[Zur Startseite](./documentation.md) | [Oberflächenüberblick](./documentation-interface.md) | [Sitzungen, Agenten und Ausführungsmodi](./documentation-sessions.md)
+[Zur Startseite](./documentation.md) | [Oberflächenüberblick](./documentation-interface.md) | [Sitzungen, Agenten und Ausführungsmodi](./documentation-sessions.md) | [API und Troubleshooting](./documentation-api-troubleshooting.md)
 
 # Schnellstart
 
-## npm-Installation
+## Voraussetzungen
 
-~~~bash
+- Nutze die in [`.nvmrc`](../../.nvmrc) definierte Node.js-Version, aktuell `22`
+- Fuer normale lokale Nutzung wird die Installation ueber npm empfohlen
+- Verwende einen GitHub-Source-Checkout nur fuer Entwicklungsmodus oder lokale Codeaenderungen
+
+## Installation ueber OpenClaw
+
+Nutze OpenClaw, um LalaClaw auf einem entfernten Mac- oder Linux-Rechner zu installieren und anschliessend per SSH-Portweiterleitung lokal darauf zuzugreifen.
+
+```text
+Install https://github.com/aliramw/lalaclaw
+```
+
+Beispiel:
+
+```bash
+ssh -N -L 3000:127.0.0.1:5678 root@your-remote-server-ip
+```
+
+Danach oeffnen:
+
+```text
+http://127.0.0.1:3000
+```
+
+## Installation ueber npm
+
+```bash
 npm install -g lalaclaw@latest
 lalaclaw init
-~~~
+```
 
-Danach [http://127.0.0.1:3000](http://127.0.0.1:3000) öffnen.
+Danach [http://127.0.0.1:5678](http://127.0.0.1:5678) oeffnen.
 
-## Entwicklungsmodus
+Hinweise:
 
-~~~bash
+- `lalaclaw init` schreibt die lokale Konfiguration nach `~/.config/lalaclaw/.env.local`
+- Standardwerte sind `HOST=127.0.0.1`, `PORT=5678` und `FRONTEND_PORT=4321`
+- In einem Source-Checkout startet `lalaclaw init` Server und Vite Dev Server im Hintergrund
+- Unter macOS mit npm installiert `lalaclaw init` den `launchd`-Dienst des Servers und startet ihn
+- Unter Linux mit npm startet `lalaclaw init` den Server im Hintergrund
+
+## Installation ueber GitHub
+
+```bash
 git clone https://github.com/aliramw/lalaclaw.git lalaclaw
 cd lalaclaw
 npm ci
+npm run doctor
+npm run lalaclaw:init
+```
+
+Danach [http://127.0.0.1:4321](http://127.0.0.1:4321) oeffnen.
+
+## Entwicklungsmodus
+
+Fuer die Entwicklung im Repository gelten diese festen Ports:
+
+```bash
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+PORT=3000 HOST=127.0.0.1 node server.js
+```
+
+Oder:
+
+```bash
 npm run dev:all
-~~~
+```
 
-Danach [http://127.0.0.1:5173](http://127.0.0.1:5173) öffnen.
-
-## Wichtige Hinweise
-
-- Für lokale UI-Entwicklung npm run dev:all statt npm start verwenden
-- Für doc, ppt und pptx wird LibreOffice für die Vorschau benötigt
-- Mit COMMANDCENTER_FORCE_MOCK=1 lässt sich der Mock-Modus erzwingen
+- Frontend: `http://127.0.0.1:5173`
+- Backend: `http://127.0.0.1:3000`
+- Browser-Einstieg: `http://127.0.0.1:5173`

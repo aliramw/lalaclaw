@@ -1,4 +1,4 @@
-[Read this README in: English](./README.md) | [中文](./README.zh.md) | [繁體中文（香港）](./README.zh-hk.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Português](./README.pt.md) | [Deutsch](./README.de.md) | [Bahasa Melayu](./README.ms.md) | [தமிழ்](./README.ta.md)
+[Read this README in: English](./README.md) | [中文](./docs/README.zh.md) | [繁體中文（香港）](./docs/README.zh-hk.md) | [日本語](./docs/README.ja.md) | [한국어](./docs/README.ko.md) | [Français](./docs/README.fr.md) | [Español](./docs/README.es.md) | [Português](./docs/README.pt.md) | [Deutsch](./docs/README.de.md) | [Bahasa Melayu](./docs/README.ms.md) | [தமிழ்](./docs/README.ta.md)
 
 # LalaClaw
 
@@ -12,51 +12,64 @@ Author: Marila Wang
 ## Highlights
 
 - React + Vite command center UI with chat, timeline, inspector, theme, locale, and attachment flows
-- VS Code-style file exploration with separate session/workspace trees, preview actions, and richer document/media handling
+- VS Code-style file exploration with separate session and workspace trees, preview actions, and richer document handling
 - Built-in locale support for 中文, 繁體中文（香港）, English, 日本語, 한국어, Français, Español, Português, Deutsch, Bahasa Melayu, and தமிழ்
 - Node.js backend that can connect to local or remote OpenClaw gateways
-- Modular frontend and backend boundaries with focused hook- and module-level tests
-- CI, linting, coverage thresholds, contribution docs, security policy, and issue templates
+- Focused tests, CI, linting, contribution docs, and release notes
 
 ## Product Tour
 
-- Top overview bar: agent, model, fast mode, think mode, context, queue, theme, and locale controls
-- Main chat workspace: prompt composer, attachment handling, pending turns, markdown rendering, and reset flow
-- Inspector panel: timeline, files, artifacts, snapshots, agent activity, and runtime peeks
-- Session runtime loop: `mock` mode by default, with optional OpenClaw gateway wiring for live runs
+- Top overview bar for agent, model, fast mode, think mode, context, queue, theme, and locale
+- Main chat workspace for prompts, attachments, streaming replies, and session reset
+- Inspector panel for timeline, files, artifacts, snapshots, and runtime activity
+- Runtime loop that works in `mock` mode by default and can switch to live OpenClaw gateways
 
-- A longer walkthrough lives in [docs/en/showcase.md](./docs/en/showcase.md)
+A longer walkthrough lives in [docs/en/showcase.md](./docs/en/showcase.md).
 
 ## Documentation
 
 - Language index: [docs/README.md](./docs/README.md)
-- English: [docs/en/documentation.md](./docs/en/documentation.md)
-- 中文: [docs/zh/documentation.md](./docs/zh/documentation.md)
-- 繁體中文（香港）: [docs/zh-hk/documentation.md](./docs/zh-hk/documentation.md)
-- 日本語: [docs/ja/documentation.md](./docs/ja/documentation.md)
-- 한국어: [docs/ko/documentation.md](./docs/ko/documentation.md)
-- Français: [docs/fr/documentation.md](./docs/fr/documentation.md)
-- Español: [docs/es/documentation.md](./docs/es/documentation.md)
-- Português: [docs/pt/documentation.md](./docs/pt/documentation.md)
-- Deutsch: [docs/de/documentation.md](./docs/de/documentation.md)
-- Bahasa Melayu: [docs/ms/documentation.md](./docs/ms/documentation.md)
-- தமிழ்: [docs/ta/documentation.md](./docs/ta/documentation.md)
+- English guide: [docs/en/documentation.md](./docs/en/documentation.md)
+- Quick start: [docs/en/documentation-quick-start.md](./docs/en/documentation-quick-start.md)
+- Interface guide: [docs/en/documentation-interface.md](./docs/en/documentation-interface.md)
+- Sessions and runtime: [docs/en/documentation-sessions.md](./docs/en/documentation-sessions.md)
+- Architecture notes: [docs/en/architecture.md](./docs/en/architecture.md)
 
-## Architecture
+More structure notes live in [server/README.md](./server/README.md) and [src/features/README.md](./src/features/README.md).
 
-```mermaid
-flowchart LR
-    UI["React Command Center"] --> Hooks["Feature Controllers & Runtime Hooks"]
-    Hooks --> API["Node HTTP API"]
-    API --> Routes["Route Handlers"]
-    Routes --> Services["OpenClaw / Transcript / Dashboard Services"]
-    Services --> Store["Session Store & Runtime Config"]
-    Services --> Gateway["OpenClaw Gateway or Mock Runtime"]
+## Installation Guide
+
+### Install Through OpenClaw
+
+Use OpenClaw to install LalaClaw on a remote Mac or Linux machine, then access it locally through SSH port forwarding.
+
+If you already have a machine with OpenClaw installed and you can log in to that machine over SSH, you can ask OpenClaw to install this project from GitHub, start it on the remote host, and then forward the remote port back to your local computer.
+
+Tell OpenClaw:
+
+```text
+Install https://github.com/aliramw/lalaclaw
 ```
 
-- More structure notes live in [server/README.md](./server/README.md), [src/features/README.md](./src/features/README.md), and [docs/en/architecture.md](./docs/en/architecture.md)
+Typical flow:
 
-## Quick Start
+1. OpenClaw clones this repository on the remote machine.
+2. OpenClaw installs dependencies and starts LalaClaw.
+3. The app listens on `127.0.0.1:5678` on the remote machine.
+4. You forward that remote port to your local computer over SSH.
+5. You open the forwarded local address in your browser.
+
+Example SSH port forwarding:
+
+```bash
+ssh -N -L 3000:127.0.0.1:5678 root@your-remote-server-ip
+```
+
+Then open the forwarded local address:
+
+```text
+http://127.0.0.1:3000
+```
 
 ### Install From npm
 
@@ -67,25 +80,23 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+Then open [http://127.0.0.1:5678](http://127.0.0.1:5678).
 
 Notes:
 
-- `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
-- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path and a launchd `PATH` that includes the current Node runtime, so non-interactive starts do not depend on shell `PATH`
-- On macOS, `lalaclaw init` also starts a `launchd` background service automatically
-- In a source checkout on macOS, `lalaclaw init` builds `dist/` first when needed so the background service can run the production app
-- After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
-- If you want config only on macOS, run `lalaclaw init --no-background`
-- On Linux, or when you opt out of background startup, continue with `lalaclaw doctor` and `lalaclaw start`
-- Use `lalaclaw status` to check the background service, `lalaclaw restart` to restart it, and `lalaclaw stop` to stop it on macOS
+- `lalaclaw init` writes local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
+- By default, `lalaclaw init` uses `HOST=127.0.0.1`, `PORT=5678`, and `FRONTEND_PORT=4321` unless you override them
+- In a source checkout, `lalaclaw init` starts both Server and Vite Dev Server in the background, then prompts to open the Dev Server URL
+- On macOS npm installs, `lalaclaw init` installs and starts the Server `launchd` service, then prompts to open the Server URL
+- On Linux npm installs, `lalaclaw init` starts the Server in the background, then prompts to open the Server URL
+- Use `lalaclaw init --no-background` if you only want to write config without auto-starting services
+- After `--no-background`, run `lalaclaw doctor`, then use `lalaclaw dev` for source checkouts or `lalaclaw start` for packaged installs
+- `lalaclaw status`, `lalaclaw restart`, and `lalaclaw stop` control the macOS `launchd` Server service only
 - Previewing `doc`, `ppt`, and `pptx` files requires LibreOffice. On macOS, run `lalaclaw doctor --fix` or `brew install --cask libreoffice`
 
 ### Install From GitHub
 
 If you want a source checkout for development or local modification:
-
-On a fresh machine with OpenClaw already installed:
 
 ```bash
 git clone https://github.com/aliramw/lalaclaw.git lalaclaw
@@ -95,31 +106,15 @@ npm run doctor
 npm run lalaclaw:init
 ```
 
-Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
+Then open [http://127.0.0.1:4321](http://127.0.0.1:4321).
 
-Important:
+Notes:
 
-- On macOS, `npm run lalaclaw:init` now tries to build and install the background service for you unless you pass `--no-background`
-- `npm run lalaclaw:start` runs in the current terminal and is not a daemon
-- If you close that terminal, the service stops and `http://127.0.0.1:3000` becomes unavailable
-
-If you already know your local setup is ready, you can skip `npm run lalaclaw:init`.
-
-If you want to review or regenerate the local config later:
-
-```bash
-npm run lalaclaw:init
-```
-
-If you prefer to edit configuration manually, start from [.env.local.example](./.env.local.example).
-
-If you want the live development environment instead of the production build:
-
-```bash
-npm run dev:all
-```
-
-Then open [http://127.0.0.1:5173](http://127.0.0.1:5173).
+- `npm run lalaclaw:init` starts both Server and Vite Dev Server in the background by default unless you pass `--no-background`
+- After background startup, it prompts to open the Dev Server URL, which defaults to `http://127.0.0.1:4321`
+- If you only want config generation, run `npm run lalaclaw:init -- --no-background`
+- `npm run lalaclaw:start` runs in the current terminal and stops when that terminal closes
+- If you want the live development environment later, run `npm run dev:all` and open `http://127.0.0.1:4321` or your configured `FRONTEND_PORT`
 
 ### Update LalaClaw
 
@@ -130,16 +125,14 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-8`:
+If you want a specific published version instead, such as `2026.3.17-9`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-8
+npm install -g lalaclaw@2026.3.17-9
 lalaclaw init
 ```
 
-If you installed LalaClaw from GitHub, update it like this:
-
-If you already installed LalaClaw from GitHub and want the latest version:
+If you installed LalaClaw from GitHub and want the latest version:
 
 ```bash
 cd /path/to/lalaclaw
@@ -149,144 +142,66 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-8`:
+If you want a specific released version instead, such as `2026.3.17-9`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-8
+git checkout 2026.3.17-9
 npm ci
 npm run build
 npm run lalaclaw:start
 ```
 
-Notes:
+## Common Commands
 
-- `git pull` updates your local copy to the newest version on GitHub.
-- `npm ci` installs the dependencies required by that version.
-- `npm run build` refreshes the web app files used by the production server.
-- `npm install -g lalaclaw@latest` updates the globally installed npm package.
-- If you use the macOS `launchd` setup, restart the service after updating with `launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app`.
-- If Git says you have local changes, back them up or commit them before updating.
-
-### Persistent Production Deploy On macOS
-
-If you want the app to stay online after you close the terminal on macOS, use `launchd`.
-
-1. Build the app first:
-
-```bash
-npm ci
-npm run doctor
-npm run lalaclaw:init
-npm run build
-```
-
-2. Generate the plist from the checked-in template:
-
-```bash
-./deploy/macos/generate-launchd-plist.sh
-```
-
-That writes `~/Library/LaunchAgents/ai.lalaclaw.app.plist` and prepares `./logs/`.
-
-3. Load it:
-
-```bash
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
-launchctl enable gui/$(id -u)/ai.lalaclaw.app
-launchctl kickstart -k gui/$(id -u)/ai.lalaclaw.app
-```
-
-That keeps the built app running in the background after logout or terminal close.
-
-Useful follow-up commands:
-
-```bash
-launchctl print gui/$(id -u)/ai.lalaclaw.app
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.lalaclaw.app.plist
-tail -f ./logs/lalaclaw-launchd.out.log
-tail -f ./logs/lalaclaw-launchd.err.log
-```
-
-More detail lives in [deploy/macos/README.md](./deploy/macos/README.md).
-
-## Scripts
-
-- `npm run dev` starts the Vite development server
-- `npm run dev:all` starts both the frontend and backend in development mode
-- `npm run dev:frontend` starts only the Vite development server
-- `npm run dev:backend` starts only the backend server
+- `npm run dev:all` starts the standard local development workflow
 - `npm run doctor` checks Node.js, OpenClaw discovery, ports, and local config
-  For `remote-gateway`, it also probes the configured gateway URL and sends a minimal API request to validate the configured model and agent.
-- `npm run doctor -- --fix` installs LibreOffice automatically on macOS when LibreOffice-backed preview support is missing
-- `npm run doctor -- --json` prints the same diagnosis as machine-readable JSON with `summary.status` and `summary.exitCode`
-- `npm run lalaclaw:init` writes a local `.env.local` bootstrap file
-- `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
+- `npm run lalaclaw:init` writes or refreshes local bootstrap config
 - `npm run lalaclaw:start` starts the built app after checking `dist/`
-- `npm run lint` runs ESLint across the workspace
-- `npm test` runs the Vitest suite once
-- `npm run test:coverage` runs Vitest with coverage thresholds and HTML output in `coverage/`
-- `npm run test:watch` runs Vitest in watch mode
 - `npm run build` creates the production bundle
-- `npm start` launches the Node server that serves `dist/`
+- `npm test` runs the Vitest suite once
+- `npm run lint` runs ESLint across the workspace
+
+For the full command list and contributor workflow, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Contributing
 
-Contributions are welcome. For larger features, architectural changes, or behavior changes, please open an issue first so the direction can be discussed before implementation.
+Contributions are welcome. For larger features, architectural changes, or user-visible behavior changes, please open an issue first.
 
 Before opening a PR:
 
-- keep changes focused and avoid unrelated refactors
-- add or update tests for behavior changes
-- route new user-facing copy through `src/locales/*.js`
-- update docs for user-visible behavior changes
-- update [CHANGELOG.md](./CHANGELOG.md) when versioned behavior changes
+- Keep changes focused and avoid unrelated refactors
+- Add or update tests for behavior changes
+- Route new user-facing copy through `src/locales/*.js`
+- Update docs for user-visible behavior changes
+- Update [CHANGELOG.md](./CHANGELOG.md) when versioned behavior changes
 
-For the full contribution checklist and project structure notes, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+The full contribution checklist lives in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Development Notes
 
-- Use `npm run dev:all` for the standard local development workflow.
-- Use [http://127.0.0.1:5173](http://127.0.0.1:5173) for the Vite app during development.
-- Use `npm run lalaclaw:start` or `npm start` only for built output that depends on `dist/`.
-- By default, the app auto-detects a local OpenClaw gateway when available.
-- To force `mock` mode for reproducible UI or frontend debugging, set `COMMANDCENTER_FORCE_MOCK=1`.
-- Before submitting a PR, prefer running `npm run lint`, `npm test`, and the affected build or coverage checks.
+- Use `npm run dev:all` for the standard local development workflow
+- Use [http://127.0.0.1:4321](http://127.0.0.1:4321) for the Vite app during development by default, or your configured `FRONTEND_PORT`
+- Use `npm run lalaclaw:start` or `npm start` only for built output that depends on `dist/`
+- By default, the app auto-detects a local OpenClaw gateway when available
+- To force `mock` mode for reproducible UI or frontend debugging, set `COMMANDCENTER_FORCE_MOCK=1`
+- Before submitting a PR, prefer running `npm run lint`, `npm test`, and `npm run build`
 
 ## Versioning
 
 LalaClaw uses npm-compatible calendar versioning for releases.
 
-- Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes.
-- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-8`, not `YYYY.M.D.N`.
-- Call out breaking changes explicitly in release notes and migration-facing docs.
-- The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
+- Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-9`, not `YYYY.M.D.N`
+- Call out breaking changes explicitly in release notes and migration-facing docs
+- The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc)
 
-## Structure
+## OpenClaw Wiring
 
-- Backend layering notes live in [server/README.md](./server/README.md)
-- Frontend feature layering notes live in [src/features/README.md](./src/features/README.md)
+If `~/.openclaw/openclaw.json` exists, LalaClaw automatically detects your local OpenClaw gateway and reuses its loopback endpoint plus gateway token.
 
-## Project Quality
-
-- Continuous integration is defined in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
-- Dependency update automation is defined in [`.github/dependabot.yml`](./.github/dependabot.yml)
-- Contribution expectations are documented in [CONTRIBUTING.md](./CONTRIBUTING.md)
-- Community expectations are documented in [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
-- Issue intake is guided by [`.github/ISSUE_TEMPLATE/`](./.github/ISSUE_TEMPLATE)
-- Pull request context is guided by [`.github/pull_request_template.md`](./.github/pull_request_template.md)
-- Review ownership is defined in [`.github/CODEOWNERS`](./.github/CODEOWNERS)
-- The repository license is defined in [LICENSE](./LICENSE)
-- Security reporting guidance is documented in [SECURITY.md](./SECURITY.md)
-- Ongoing release notes are tracked in [CHANGELOG.md](./CHANGELOG.md)
-- The repository targets Node.js `22` via [`.nvmrc`](./.nvmrc)
-
-## OpenClaw wiring
-
-If `~/.openclaw/openclaw.json` exists, LalaClaw will automatically detect your local OpenClaw gateway and reuse its loopback endpoint plus gateway token.
-
-For a fresh machine, the recommended production setup is:
+For a fresh source checkout, a typical setup looks like this:
 
 ```bash
 git clone https://github.com/aliramw/lalaclaw.git lalaclaw
@@ -294,13 +209,9 @@ cd lalaclaw
 npm ci
 npm run doctor
 npm run lalaclaw:init
-npm run build
-npm run lalaclaw:start
 ```
 
-If you need it to keep running after logout or terminal close on macOS, use `launchd` instead of a plain foreground shell.
-
-If you want to override that and point to another OpenClaw-compatible gateway, set:
+If you want to point to another OpenClaw-compatible gateway, set:
 
 ```bash
 export OPENCLAW_BASE_URL="https://your-openclaw-gateway"
@@ -309,7 +220,6 @@ export OPENCLAW_MODEL="openclaw"
 export OPENCLAW_AGENT_ID="main"
 export OPENCLAW_API_STYLE="chat"
 export OPENCLAW_API_PATH="/v1/chat/completions"
-node server.js
 ```
 
 If your gateway is closer to the OpenAI Responses API, use:
@@ -320,9 +230,3 @@ export OPENCLAW_API_PATH="/v1/responses"
 ```
 
 Without these variables, the app runs in `mock` mode so the UI and chat loop remain usable during bootstrap.
-
-To force `mock` mode even when a local `~/.openclaw/openclaw.json` is present, set:
-
-```bash
-export COMMANDCENTER_FORCE_MOCK=1
-```

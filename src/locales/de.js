@@ -163,7 +163,7 @@ const de = {
     },
     resetConversation: "Neue Sitzung starten",
     resetConversationHotkey: "Neue Sitzung starten (Cmd + N)",
-    resetConversationTooltipHint: "Beim Start einer neuen Sitzung wird die aktuelle Unterhaltung zurückgesetzt.",
+    resetConversationTooltipHint: "Beim Start einer neuen Sitzung wird die aktuelle Unterhaltung zuruckgesetzt und die Kontextlange auf null gesetzt.",
     resetConversationConfirm: "Neue Sitzung starten? Unterhaltungsverlauf und Kontext werden gelöscht.",
     resetConversationDialog: {
       title: "Neue Sitzung starten?",

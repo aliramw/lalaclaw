@@ -236,7 +236,7 @@ const en = {
     },
     resetConversation: "Start new session",
     resetConversationHotkey: "Start new session (Cmd + N)",
-    resetConversationTooltipHint: "Starting a new session will reset the current conversation.",
+    resetConversationTooltipHint: "Starting a new session will reset the current conversation, and the context length will return to zero.",
     resetConversationConfirm: "Start a new session? Conversation history and context will be cleared.",
     resetConversationDialog: {
       title: "Start a new session?",

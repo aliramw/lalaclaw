@@ -28,7 +28,7 @@ import { useAppPersistence } from "@/features/app/storage";
 import { formatCompactK, formatTime, maxPromptRows } from "@/features/chat/utils";
 import { useChatController, usePromptHistory } from "@/features/chat/controllers";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
-import { createResetImSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
+import { createResetImSessionUser, getImSessionDisplayName, isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
 import { useI18n } from "@/lib/i18n";
@@ -99,17 +99,11 @@ function hashSessionUser(value = "") {
   return Math.abs(hash).toString(36) || "session";
 }
 
-export function buildChatTabTitle(agentId = "main", sessionUser = "") {
+export function buildChatTabTitle(agentId = "main", sessionUser = "", options = {}) {
   const normalizedAgentId = String(agentId || "main").trim() || "main";
-  const imSessionType = resolveImSessionType(sessionUser);
-  if (imSessionType === "dingtalk") {
-    return `钉钉 ${normalizedAgentId}`;
-  }
-  if (imSessionType === "feishu") {
-    return `飞书 ${normalizedAgentId}`;
-  }
-  if (imSessionType === "wecom") {
-    return `企业微信 ${normalizedAgentId}`;
+  const imLabel = getImSessionDisplayName(sessionUser, { locale: options.locale, shortWecom: true });
+  if (imLabel) {
+    return `${imLabel} ${normalizedAgentId}`;
   }
   return normalizedAgentId;
 }
@@ -123,6 +117,7 @@ export function planSearchedSessionTabTarget({
   agentId = "main",
   chatTabs = [],
   sessionUser = "",
+  locale = "zh",
 } = {}) {
   const normalizedAgentId = String(agentId || "main").trim() || "main";
   const normalizedSessionUser = String(sessionUser || "").trim();
@@ -136,7 +131,7 @@ export function planSearchedSessionTabTarget({
     return {
       create: false,
       tabId: existingTab.id,
-      title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser),
+      title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser, { locale }),
     };
   }
 
@@ -144,14 +139,14 @@ export function planSearchedSessionTabTarget({
     return {
       create: true,
       tabId: createSessionScopedTabId(normalizedAgentId, normalizedSessionUser),
-      title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser),
+      title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser, { locale }),
     };
   }
 
   return {
     create: false,
     tabId: normalizedActiveTabId,
-    title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser),
+    title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser, { locale }),
   };
 }
 
@@ -1911,6 +1906,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       activeTabId: activeChatTabIdRef.current,
       agentId: nextAgentId,
       chatTabs: chatTabsRef.current,
+      locale: intlLocale,
       sessionUser: nextSessionUser,
     });
     const activeTabId = String(plannedTabId || "").trim();
@@ -2191,7 +2187,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         id: tab.id,
         agentId: resolveAgentIdFromTabId(tab.id),
         sessionUser: tab.sessionUser,
-        title: buildChatTabTitle(resolveAgentIdFromTabId(tab.id), tab.sessionUser),
+        title: buildChatTabTitle(resolveAgentIdFromTabId(tab.id), tab.sessionUser, { locale: intlLocale }),
         active: tab.id === activeChatTabId,
         busy: isChatTabBusy({
           tabId: tab.id,
