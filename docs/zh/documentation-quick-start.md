@@ -22,6 +22,7 @@ lalaclaw init
 说明：
 
 - `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
+- 检测到本地 OpenClaw 时，`lalaclaw init` 还会写入解析后的 `OPENCLAW_BIN`，避免 `launchd` 或其他非交互环境依赖 shell `PATH`
 - 在 macOS 的 npm 安装场景下，`lalaclaw init` 还会自动通过 `launchd` 启动后台服务
 - macOS 后台服务启动后，`lalaclaw init` 会提示你按 Enter，并自动在浏览器里打开 App URL
 - 如果你只想写配置、不自动后台启动，可以使用 `lalaclaw init --no-background`

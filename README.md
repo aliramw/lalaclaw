@@ -72,6 +72,7 @@ Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 Notes:
 
 - `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
+- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path so launchd and other non-interactive starts do not depend on shell `PATH`
 - On macOS, `lalaclaw init` also starts a `launchd` background service automatically
 - In a source checkout on macOS, `lalaclaw init` builds `dist/` first when needed so the background service can run the production app
 - After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser

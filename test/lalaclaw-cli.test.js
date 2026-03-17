@@ -208,6 +208,7 @@ describe("LalaClaw CLI helpers", () => {
       frontendHost: "127.0.0.1",
       frontendPort: "5173",
       profile: "mock",
+      openclawBin: "",
       openclawModel: "openclaw",
       openclawAgentId: "main",
       openclawApiStyle: "chat",
@@ -215,8 +216,26 @@ describe("LalaClaw CLI helpers", () => {
     });
 
     expect(output).toContain("COMMANDCENTER_FORCE_MOCK=1");
+    expect(output).toContain("# OPENCLAW_BIN=");
     expect(output).toContain("OPENCLAW_MODEL=openclaw");
     expect(output).toContain("# OPENCLAW_BASE_URL=");
+  });
+
+  it("renders an env file with an explicit OPENCLAW_BIN", () => {
+    const output = cli.renderEnvFile({
+      host: "127.0.0.1",
+      backendPort: "3000",
+      frontendHost: "127.0.0.1",
+      frontendPort: "5173",
+      profile: "local-openclaw",
+      openclawBin: "/Users/example/.npm-global/bin/openclaw",
+      openclawModel: "openclaw",
+      openclawAgentId: "main",
+      openclawApiStyle: "chat",
+      openclawApiPath: "/v1/chat/completions",
+    });
+
+    expect(output).toContain("OPENCLAW_BIN=/Users/example/.npm-global/bin/openclaw");
   });
 
   it("reads the checked-in example env template", () => {
@@ -645,6 +664,38 @@ describe("LalaClaw CLI helpers", () => {
     expect(plist).toContain("<string>--config-file</string>");
     expect(plist).toContain("<string>/Users/example/.config/lalaclaw/.env.local</string>");
     expect(plist).toContain("/Users/example/.config/lalaclaw/logs/lalaclaw-launchd.out.log");
+  });
+
+  it("passes OPENCLAW_BIN from the env file into child processes", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-child-env-"));
+    const envFilePath = path.join(tempDir, ".env.local");
+
+    fs.writeFileSync(
+      envFilePath,
+      [
+        "HOST=127.0.0.1",
+        "PORT=3000",
+        "FRONTEND_HOST=127.0.0.1",
+        "FRONTEND_PORT=5173",
+        "OPENCLAW_BIN=/Users/example/.npm-global/bin/openclaw",
+        "OPENCLAW_BASE_URL=https://gateway.example.com",
+        "OPENCLAW_API_KEY=secret",
+        "OPENCLAW_MODEL=openclaw",
+        "OPENCLAW_AGENT_ID=main",
+        "OPENCLAW_API_STYLE=chat",
+        "OPENCLAW_API_PATH=/v1/chat/completions",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    try {
+      const result = cli.buildChildEnv(envFilePath);
+      expect(result.config.openclawBin).toBe("/Users/example/.npm-global/bin/openclaw");
+      expect(result.childEnv.OPENCLAW_BIN).toBe("/Users/example/.npm-global/bin/openclaw");
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("reads launchd service status from launchctl output", () => {

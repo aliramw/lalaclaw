@@ -22,6 +22,7 @@ lalaclaw init
 Notes:
 
 - `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
+- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path so launchd and other non-interactive starts do not depend on shell `PATH`
 - On npm installs for macOS, `lalaclaw init` also starts a `launchd` background service automatically
 - After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
 - If you only want to write config on macOS, use `lalaclaw init --no-background`

@@ -315,6 +315,7 @@ function resolveConfig(envValues, localOpenClaw) {
     frontendPort,
     profile,
     commandCenterForceMock: profile === 'mock' ? '1' : '',
+    openclawBin: String(envValues.OPENCLAW_BIN || '').trim(),
     openclawBaseUrl: String(envValues.OPENCLAW_BASE_URL || '').trim(),
     openclawApiKey: String(envValues.OPENCLAW_API_KEY || '').trim(),
     openclawModel: String(envValues.OPENCLAW_MODEL || localOpenClaw.defaultModel || DEFAULT_MODEL).trim() || DEFAULT_MODEL,
@@ -412,6 +413,8 @@ function validateConfig(config, localOpenClaw, openclawBinary = '') {
       errors.push(`Local OpenClaw profile selected, but ${localOpenClaw.path} could not be parsed.`);
     } else if (!localOpenClaw.token) {
       errors.push(`Local OpenClaw profile selected, but no gateway token was found in ${localOpenClaw.path}.`);
+    } else if (String(config.openclawBin || '').trim() && !openclawBinary) {
+      errors.push(`Local OpenClaw profile selected, but OPENCLAW_BIN could not be resolved: ${config.openclawBin}`);
     } else if (!openclawBinary) {
       errors.push('Local OpenClaw profile selected, but the `openclaw` CLI was not found. Install it or set OPENCLAW_BIN.');
     } else {
@@ -917,6 +920,7 @@ function renderEnvFile(config) {
     '',
     '# Runtime profile: local-openclaw | mock | remote-gateway',
     `COMMANDCENTER_FORCE_MOCK=${config.profile === 'mock' ? '1' : '0'}`,
+    config.openclawBin ? `OPENCLAW_BIN=${quoteEnvValue(config.openclawBin)}` : '# OPENCLAW_BIN=',
   ];
 
   if (config.profile === 'remote-gateway') {
@@ -1038,6 +1042,7 @@ function buildDoctorReport({
     openclawBinary: {
       found: Boolean(openclawBinary),
       path: openclawBinary || '',
+      requested: config.openclawBin || '',
     },
     presentationPreview: {
       available: Boolean(sofficeBinary),
@@ -1108,7 +1113,7 @@ async function collectDoctorData(envFilePath) {
   const nodeVersion = process.versions.node;
   const nodeMajor = Number(String(nodeVersion || '').split('.')[0] || 0);
   const nodeMatches = nodeMajor === REQUIRED_NODE_MAJOR;
-  const openclawBinary = findExecutable(process.env.OPENCLAW_BIN || 'openclaw');
+  const openclawBinary = findExecutable(config.openclawBin || process.env.OPENCLAW_BIN || 'openclaw');
   const sofficeBinary = findExecutable(process.env.SOFFICE_BIN || 'soffice');
   const brewBinary = process.platform === 'darwin' ? findExecutable('brew') : '';
   const libreOfficeInstallCommand = resolveLibreOfficeInstallCommand({
@@ -1160,7 +1165,15 @@ function printDoctorReport(report) {
     console.log(`INFO  Workspace root: ${report.localOpenClaw.workspaceRoot}`);
   }
 
-  console.log(`${report.openclawBinary.found ? 'OK   ' : 'WARN '} OpenClaw CLI ${report.openclawBinary.found ? `found at ${report.openclawBinary.path}` : 'not found on PATH'}`);
+  console.log(
+    `${report.openclawBinary.found ? 'OK   ' : 'WARN '} OpenClaw CLI ${
+      report.openclawBinary.found
+        ? `found at ${report.openclawBinary.path}`
+        : report.openclawBinary.requested
+          ? `not found at ${report.openclawBinary.requested}`
+          : 'not found on PATH'
+    }`,
+  );
   console.log(
     `${report.presentationPreview.available ? 'OK   ' : 'WARN '} LibreOffice-backed preview ${report.presentationPreview.available ? `enabled via ${report.presentationPreview.binaryPath}` : 'disabled because soffice was not found'}`,
   );
@@ -1198,8 +1211,11 @@ async function runInit(envFilePath, options = {}) {
   }
 
   const localOpenClaw = detectLocalOpenClaw();
-  const openclawBinary = findExecutable(process.env.OPENCLAW_BIN || 'openclaw');
   const currentEnv = readEnvFile(envFilePath);
+  if (!currentEnv.OPENCLAW_BIN && process.env.OPENCLAW_BIN) {
+    currentEnv.OPENCLAW_BIN = process.env.OPENCLAW_BIN;
+  }
+  const openclawBinary = findExecutable(currentEnv.OPENCLAW_BIN || 'openclaw');
   const detectedConfig = resolveConfig(currentEnv, localOpenClaw);
 
   if (localOpenClaw.exists && localOpenClaw.parseError) {
@@ -1211,6 +1227,12 @@ async function runInit(envFilePath, options = {}) {
   }
 
   let nextConfig = applyConfigOverrides(detectedConfig, options);
+  if (nextConfig.profile === 'local-openclaw' && openclawBinary) {
+    nextConfig.openclawBin = openclawBinary;
+    if (currentEnv.OPENCLAW_BIN !== openclawBinary) {
+      console.log(`INFO  Resolved OpenClaw CLI to ${openclawBinary}; writing OPENCLAW_BIN for non-interactive launches.`);
+    }
+  }
 
   if (!options.defaults) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -1239,7 +1261,8 @@ async function runInit(envFilePath, options = {}) {
       rl.close();
     }
   }
-  const validation = validateConfig(nextConfig, localOpenClaw, openclawBinary);
+  const resolvedOpenClawBinary = findExecutable(nextConfig.openclawBin || 'openclaw');
+  const validation = validateConfig(nextConfig, localOpenClaw, resolvedOpenClawBinary);
   if (validation.errors.length) {
     throw new Error(validation.errors.join(' '));
   }
@@ -1389,6 +1412,11 @@ function buildChildEnv(envFilePath) {
   childEnv.OPENCLAW_AGENT_ID = config.openclawAgentId;
   childEnv.OPENCLAW_API_STYLE = config.openclawApiStyle;
   childEnv.OPENCLAW_API_PATH = config.openclawApiPath;
+  if (config.openclawBin) {
+    childEnv.OPENCLAW_BIN = config.openclawBin;
+  } else {
+    delete childEnv.OPENCLAW_BIN;
+  }
 
   return {
     childEnv,
@@ -1685,6 +1713,7 @@ module.exports = {
   collectDoctorData,
   resolveLibreOfficeInstallCommand,
   runDoctorFix,
+  buildChildEnv,
   openExternalUrl,
   promptToOpenApp,
 };
