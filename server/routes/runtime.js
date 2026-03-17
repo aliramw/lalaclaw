@@ -3,7 +3,6 @@ const { URL } = require('node:url');
 function createRuntimeHandler({
   buildDashboardSnapshot,
   config,
-  normalizeSessionUser,
   sendJson,
 }) {
   function parseOptionalBoolean(value) {
@@ -23,7 +22,7 @@ function createRuntimeHandler({
   return async function handleRuntime(req, res) {
     try {
       const searchParams = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const sessionUser = normalizeSessionUser(searchParams.get('sessionUser') || 'command-center');
+      const sessionUser = String(searchParams.get('sessionUser') || 'command-center').trim() || 'command-center';
       const agentId = String(searchParams.get('agentId') || '').trim();
       const model = String(searchParams.get('model') || '').trim();
       const thinkMode = String(searchParams.get('thinkMode') || '').trim();

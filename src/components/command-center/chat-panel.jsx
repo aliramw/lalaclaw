@@ -1039,6 +1039,7 @@ const MessageBubble = memo(function MessageBubble({
                 <MarkdownContent
                   content={renderedContent}
                   files={files}
+                  fontSize={chatFontSize}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   streaming={isStreamingAssistant}
@@ -1085,6 +1086,7 @@ const MessageBubble = memo(function MessageBubble({
                 <MarkdownContent
                   content={renderedContent}
                   files={files}
+                  fontSize={chatFontSize}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   streaming={isStreamingAssistant}
@@ -1155,12 +1157,13 @@ const MessageBubble = memo(function MessageBubble({
               )}
             >
               <CardContent className={bubbleContentClassName}>
-                  <MarkdownContent
-                    content={renderedContent}
-                    files={files}
-                    headingScopeId={headingScopeId}
-                    resolvedTheme={resolvedTheme}
-                    streaming={isStreamingAssistant}
+                <MarkdownContent
+                  content={renderedContent}
+                  files={files}
+                  fontSize={chatFontSize}
+                  headingScopeId={headingScopeId}
+                  resolvedTheme={resolvedTheme}
+                  streaming={isStreamingAssistant}
                     onOpenFilePreview={handleOpenFilePreview}
                     onOpenImagePreview={handleOpenImagePreview}
                     className={fontSizeStyles.compactMarkdown}
@@ -1211,6 +1214,7 @@ const MessageBubble = memo(function MessageBubble({
               <MarkdownContent
                 content={renderedContent}
                 files={files}
+                fontSize={chatFontSize}
                 headingScopeId={headingScopeId}
                 resolvedTheme={resolvedTheme}
                 streaming={isStreamingAssistant}

@@ -28,6 +28,8 @@ import { FilePreviewOverlay, ImagePreviewOverlay } from "@/components/command-ce
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n";
 
+const navigatorPlatformDescriptor = Object.getOwnPropertyDescriptor(window.navigator, "platform");
+
 function renderPreview(node) {
   return render(
     <I18nProvider>
@@ -36,11 +38,21 @@ function renderPreview(node) {
   );
 }
 
+function mockNavigatorPlatform(platform) {
+  Object.defineProperty(window.navigator, "platform", {
+    configurable: true,
+    value: platform,
+  });
+}
+
 describe("FilePreviewOverlay", () => {
   afterEach(() => {
     window.localStorage.removeItem("file-preview-font-size");
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    if (navigatorPlatformDescriptor) {
+      Object.defineProperty(window.navigator, "platform", navigatorPlatformDescriptor);
+    }
   });
 
   it("renders pdf files inside an iframe preview", () => {
@@ -190,7 +202,7 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByText("plain preview").closest("pre")).toHaveClass("text-[16px]", "leading-7");
   });
 
-  it("lets markdown previews switch into Monaco editing mode and save inline", async () => {
+  it("returns markdown previews to preview mode after clicking save and shows a success notice", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ ok: true }),
@@ -240,6 +252,89 @@ describe("FilePreviewOverlay", () => {
     expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
     expect(screen.getByText("After")).toBeInTheDocument();
     expect(screen.getByText("Saved in preview")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/Saved successfully\.|保存成功/);
+  });
+
+  it("uses Cmd+S on Apple platforms to save while staying in editing mode", async () => {
+    mockNavigatorPlatform("MacIntel");
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# Before\n\nPreview body",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
+    await user.clear(editor);
+    await user.type(editor, "# After");
+    fireEvent.keyDown(window, {
+      key: "s",
+      code: "KeyS",
+      metaKey: true,
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId("file-preview-monaco-editor")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/Saved successfully\.|保存成功/);
+  });
+
+  it("uses Ctrl+S on non-Apple platforms to save while staying in editing mode", async () => {
+    mockNavigatorPlatform("Win32");
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# Before\n\nPreview body",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
+    await user.clear(editor);
+    await user.type(editor, "# After");
+    fireEvent.keyDown(window, {
+      key: "s",
+      code: "KeyS",
+      ctrlKey: true,
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByTestId("file-preview-monaco-editor")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/Saved successfully\.|保存成功/);
   });
 
   it("shows the inspector files sidebar for editable previews and opens files from it", async () => {

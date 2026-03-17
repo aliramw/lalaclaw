@@ -103,6 +103,66 @@ describe("SessionOverview", () => {
     expect(screen.getByText("暂无可选模型")).toBeInTheDocument();
   });
 
+  it("searches DingTalk sessions by keyword and switches to the selected result", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    const onSearchSessions = vi.fn().mockResolvedValue([
+      {
+        agentId: "main",
+        preview: "这是最近一条和发布群有关的消息。",
+        sessionKey: "agent:main:openai-user:dingtalk-connector:release-room",
+        sessionUser: "dingtalk-connector:release-room",
+        title: "发布群",
+        updatedLabel: "03/17 12:10",
+      },
+    ]);
+    const onSelectSearchedSession = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="status"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onSearchSessions={onSearchSessions}
+            onSelectSearchedSession={onSelectSearchedSession}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "会话 定位钉钉" }));
+    await user.type(screen.getByLabelText("搜索词"), "发布群");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+
+    await waitFor(() => {
+      expect(onSearchSessions).toHaveBeenCalledWith("发布群");
+    });
+
+    expect(await screen.findByText("发布群")).toBeInTheDocument();
+    expect(screen.getByText(/dingtalk-connector:release-room/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "切换到这个会话" }));
+
+    await waitFor(() => {
+      expect(onSelectSearchedSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionUser: "dingtalk-connector:release-room",
+          title: "发布群",
+        }),
+      );
+    });
+  });
+
   it("disables model, fast mode, think mode, and agent-session controls until OpenClaw is connected", () => {
     window.localStorage.setItem(localeStorageKey, "zh");
     const onAgentChange = vi.fn();

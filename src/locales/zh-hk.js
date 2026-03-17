@@ -345,6 +345,7 @@ const zhHk = {
       cancelEdit: "取消",
       saveFile: "儲存",
       savingFile: "儲存中…",
+      saveSucceeded: "儲存成功",
       openInCodeEditor: "用 VS Code 開啟",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `在 ${label} 中顯示`,

@@ -16,13 +16,21 @@ function createTranscriptProjector({
   formatTimestamp,
 }) {
   const TRANSIENT_USER_REPLAY_WINDOW_MS = 10 * 60 * 1000;
+  const SESSION_SEARCH_MAX_RESULTS = 12;
+  const SESSION_SEARCH_MAX_CANDIDATES = 80;
+  const SESSION_SEARCH_TRANSCRIPT_WINDOW = 160;
+  const SESSION_SEARCH_PREVIEW_CHARS = 180;
 
   function getSessionsIndexPath(agentId) {
     return path.join(LOCAL_OPENCLAW_DIR, 'agents', agentId, 'sessions', 'sessions.json');
   }
 
+  function getSessionsDirPath(agentId) {
+    return path.join(LOCAL_OPENCLAW_DIR, 'agents', agentId, 'sessions');
+  }
+
   function getTranscriptPath(agentId, sessionId) {
-    return path.join(LOCAL_OPENCLAW_DIR, 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
+    return path.join(getSessionsDirPath(agentId), `${sessionId}.jsonl`);
   }
 
   function loadSessionsIndex(agentId) {
@@ -1382,6 +1390,279 @@ function createTranscriptProjector({
     return latestEntry;
   }
 
+  function extractOpenAiUserSessionUser(agentId, sessionKey) {
+    const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
+    const prefix = `agent:${normalizedAgentId}:openai-user:`;
+    if (!String(sessionKey || '').startsWith(prefix)) {
+      return '';
+    }
+
+    return String(sessionKey).slice(prefix.length).trim();
+  }
+
+  function normalizeSessionSearchText(value = '') {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function parseSerializedSessionIdentity(sessionUser = '') {
+    const text = String(sessionUser || '').trim();
+    if (!text.startsWith('{') || !text.endsWith('}')) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function buildSessionSearchMetadata(entry = {}) {
+    const parsedSessionIdentity = parseSerializedSessionIdentity(entry.sessionUser);
+    const friendlySessionLabel = String(
+      parsedSessionIdentity?.groupname
+      || parsedSessionIdentity?.sendername
+      || parsedSessionIdentity?.peername
+      || parsedSessionIdentity?.peerid
+      || parsedSessionIdentity?.groupid
+      || entry.sessionUser,
+    ).trim();
+    const resolvedChannel = String(
+      entry.sessionRecord?.channel
+      || entry.sessionRecord?.lastChannel
+      || entry.sessionRecord?.origin?.provider
+      || entry.sessionRecord?.deliveryContext?.channel
+      || parsedSessionIdentity?.channel
+      || '',
+    ).trim();
+    const metadataHaystack = [
+      entry.sessionKey,
+      entry.sessionUser,
+      friendlySessionLabel,
+      parsedSessionIdentity?.channel,
+      parsedSessionIdentity?.accountid,
+      parsedSessionIdentity?.chattype,
+      parsedSessionIdentity?.peerid,
+      parsedSessionIdentity?.peername,
+      parsedSessionIdentity?.sendername,
+      parsedSessionIdentity?.groupid,
+      parsedSessionIdentity?.groupname,
+      entry.sessionRecord?.displayName,
+      entry.sessionRecord?.groupId,
+      entry.sessionRecord?.channel,
+      entry.sessionRecord?.lastChannel,
+      entry.sessionRecord?.origin?.label,
+      entry.sessionRecord?.origin?.provider,
+      entry.sessionRecord?.origin?.surface,
+      entry.sessionRecord?.origin?.from,
+      entry.sessionRecord?.origin?.to,
+      entry.sessionRecord?.deliveryContext?.channel,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      friendlySessionLabel,
+      normalizedMetadataHaystack: normalizeSessionSearchText(metadataHaystack),
+      parsedSessionIdentity,
+      resolvedChannel,
+    };
+  }
+
+  function buildSessionSearchPreview(entries = [], searchTerm = '') {
+    const normalizedSearchTerm = normalizeSessionSearchText(searchTerm);
+    const messageSnippets = (entries || [])
+      .filter((entry) => entry?.type === 'message')
+      .map((entry) => {
+        const role = String(entry?.message?.role || '').trim();
+        const text = role === 'assistant'
+          ? cleanAssistantReply(extractTextSegments(entry?.message?.content).join('\n'))
+          : cleanUserMessage(extractTextSegments(entry?.message?.content).join('\n'));
+
+        return {
+          normalizedText: normalizeSessionSearchText(text),
+          text,
+        };
+      })
+      .filter((entry) => entry.text);
+
+    if (!messageSnippets.length) {
+      return { matched: false, preview: '' };
+    }
+
+    const matchedSnippet = normalizedSearchTerm
+      ? messageSnippets.find((entry) => entry.normalizedText.includes(normalizedSearchTerm))
+      : null;
+
+    if (matchedSnippet) {
+      return {
+        matched: true,
+        preview: clip(matchedSnippet.text, SESSION_SEARCH_PREVIEW_CHARS),
+      };
+    }
+
+    const latestSnippet = messageSnippets.at(-1) || messageSnippets[0];
+    return {
+      matched: false,
+      preview: clip(latestSnippet?.text || '', SESSION_SEARCH_PREVIEW_CHARS),
+    };
+  }
+
+  function findFallbackTranscriptPaths(agentId, sessionKey, limit = 2) {
+    const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
+    const normalizedSessionKey = String(sessionKey || '').trim();
+    if (!normalizedSessionKey) {
+      return [];
+    }
+
+    const sessionsDir = getSessionsDirPath(normalizedAgentId);
+    let directoryEntries = [];
+    try {
+      directoryEntries = fs.readdirSync(sessionsDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+
+    const escapedSessionKey = JSON.stringify(normalizedSessionKey).slice(1, -1);
+    const rankedFiles = directoryEntries
+      .filter((entry) => entry?.isFile?.() && entry.name.endsWith('.jsonl'))
+      .map((entry) => {
+        const filePath = path.join(sessionsDir, entry.name);
+        let stat = null;
+        try {
+          stat = fs.statSync(filePath);
+        } catch {
+          stat = null;
+        }
+        return {
+          filePath,
+          mtimeMs: Number(stat?.mtimeMs || 0),
+        };
+      })
+      .sort((left, right) => right.mtimeMs - left.mtimeMs);
+
+    const fallbackPaths = [];
+
+    for (const file of rankedFiles) {
+      if (fallbackPaths.length >= limit) {
+        break;
+      }
+
+      const text = readTextIfExists(file.filePath);
+      if (!text) {
+        continue;
+      }
+
+      if (text.includes(normalizedSessionKey) || text.includes(escapedSessionKey)) {
+        fallbackPaths.push(file.filePath);
+      }
+    }
+
+    return fallbackPaths;
+  }
+
+  function getTranscriptEntriesForSession(agentId, sessionRecord, sessionKey, windowSize = SESSION_SEARCH_TRANSCRIPT_WINDOW) {
+    const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
+    const primaryPath = sessionRecord?.sessionId
+      ? getTranscriptPath(normalizedAgentId, sessionRecord.sessionId)
+      : '';
+    const transcriptPaths = [];
+
+    if (primaryPath && fileExists(primaryPath)) {
+      transcriptPaths.push(primaryPath);
+    } else {
+      transcriptPaths.push(...findFallbackTranscriptPaths(normalizedAgentId, sessionKey));
+    }
+
+    const mergedEntries = [];
+    for (const transcriptPath of transcriptPaths) {
+      const transcriptEntries = readJsonLines(transcriptPath);
+      if (!transcriptEntries.length) {
+        continue;
+      }
+      mergedEntries.push(...transcriptEntries.slice(-windowSize));
+    }
+
+    return mergedEntries.slice(-windowSize);
+  }
+
+  function searchSessionsForAgent(agentId, options = {}) {
+    const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
+    const normalizedSearchTerm = normalizeSessionSearchText(options.term);
+    const normalizedChannel = normalizeSessionSearchText(options.channel);
+    const requestedLimit = Number(options.limit || 0);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.max(1, Math.min(24, Math.floor(requestedLimit)))
+      : SESSION_SEARCH_MAX_RESULTS;
+    const sessions = loadSessionsIndex(normalizedAgentId);
+    const indexedSessions = Object.entries(sessions)
+      .map(([sessionKey, sessionRecord]) => ({
+        sessionKey,
+        sessionRecord,
+        sessionUser: extractOpenAiUserSessionUser(normalizedAgentId, sessionKey),
+        updatedAt: Number(sessionRecord?.updatedAt || 0),
+      }))
+      .filter((entry) => entry.sessionUser && entry.updatedAt)
+      .map((entry) => ({
+        ...entry,
+        ...buildSessionSearchMetadata(entry),
+      }))
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+
+    const candidates = indexedSessions
+      .filter((entry) => (
+        !normalizedChannel
+        || entry.normalizedMetadataHaystack.includes(normalizedChannel)
+      ))
+      .slice(0, SESSION_SEARCH_MAX_CANDIDATES);
+
+    const matches = [];
+
+    for (const entry of candidates) {
+      const metadataMatched = normalizedSearchTerm
+        ? entry.normalizedMetadataHaystack.includes(normalizedSearchTerm)
+        : false;
+
+      let transcriptMatched = false;
+      let preview = '';
+
+      if (entry.sessionRecord?.sessionId || entry.sessionKey) {
+        const transcriptEntries = getTranscriptEntriesForSession(
+          normalizedAgentId,
+          entry.sessionRecord,
+          entry.sessionKey,
+          SESSION_SEARCH_TRANSCRIPT_WINDOW,
+        );
+        const previewResult = buildSessionSearchPreview(transcriptEntries, normalizedSearchTerm);
+        preview = previewResult.preview;
+        transcriptMatched = previewResult.matched;
+      }
+
+      if (normalizedSearchTerm && !metadataMatched && !transcriptMatched) {
+        continue;
+      }
+
+      matches.push({
+        agentId: normalizedAgentId,
+        channel: entry.resolvedChannel,
+        matchSource: metadataMatched ? 'metadata' : transcriptMatched ? 'transcript' : 'recent',
+        preview,
+        sessionKey: entry.sessionKey,
+        sessionUser: entry.sessionUser,
+        title: entry.sessionRecord?.displayName || entry.friendlySessionLabel || entry.sessionUser,
+        updatedAt: entry.updatedAt,
+        updatedLabel: formatTimestamp(entry.updatedAt),
+      });
+
+      if (matches.length >= limit) {
+        break;
+      }
+    }
+
+    return matches;
+  }
+
   function buildAgentGraph() {
     const localConfig = config.localConfig;
     if (!localConfig?.agents?.list?.length) {
@@ -1428,6 +1709,8 @@ function createTranscriptProjector({
     parseSessionStatusText,
     readJsonLines,
     findLatestSessionForAgent,
+    getTranscriptEntriesForSession,
+    searchSessionsForAgent,
     resolveSessionRecord,
   };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpen, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { InspectorFilesPanel } from "@/components/command-center/inspector-files-panel";
@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
-import { cn } from "@/lib/utils";
+import { cn, isApplePlatform } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
 const filePreviewCodeTheme = themes.dracula;
@@ -882,6 +882,7 @@ export function FilePreviewOverlay({
   workspaceLoaded = false,
 }) {
   const { messages } = useI18n();
+  const applePlatform = isApplePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
   const [filePreviewFontSize, setFilePreviewFontSize] = useState(() => loadStoredFilePreviewFontSize());
@@ -890,6 +891,7 @@ export function FilePreviewOverlay({
   const [editableContent, setEditableContent] = useState("");
   const [previewContentOverride, setPreviewContentOverride] = useState(null);
   const [saveError, setSaveError] = useState("");
+  const [saveNotice, setSaveNotice] = useState(null);
   const previewIdentity = `${preview?.path || preview?.item?.path || preview?.name || ""}:${preview?.kind || ""}`;
 
   useEffect(() => {
@@ -928,6 +930,7 @@ export function FilePreviewOverlay({
       setEditableContent("");
       setPreviewContentOverride(null);
       setSaveError("");
+      setSaveNotice(null);
       return;
     }
 
@@ -937,6 +940,7 @@ export function FilePreviewOverlay({
     setEditableContent(isEditablePreview(preview) ? String(preview.content || "") : "");
     setPreviewContentOverride(null);
     setSaveError("");
+    setSaveNotice(null);
   }, [preview, previewIdentity]);
 
   useEffect(() => {
@@ -947,25 +951,33 @@ export function FilePreviewOverlay({
     setEditableContent(String(preview.content || ""));
   }, [isEditing, preview, previewContentOverride]);
 
-  if (!preview) {
-    return null;
-  }
+  useEffect(() => {
+    if (!saveNotice) {
+      return undefined;
+    }
 
-  const title = preview.item?.fullPath || preview.item?.path || preview.path || "";
+    const timeoutId = window.setTimeout(() => {
+      setSaveNotice(null);
+    }, 2600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [saveNotice]);
+
+  const title = preview?.item?.fullPath || preview?.item?.path || preview?.path || "";
   const displayPath = compactHomePath(title);
   const isDark = resolvedTheme === "dark";
   const vscodeHref = getVsCodeHref(title);
-  const showVsCodeButton = isCodeLikePreviewTarget(title, preview.kind);
+  const showVsCodeButton = isCodeLikePreviewTarget(title, preview?.kind);
   const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || "Folder");
-  const isPdfPreview = preview.kind === "pdf" && Boolean(preview.contentUrl);
+  const isPdfPreview = preview?.kind === "pdf" && Boolean(preview.contentUrl);
   const editablePreview = isEditablePreview(preview);
   const effectivePreviewContent = editablePreview
-    ? (previewContentOverride !== null ? previewContentOverride : String(preview.content || ""))
+    ? (previewContentOverride !== null ? previewContentOverride : String(preview?.content || ""))
     : "";
-  const canEditPreview = editablePreview && !preview.loading && !preview.error && !preview.truncated && Boolean(title);
+  const canEditPreview = editablePreview && !preview?.loading && !preview?.error && !preview?.truncated && Boolean(title);
   const showFilesSidebar = editablePreview && Boolean(title);
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
-  const showPreviewFontSizeControls = preview.kind === "markdown" || preview.kind === "text" || preview.kind === "json";
+  const showPreviewFontSizeControls = preview?.kind === "markdown" || preview?.kind === "text" || preview?.kind === "json";
 
   const handleRevealInFileManager = async () => {
     if (!title || openingInFileManager) {
@@ -995,16 +1007,18 @@ export function FilePreviewOverlay({
 
     setEditableContent(effectivePreviewContent);
     setSaveError("");
+    setSaveNotice(null);
     setIsEditing(true);
   };
 
   const handleCancelEditing = () => {
     setEditableContent(effectivePreviewContent);
     setSaveError("");
+    setSaveNotice(null);
     setIsEditing(false);
   };
 
-  const handleSaveEditing = async () => {
+  const handleSaveEditing = useCallback(async ({ stayInEditing = false } = {}) => {
     if (!canEditPreview || isSaving) {
       return;
     }
@@ -1012,6 +1026,7 @@ export function FilePreviewOverlay({
     try {
       setIsSaving(true);
       setSaveError("");
+      setSaveNotice(null);
       const response = await fetch("/api/file-preview/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1029,13 +1044,60 @@ export function FilePreviewOverlay({
       }
 
       setPreviewContentOverride(editableContent);
-      setIsEditing(false);
+      setIsEditing(stayInEditing);
+      setSaveNotice({
+        id: Date.now(),
+        message: messages.inspector.previewActions.saveSucceeded,
+      });
     } catch (error) {
       setSaveError(error.message || messages.inspector.previewErrors.saveFailed);
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [
+    canEditPreview,
+    editableContent,
+    isSaving,
+    messages.inspector.previewActions.saveSucceeded,
+    messages.inspector.previewErrors.saveFailed,
+    messages.inspector.previewErrors.saveRequiresRestart,
+    title,
+  ]);
+
+  useEffect(() => {
+    if (!preview || !isEditing || !canEditPreview) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      const normalizedKey = String(event.key || "").trim().toLowerCase();
+      const usesExpectedModifier = applePlatform
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey;
+      const isSaveShortcut =
+        usesExpectedModifier
+        && !event.shiftKey
+        && !event.altKey
+        && !event.repeat
+        && !event.isComposing
+        && (event.code === "KeyS" || normalizedKey === "s");
+
+      if (!isSaveShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      handleSaveEditing({ stayInEditing: true });
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [applePlatform, canEditPreview, handleSaveEditing, isEditing, preview]);
+
+  if (!preview) {
+    return null;
+  }
 
   let body = null;
   if (preview.loading) {
@@ -1169,6 +1231,22 @@ export function FilePreviewOverlay({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px]" onClick={onClose}>
+      {saveNotice?.message ? (
+        <div className="pointer-events-none fixed inset-x-0 top-5 z-[130] flex justify-center px-4">
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "inline-flex min-h-11 items-center rounded-full border px-4 py-2 text-sm font-medium shadow-[0_18px_42px_rgba(15,23,42,0.14)] backdrop-blur-xl",
+              isDark
+                ? "border-emerald-400/18 bg-[#10231c]/92 text-emerald-200 shadow-[0_22px_48px_rgba(0,0,0,0.42)]"
+                : "border-emerald-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(240,253,247,0.97))] text-emerald-800",
+            )}
+          >
+            {saveNotice.message}
+          </div>
+        </div>
+      ) : null}
       <div className={cn("flex h-full items-center justify-center p-6", isFullscreen && "p-0")} onClick={(event) => event.stopPropagation()}>
         <div
           className={cn(
@@ -1251,7 +1329,7 @@ export function FilePreviewOverlay({
                       size="sm"
                       className="h-8 gap-1.5 px-3 text-xs"
                       aria-label={isSaving ? messages.inspector.previewActions.savingFile : messages.inspector.previewActions.saveFile}
-                      onClick={handleSaveEditing}
+                      onClick={() => handleSaveEditing({ stayInEditing: false })}
                       disabled={isSaving}
                     >
                       {isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}

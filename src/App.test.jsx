@@ -774,6 +774,7 @@ describe("App", () => {
     await waitFor(() => {
       const mainMessage = screen.getByText("主会话消息");
       expect(hasAncestorClass(mainMessage, "text-[14px]")).toBe(true);
+      expect(hasAncestorClass(mainMessage, "leading-6")).toBe(true);
     });
 
     await user.click(screen.getByRole("button", { name: /expert/ }));
@@ -781,6 +782,7 @@ describe("App", () => {
     await waitFor(() => {
       const expertMessage = screen.getByText("专家会话消息");
       expect(hasAncestorClass(expertMessage, "text-[14px]")).toBe(true);
+      expect(hasAncestorClass(expertMessage, "leading-6")).toBe(true);
     });
   });
 
