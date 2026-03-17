@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
+import { contentNeedsMarkdownRenderer } from "@/components/command-center/markdown-content-utils";
 
 const mermaidInitializeMock = vi.fn();
 const mermaidRenderMock = vi.fn();
@@ -15,6 +16,26 @@ vi.mock("mermaid", () => ({
 }));
 
 describe("MarkdownContent", () => {
+  it("keeps plain chat text on the lightweight rendering path", () => {
+    expect(contentNeedsMarkdownRenderer("今晚帮我看一下这个问题。")).toBe(false);
+    expect(contentNeedsMarkdownRenderer("第一行\n第二行")).toBe(false);
+  });
+
+  it("routes markdown-heavy content to the rich renderer path", () => {
+    expect(contentNeedsMarkdownRenderer("# 控制台")).toBe(true);
+    expect(contentNeedsMarkdownRenderer("访问 https://openai.com")).toBe(true);
+    expect(contentNeedsMarkdownRenderer("```js\nconst answer = 42;\n```")).toBe(true);
+  });
+
+  it("renders plain chat text without markdown transforms", () => {
+    const { container } = render(<MarkdownContent content={"第一行\n第二行"} />);
+
+    const text = container.querySelector(".whitespace-pre-wrap.break-words");
+    expect(text?.textContent).toBe("第一行\n第二行");
+    expect(text).toHaveClass("whitespace-pre-wrap", "break-words");
+    expect(document.querySelector("h1, h2, h3, pre, code, a")).toBeNull();
+  });
+
   it("renders headings, links, and inline code", async () => {
     render(<MarkdownContent content={`# 控制台\n\n访问 [OpenAI](https://openai.com)\n\n使用 \`npm test\``} />);
 

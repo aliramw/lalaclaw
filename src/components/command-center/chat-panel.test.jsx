@@ -181,7 +181,7 @@ describe("ChatPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByLabelText("新しいセッションを開始"));
+    await user.click(await screen.findByLabelText("新しいセッションを開始"));
 
     expect(screen.getByRole("alertdialog", { name: "新しいセッションを開始しますか？" })).toBeInTheDocument();
     expect(screen.getByText("会話履歴とコンテキストは消去されます。")).toBeInTheDocument();
@@ -212,6 +212,31 @@ describe("ChatPanel", () => {
     expect(screen.getByPlaceholderText("Openclaw尚未连接，请稍候。")).toBeDisabled();
     expect(screen.getByLabelText("开启新会话")).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+  });
+
+  it("keeps the composer frame in its active focus styling even before focus", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          resolvedTheme="dark"
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const composerFrame = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。").parentElement;
+    expect(composerFrame).toHaveClass("border-[#4d88c7]", "ring-2", "ring-[#4d88c7]/20");
   });
 
   it("formats reset tooltip shortcuts for the current platform", async () => {
@@ -937,6 +962,71 @@ describe("ChatPanel", () => {
     });
   });
 
+  it("keeps the outline height stable while the chat viewport scrolls", async () => {
+    const messageViewportRef = { current: null };
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={messageViewportRef}
+          messages={[
+            {
+              role: "assistant",
+              content: "# 第一部分\n内容\n## 第二部分\n更多内容",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const aside = screen.getByText("大纲").closest("aside");
+    expect(aside).toBeTruthy();
+    expect(messageViewportRef.current).toBeTruthy();
+
+    Object.defineProperty(messageViewportRef.current, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: 100, bottom: 540, left: 0, right: 0, width: 0, height: 440 }),
+    });
+
+    let outlineTop = 140;
+    Object.defineProperty(aside, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: outlineTop, bottom: outlineTop + 120, left: 0, right: 0, width: 0, height: 120 }),
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() => {
+      expect(aside.style.maxHeight).toBe("380px");
+    });
+
+    outlineTop = 72;
+
+    act(() => {
+      messageViewportRef.current.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(aside.style.maxHeight).toBe("380px");
+  });
+
   it("does not render the outline card while the latest assistant message is still streaming", () => {
     const { container } = render(
       <TooltipProvider>
@@ -1544,7 +1634,7 @@ describe("ChatPanel", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByAltText("shot.png"));
-    expect(screen.getByRole("button", { name: "放大图片" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "放大图片" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭预览" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
@@ -3293,7 +3383,7 @@ describe("ChatPanel", () => {
           messageViewportRef={viewportRef}
           messages={[
             { role: "assistant", content: "第一段", timestamp: 1 },
-            { role: "assistant", content: "第二段", timestamp: 2 },
+            { role: "user", content: "第二段", timestamp: 2 },
           ]}
           onPromptChange={() => {}}
           onPromptKeyDown={() => {}}
@@ -3476,6 +3566,77 @@ describe("ChatPanel", () => {
     fireEvent.click(bottomButton);
 
     expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 720, behavior: "smooth" });
+  });
+
+  it("drives the bottom button from the bottom sentinel observer when IntersectionObserver is available", async () => {
+    const viewportRef = { current: null };
+    const observedEntries = [];
+
+    class IntersectionObserverMock {
+      constructor(callback) {
+        this.callback = callback;
+        this.targets = [];
+        observedEntries.push(this);
+      }
+
+      disconnect() {}
+
+      observe(target) {
+        this.targets.push(target);
+      }
+
+      unobserve() {}
+    }
+
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "assistant", content: "第一段", timestamp: 1 },
+            { role: "assistant", content: "第二段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ sessionUser: "command-center" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 960 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 320 });
+
+    const bottomObserver = observedEntries.find((entry) =>
+      entry.targets.some((target) => target?.hasAttribute?.("data-message-bottom-sentinel")),
+    );
+    const observedTarget = bottomObserver?.targets.find((target) => target?.hasAttribute?.("data-message-bottom-sentinel"));
+
+    expect(bottomObserver?.callback).toBeTypeOf("function");
+    expect(observedTarget).toBeTruthy();
+
+    act(() => {
+      bottomObserver.callback([
+        {
+          target: observedTarget,
+          isIntersecting: false,
+          intersectionRatio: 0,
+        },
+      ]);
+    });
+
+    expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
   });
 
   it("does not show the bottom button for a brand new empty conversation after restoring from a scrolled session", () => {

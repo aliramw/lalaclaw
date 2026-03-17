@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense } from "react";
+import { contentNeedsMarkdownRenderer } from "@/components/command-center/markdown-content-utils";
 import { cn } from "@/lib/utils";
 
 const markdownShellClassName =
@@ -45,6 +46,15 @@ export const MarkdownContent = memo(function MarkdownContent({
   onOpenImagePreview,
 }) {
   const text = String(content || "");
+  const needsMarkdownRenderer = contentNeedsMarkdownRenderer(text);
+
+  if (!needsMarkdownRenderer) {
+    return (
+      <div className={cn(markdownShellClassName, className)}>
+        <div className="whitespace-pre-wrap break-words">{text}</div>
+      </div>
+    );
+  }
 
   return (
     <Suspense

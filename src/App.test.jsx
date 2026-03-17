@@ -295,6 +295,34 @@ describe("App", () => {
     });
   }, 10_000);
 
+  it("requests the initial runtime snapshot only once on first load", async () => {
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      if (url.startsWith("/api/workspace-tree")) {
+        return mockJsonResponse({ ok: true, entries: [] });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    mockDesktopLayout();
+
+    render(<App />);
+
+    expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
+
+    await waitFor(() => {
+      const runtimeCalls = fetchMock.mock.calls.filter(([input]) => String(input).startsWith("/api/runtime"));
+      expect(runtimeCalls).toHaveLength(1);
+    });
+  });
+
   it("switches the main action to stop while a reply is running and aborts the turn on click", async () => {
     const openClawSnapshot = createSnapshot({
       session: {
@@ -803,7 +831,7 @@ describe("App", () => {
     expect(screen.getByText("image-worker")).toBeInTheDocument();
   });
 
-  it("localizes task relationship statuses for english UI", () => {
+  it("localizes task relationship statuses for english UI", async () => {
     window.localStorage.setItem(localeStorageKey, "en");
 
     const { rerender } = render(
@@ -832,7 +860,7 @@ describe("App", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(await screen.findByText("Completed")).toBeInTheDocument();
     expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 

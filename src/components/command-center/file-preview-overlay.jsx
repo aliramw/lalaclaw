@@ -6,7 +6,7 @@ import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
-import { Prism } from "@/lib/prism-languages";
+import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
@@ -281,6 +281,7 @@ function FilePreviewCodeBlock({
   const isSubtle = variant === "subtle";
   const theme = syntaxTheme || filePreviewCodeTheme;
   const fontSizeClassName = codePreviewFontSizeClassNames[fontSize] || codePreviewFontSizeClassNames.medium;
+  const highlightedLanguage = usePrismLanguage(language);
 
   return (
     <div
@@ -299,7 +300,7 @@ function FilePreviewCodeBlock({
       >
         {language}
       </div>
-      <Highlight prism={Prism} theme={theme} code={String(content || "")} language={language}>
+      <Highlight prism={Prism} theme={theme} code={String(content || "")} language={highlightedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
           <pre
             className={cn(

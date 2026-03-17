@@ -1,10 +1,9 @@
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, Copy, Paperclip, RotateCcw, Send, Square, X } from "lucide-react";
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { FilePreviewOverlay, ImagePreviewOverlay } from "@/components/command-center/file-preview-overlay";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -14,6 +13,13 @@ import { createConversationKey } from "@/features/app/storage";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useI18n } from "@/lib/i18n";
+
+const LazyFilePreviewOverlay = lazy(() =>
+  import("@/components/command-center/file-preview-overlay").then((module) => ({ default: module.FilePreviewOverlay })),
+);
+const LazyImagePreviewOverlay = lazy(() =>
+  import("@/components/command-center/file-preview-overlay").then((module) => ({ default: module.ImagePreviewOverlay })),
+);
 
 const bubbleBaseClassName =
   "min-w-0 transition-[border-color,background-color,box-shadow,color] duration-200";
@@ -626,13 +632,10 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
     const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
     let frameId = 0;
     let resizeObserver = null;
-    let activeViewport = null;
     let attachRetryTimeoutId = 0;
     let attachRetryCount = 0;
 
     const cleanupListeners = () => {
-      activeViewport?.removeEventListener("scroll", scheduleOutlineMaxHeightUpdate);
-      activeViewport = null;
       window.removeEventListener("resize", scheduleOutlineMaxHeightUpdate);
       resizeObserver?.disconnect?.();
       resizeObserver = null;
@@ -673,9 +676,7 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
         return;
       }
 
-      activeViewport = latestViewport;
       updateOutlineMaxHeight();
-      latestViewport.addEventListener("scroll", scheduleOutlineMaxHeightUpdate, { passive: true });
       window.addEventListener("resize", scheduleOutlineMaxHeightUpdate);
 
       if (ResizeObserverCtor) {
@@ -683,7 +684,9 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
           scheduleOutlineMaxHeightUpdate();
         });
 
-        [latestViewport, latestViewport.firstElementChild, latestOutline.parentElement, latestOutline]
+        // The outline height only depends on the viewport bounds and the meta stack's top position.
+        // Observing the whole scroll content tree makes this update fire too often during message growth.
+        [latestViewport, latestOutline.parentElement]
           .filter(Boolean)
           .forEach((node) => resizeObserver.observe(node));
       }
@@ -888,38 +891,71 @@ const MessageBubble = memo(function MessageBubble({
       return undefined;
     }
 
-    const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
-    let resizeObserver = null;
-    let frameId = 0;
-
-    const updateBubbleTopJump = () => {
-      const viewportRect = viewport.getBoundingClientRect();
-      const bubbleRect = bubble.getBoundingClientRect();
+    const updateBubbleTopJump = (viewportRect, bubbleRect, viewportClientHeight) => {
       setShowBubbleTopJump(
         shouldShowBubbleTopJumpButton({
           viewportRect,
           bubbleRect,
-          viewportClientHeight: viewport.clientHeight,
+          viewportClientHeight,
         }),
       );
     };
 
-    updateBubbleTopJump();
-    viewport.addEventListener("scroll", updateBubbleTopJump, { passive: true });
-    window.addEventListener("resize", updateBubbleTopJump);
+    const IntersectionObserverCtor = window.IntersectionObserver || globalThis.IntersectionObserver;
+    if (IntersectionObserverCtor) {
+      const observer = new IntersectionObserverCtor(
+        (entries) => {
+          const entry = entries[0];
+          const rootBounds = entry?.rootBounds;
+          if (!entry || !rootBounds) {
+            setShowBubbleTopJump(false);
+            return;
+          }
+
+          updateBubbleTopJump(
+            rootBounds,
+            entry.boundingClientRect,
+            rootBounds.height || viewport.clientHeight,
+          );
+        },
+        {
+          root: viewport,
+          threshold: [0, 0.01, 0.99, 1],
+        },
+      );
+
+      observer.observe(bubble);
+      return () => observer.disconnect();
+    }
+
+    const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
+    let resizeObserver = null;
+    let frameId = 0;
+
+    const measureBubbleTopJump = () => {
+      updateBubbleTopJump(
+        viewport.getBoundingClientRect(),
+        bubble.getBoundingClientRect(),
+        viewport.clientHeight,
+      );
+    };
+
+    measureBubbleTopJump();
+    viewport.addEventListener("scroll", measureBubbleTopJump, { passive: true });
+    window.addEventListener("resize", measureBubbleTopJump);
 
     if (ResizeObserverCtor) {
       resizeObserver = new ResizeObserverCtor(() => {
         window.cancelAnimationFrame(frameId);
-        frameId = window.requestAnimationFrame(updateBubbleTopJump);
+        frameId = window.requestAnimationFrame(measureBubbleTopJump);
       });
 
       [viewport, bubble, viewport.firstElementChild].filter(Boolean).forEach((node) => resizeObserver.observe(node));
     }
 
     return () => {
-      viewport.removeEventListener("scroll", updateBubbleTopJump);
-      window.removeEventListener("resize", updateBubbleTopJump);
+      viewport.removeEventListener("scroll", measureBubbleTopJump);
+      window.removeEventListener("resize", measureBubbleTopJump);
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect?.();
     };
@@ -1575,6 +1611,7 @@ export function ChatPanel({
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
   const mentionMenuRef = useRef(null);
   const latestAssistantBubbleRef = useRef(null);
+  const bottomSentinelRef = useRef(null);
   const fontSizeStyles = resolveChatFontSizeStyles(chatFontSize);
   const mentionOptionStateClassName = resolvedTheme === "dark" ? "bg-[#373737] text-foreground" : "bg-[#e5e5e5] text-foreground";
   const mentionOptionHoverClassName = resolvedTheme === "dark" ? "text-foreground hover:bg-[#373737]/85" : "text-foreground hover:bg-[#e5e5e5]/85";
@@ -1842,6 +1879,36 @@ export function ChatPanel({
     scrollModeRef.current = nextMode;
   }, []);
 
+  const updateViewportBottomState = useCallback((isNearBottom, { markManual = false, viewport } = {}) => {
+    const resolvedViewport = viewport || messageViewportRef?.current;
+    wasNearBottomRef.current = isNearBottom;
+
+    if (isNearBottom) {
+      if (manualScrollLockRef.current && programmaticScrollRef.current) {
+        return;
+      }
+      if (persistentManualScrollLockRef.current) {
+        autoScrollSuppressedRef.current = true;
+        scrollModeRef.current = "manual";
+      } else {
+        persistentManualScrollLockRef.current = false;
+        manualScrollLockRef.current = false;
+        autoScrollSuppressedRef.current = false;
+        if (scrollModeRef.current === "manual") {
+          scrollModeRef.current = "follow-bottom";
+        }
+      }
+    } else if (markManual && !programmaticScrollRef.current) {
+      autoScrollSuppressedRef.current = true;
+      scrollModeRef.current = "manual";
+    }
+
+    const maxTop = resolvedViewport
+      ? Math.max(0, resolvedViewport.scrollHeight - resolvedViewport.clientHeight)
+      : 0;
+    setShowLatestReplyButton(messages.length > 0 && maxTop > 48 && (scrollModeRef.current === "pin-top" || !isNearBottom));
+  }, [messageViewportRef, messages.length]);
+
   const scrollViewport = useCallback((viewport, top, behavior = "auto", holdMs = 0) => {
     if (!viewport) {
       return;
@@ -1864,46 +1931,9 @@ export function ChatPanel({
       return;
     }
 
-    cancelAnimatedViewportScroll();
-    const startTop = Number(viewport.scrollTop) || 0;
-    const targetTop = Number.isFinite(top) ? top : startTop;
-    const distance = targetTop - startTop;
-    if (Math.abs(distance) < 1 || duration <= 0) {
-      viewport.scrollTop = targetTop;
-      return;
-    }
-
-    const startedAt = window.performance?.now?.() ?? 0;
-    programmaticScrollRef.current = true;
-
-    const finish = () => {
-      viewport.scrollTop = targetTop;
-      animatedScrollFrameRef.current = 0;
-      programmaticScrollResetRef.current = window.setTimeout(() => {
-        programmaticScrollRef.current = false;
-      }, 0);
-    };
-
-    const step = (frameTime) => {
-      if (!Number.isFinite(frameTime)) {
-        finish();
-        return;
-      }
-
-      const progress = Math.min(1, (frameTime - startedAt) / duration);
-      const easedProgress = 1 - ((1 - progress) ** 3);
-      viewport.scrollTop = startTop + distance * easedProgress;
-
-      if (progress >= 1) {
-        finish();
-        return;
-      }
-
-      animatedScrollFrameRef.current = window.requestAnimationFrame(step);
-    };
-
-    animatedScrollFrameRef.current = window.requestAnimationFrame(step);
-  }, [cancelAnimatedViewportScroll]);
+    const targetTop = Number.isFinite(top) ? top : Number(viewport.scrollTop) || 0;
+    scrollViewport(viewport, targetTop, duration > 0 ? "smooth" : "auto", duration);
+  }, [scrollViewport]);
 
   const queueFocusHighlight = useCallback((messageId, delayMs = 0) => {
     const resolvedMessageId = String(messageId || "").trim();
@@ -2188,34 +2218,13 @@ export function ChatPanel({
       return undefined;
     }
 
+    const sentinel = bottomSentinelRef.current;
+    const IntersectionObserverCtor = window.IntersectionObserver || globalThis.IntersectionObserver;
     const updateWasNearBottom = (markManual = false) => {
       const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-      const isNearBottom = distanceFromBottom <= 48;
-      wasNearBottomRef.current = isNearBottom;
-      if (isNearBottom) {
-        if (manualScrollLockRef.current && programmaticScrollRef.current) {
-          return;
-        }
-        if (persistentManualScrollLockRef.current) {
-          autoScrollSuppressedRef.current = true;
-          scrollModeRef.current = "manual";
-          return;
-        }
-        persistentManualScrollLockRef.current = false;
-        manualScrollLockRef.current = false;
-        autoScrollSuppressedRef.current = false;
-        if (scrollModeRef.current === "manual") {
-          scrollModeRef.current = "follow-bottom";
-        }
-        return;
-      }
-      if (markManual && !programmaticScrollRef.current) {
-        autoScrollSuppressedRef.current = true;
-        scrollModeRef.current = "manual";
-      }
+      updateViewportBottomState(distanceFromBottom <= 48, { markManual, viewport });
     };
 
-    const handleViewportScroll = () => updateWasNearBottom(pointerScrollIntentRef.current);
     const markManualTakeover = () => {
       markUserScrollTakeover({ lockAutoFollow: true });
     };
@@ -2227,7 +2236,29 @@ export function ChatPanel({
     };
 
     updateWasNearBottom(false);
-    viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
+    let removeViewportScrollListener = null;
+    let bottomObserver = null;
+    if (IntersectionObserverCtor && sentinel) {
+      bottomObserver = new IntersectionObserverCtor(
+        (entries) => {
+          const entry = entries.find((candidate) => candidate.target === sentinel) || entries[0];
+          updateViewportBottomState(Boolean(entry?.isIntersecting || entry?.intersectionRatio > 0), {
+            markManual: pointerScrollIntentRef.current,
+            viewport,
+          });
+        },
+        {
+          root: viewport,
+          rootMargin: "0px 0px 48px 0px",
+          threshold: 0,
+        },
+      );
+      bottomObserver.observe(sentinel);
+    } else {
+      const handleViewportScroll = () => updateWasNearBottom(pointerScrollIntentRef.current);
+      viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
+      removeViewportScrollListener = () => viewport.removeEventListener("scroll", handleViewportScroll);
+    }
     viewport.addEventListener("wheel", markManualTakeover, { passive: true });
     viewport.addEventListener("touchmove", markManualTakeover, { passive: true });
     viewport.addEventListener("pointerdown", handlePointerDown, { passive: true });
@@ -2250,7 +2281,8 @@ export function ChatPanel({
     window.addEventListener("pointerup", clearPointerIntent, { passive: true });
     window.addEventListener("pointercancel", clearPointerIntent, { passive: true });
     return () => {
-      viewport.removeEventListener("scroll", handleViewportScroll);
+      bottomObserver?.disconnect?.();
+      removeViewportScrollListener?.();
       viewport.removeEventListener("wheel", markManualTakeover);
       viewport.removeEventListener("touchmove", markManualTakeover);
       viewport.removeEventListener("pointerdown", handlePointerDown);
@@ -2260,7 +2292,7 @@ export function ChatPanel({
       window.removeEventListener("pointerup", clearPointerIntent);
       window.removeEventListener("pointercancel", clearPointerIntent);
     };
-  }, [markUserScrollTakeover, messageViewportRef]);
+  }, [markUserScrollTakeover, messageViewportRef, updateViewportBottomState]);
 
   const alignLatestAssistantReply = useCallback(() => {
     const viewport = messageViewportRef?.current;
@@ -2351,24 +2383,13 @@ export function ChatPanel({
       return undefined;
     }
 
-    const updateLatestReplyButton = () => {
-      if (!messages.length) {
-        setShowLatestReplyButton(false);
-        return;
-      }
-      const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-      if (maxTop <= 48) {
-        setShowLatestReplyButton(false);
-        return;
-      }
-      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-      setShowLatestReplyButton(scrollModeRef.current === "pin-top" || distanceFromBottom > 48);
-    };
-
-    updateLatestReplyButton();
-    viewport.addEventListener("scroll", updateLatestReplyButton, { passive: true });
-    return () => viewport.removeEventListener("scroll", updateLatestReplyButton);
-  }, [messageViewportRef, messages.length, visibleConversationKey]);
+    const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    const isNearBottom = maxTop <= 48
+      ? true
+      : viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 48;
+    updateViewportBottomState(isNearBottom, { viewport });
+    return undefined;
+  }, [latestAssistantRenderKey, messageViewportRef, messages.length, updateViewportBottomState, visibleConversationKey]);
 
   useEffect(() => {
     if (!focusMessageRequest?.id) {
@@ -2600,6 +2621,7 @@ export function ChatPanel({
                       });
                     })()
                     : <EmptyConversation />}
+                  <div ref={bottomSentinelRef} aria-hidden="true" data-message-bottom-sentinel className="h-px w-full" />
                 </div>
               </ScrollArea>
               {showLatestReplyButton ? (
@@ -2701,8 +2723,8 @@ export function ChatPanel({
               className={cn(
                 "overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
                 resolvedTheme === "dark"
-                  ? "focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
-                  : "focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
+                  ? "border-[#4d88c7] ring-2 ring-[#4d88c7]/20 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
+                  : "border-[#1677eb] ring-2 ring-[#1677eb]/35 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
               )}
             >
               {composerAttachments?.length ? (
@@ -2883,8 +2905,22 @@ export function ChatPanel({
           </CardContent>
         </Card>
       </div>
-      <FilePreviewOverlay files={files} preview={filePreview} resolvedTheme={resolvedTheme} onClose={closeFilePreview} onOpenFilePreview={handleOpenPreview} />
-      <ImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
+      {filePreview ? (
+        <Suspense fallback={null}>
+          <LazyFilePreviewOverlay
+            files={files}
+            preview={filePreview}
+            resolvedTheme={resolvedTheme}
+            onClose={closeFilePreview}
+            onOpenFilePreview={handleOpenPreview}
+          />
+        </Suspense>
+      ) : null}
+      {imagePreview ? (
+        <Suspense fallback={null}>
+          <LazyImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
+        </Suspense>
+      ) : null}
     </>
   );
 }

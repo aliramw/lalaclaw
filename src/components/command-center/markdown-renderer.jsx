@@ -2,11 +2,7 @@ import { Children, memo, useCallback, useEffect, useId, useMemo, useRef, useStat
 import { Check, Copy, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import remarkMath from "remark-math";
-import remarkGfm from "remark-gfm";
-import "katex/dist/katex.min.css";
-import { Prism } from "@/lib/prism-languages";
+import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
@@ -14,7 +10,29 @@ const codeTheme = themes.dracula;
 const homePrefix = "/Users/marila";
 const trackedFileLinkButtonClassName =
   "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
+const emptyMarkdownPluginState = Object.freeze({ remarkPlugins: [], rehypePlugins: [] });
 let mermaidLibraryPromise = null;
+let remarkGfmLibraryPromise = null;
+let remarkMathLibraryPromise = null;
+let rehypeKatexLibraryPromise = null;
+let katexCssPromise = null;
+
+function contentNeedsGfmPlugin(content = "") {
+  const text = String(content || "");
+  return (
+    /(^|\n)\|.+\|/.test(text)
+    || /(^|\n)\s*[-*]\s+\[[ xX]\]\s+/.test(text)
+    || /~~[^~]+~~/.test(text)
+    || /(^|[\s(])https?:\/\/\S+/i.test(text)
+  );
+}
+
+function contentNeedsMathPlugin(content = "") {
+  const text = String(content || "");
+  return /\$\$[\s\S]+?\$\$/.test(text)
+    || /\$(?!\s)([^$\n]+?)\$/.test(text)
+    || /\\\((.+?)\\\)|\\\[([\s\S]+?)\\\]/.test(text);
+}
 
 async function loadMermaid() {
   if (!mermaidLibraryPromise) {
@@ -22,6 +40,38 @@ async function loadMermaid() {
   }
 
   return mermaidLibraryPromise;
+}
+
+async function loadRemarkGfm() {
+  if (!remarkGfmLibraryPromise) {
+    remarkGfmLibraryPromise = import("remark-gfm").then((module) => module.default || module);
+  }
+
+  return remarkGfmLibraryPromise;
+}
+
+async function loadRemarkMath() {
+  if (!remarkMathLibraryPromise) {
+    remarkMathLibraryPromise = import("remark-math").then((module) => module.default || module);
+  }
+
+  return remarkMathLibraryPromise;
+}
+
+async function loadRehypeKatex() {
+  if (!rehypeKatexLibraryPromise) {
+    rehypeKatexLibraryPromise = import("rehype-katex").then((module) => module.default || module);
+  }
+
+  return rehypeKatexLibraryPromise;
+}
+
+async function loadKatexCss() {
+  if (!katexCssPromise) {
+    katexCssPromise = import("katex/dist/katex.min.css");
+  }
+
+  return katexCssPromise;
 }
 
 function stabilizeMermaidTooltips() {
@@ -482,6 +532,7 @@ function CodeBlock({ code, language, scrollAnchorId = "" }) {
   const { messages } = useI18n();
   const normalizedLanguage = String(language || "text").toLowerCase();
   const aliasedLanguage = normalizedLanguage === "md" ? "markdown" : normalizedLanguage;
+  const highlightedLanguage = usePrismLanguage(aliasedLanguage);
   const languageLabel = messages.markdown.languageLabels?.[aliasedLanguage]
     || aliasedLanguage
       .split("-")
@@ -496,7 +547,7 @@ function CodeBlock({ code, language, scrollAnchorId = "" }) {
         </span>
         <CopyButton code={code} />
       </div>
-      <Highlight prism={Prism} theme={codeTheme} code={code} language={normalizedLanguage}>
+      <Highlight prism={Prism} theme={codeTheme} code={code} language={highlightedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
           <pre className="overflow-x-auto px-0 py-1.5 text-[12px] leading-5 text-zinc-50">
             {tokens.map((line, lineIndex) => (
@@ -734,12 +785,55 @@ export default function MarkdownRenderer({
     () => repairFencedCodeBlocks(normalizeMathDelimiters(promoteStandaloneImageLinks(content))),
     [content],
   );
+  const shouldLoadGfmPlugin = useMemo(() => contentNeedsGfmPlugin(normalizedContent), [normalizedContent]);
+  const shouldLoadMathPlugin = useMemo(() => contentNeedsMathPlugin(normalizedContent), [normalizedContent]);
+  const [pluginState, setPluginState] = useState(emptyMarkdownPluginState);
   const outlineItems = useMemo(
     () => extractHeadingOutline(normalizedContent),
     [normalizedContent],
   );
   let headingRenderIndex = 0;
   let blockRenderIndex = 0;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!shouldLoadGfmPlugin && !shouldLoadMathPlugin) {
+      setPluginState((current) => (
+        current.remarkPlugins.length || current.rehypePlugins.length ? emptyMarkdownPluginState : current
+      ));
+      return undefined;
+    }
+
+    const loadPlugins = async () => {
+      const remarkPlugins = [];
+      const rehypePlugins = [];
+
+      if (shouldLoadGfmPlugin) {
+        remarkPlugins.push(await loadRemarkGfm());
+      }
+
+      if (shouldLoadMathPlugin) {
+        const [remarkMathPlugin, rehypeKatexPlugin] = await Promise.all([
+          loadRemarkMath(),
+          loadRehypeKatex(),
+          loadKatexCss(),
+        ]);
+        remarkPlugins.push(remarkMathPlugin);
+        rehypePlugins.push(rehypeKatexPlugin);
+      }
+
+      if (!cancelled) {
+        setPluginState({ remarkPlugins, rehypePlugins });
+      }
+    };
+
+    void loadPlugins();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldLoadGfmPlugin, shouldLoadMathPlugin]);
 
   useEffect(() => {
     if (!previewImage?.src) {
@@ -832,8 +926,8 @@ export default function MarkdownRenderer({
     <>
       <div className={cn(shellClassName, className)}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeKatex]}
+          remarkPlugins={pluginState.remarkPlugins}
+          rehypePlugins={pluginState.rehypePlugins}
           urlTransform={markdownUrlTransform}
           components={{
             a: (props) => <LinkRenderer {...props} files={files} headingScopeId={headingScopeId} onOpenFilePreview={onOpenFilePreview} />,

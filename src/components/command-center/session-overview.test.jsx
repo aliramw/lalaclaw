@@ -237,7 +237,7 @@ describe("SessionOverview", () => {
     expect(screen.getByRole("menuitemcheckbox", { name: "openai-codex/gpt-5.4 (默认)" })).toBeInTheDocument();
   });
 
-  it("keeps the theme toggle as compact as the language switcher", () => {
+  it("keeps the theme toggle as compact as the language switcher", async () => {
     window.localStorage.setItem(localeStorageKey, "en");
 
     render(
@@ -262,7 +262,7 @@ describe("SessionOverview", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByRole("button", { name: "Switch language" })).toHaveClass("h-9");
+    expect(await screen.findByRole("button", { name: "Switch language" })).toHaveClass("h-9");
     expect(screen.getByRole("button", { name: "Follow system" }).parentElement).toHaveClass("h-9");
     expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-8", "min-w-[2.5rem]");
     expect(screen.getByRole("button", { name: "Light mode" })).toHaveClass("h-8", "min-w-[2.5rem]");

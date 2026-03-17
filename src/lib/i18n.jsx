@@ -1,18 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import de from "@/locales/de";
-import en from "@/locales/en";
-import es from "@/locales/es";
-import fr from "@/locales/fr";
-import ja from "@/locales/ja";
-import ko from "@/locales/ko";
-import ms from "@/locales/ms";
-import pt from "@/locales/pt";
-import ta from "@/locales/ta";
 import zh from "@/locales/zh";
-import zhHk from "@/locales/zh-hk";
 
 const localeStorageKey = "command-center-locale";
-const dictionaries = { zh, en, "zh-hk": zhHk, ja, ko, fr, es, pt, de, ms, ta };
 const supportedLocales = ["zh", "zh-hk", "en", "ja", "ko", "fr", "es", "pt", "de", "ms", "ta"];
 const intlLocaleMap = {
   zh: "zh-CN",
@@ -27,10 +16,39 @@ const intlLocaleMap = {
   ms: "ms-MY",
   ta: "ta-IN",
 };
+const localeOptionLabels = {
+  zh: "中文",
+  "zh-hk": "繁體中文（香港）",
+  en: "English",
+  ja: "日本語",
+  ko: "한국어",
+  fr: "Français",
+  es: "Español",
+  pt: "Português",
+  de: "Deutsch",
+  ms: "Bahasa Melayu",
+  ta: "தமிழ்",
+};
 const localeOptions = supportedLocales.map((locale) => ({
   value: locale,
-  label: dictionaries[locale].locale.options[locale],
+  label: localeOptionLabels[locale] || locale,
 }));
+const dictionaryCache = {
+  zh,
+};
+const localeLoaders = {
+  zh: async () => zh,
+  "zh-hk": () => import("@/locales/zh-hk").then((module) => module.default || module),
+  en: () => import("@/locales/en").then((module) => module.default || module),
+  ja: () => import("@/locales/ja").then((module) => module.default || module),
+  ko: () => import("@/locales/ko").then((module) => module.default || module),
+  fr: () => import("@/locales/fr").then((module) => module.default || module),
+  es: () => import("@/locales/es").then((module) => module.default || module),
+  pt: () => import("@/locales/pt").then((module) => module.default || module),
+  de: () => import("@/locales/de").then((module) => module.default || module),
+  ms: () => import("@/locales/ms").then((module) => module.default || module),
+  ta: () => import("@/locales/ta").then((module) => module.default || module),
+};
 
 function normalizeLocale(rawLocale = "") {
   const normalized = String(rawLocale || "").toLowerCase();
@@ -77,6 +95,19 @@ function loadStoredLocale() {
   }
 }
 
+async function loadLocaleDictionary(locale) {
+  const normalizedLocale = supportedLocales.includes(locale) ? locale : "zh";
+
+  if (dictionaryCache[normalizedLocale]) {
+    return dictionaryCache[normalizedLocale];
+  }
+
+  const loader = localeLoaders[normalizedLocale] || localeLoaders.zh;
+  const dictionary = await loader();
+  dictionaryCache[normalizedLocale] = dictionary;
+  return dictionary;
+}
+
 const I18nContext = createContext({
   locale: "zh",
   setLocale: () => {},
@@ -87,6 +118,7 @@ const I18nContext = createContext({
 
 export function I18nProvider({ children }) {
   const [locale, setLocale] = useState(() => loadStoredLocale() || detectSystemLocale());
+  const [messages, setMessages] = useState(() => dictionaryCache[loadStoredLocale() || detectSystemLocale()] || zh);
 
   useEffect(() => {
     try {
@@ -95,12 +127,29 @@ export function I18nProvider({ children }) {
   }, [locale]);
 
   useEffect(() => {
-    if (typeof document === "undefined") {
-      return;
+    let cancelled = false;
+
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = intlLocaleMap[locale] || "zh-CN";
     }
 
-    document.documentElement.lang = intlLocaleMap[locale] || "zh-CN";
-    document.title = dictionaries[locale]?.app?.documentTitle || dictionaries[locale]?.app?.title || document.title;
+    setMessages(dictionaryCache[locale] || zh);
+
+    void loadLocaleDictionary(locale).then((dictionary) => {
+      if (cancelled) {
+        return;
+      }
+
+      setMessages(dictionary);
+
+      if (typeof document !== "undefined") {
+        document.title = dictionary?.app?.documentTitle || dictionary?.app?.title || document.title;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [locale]);
 
   const value = useMemo(
@@ -108,10 +157,10 @@ export function I18nProvider({ children }) {
       locale,
       setLocale,
       localeOptions,
-      messages: dictionaries[locale] || zh,
+      messages,
       intlLocale: intlLocaleMap[locale] || "zh-CN",
     }),
-    [locale],
+    [locale, messages],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

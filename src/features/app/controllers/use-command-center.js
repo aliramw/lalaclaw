@@ -10,18 +10,14 @@ import {
   defaultInspectorPanelWidth,
   defaultSessionUser,
   defaultTab,
-  derivePendingEntryFromLocalMessages,
   hasAuthoritativePendingAssistantReply,
   loadStoredChatScrollTops,
   loadPendingChatTurns,
   loadStoredPromptDrafts,
   loadStoredPromptHistory,
   loadStoredState,
-  mergeConversationAttachments,
-  mergeConversationIdentity,
   mergePendingConversation,
   pruneCompletedPendingChatTurns,
-  mergeStaleLocalConversationTail,
   persistUiStateSnapshot,
   persistChatScrollTops,
   sanitizeInspectorPanelWidth,
@@ -32,7 +28,6 @@ import { useAppPersistence } from "@/features/app/storage";
 import { formatCompactK, formatTime, maxPromptRows } from "@/features/chat/utils";
 import { useChatController, usePromptHistory } from "@/features/chat/controllers";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
-import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
 import { useI18n } from "@/lib/i18n";
 
@@ -95,48 +90,6 @@ function resolveAgentIdFromTabId(tabId = "") {
 
 function normalizeRuntimeIdentityValue(value = "") {
   return String(value || "").trim();
-}
-
-function snapshotHasPendingUserMessage(snapshotMessages = [], pendingEntry = null) {
-  if (!pendingEntry?.userMessage?.content) {
-    return false;
-  }
-
-  const targetContent = String(pendingEntry.userMessage.content);
-  const expectedTimestamp = Number(pendingEntry.userMessage.timestamp || 0);
-  const startedAt = Number(pendingEntry.startedAt || 0);
-  const matchThreshold = expectedTimestamp || startedAt || 0;
-
-  return (snapshotMessages || []).some((message) => {
-    if (message?.role !== "user" || String(message.content || "") !== targetContent) {
-      return false;
-    }
-
-    const timestamp = Number(message.timestamp || 0);
-    return !matchThreshold || !timestamp || timestamp >= matchThreshold;
-  });
-}
-
-function shouldClearRecoveredPendingTurn({
-  pendingEntry,
-  recovered = false,
-  snapshotHasPendingUserMessage = false,
-  snapshotHasAssistantReply = false,
-  status = "",
-} = {}) {
-  if (!recovered || !pendingEntry || pendingEntry?.stopped || snapshotHasAssistantReply) {
-    return false;
-  }
-
-  const normalizedStatus = normalizeStatusKey(status);
-  if (normalizedStatus === "failed" || normalizedStatus === "offline") {
-    return true;
-  }
-
-  // Runtime status can still briefly look settled right after a refresh while the
-  // assistant turn is actively continuing on the backend. If the latest user turn
-  // is already present in the snapshot, keep the recovered pending reply alive.
-  return (normalizedStatus === "idle" || normalizedStatus === "completed") && !snapshotHasPendingUserMessage;
 }
 
 export function hasActiveAssistantReply(messages = []) {
@@ -362,12 +315,14 @@ export function useCommandCenter() {
   const messagesByTabIdRef = useRef(messagesByTabId);
   const sessionByTabIdRef = useRef(sessionByTabId);
   const busyByTabIdRef = useRef(busyByTabId);
+  const runtimeCacheByTabIdRef = useRef(runtimeCacheByTabId);
   const pendingChatTurnsRef = useRef(pendingChatTurns);
   const promptDraftsByConversationRef = useRef(promptDraftsByConversation);
   const activeTabRef = useRef(activeTab);
   const inspectorPanelWidthRef = useRef(inspectorPanelWidth);
   const chatFontSizeRef = useRef(chatFontSize);
   const composerSendModeRef = useRef(composerSendMode);
+  const promptHeightMetricsRef = useRef({ node: null, maxHeight: 0 });
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
   const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
   const runtimeRequestByTabIdRef = useRef({});
@@ -508,6 +463,10 @@ export function useCommandCenter() {
     };
   }, []);
 
+  useEffect(() => {
+    runtimeCacheByTabIdRef.current = runtimeCacheByTabId;
+  }, [runtimeCacheByTabId]);
+
   const setMessagesForTab = useCallback((tabId, value) => {
     setMessagesByTabId((current) => {
       const previous = current[tabId] || [];
@@ -641,240 +600,6 @@ export function useCommandCenter() {
     });
   }, []);
 
-  const applySnapshotToTab = useCallback((tabId, snapshot, fallbackTab = null) => {
-    if (!tabId || !snapshot) {
-      return;
-    }
-
-    const fallbackMeta = tabMetaByIdRef.current[tabId];
-    const currentTab =
-      fallbackTab
-      || chatTabsRef.current.find((entry) => entry.id === tabId)
-      || {
-        id: tabId,
-        agentId: fallbackMeta?.agentId || snapshot.session?.agentId || snapshot.agentId || "main",
-        sessionUser: fallbackMeta?.sessionUser || snapshot.session?.sessionUser || defaultSessionUser,
-      };
-    const nextAgentId = resolveAgentIdFromTabId(tabId) || currentTab.agentId || snapshot.session?.agentId || snapshot.agentId || "main";
-    const nextSessionUser = snapshot.session?.sessionUser || currentTab.sessionUser;
-    const nextModel = snapshot.session?.selectedModel || snapshot.session?.model || snapshot.model || "";
-    const nextFastMode =
-      snapshot.session?.fastMode === i18n.sessionOverview.fastMode.on
-      || snapshot.session?.fastMode === "开启"
-      || snapshot.session?.fastMode === true
-      || snapshot.fastMode === true;
-    const nextThinkMode = snapshot.session?.thinkMode || fallbackMeta?.thinkMode || "off";
-    const nextConversationKey = createConversationKey(nextSessionUser, nextAgentId);
-    const localMessages = messagesByTabIdRef.current[tabId] || [];
-    const pendingEntry = pendingChatTurns[nextConversationKey] || derivePendingEntryFromLocalMessages(localMessages) || null;
-    const recoveredPending = restoredPendingConversationKeysRef.current.has(nextConversationKey);
-
-    updateTabIdentity(tabId, {
-      sessionUser: nextSessionUser,
-    });
-    updateTabMeta(tabId, {
-      agentId: nextAgentId,
-      sessionUser: nextSessionUser,
-      model: nextModel,
-      fastMode: nextFastMode,
-      thinkMode: nextThinkMode,
-    });
-    updateTabSession(tabId, (current) => ({
-      ...current,
-      ...(snapshot.session || {}),
-      agentId: nextAgentId,
-      selectedAgentId: snapshot.session?.selectedAgentId || nextAgentId,
-      sessionUser: nextSessionUser,
-      model: nextModel || current.model,
-      selectedModel: nextModel || current.selectedModel,
-      mode: snapshot.session?.mode || snapshot.mode || current.mode,
-      availableAgents: snapshot.session?.availableAgents || snapshot.availableAgents || current.availableAgents,
-      availableModels: snapshot.session?.availableModels || snapshot.availableModels || current.availableModels,
-      thinkMode: snapshot.session?.thinkMode || current.thinkMode,
-    }));
-
-    if (Array.isArray(snapshot.conversation)) {
-      const mergedConversation = mergeConversationIdentity(
-        mergeConversationAttachments(snapshot.conversation, localMessages),
-        localMessages,
-      );
-      const snapshotHasAssistantReply = pendingEntry
-        ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
-        : false;
-      const snapshotIncludesPendingUserMessage = pendingEntry
-        ? snapshotHasPendingUserMessage(mergedConversation, pendingEntry)
-        : false;
-      const shouldClearPending = shouldClearRecoveredPendingTurn({
-        pendingEntry,
-        recovered: recoveredPending,
-        snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
-        snapshotHasAssistantReply,
-        status: snapshot.session?.status || "",
-      });
-      const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
-      const effectiveLocalMessages = pendingEntry && !snapshotHasAssistantReply ? localMessages : [];
-      const mergedConversationWithLocalTail = pendingEntry && !shouldClearPending
-        ? mergedConversation
-        : mergeStaleLocalConversationTail(
-            mergedConversation,
-            shouldClearPending ? localMessagesWithoutPending : localMessages,
-          );
-      const hydratedConversation = shouldClearPending
-        ? mergedConversationWithLocalTail
-        : mergePendingConversation(
-            mergedConversationWithLocalTail,
-            pendingEntry,
-            i18n.chat.thinkingPlaceholder,
-            effectiveLocalMessages,
-          );
-      setMessagesForTab(tabId, hydratedConversation);
-      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !shouldClearPending;
-      setBusyForTab(tabId, hasActivePendingTurn);
-
-      if (pendingEntry && !hasActivePendingTurn) {
-        setPendingChatTurns((current) => {
-          if (!current[nextConversationKey]) {
-            return current;
-          }
-
-          const next = { ...current };
-          delete next[nextConversationKey];
-          return next;
-        });
-      }
-    }
-
-    setRuntimeCacheByTabId((current) => ({
-      ...current,
-      [tabId]: {
-        agents: snapshot.agents || [],
-        artifacts: snapshot.artifacts || [],
-        availableAgents: snapshot.session?.availableAgents || snapshot.availableAgents || [],
-        availableModels: snapshot.session?.availableModels || snapshot.availableModels || [],
-        files: snapshot.files || [],
-        peeks: snapshot.peeks || { workspace: null, terminal: null, browser: null, environment: null },
-        snapshots: snapshot.snapshots || [],
-        taskRelationships: snapshot.taskRelationships || [],
-        taskTimeline: snapshot.taskTimeline || [],
-      },
-    }));
-  }, [
-    i18n.chat.thinkingPlaceholder,
-    i18n.sessionOverview.fastMode.on,
-    pendingChatTurns,
-    setBusyForTab,
-    setMessagesForTab,
-    setPendingChatTurns,
-    updateTabIdentity,
-    updateTabMeta,
-    updateTabSession,
-  ]);
-
-  const fetchRuntimeForTab = useCallback(async (tabId, runtimeTarget, fallbackTab = null) => {
-    const target =
-      runtimeTarget && typeof runtimeTarget === "object"
-        ? runtimeTarget
-        : { sessionUser: runtimeTarget };
-    const requestId = (runtimeRequestByTabIdRef.current[tabId] || 0) + 1;
-    runtimeRequestByTabIdRef.current = {
-      ...runtimeRequestByTabIdRef.current,
-      [tabId]: requestId,
-    };
-    const normalizedSessionUser = String(target?.sessionUser || "").trim();
-    const normalizedAgentId = String(target?.agentId || fallbackTab?.agentId || "").trim();
-    const localMessages = messagesByTabIdRef.current[tabId] || [];
-
-    if (!tabId || !normalizedSessionUser) {
-      return null;
-    }
-
-    const loadSnapshot = async (nextSessionUser) => {
-      const params = new URLSearchParams({
-        sessionUser: nextSessionUser,
-      });
-      if (normalizedAgentId) {
-        params.set("agentId", normalizedAgentId);
-      }
-
-      const response = await fetch(`/api/runtime?${params.toString()}`);
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Runtime snapshot failed");
-      }
-      if (runtimeRequestByTabIdRef.current[tabId] !== requestId) {
-        return null;
-      }
-      return {
-        payload,
-        sessionUser: nextSessionUser,
-      };
-    };
-
-    let { payload, sessionUser: resolvedSessionUser } = await loadSnapshot(normalizedSessionUser);
-    if (!payload) {
-      return null;
-    }
-
-    if (
-      normalizedAgentId &&
-      normalizedAgentId !== "main" &&
-      !localMessages.length &&
-      normalizedSessionUser !== defaultSessionUser &&
-      isGeneratedAgentBootstrapSessionUser(normalizedSessionUser, normalizedAgentId) &&
-      (!Array.isArray(payload.conversation) || payload.conversation.length === 0)
-    ) {
-      ({ payload, sessionUser: resolvedSessionUser } = await loadSnapshot(defaultSessionUser));
-      if (!payload) {
-        return null;
-      }
-    }
-
-    if (runtimeRequestByTabIdRef.current[tabId] !== requestId) {
-      return null;
-    }
-
-    const latestTab = chatTabsRef.current.find((entry) => entry.id === tabId) || fallbackTab;
-    const latestMeta = tabMetaByIdRef.current[tabId] || null;
-    const latestSession = sessionByTabIdRef.current[tabId] || null;
-    const latestAgentId =
-      latestMeta?.agentId
-      || latestSession?.agentId
-      || latestTab?.agentId
-      || normalizedAgentId
-      || resolveAgentIdFromTabId(tabId)
-      || "main";
-    const latestSessionUser =
-      latestMeta?.sessionUser
-      || latestSession?.sessionUser
-      || latestTab?.sessionUser
-      || "";
-
-    if (
-      !shouldApplyRuntimeSnapshotToTab({
-        currentAgentId: latestAgentId,
-        currentSessionUser: latestSessionUser,
-        requestedAgentId: normalizedAgentId,
-        requestedSessionUser: normalizedSessionUser,
-        resolvedSessionUser,
-      })
-    ) {
-      return null;
-    }
-
-    applySnapshotToTab(
-      tabId,
-      payload,
-      fallbackTab
-        ? {
-            ...fallbackTab,
-            agentId: normalizedAgentId || fallbackTab.agentId,
-            sessionUser: resolvedSessionUser,
-          }
-        : null,
-    );
-    return payload;
-  }, [applySnapshotToTab]);
-
   const getMessagesForTab = useCallback((tabId) => messagesByTabIdRef.current[tabId] || [], []);
   const isTabActive = useCallback((tabId) => activeChatTabIdRef.current === tabId, []);
 
@@ -955,9 +680,12 @@ export function useCommandCenter() {
     });
   }, []);
 
-  const adjustPromptHeight = useCallback(() => {
-    const textarea = promptRef.current;
-    if (!textarea) return;
+  const resolvePromptMaxHeight = useCallback((textarea) => {
+    const cached = promptHeightMetricsRef.current;
+    if (cached.node === textarea && cached.maxHeight > 0) {
+      return cached.maxHeight;
+    }
+
     const computed = window.getComputedStyle(textarea);
     const lineHeight = Number.parseFloat(computed.lineHeight) || 20;
     const paddingTop = Number.parseFloat(computed.paddingTop) || 0;
@@ -966,10 +694,20 @@ export function useCommandCenter() {
     const borderBottom = Number.parseFloat(computed.borderBottomWidth) || 0;
     const maxHeight = lineHeight * maxPromptRows + paddingTop + paddingBottom + borderTop + borderBottom;
 
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+    promptHeightMetricsRef.current = { node: textarea, maxHeight };
+    return maxHeight;
   }, []);
+
+  const adjustPromptHeight = useCallback(() => {
+    const textarea = promptRef.current;
+    if (!textarea) return;
+    const maxHeight = resolvePromptMaxHeight(textarea);
+
+    textarea.style.height = "auto";
+    const scrollHeight = textarea.scrollHeight;
+    textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [resolvePromptMaxHeight]);
 
   const setPromptForConversation = useCallback((value, conversationKey = activeConversationKey) => {
     setPrompt((current) => {
@@ -1130,6 +868,16 @@ export function useCommandCenter() {
   }, [adjustPromptHeight, prompt]);
 
   useEffect(() => {
+    const resetPromptHeightMetrics = () => {
+      promptHeightMetricsRef.current = { node: promptRef.current, maxHeight: 0 };
+      adjustPromptHeight();
+    };
+
+    window.addEventListener("resize", resetPromptHeightMetrics);
+    return () => window.removeEventListener("resize", resetPromptHeightMetrics);
+  }, [adjustPromptHeight]);
+
+  useEffect(() => {
     focusPrompt();
   }, [focusPrompt]);
 
@@ -1165,18 +913,8 @@ export function useCommandCenter() {
       sessionUser: nextMeta.sessionUser || nextSession.sessionUser,
       agentId: nextMeta.agentId || nextSession.agentId,
     });
-    hydrateRuntimeState(runtimeCacheByTabId[activeChatTab.id] || null);
-    if (nextMeta.sessionUser || nextSession.sessionUser) {
-      void fetchRuntimeForTab(
-        activeChatTab.id,
-        {
-          agentId: nextMeta.agentId || nextSession.agentId || activeChatTab.agentId,
-          sessionUser: nextMeta.sessionUser || nextSession.sessionUser,
-        },
-        activeChatTab,
-      ).catch(() => {});
-    }
-  }, [activeChatTab, activeChatTabId, fetchRuntimeForTab, hydrateRuntimeState, i18n, setActiveTarget]);
+    hydrateRuntimeState(runtimeCacheByTabIdRef.current[activeChatTab.id] || null);
+  }, [activeChatTab, activeChatTabId, hydrateRuntimeState, i18n, setActiveTarget]);
 
   useEffect(() => {
     setPrompt(promptDraftsByConversation[activeConversationKey] || "");
@@ -1548,19 +1286,45 @@ export function useCommandCenter() {
     const viewport = messageViewportRef.current;
     if (!viewport) return;
 
+    const bottomSentinel = viewport.querySelector("[data-message-bottom-sentinel]");
+    const IntersectionObserverCtor = window.IntersectionObserver || globalThis.IntersectionObserver;
     const syncAutoScroll = () => {
       const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
       shouldAutoScrollRef.current = distanceFromBottom <= 48;
     };
 
-    const updateAutoScroll = () => {
-      syncAutoScroll();
+    const persistScrollPosition = () => {
       persistConversationScrollTop(activeConversationKey, viewport.scrollTop);
     };
 
     syncAutoScroll();
-    viewport.addEventListener("scroll", updateAutoScroll, { passive: true });
-    return () => viewport.removeEventListener("scroll", updateAutoScroll);
+    let removeAutoScrollSync = null;
+    let bottomObserver = null;
+
+    if (IntersectionObserverCtor && bottomSentinel) {
+      bottomObserver = new IntersectionObserverCtor(
+        (entries) => {
+          const entry = entries.find((candidate) => candidate.target === bottomSentinel) || entries[0];
+          shouldAutoScrollRef.current = Boolean(entry?.isIntersecting || entry?.intersectionRatio > 0);
+        },
+        {
+          root: viewport,
+          rootMargin: "0px 0px 48px 0px",
+          threshold: 0,
+        },
+      );
+      bottomObserver.observe(bottomSentinel);
+    } else {
+      viewport.addEventListener("scroll", syncAutoScroll, { passive: true });
+      removeAutoScrollSync = () => viewport.removeEventListener("scroll", syncAutoScroll);
+    }
+
+    viewport.addEventListener("scroll", persistScrollPosition, { passive: true });
+    return () => {
+      bottomObserver?.disconnect?.();
+      removeAutoScrollSync?.();
+      viewport.removeEventListener("scroll", persistScrollPosition);
+    };
   }, [activeConversationKey, persistConversationScrollTop]);
 
   useEffect(() => {

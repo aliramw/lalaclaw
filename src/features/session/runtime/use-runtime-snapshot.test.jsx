@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
@@ -198,6 +199,67 @@ describe("useRuntimeSnapshot", () => {
       { role: "user", content: "刷新后继续显示", timestamp: 100 },
       { role: "assistant", content: "正在思考…", timestamp: 101, pending: true },
     ]);
+  });
+
+  it("deduplicates the initial runtime request under StrictMode", async () => {
+    const deferred = createDeferred();
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() => deferred.promise);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = ({ children }) => (
+      <StrictMode>{children}</StrictMode>
+    );
+
+    renderHook(
+      () =>
+        useRuntimeSnapshot({
+          activePendingChat: null,
+          busy: false,
+          i18n: createI18n(),
+          messagesRef: { current: [] },
+          pendingChatTurns: {},
+          session: createSession(),
+          setBusy,
+          setFastMode,
+          setMessagesSynced,
+          setModel,
+          setPendingChatTurns,
+          setPromptHistoryByConversation,
+          setSession,
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main");
+    });
+
+    deferred.resolve(
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+        },
+        conversation: [],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setModel).toHaveBeenCalledWith("openclaw");
+    });
   });
 
   it("posts session updates with the active session user and applies the returned snapshot", async () => {

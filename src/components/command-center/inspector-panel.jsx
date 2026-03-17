@@ -1,18 +1,24 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, Pencil, RotateCcw, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FilePreviewOverlay as SharedFilePreviewOverlay, ImagePreviewOverlay as SharedImagePreviewOverlay } from "@/components/command-center/file-preview-overlay";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
-import { Prism } from "@/lib/prism-languages";
+import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn, stripMarkdownForDisplay } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+
+const LazyFilePreviewOverlay = lazy(() =>
+  import("@/components/command-center/file-preview-overlay").then((module) => ({ default: module.FilePreviewOverlay })),
+);
+const LazyImagePreviewOverlay = lazy(() =>
+  import("@/components/command-center/file-preview-overlay").then((module) => ({ default: module.ImagePreviewOverlay })),
+);
 
 const homePrefix = "/Users/marila";
 const darkToolIoTheme = themes.dracula;
@@ -1387,6 +1393,7 @@ function ToolIoCodeBlock({ emptyText, label, resolvedTheme = "light", value }) {
   const content = String(value || emptyText || "").trim() || String(emptyText || "");
   const language = looksLikeJson(content) ? "json" : "text";
   const toolIoTheme = resolvedTheme === "dark" ? darkToolIoTheme : lightToolIoTheme;
+  const highlightedLanguage = usePrismLanguage(language);
 
   return (
     <div
@@ -1404,7 +1411,7 @@ function ToolIoCodeBlock({ emptyText, label, resolvedTheme = "light", value }) {
         <span>{label}</span>
         <CopyCodeButton content={content} />
       </div>
-      <Highlight prism={Prism} theme={toolIoTheme} code={content} language={language}>
+      <Highlight prism={Prism} theme={toolIoTheme} code={content} language={highlightedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
           <pre
             className={cn(
@@ -1917,8 +1924,22 @@ export function InspectorPanel({
           </Tabs>
         </CardContent>
       </Card>
-      <SharedFilePreviewOverlay files={previewFiles} preview={filePreview} resolvedTheme={resolvedTheme} onClose={closeFilePreview} onOpenFilePreview={handleOpenPreview} />
-      <SharedImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
+      {filePreview ? (
+        <Suspense fallback={null}>
+          <LazyFilePreviewOverlay
+            files={previewFiles}
+            preview={filePreview}
+            resolvedTheme={resolvedTheme}
+            onClose={closeFilePreview}
+            onOpenFilePreview={handleOpenPreview}
+          />
+        </Suspense>
+      ) : null}
+      {imagePreview ? (
+        <Suspense fallback={null}>
+          <LazyImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
+        </Suspense>
+      ) : null}
     </>
   );
 }

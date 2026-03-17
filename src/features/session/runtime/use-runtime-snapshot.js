@@ -120,6 +120,7 @@ export function useRuntimeSnapshot({
   const [agents, setAgents] = useState([]);
   const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null, environment: null });
   const runtimeRequestRef = useRef(0);
+  const inflightRuntimeRequestRef = useRef(null);
   const pendingChatTurnsRef = useRef(pendingChatTurns);
   const sessionRef = useRef(session);
 
@@ -272,8 +273,6 @@ export function useRuntimeSnapshot({
 
   const loadRuntime = useCallback(async (sessionUser = sessionRef.current.sessionUser, overrides = {}) => {
     const currentSession = sessionRef.current;
-    const requestId = runtimeRequestRef.current + 1;
-    runtimeRequestRef.current = requestId;
     const params = new URLSearchParams({
       sessionUser: String(sessionUser || currentSession.sessionUser || "").trim(),
     });
@@ -283,16 +282,40 @@ export function useRuntimeSnapshot({
       params.set("agentId", resolvedAgentId);
     }
 
-    const response = await fetch(`/api/runtime?${params.toString()}`);
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || "Runtime snapshot failed");
+    const requestKey = params.toString();
+    if (inflightRuntimeRequestRef.current?.key === requestKey) {
+      return inflightRuntimeRequestRef.current.promise;
     }
-    if (requestId !== runtimeRequestRef.current) {
+
+    const requestId = runtimeRequestRef.current + 1;
+    runtimeRequestRef.current = requestId;
+
+    const requestPromise = (async () => {
+      const response = await fetch(`/api/runtime?${requestKey}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Runtime snapshot failed");
+      }
+      if (requestId !== runtimeRequestRef.current) {
+        return payload;
+      }
+      applySnapshot(payload);
       return payload;
+    })();
+
+    inflightRuntimeRequestRef.current = {
+      key: requestKey,
+      promise: requestPromise,
+      requestId,
+    };
+
+    try {
+      return await requestPromise;
+    } finally {
+      if (inflightRuntimeRequestRef.current?.requestId === requestId) {
+        inflightRuntimeRequestRef.current = null;
+      }
     }
-    applySnapshot(payload);
-    return payload;
   }, [applySnapshot]);
 
   useEffect(() => {
