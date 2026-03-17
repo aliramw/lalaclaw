@@ -61,10 +61,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Se preferir uma versao publicada especifica, como `2026.3.17-7`:
+Se preferir uma versao publicada especifica, como `2026.3.17-8`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-7
+npm install -g lalaclaw@2026.3.17-8
 lalaclaw init
 ```
 
@@ -80,12 +80,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Se preferir uma versao publicada especifica, como `2026.3.17-7`:
+Se preferir uma versao publicada especifica, como `2026.3.17-8`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-7
+git checkout 2026.3.17-8
 npm ci
 npm run build
 npm run lalaclaw:start

@@ -82,7 +82,7 @@ describe("planSearchedSessionTabTarget", () => {
     ).toEqual(
       expect.objectContaining({
         create: true,
-        title: "main：钉钉",
+        title: "钉钉 main",
       }),
     );
   });
@@ -101,7 +101,7 @@ describe("planSearchedSessionTabTarget", () => {
     ).toEqual({
       create: false,
       tabId: "agent:main::abc123",
-      title: "main：钉钉",
+      title: "钉钉 main",
     });
   });
 
@@ -116,7 +116,7 @@ describe("planSearchedSessionTabTarget", () => {
     ).toEqual(
       expect.objectContaining({
         create: true,
-        title: "main：飞书",
+        title: "飞书 main",
       }),
     );
   });
@@ -132,15 +132,15 @@ describe("planSearchedSessionTabTarget", () => {
     ).toEqual(
       expect.objectContaining({
         create: true,
-        title: "main：企业微信",
+        title: "企业微信 main",
       }),
     );
   });
 });
 
 describe("buildChatTabTitle", () => {
-  it("formats DingTalk tabs with the agent name prefix", () => {
-    expect(buildChatTabTitle("expert", '{"channel":"dingtalk-connector","peerid":"398058"}')).toBe("expert：钉钉");
+  it("formats DingTalk tabs with the platform name prefix", () => {
+    expect(buildChatTabTitle("expert", '{"channel":"dingtalk-connector","peerid":"398058"}')).toBe("钉钉 expert");
   });
 
   it("keeps DingTalk reset sessions labeled as DingTalk tabs", () => {
@@ -149,15 +149,15 @@ describe("buildChatTabTitle", () => {
         "expert",
         '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058:reset:1773319871765","sendername":"马锐拉"}',
       ),
-    ).toBe("expert：钉钉");
+    ).toBe("钉钉 expert");
   });
 
-  it("formats Feishu tabs with the agent name prefix", () => {
-    expect(buildChatTabTitle("expert", "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58")).toBe("expert：飞书");
+  it("formats Feishu tabs with the platform name prefix", () => {
+    expect(buildChatTabTitle("expert", "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58")).toBe("飞书 expert");
   });
 
-  it("formats WeCom tabs with the agent name prefix", () => {
-    expect(buildChatTabTitle("expert", "agent:main:wecom:direct:marila")).toBe("expert：企业微信");
+  it("formats WeCom tabs with the platform name prefix", () => {
+    expect(buildChatTabTitle("expert", "agent:main:wecom:direct:marila")).toBe("企业微信 expert");
   });
 });
 

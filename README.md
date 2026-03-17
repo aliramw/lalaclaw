@@ -72,7 +72,7 @@ Then open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 Notes:
 
 - `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
-- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path so launchd and other non-interactive starts do not depend on shell `PATH`
+- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path and a launchd `PATH` that includes the current Node runtime, so non-interactive starts do not depend on shell `PATH`
 - On macOS, `lalaclaw init` also starts a `launchd` background service automatically
 - In a source checkout on macOS, `lalaclaw init` builds `dist/` first when needed so the background service can run the production app
 - After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
@@ -130,10 +130,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-7`:
+If you want a specific published version instead, such as `2026.3.17-8`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-7
+npm install -g lalaclaw@2026.3.17-8
 lalaclaw init
 ```
 
@@ -149,12 +149,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-7`:
+If you want a specific released version instead, such as `2026.3.17-8`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-7
+git checkout 2026.3.17-8
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -259,7 +259,7 @@ For the full contribution checklist and project structure notes, see [CONTRIBUTI
 LalaClaw uses npm-compatible calendar versioning for releases.
 
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes.
-- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-7`, not `YYYY.M.D.N`.
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-8`, not `YYYY.M.D.N`.
 - Call out breaking changes explicitly in release notes and migration-facing docs.
 - The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
 

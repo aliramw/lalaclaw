@@ -103,13 +103,13 @@ export function buildChatTabTitle(agentId = "main", sessionUser = "") {
   const normalizedAgentId = String(agentId || "main").trim() || "main";
   const imSessionType = resolveImSessionType(sessionUser);
   if (imSessionType === "dingtalk") {
-    return `${normalizedAgentId}：钉钉`;
+    return `钉钉 ${normalizedAgentId}`;
   }
   if (imSessionType === "feishu") {
-    return `${normalizedAgentId}：飞书`;
+    return `飞书 ${normalizedAgentId}`;
   }
   if (imSessionType === "wecom") {
-    return `${normalizedAgentId}：企业微信`;
+    return `企业微信 ${normalizedAgentId}`;
   }
   return normalizedAgentId;
 }
@@ -1454,7 +1454,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     promptHistoryByConversation,
     promptRef,
     setPrompt: (value) => setPromptForConversation(value, activeConversationKey, { flushDrafts: true, syncVisible: true }),
-    syncPromptInput: (value) => setPromptForConversation(value, activeConversationKey, { syncVisible: false }),
+    syncPromptInput: (value) => setPromptForConversation(value, activeConversationKey, { syncVisible: true }),
   });
 
   useEffect(() => {

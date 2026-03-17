@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
-import { isDingTalkSessionUser, isImSessionUser } from "@/features/session/im-session";
+import { isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
 import { isOfflineStatus, normalizeStatusKey } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/storage";
 import { maxPromptRows } from "@/features/chat/utils";
@@ -131,6 +131,30 @@ function formatAttachmentSize(size = 0) {
   if (numeric < 1024) return `${numeric} B`;
   if (numeric < 1024 * 1024) return `${(numeric / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
   return `${(numeric / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
+}
+
+function splitImTabTitleForDisplay(title = "", agentId = "", sessionUser = "") {
+  const normalizedTitle = String(title || "").trim();
+  const normalizedAgentId = String(agentId || "").trim();
+
+  if (!normalizedTitle || !normalizedAgentId || !resolveImSessionType(sessionUser)) {
+    return null;
+  }
+
+  const agentSuffix = ` ${normalizedAgentId}`;
+  if (!normalizedTitle.endsWith(agentSuffix) || normalizedTitle.length <= agentSuffix.length) {
+    return null;
+  }
+
+  const platformLabel = normalizedTitle.slice(0, -agentSuffix.length).trim();
+  if (!platformLabel) {
+    return null;
+  }
+
+  return {
+    platformLabel,
+    agentName: normalizedAgentId,
+  };
 }
 
 function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
@@ -1502,6 +1526,8 @@ export function ChatTabsStrip({
       {items.map((item, index) => {
         const shortcutNumber = index < 9 ? String(index + 1) : null;
         const isClosableActiveTab = closable && item.active;
+        const tabTitle = item.title || item.agentId;
+        const imTitleParts = splitImTabTitleForDisplay(tabTitle, item.agentId, item.sessionUser);
 
         return (
           <div
@@ -1595,7 +1621,15 @@ export function ChatTabsStrip({
                     : item.active ? "bg-white/65" : "bg-muted-foreground/35",
                 )}
               />
-              <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>{item.title || item.agentId}</span>
+              <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>
+                {imTitleParts ? (
+                  <>
+                    <span>{imTitleParts.platformLabel}</span>
+                    {" "}
+                    <span className={cn("text-[11px]", item.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
+                  </>
+                ) : tabTitle}
+              </span>
               {shortcutNumber && !isClosableActiveTab ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1634,7 +1668,7 @@ export function ChatTabsStrip({
                       event.stopPropagation();
                       onClose?.(item.id);
                     }}
-                    aria-label={messages.chat.closeTabAriaLabel(item.title || item.agentId)}
+                    aria-label={messages.chat.closeTabAriaLabel(tabTitle)}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

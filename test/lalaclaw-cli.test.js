@@ -176,6 +176,42 @@ describe("LalaClaw CLI helpers", () => {
     });
   });
 
+  it("applies a resolved OPENCLAW_BIN only for local-openclaw profiles", () => {
+    const logs = [];
+    const nextConfig = cli.applyResolvedOpenClawBin(
+      {
+        host: "127.0.0.1",
+        backendPort: "3000",
+        frontendHost: "127.0.0.1",
+        frontendPort: "5173",
+        profile: "local-openclaw",
+        openclawBin: "",
+        openclawModel: "openclaw",
+        openclawAgentId: "main",
+        openclawApiStyle: "chat",
+        openclawApiPath: "/v1/chat/completions",
+      },
+      "/Users/example/.npm-global/bin/openclaw",
+      "",
+      (message) => logs.push(message),
+    );
+
+    expect(nextConfig.openclawBin).toBe("/Users/example/.npm-global/bin/openclaw");
+    expect(logs).toEqual([
+      "INFO  Resolved OpenClaw CLI to /Users/example/.npm-global/bin/openclaw; writing OPENCLAW_BIN for non-interactive launches.",
+    ]);
+    expect(
+      cli.applyResolvedOpenClawBin(
+        {
+          profile: "mock",
+          openclawBin: "",
+        },
+        "/Users/example/.npm-global/bin/openclaw",
+        "",
+      ).openclawBin,
+    ).toBe("");
+  });
+
   it("updates the default API path when only the API style changes", () => {
     const nextConfig = cli.applyConfigOverrides(
       {
@@ -656,6 +692,7 @@ describe("LalaClaw CLI helpers", () => {
       envFilePath: "/Users/example/.config/lalaclaw/.env.local",
       stdoutPath: "/Users/example/.config/lalaclaw/logs/lalaclaw-launchd.out.log",
       stderrPath: "/Users/example/.config/lalaclaw/logs/lalaclaw-launchd.err.log",
+      pathEnv: "/opt/homebrew/bin:/Users/example/.npm-global/bin:/usr/bin:/bin",
     });
 
     expect(plist).toContain("<string>ai.lalaclaw.app</string>");
@@ -663,7 +700,16 @@ describe("LalaClaw CLI helpers", () => {
     expect(plist).toContain("<string>start</string>");
     expect(plist).toContain("<string>--config-file</string>");
     expect(plist).toContain("<string>/Users/example/.config/lalaclaw/.env.local</string>");
+    expect(plist).toContain("<key>EnvironmentVariables</key>");
+    expect(plist).toContain("<key>PATH</key>");
+    expect(plist).toContain("<string>/opt/homebrew/bin:/Users/example/.npm-global/bin:/usr/bin:/bin</string>");
     expect(plist).toContain("/Users/example/.config/lalaclaw/logs/lalaclaw-launchd.out.log");
+  });
+
+  it("builds PATH values by prepending required runtime directories", () => {
+    expect(
+      cli.buildPathEnv("/usr/bin:/bin", ["/opt/homebrew/bin", "/usr/bin", "", "/Users/example/.npm-global/bin"]),
+    ).toBe("/opt/homebrew/bin:/usr/bin:/Users/example/.npm-global/bin:/bin");
   });
 
   it("passes OPENCLAW_BIN from the env file into child processes", () => {
@@ -693,6 +739,108 @@ describe("LalaClaw CLI helpers", () => {
       const result = cli.buildChildEnv(envFilePath);
       expect(result.config.openclawBin).toBe("/Users/example/.npm-global/bin/openclaw");
       expect(result.childEnv.OPENCLAW_BIN).toBe("/Users/example/.npm-global/bin/openclaw");
+      expect(result.childEnv.PATH.split(path.delimiter)).toEqual(
+        expect.arrayContaining([
+          path.dirname(process.execPath),
+          "/Users/example/.npm-global/bin",
+        ]),
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("clears remote gateway env vars when child processes run in local-openclaw mode", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-local-openclaw-env-"));
+    const envFilePath = path.join(tempDir, ".env.local");
+    const openclawConfigDir = path.join(tempDir, ".openclaw");
+    const originalHomedir = os.homedir;
+    const previousBaseUrl = process.env.OPENCLAW_BASE_URL;
+    const previousApiKey = process.env.OPENCLAW_API_KEY;
+
+    os.homedir = () => tempDir;
+    process.env.OPENCLAW_BASE_URL = "https://stale-gateway.example.com";
+    process.env.OPENCLAW_API_KEY = "stale-secret";
+
+    fs.mkdirSync(openclawConfigDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(openclawConfigDir, "openclaw.json"),
+      JSON.stringify({
+        gateway: {
+          auth: { token: "token-123" },
+          port: 18789,
+        },
+        agents: {
+          defaults: {
+            model: { primary: "openclaw" },
+          },
+          list: [
+            {
+              id: "main",
+              default: true,
+              model: { primary: "openclaw" },
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+
+    fs.writeFileSync(
+      envFilePath,
+      [
+        "HOST=127.0.0.1",
+        "PORT=3000",
+        "FRONTEND_HOST=127.0.0.1",
+        "FRONTEND_PORT=5173",
+        "COMMANDCENTER_FORCE_MOCK=0",
+        "OPENCLAW_BIN=/Users/example/.npm-global/bin/openclaw",
+        "OPENCLAW_MODEL=openclaw",
+        "OPENCLAW_AGENT_ID=main",
+        "OPENCLAW_API_STYLE=chat",
+        "OPENCLAW_API_PATH=/v1/chat/completions",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    try {
+      const result = cli.buildChildEnv(envFilePath);
+      expect(result.config.profile).toBe("local-openclaw");
+      expect(result.childEnv.OPENCLAW_BASE_URL).toBeUndefined();
+      expect(result.childEnv.OPENCLAW_API_KEY).toBeUndefined();
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      os.homedir = originalHomedir;
+      if (previousBaseUrl === undefined) {
+        delete process.env.OPENCLAW_BASE_URL;
+      } else {
+        process.env.OPENCLAW_BASE_URL = previousBaseUrl;
+      }
+      if (previousApiKey === undefined) {
+        delete process.env.OPENCLAW_API_KEY;
+      } else {
+        process.env.OPENCLAW_API_KEY = previousApiKey;
+      }
+    }
+  });
+
+  it("requires absolute OPENCLAW_BIN paths to be executable", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-openclaw-bin-"));
+    const openclawPath = path.join(tempDir, "openclaw");
+
+    fs.writeFileSync(openclawPath, "#!/bin/sh\nexit 0\n", "utf8");
+
+    try {
+      fs.chmodSync(openclawPath, 0o644);
+      if (process.platform === "win32") {
+        expect(cli.findExecutable(openclawPath)).toBe(openclawPath);
+      } else {
+        expect(cli.findExecutable(openclawPath)).toBe("");
+      }
+
+      fs.chmodSync(openclawPath, 0o755);
+      expect(cli.findExecutable(openclawPath)).toBe(openclawPath);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

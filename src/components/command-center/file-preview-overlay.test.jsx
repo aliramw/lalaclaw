@@ -423,6 +423,9 @@ describe("FilePreviewOverlay", () => {
     const sidebar = screen.getByTestId("file-preview-files-sidebar");
     expect(sidebar).toHaveAttribute("aria-label", "Files");
     expect(within(sidebar).getByText(/Session files|本次会话文件/)).toBeInTheDocument();
+    const sidebarViewport = sidebar.querySelector("[data-radix-scroll-area-viewport]");
+    expect(sidebarViewport).toBeInTheDocument();
+    expect(sidebarViewport).toHaveClass("h-full");
 
     const user = userEvent.setup();
     await user.click(within(sidebar).getByTitle("/Users/marila/projects/lalaclaw/src/alpha.js"));

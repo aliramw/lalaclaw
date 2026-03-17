@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -119,6 +120,43 @@ describe("createOpenClawClient", () => {
     expect(execFileAsync.mock.calls[0][1]).toContain("agent");
     expect(execFileAsync.mock.calls[1][1]).toContain("agent.wait");
     expect(execFileAsync.mock.calls[2][1]).toContain("chat.history");
+  });
+
+  it("executes the OpenClaw CLI with a PATH that includes the current Node runtime", async () => {
+    const previousPath = process.env.PATH;
+    process.env.PATH = "";
+    const execFileAsync = vi.fn().mockResolvedValue({ stdout: JSON.stringify({ ok: true }) });
+
+    try {
+      const client = createClient({
+        execFileAsync,
+        OPENCLAW_BIN: "/Users/example/.npm-global/bin/openclaw",
+      });
+
+      await client.callOpenClawGateway("sessions.patch", { key: "agent:main:openai-user:test", model: "gpt-5" });
+
+      expect(execFileAsync).toHaveBeenCalledWith(
+        "/Users/example/.npm-global/bin/openclaw",
+        expect.arrayContaining(["gateway", "call", "sessions.patch"]),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            PATH: expect.stringContaining(path.dirname(process.execPath)),
+          }),
+        }),
+      );
+      expect(execFileAsync.mock.calls[0][2].env.PATH.split(path.delimiter)).toEqual(
+        expect.arrayContaining([
+          path.dirname(process.execPath),
+          "/Users/example/.npm-global/bin",
+        ]),
+      );
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
   });
 
   it("dispatches fast text-only conversations through the direct HTTP API", async () => {

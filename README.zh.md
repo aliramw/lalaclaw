@@ -72,7 +72,7 @@ lalaclaw init
 说明：
 
 - `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
-- 检测到本地 OpenClaw 时，`lalaclaw init` 还会写入解析后的 `OPENCLAW_BIN`，避免 `launchd` 或其他非交互环境依赖 shell `PATH`
+- 检测到本地 OpenClaw 时，`lalaclaw init` 还会写入解析后的 `OPENCLAW_BIN`，并给 `launchd` 配好包含当前 Node 运行时的 `PATH`，避免非交互环境依赖 shell `PATH`
 - 在 macOS 上，`lalaclaw init` 还会自动通过 `launchd` 启动后台服务
 - 在 macOS 的源码仓库里，如果缺少 `dist/`，`lalaclaw init` 会先构建生产包，再启动后台服务
 - macOS 后台服务启动后，`lalaclaw init` 会提示你按 Enter，并自动在浏览器里打开 App URL
@@ -130,10 +130,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-5`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-8`：
 
 ```bash
-npm install -g lalaclaw@2026.3.17-5
+npm install -g lalaclaw@2026.3.17-8
 lalaclaw init
 ```
 
@@ -149,12 +149,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-5`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-8`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-5
+git checkout 2026.3.17-8
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -259,7 +259,7 @@ tail -f ./logs/lalaclaw-launchd.err.log
 LalaClaw 使用 npm 兼容的日历版本格式。
 
 - 每次项目版本变化时更新 [CHANGELOG.md](./CHANGELOG.md)
-- 使用 npm 兼容的日历版本格式。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-5`，不要使用 `YYYY.M.D.N`
+- 使用 npm 兼容的日历版本格式。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-8`，不要使用 `YYYY.M.D.N`
 - 破坏性变更应在 release notes 和迁移文档里明确标注
 - 当前仓库目标 Node.js 版本是 [`.nvmrc`](./.nvmrc) 中的 `22`
 

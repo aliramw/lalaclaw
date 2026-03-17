@@ -1478,7 +1478,7 @@ export function FilePreviewOverlay({
                   )}
                   aria-label={messages.inspector.tabs.files}
                 >
-                  <div className="min-h-0 flex-1 px-4 py-3">
+                  <div className="min-h-0 flex flex-1 flex-col overflow-hidden px-4 py-3">
                     <InspectorFilesPanel
                       currentAgentId={currentAgentId}
                       currentSessionUser={currentSessionUser}

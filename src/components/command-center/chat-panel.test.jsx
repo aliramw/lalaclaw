@@ -863,6 +863,33 @@ describe("ChatPanel", () => {
     expect(onActivate).toHaveBeenCalledWith("agent:expert");
   });
 
+  it("renders IM tab agent-name with muted color", () => {
+    render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            {
+              id: "agent:main::abc123",
+              agentId: "main",
+              active: false,
+              busy: false,
+              title: "钉钉 main",
+              sessionUser: '{"channel":"dingtalk-connector","peerid":"398058"}',
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const tabButton = screen.getByRole("button", { name: "钉钉 main" });
+    const agentNameLabel = Array.from(tabButton.querySelectorAll("span")).find(
+      (node) => node.textContent === "main" && node.className.includes("text-muted-foreground"),
+    );
+
+    expect(agentNameLabel).toBeTruthy();
+    expect(agentNameLabel).toHaveClass("text-[11px]");
+  });
+
   it("shows a platform-aware tooltip for inactive tab shortcuts", async () => {
     vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Win32");
 

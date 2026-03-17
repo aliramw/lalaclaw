@@ -1192,7 +1192,7 @@ export function InspectorFilesPanel({
 
   return (
     <>
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="h-full min-h-0 flex-1">
         <div className="space-y-2 py-1 pr-4">
           {showHint ? <InspectorHint text={messages.inspector.filesHint} /> : null}
           {hasSessionFiles ? (

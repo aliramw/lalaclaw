@@ -32,6 +32,21 @@ function createOpenClawClient({
   tailLines,
   loadGatewaySdk,
 }) {
+  function buildOpenClawExecEnv(baseEnv = process.env) {
+    const values = [
+      path.dirname(process.execPath),
+      path.isAbsolute(OPENCLAW_BIN) ? path.dirname(OPENCLAW_BIN) : '',
+      ...String(baseEnv?.PATH || '').split(path.delimiter),
+    ]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    const dedupedPath = values.filter((value, index) => values.indexOf(value) === index).join(path.delimiter);
+    return {
+      ...baseEnv,
+      PATH: dedupedPath,
+    };
+  }
+
   function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -148,7 +163,7 @@ function createOpenClawClient({
       try {
         const { stdout } = await execFileAsync('which', [OPENCLAW_BIN], {
           cwd: PROJECT_ROOT,
-          env: process.env,
+          env: buildOpenClawExecEnv(process.env),
           maxBuffer: 1024 * 32,
         });
         const resolvedBin = String(stdout || '').trim();
@@ -261,7 +276,7 @@ function createOpenClawClient({
 
     const { stdout } = await withGatewayRetry(`gateway RPC ${method}`, async () => await execFileAsync(OPENCLAW_BIN, args, {
       cwd: PROJECT_ROOT,
-      env: process.env,
+      env: buildOpenClawExecEnv(process.env),
       maxBuffer: 1024 * 1024,
     }));
 

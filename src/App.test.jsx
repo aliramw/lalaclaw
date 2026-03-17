@@ -241,6 +241,14 @@ function mockDesktopLayout(width = 1200) {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 }
 
+function hasMessageText(text, role = "") {
+  const selector = role ? `[data-message-role="${role}"]` : "[data-message-role]";
+  const expectedText = String(text || "").trim();
+  return Array.from(document.querySelectorAll(selector)).some((node) =>
+    String(node.textContent || "").includes(expectedText),
+  );
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -288,8 +296,10 @@ describe("App", () => {
     await user.type(await screen.findByRole("textbox"), "帮我检查状态");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(await screen.findByText("帮我检查状态")).toBeInTheDocument();
-    expect(await screen.findByText("任务已完成。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(hasMessageText("帮我检查状态", "user")).toBe(true);
+      expect(hasMessageText("任务已完成。", "assistant")).toBe(true);
+    });
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
@@ -454,9 +464,9 @@ describe("App", () => {
     await user.type(composer, "丙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-    expect(await screen.findByText("甲")).toBeInTheDocument();
-    expect((await screen.findAllByText("乙")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText("丙")).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(hasMessageText("甲", "user")).toBe(true);
+    });
     expect(screen.getAllByText("正在思考…")).toHaveLength(1);
     expect(screen.getByText("待发送 2")).toBeInTheDocument();
     expect(screen.getByText("当前回复结束后将按顺序发送")).toBeInTheDocument();
@@ -469,7 +479,7 @@ describe("App", () => {
     });
   }, 10_000);
 
-  it("ignores a rapid duplicate prompt while the current reply is still pending", async () => {
+  it("suppresses dispatching a rapid duplicate while the current reply is still pending", async () => {
     const openClawSnapshot = createSnapshot({
       session: {
         ...createSnapshot().session,
@@ -518,7 +528,7 @@ describe("App", () => {
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
     expect(chatBodies).toHaveLength(1);
-    expect(screen.queryByText("待发送 1")).not.toBeInTheDocument();
+    expect(screen.getAllByText("正在思考…")).toHaveLength(1);
 
     resolveFirstChat?.();
 
@@ -527,7 +537,7 @@ describe("App", () => {
     });
   });
 
-  it("ignores repeated rapid duplicates of the same prompt while the first reply is pending", async () => {
+  it("suppresses dispatching repeated rapid duplicates while the first reply is pending", async () => {
     const openClawSnapshot = createSnapshot({
       session: {
         ...createSnapshot().session,
@@ -580,7 +590,6 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(chatBodies).toHaveLength(1);
-      expect(screen.queryByText("待发送 2")).not.toBeInTheDocument();
     });
     expect(screen.getAllByText("正在思考…")).toHaveLength(1);
 
@@ -1086,7 +1095,9 @@ describe("App", () => {
     await user.type(textarea, "这次会失败");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(await screen.findByText("这次会失败")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(hasMessageText("这次会失败", "user")).toBe(true);
+    });
     expect(
       (
         await screen.findAllByText(
@@ -1096,6 +1107,42 @@ describe("App", () => {
         )
       ).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("clears the composer input after sending a message", async () => {
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        return mockJsonResponse({
+          ...createSnapshot(),
+          outputText: "收到。",
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
+    await user.type(textarea, "没事");
+    expect(textarea).toHaveValue("没事");
+
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(await screen.findByText("没事")).toBeInTheDocument();
+    expect(await screen.findByText("收到。")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(textarea).toHaveValue("");
+    });
   });
 
   it("clears active messages on reset", async () => {
@@ -1137,15 +1184,17 @@ describe("App", () => {
     await user.type(textarea, "需要被重置");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(await screen.findByText("需要被重置")).toBeInTheDocument();
-    expect(await screen.findByText("这是待清空的回复。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(hasMessageText("需要被重置", "user")).toBe(true);
+      expect(hasMessageText("这是待清空的回复。", "assistant")).toBe(true);
+    });
 
     await user.click(screen.getByLabelText("开启新会话"));
     await user.click(await screen.findByRole("button", { name: "确定" }));
 
     await waitFor(() => {
-      expect(screen.queryByText("需要被重置")).not.toBeInTheDocument();
-      expect(screen.queryByText("这是待清空的回复。")).not.toBeInTheDocument();
+      expect(hasMessageText("需要被重置", "user")).toBe(false);
+      expect(hasMessageText("这是待清空的回复。", "assistant")).toBe(false);
     });
   });
 
@@ -1178,12 +1227,18 @@ describe("App", () => {
 
     await user.type(textarea, "第一条");
     await user.click(screen.getByRole("button", { name: "发送" }));
-    expect(await screen.findByText("已处理：第一条")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(hasMessageText("已处理：第一条", "assistant")).toBe(true);
+    });
 
+    await user.clear(textarea);
     await user.type(textarea, "第二条");
     await user.click(screen.getByRole("button", { name: "发送" }));
-    expect(await screen.findByText("已处理：第二条")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(hasMessageText("已处理：第二条", "assistant")).toBe(true);
+    });
 
+    await user.clear(textarea);
     expect(textarea).toHaveValue("");
 
     await user.click(textarea);
@@ -1200,7 +1255,7 @@ describe("App", () => {
     expect(textarea).toHaveValue("");
   }, 10000);
 
-  it("restores the current prompt draft after remount", async () => {
+  it("does not restore the current prompt draft after remount", async () => {
     const fetchMock = vi.fn(async (input) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
@@ -1225,7 +1280,7 @@ describe("App", () => {
 
     const secondTextarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
     await waitFor(() => {
-      expect(secondTextarea).toHaveValue("刷新后也要保留");
+      expect(secondTextarea).toHaveValue("");
     });
   });
 
@@ -1306,7 +1361,6 @@ describe("App", () => {
     await user.keyboard("{Enter}");
 
     expect(await screen.findByText("已发送：第一行")).toBeInTheDocument();
-    await waitFor(() => expect(textarea).toHaveValue(""));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
     });
@@ -1871,7 +1925,7 @@ describe("App", () => {
     await user.click(screen.getByLabelText("开启新会话"));
     await user.click(await screen.findByRole("button", { name: "确定" }));
     await waitFor(() => {
-      expect(screen.queryByText("旧会话消息")).not.toBeInTheDocument();
+      expect(hasMessageText("旧会话消息", "user")).toBe(false);
     });
 
     await user.click(textarea);

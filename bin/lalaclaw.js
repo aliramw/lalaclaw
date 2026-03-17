@@ -228,6 +228,23 @@ function clipText(value, length = 200) {
   return text.length > length ? `${text.slice(0, length - 1)}…` : text;
 }
 
+function isExecutableFile(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile()) {
+      return false;
+    }
+
+    if (process.platform !== 'win32') {
+      fs.accessSync(filePath, fs.constants.X_OK);
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function canPromptInteractively(input = process.stdin, output = process.stdout) {
   return Boolean(input && output && input.isTTY && output.isTTY);
 }
@@ -323,6 +340,23 @@ function resolveConfig(envValues, localOpenClaw) {
     openclawApiStyle: apiStyle,
     openclawApiPath: String(envValues.OPENCLAW_API_PATH || (apiStyle === 'responses' ? '/v1/responses' : '/v1/chat/completions')).trim(),
   };
+}
+
+function applyResolvedOpenClawBin(config, resolvedOpenClawBinary = '', previousOpenClawBin = '', log = console.log) {
+  if (config.profile !== 'local-openclaw' || !resolvedOpenClawBinary) {
+    return config;
+  }
+
+  const nextConfig = {
+    ...config,
+    openclawBin: resolvedOpenClawBinary,
+  };
+
+  if (previousOpenClawBin !== resolvedOpenClawBinary && typeof log === 'function') {
+    log(`INFO  Resolved OpenClaw CLI to ${resolvedOpenClawBinary}; writing OPENCLAW_BIN for non-interactive launches.`);
+  }
+
+  return nextConfig;
 }
 
 function applyConfigOverrides(config, options = {}) {
@@ -653,6 +687,17 @@ function quoteEnvValue(value) {
   return /[\s#"'`]/.test(value) ? JSON.stringify(value) : value;
 }
 
+function buildPathEnv(currentPath = '', extraEntries = []) {
+  const values = [
+    ...extraEntries,
+    ...String(currentPath || '').split(path.delimiter),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const deduped = values.filter((value, index) => values.indexOf(value) === index);
+  return deduped.join(path.delimiter);
+}
+
 function xmlEscape(value) {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -670,7 +715,7 @@ function resolveLaunchdLogDir() {
   return path.join(resolveDefaultConfigDir(), 'logs');
 }
 
-function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, stdoutPath, stderrPath }) {
+function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, stdoutPath, stderrPath, pathEnv = '' }) {
   const values = {
     label: xmlEscape(MACOS_LAUNCHD_LABEL),
     nodePath: xmlEscape(nodePath),
@@ -679,6 +724,7 @@ function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, 
     envFilePath: xmlEscape(envFilePath),
     stdoutPath: xmlEscape(stdoutPath),
     stderrPath: xmlEscape(stderrPath),
+    pathEnv: xmlEscape(pathEnv),
   };
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -705,6 +751,12 @@ function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, 
       <string>--config-file</string>
       <string>${values.envFilePath}</string>
     </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>${values.pathEnv}</string>
+    </dict>
 
     <key>StandardOutPath</key>
     <string>${values.stdoutPath}</string>
@@ -778,6 +830,12 @@ function installLaunchdService(envFilePath, spawnSyncImpl = spawnSync) {
   const stdoutPath = path.join(logDir, 'lalaclaw-launchd.out.log');
   const stderrPath = path.join(logDir, 'lalaclaw-launchd.err.log');
   const cliPath = path.join(PROJECT_ROOT, 'bin', 'lalaclaw.js');
+  const envValues = readEnvFile(envFilePath);
+  const launchdConfig = resolveConfig(envValues, detectLocalOpenClaw());
+  const pathEnv = buildPathEnv(process.env.PATH, [
+    path.dirname(process.execPath),
+    path.isAbsolute(launchdConfig.openclawBin) ? path.dirname(launchdConfig.openclawBin) : '',
+  ]);
   const guiTarget = `gui/${process.getuid()}`;
   const serviceTarget = `${guiTarget}/${MACOS_LAUNCHD_LABEL}`;
 
@@ -792,6 +850,7 @@ function installLaunchdService(envFilePath, spawnSyncImpl = spawnSync) {
       envFilePath,
       stdoutPath,
       stderrPath,
+      pathEnv,
     }),
     'utf8',
   );
@@ -1227,12 +1286,7 @@ async function runInit(envFilePath, options = {}) {
   }
 
   let nextConfig = applyConfigOverrides(detectedConfig, options);
-  if (nextConfig.profile === 'local-openclaw' && openclawBinary) {
-    nextConfig.openclawBin = openclawBinary;
-    if (currentEnv.OPENCLAW_BIN !== openclawBinary) {
-      console.log(`INFO  Resolved OpenClaw CLI to ${openclawBinary}; writing OPENCLAW_BIN for non-interactive launches.`);
-    }
-  }
+  nextConfig = applyResolvedOpenClawBin(nextConfig, openclawBinary, currentEnv.OPENCLAW_BIN);
 
   if (!options.defaults) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -1261,6 +1315,9 @@ async function runInit(envFilePath, options = {}) {
       rl.close();
     }
   }
+
+  nextConfig = applyResolvedOpenClawBin(nextConfig, openclawBinary, nextConfig.openclawBin, null);
+
   const resolvedOpenClawBinary = findExecutable(nextConfig.openclawBin || 'openclaw');
   const validation = validateConfig(nextConfig, localOpenClaw, resolvedOpenClawBinary);
   if (validation.errors.length) {
@@ -1309,7 +1366,7 @@ async function runInit(envFilePath, options = {}) {
 
 function findExecutable(binName) {
   if (path.isAbsolute(binName)) {
-    return fs.existsSync(binName) ? binName : '';
+    return isExecutableFile(binName) ? binName : '';
   }
 
   const locator = process.platform === 'win32' ? 'where' : 'which';
@@ -1387,6 +1444,10 @@ function buildChildEnv(envFilePath) {
     ...process.env,
     HOST: config.host,
     PORT: config.backendPort,
+    PATH: buildPathEnv(process.env.PATH, [
+      path.dirname(process.execPath),
+      path.isAbsolute(config.openclawBin) ? path.dirname(config.openclawBin) : '',
+    ]),
   };
 
   if (config.frontendHost) {
@@ -1405,6 +1466,9 @@ function buildChildEnv(envFilePath) {
     if (config.profile === 'remote-gateway') {
       childEnv.OPENCLAW_BASE_URL = config.openclawBaseUrl;
       childEnv.OPENCLAW_API_KEY = config.openclawApiKey;
+    } else {
+      delete childEnv.OPENCLAW_BASE_URL;
+      delete childEnv.OPENCLAW_API_KEY;
     }
   }
 
@@ -1685,12 +1749,15 @@ module.exports = {
   normalizeProfile,
   applyConfigOverrides,
   clipText,
+  isExecutableFile,
   readExampleEnvTemplate,
   resolveDefaultConfigDir,
   resolveDefaultEnvFile,
   isSourceCheckout,
   resolveRuntimeProfile,
   resolveConfig,
+  applyResolvedOpenClawBin,
+  buildPathEnv,
   resolveLaunchdPlistPath,
   resolveLaunchdLogDir,
   renderEnvFile,
@@ -1714,6 +1781,7 @@ module.exports = {
   resolveLibreOfficeInstallCommand,
   runDoctorFix,
   buildChildEnv,
+  findExecutable,
   openExternalUrl,
   promptToOpenApp,
 };

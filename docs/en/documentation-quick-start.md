@@ -22,7 +22,7 @@ lalaclaw init
 Notes:
 
 - `lalaclaw init` writes your local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
-- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path so launchd and other non-interactive starts do not depend on shell `PATH`
+- When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path and a launchd `PATH` that includes the current Node runtime, so non-interactive starts do not depend on shell `PATH`
 - On npm installs for macOS, `lalaclaw init` also starts a `launchd` background service automatically
 - After the macOS background service starts, `lalaclaw init` prompts you to press Enter and opens the App URL in your browser
 - If you only want to write config on macOS, use `lalaclaw init --no-background`
@@ -65,10 +65,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-7`:
+If you want a specific published version instead, such as `2026.3.17-8`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-7
+npm install -g lalaclaw@2026.3.17-8
 lalaclaw init
 ```
 
@@ -84,12 +84,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-7`:
+If you want a specific released version instead, such as `2026.3.17-8`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-7
+git checkout 2026.3.17-8
 npm ci
 npm run build
 npm run lalaclaw:start

@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17-8]
+
+### Added
+
+- Expanded CLI and gateway regression coverage for PATH composition, local profile env isolation, executable-bin validation, and IM session tab naming/styling
+
+### Changed
+
+- Updated IM conversation tab labels to `钉钉 agent-name` / `飞书 agent-name` / `企业微信 agent-name`, and rendered the `agent-name` suffix in a muted smaller style for clearer visual hierarchy
+- Hardened launch/runtime environment setup by prepending required runtime/bin directories to PATH for launchd services and spawned child processes
+- Updated published-version examples in `README` and localized `documentation-quick-start` guides to `2026.3.17-8`
+
+### Fixed
+
+- Fixed local OpenClaw binary discovery/usage in non-interactive contexts by requiring absolute `OPENCLAW_BIN` paths to be executable and by consistently persisting resolved local binaries during `lalaclaw init`
+- Fixed stale remote-gateway variables leaking into local-openclaw child environments by clearing `OPENCLAW_BASE_URL` and `OPENCLAW_API_KEY` when running locally
+- Fixed OpenClaw CLI gateway invocations that could fail to resolve binaries under constrained PATH environments
+
 ## [2026.3.17-7]
 
 ### Added
