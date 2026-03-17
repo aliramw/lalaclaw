@@ -492,6 +492,28 @@ function createOpenClawClient({
     );
   }
 
+  async function mirrorOpenClawUserMessage(sessionUser = 'command-center', messageText = '') {
+    const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
+    const trimmedMessage = String(messageText || '').trim();
+    if (!deliveryRoute || !trimmedMessage) {
+      return null;
+    }
+
+    const agentId = resolveSessionAgentId(sessionUser);
+    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    return await invokeOpenClawTool(
+      'message',
+      {
+        channel: deliveryRoute.channel,
+        target: deliveryRoute.to,
+        accountId: deliveryRoute.accountId,
+        message: trimmedMessage,
+      },
+      sessionKey,
+      'send',
+    );
+  }
+
   async function callOpenClawSession(messages, sessionUser = 'command-center', timeoutMs = 30000) {
     const result = await startOpenClawSessionRun(messages, sessionUser);
     const finalAssistant = await waitForOpenClawSessionCompletion(result, timeoutMs);
@@ -1222,6 +1244,7 @@ function createOpenClawClient({
     dispatchOpenClawStream,
     fetchBrowserPeek,
     invokeOpenClawTool,
+    mirrorOpenClawUserMessage,
     parseOpenClawResponse,
   };
 }

@@ -197,6 +197,7 @@ function createAppContext() {
     dispatchOpenClawStream,
     fetchBrowserPeek,
     invokeOpenClawTool,
+    mirrorOpenClawUserMessage,
     parseOpenClawResponse,
   } = createOpenClawClient({
     config,
@@ -281,6 +282,7 @@ function createAppContext() {
     getDefaultModelForAgent,
     getMessageAttachments,
     getSessionPreferences,
+    mirrorOpenClawUserMessage,
     normalizeChatMessage,
     normalizeSessionUser,
     parseFastCommand,
@@ -301,7 +303,6 @@ function createAppContext() {
     callOpenClawGateway,
     config,
     getCommandCenterSessionKey,
-    normalizeSessionUser,
     parseRequestBody,
     resolveSessionAgentId,
     sendJson,

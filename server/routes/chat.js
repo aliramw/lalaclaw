@@ -61,6 +61,7 @@ function createChatHandler({
   getDefaultModelForAgent,
   getMessageAttachments,
   getSessionPreferences,
+  mirrorOpenClawUserMessage,
   normalizeChatMessage,
   normalizeSessionUser,
   parseFastCommand,
@@ -404,6 +405,10 @@ function createChatHandler({
       }
 
       setSessionPreferences(sessionUser, nextPreferences);
+
+      if (config.mode === 'openclaw' && latestUserContent && !latestUserContent.startsWith('/')) {
+        await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent);
+      }
 
       if (shouldStream) {
         startChatStream(res);

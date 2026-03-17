@@ -5,6 +5,7 @@ describe('createChatHandler', () => {
   it('passes raw sessionUser values through to OpenClaw dispatch', async () => {
     const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
     let dispatchedSessionUser = '';
+    const mirroredMessages = [];
     let responseBody = null;
     const handleChat = createChatHandler({
       appendLocalSessionFileEntries: () => [],
@@ -30,6 +31,10 @@ describe('createChatHandler', () => {
       getDefaultModelForAgent: () => 'openai-codex/gpt-5.4',
       getMessageAttachments: () => [],
       getSessionPreferences: () => ({}),
+      mirrorOpenClawUserMessage: async (sessionUser, messageText) => {
+        mirroredMessages.push({ sessionUser, messageText });
+        return { ok: true };
+      },
       normalizeChatMessage: (message) => String(message?.content || message || '').trim(),
       normalizeSessionUser: (value) => value,
       parseFastCommand: () => null,
@@ -56,6 +61,12 @@ describe('createChatHandler', () => {
     await handleChat({}, {});
 
     expect(dispatchedSessionUser).toBe(rawSessionUser);
+    expect(mirroredMessages).toEqual([
+      {
+        sessionUser: rawSessionUser,
+        messageText: '你你你',
+      },
+    ]);
     expect(responseBody.outputText).toBe('收到');
   });
 });

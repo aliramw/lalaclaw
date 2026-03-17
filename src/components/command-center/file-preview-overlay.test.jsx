@@ -2,7 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { renderAsyncMock } = vi.hoisted(() => ({
+const { monacoEditorApis, renderAsyncMock } = vi.hoisted(() => ({
+  monacoEditorApis: [],
   renderAsyncMock: vi.fn(),
 }));
 
@@ -11,7 +12,7 @@ vi.mock("docx-preview", () => ({
 }));
 
 vi.mock("@monaco-editor/react", () => ({
-  default: function MockMonacoEditor({ language, onChange, value }) {
+  default: function MockMonacoEditor({ language, onChange, onMount, value }) {
     return (
       <textarea
         aria-label="Monaco editor"
@@ -19,6 +20,26 @@ vi.mock("@monaco-editor/react", () => ({
         data-testid="file-preview-monaco-editor"
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
+        ref={(node) => {
+          if (!node || node.dataset.monacoMounted === "true") {
+            return;
+          }
+
+          node.dataset.monacoMounted = "true";
+
+          const editorApi = {
+            focus: () => node.focus(),
+            getDomNode: () => node,
+            getLayoutInfo: () => ({ height: 200 }),
+            getScrollHeight: () => 1200,
+            setScrollTop: (nextScrollTop) => {
+              node.scrollTop = nextScrollTop;
+            },
+          };
+
+          monacoEditorApis.push(editorApi);
+          onMount?.(editorApi);
+        }}
       />
     );
   },
@@ -48,6 +69,7 @@ function mockNavigatorPlatform(platform) {
 describe("FilePreviewOverlay", () => {
   afterEach(() => {
     window.localStorage.removeItem("file-preview-font-size");
+    monacoEditorApis.length = 0;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     if (navigatorPlatformDescriptor) {
@@ -253,6 +275,38 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByText("After")).toBeInTheDocument();
     expect(screen.getByText("Saved in preview")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/Saved successfully\.|保存成功/);
+  });
+
+  it("starts editing near the same scroll position as the preview", async () => {
+    const user = userEvent.setup();
+    const markdownContent = Array.from({ length: 120 }, (_, index) => `- 第 ${index + 1} 行`).join("\n");
+    const { container } = renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: `# 标题\n\n${markdownContent}`,
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const viewport = container.querySelector("[data-radix-scroll-area-viewport]");
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1600 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 400 });
+    viewport.scrollTop = 600;
+
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
+    await waitFor(() => {
+      expect(editor.scrollTop).toBe(500);
+    });
   });
 
   it("uses Cmd+S on Apple platforms to save while staying in editing mode", async () => {

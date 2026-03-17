@@ -329,6 +329,7 @@ function FilePreviewCodeBlock({
 function EditableFilePreview({
   path,
   kind,
+  initialScrollRatio = null,
   value,
   onChange,
   resolvedTheme = "dark",
@@ -337,6 +338,11 @@ function EditableFilePreview({
   messages,
 }) {
   const [EditorComponent, setEditorComponent] = useState(null);
+  const initialScrollRatioRef = useRef(initialScrollRatio);
+
+  useEffect(() => {
+    initialScrollRatioRef.current = initialScrollRatio;
+  }, [initialScrollRatio]);
 
   useEffect(() => {
     let cancelled = false;
@@ -374,6 +380,30 @@ function EditableFilePreview({
           loading={loadingState}
           onMount={(editor) => {
             editor.focus();
+
+            const normalizedRatio = Number(initialScrollRatioRef.current);
+            initialScrollRatioRef.current = null;
+            if (!Number.isFinite(normalizedRatio) || normalizedRatio <= 0) {
+              return;
+            }
+
+            const syncPreviewPosition = () => {
+              const layoutHeight = Number(
+                editor.getLayoutInfo?.()?.height
+                || editor.getDomNode?.()?.clientHeight
+                || 0,
+              );
+              const scrollHeight = Number(editor.getScrollHeight?.() || 0);
+              const maxScrollTop = Math.max(0, scrollHeight - layoutHeight);
+
+              editor.setScrollTop?.(maxScrollTop * Math.min(normalizedRatio, 1));
+            };
+
+            if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+              window.requestAnimationFrame(syncPreviewPosition);
+            } else {
+              setTimeout(syncPreviewPosition, 0);
+            }
           }}
           height="100%"
           options={{
@@ -892,6 +922,8 @@ export function FilePreviewOverlay({
   const [previewContentOverride, setPreviewContentOverride] = useState(null);
   const [saveError, setSaveError] = useState("");
   const [saveNotice, setSaveNotice] = useState(null);
+  const previewViewportRef = useRef(null);
+  const pendingEditorScrollRatioRef = useRef(null);
   const previewIdentity = `${preview?.path || preview?.item?.path || preview?.name || ""}:${preview?.kind || ""}`;
 
   useEffect(() => {
@@ -931,6 +963,7 @@ export function FilePreviewOverlay({
       setPreviewContentOverride(null);
       setSaveError("");
       setSaveNotice(null);
+      pendingEditorScrollRatioRef.current = null;
       return;
     }
 
@@ -941,6 +974,7 @@ export function FilePreviewOverlay({
     setPreviewContentOverride(null);
     setSaveError("");
     setSaveNotice(null);
+    pendingEditorScrollRatioRef.current = null;
   }, [preview, previewIdentity]);
 
   useEffect(() => {
@@ -1003,6 +1037,14 @@ export function FilePreviewOverlay({
   const handleStartEditing = () => {
     if (!canEditPreview) {
       return;
+    }
+
+    const previewViewport = previewViewportRef.current;
+    if (previewViewport) {
+      const maxScrollTop = Math.max(0, previewViewport.scrollHeight - previewViewport.clientHeight);
+      pendingEditorScrollRatioRef.current = maxScrollTop > 0 ? previewViewport.scrollTop / maxScrollTop : 0;
+    } else {
+      pendingEditorScrollRatioRef.current = null;
     }
 
     setEditableContent(effectivePreviewContent);
@@ -1118,6 +1160,7 @@ export function FilePreviewOverlay({
         <EditableFilePreview
           path={title}
           kind={preview.kind}
+          initialScrollRatio={pendingEditorScrollRatioRef.current}
           value={editableContent}
           onChange={setEditableContent}
           resolvedTheme={resolvedTheme}
@@ -1219,7 +1262,7 @@ export function FilePreviewOverlay({
       {body}
     </div>
   ) : (
-    <ScrollArea className="min-h-0 flex-1">
+    <ScrollArea className="min-h-0 flex-1" viewportRef={previewViewportRef}>
       <div className="min-h-full px-6 py-5">{body}</div>
       {preview.truncated ? (
         <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
