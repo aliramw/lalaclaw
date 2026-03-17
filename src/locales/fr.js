@@ -185,7 +185,7 @@ const fr = {
     waitingFirstPrompt: "En attente du premier message",
     conversationWillAppear: "La conversation avec l'Agent s'affichera ici.",
     thinkingPlaceholder: "Réflexion en cours…",
-    promptPlaceholder: "Décrivez ce que vous voulez que l'Agent accomplisse dans l'espace de travail actuel.",
+    promptPlaceholder: (agentName) => `💡 Envie de faire quelque chose avec ${agentName} ?`,
     disconnectedPlaceholder: "OpenClaw n'est pas encore connecté. Veuillez patienter.",
     composerEnterToSendHint: "Entrée pour envoyer, Maj + Entrée pour un retour à la ligne",
     composerDoubleEnterHint: "Double Entrée ou Maj + Entrée pour envoyer, Entrée pour un retour à la ligne",

@@ -185,7 +185,7 @@ const ja = {
     waitingFirstPrompt: "最初の指示を待機中",
     conversationWillAppear: "ここに Agent との会話が表示されます。",
     thinkingPlaceholder: "考えています…",
-    promptPlaceholder: "現在の workspace で Agent にしてほしいことを説明してください。",
+    promptPlaceholder: (agentName) => `💡 ${agentName} と一緒に何かしてみる？`,
     disconnectedPlaceholder: "OpenClaw はまだ接続されていません。しばらくお待ちください。",
     composerEnterToSendHint: "Enter で送信、Shift + Enter で改行",
     composerDoubleEnterHint: "Enter 連打または Shift + Enter で送信、Enter で改行",

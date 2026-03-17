@@ -537,6 +537,45 @@ describe("SessionOverview", () => {
     });
   });
 
+  it("does not show the language tooltip again immediately after switching languages", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="dark"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "切换语言" });
+
+    await user.hover(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("切换语言");
+
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Français" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    });
+  });
+
   it("hides agents that already have an open session from the switcher menu", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 

@@ -185,7 +185,7 @@ const en = {
     waitingFirstPrompt: "Waiting for the first prompt",
     conversationWillAppear: "Your conversation with the Agent will appear here.",
     thinkingPlaceholder: "Thinking…",
-    promptPlaceholder: "Describe what you want the Agent to complete in the current workspace.",
+    promptPlaceholder: (agentName) => `💡 Want to do something with ${agentName}?`,
     disconnectedPlaceholder: "OpenClaw is not connected yet. Please wait.",
     composerEnterToSendHint: "Enter to send, Shift + Enter for newline",
     composerDoubleEnterHint: "Double-tap Enter or Shift + Enter to send, Enter for newline",

@@ -802,7 +802,7 @@ function FileGroupSection({ children, count = 0, defaultOpen = true, label, mess
             {count}
           </Badge>
         </button>
-        {action ? <div className="min-w-0 shrink-0">{action}</div> : null}
+        {action ? <div className="min-w-0 w-[10.5rem] max-w-[44%] shrink">{action}</div> : null}
       </div>
       {!collapsed ? children : null}
     </section>
@@ -811,7 +811,7 @@ function FileGroupSection({ children, count = 0, defaultOpen = true, label, mess
 
 function FileFilterInput({ filterInput, messages, onChange, onClear }) {
   return (
-    <label className="relative block w-[10.5rem]">
+    <label className="relative block w-full">
       <span className="sr-only">{messages.label}</span>
       <input
         type="text"

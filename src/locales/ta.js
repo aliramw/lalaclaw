@@ -173,7 +173,7 @@ const ta = {
     },
     waitingFirstPrompt: "முதல் prompt க்காக காத்திருக்கிறது",
     conversationWillAppear: "ஏஜென்டுடன் உங்கள் உரையாடல் இங்கே தோன்றும்.",
-    promptPlaceholder: "தற்போதைய workspace-ல் ஏஜென்ட் என்ன செய்ய வேண்டும் என்பதை விவரிக்கவும்.",
+    promptPlaceholder: (agentName) => `💡 ${agentName} உடன் ஏதாவது செய்ய விரும்புகிறீர்களா?`,
     disconnectedPlaceholder: "OpenClaw இன்னும் இணைக்கப்படவில்லை. தயவு செய்து காத்திருக்கவும்.",
     composerEnterToSendHint: "அனுப்ப Enter, புதிய வரிக்கு Shift + Enter",
     composerDoubleEnterHint: "அனுப்ப இரண்டு முறை Enter அல்லது Shift + Enter, புதிய வரிக்கு Enter",

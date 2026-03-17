@@ -173,7 +173,7 @@ const de = {
     },
     waitingFirstPrompt: "Warte auf den ersten Prompt",
     conversationWillAppear: "Deine Unterhaltung mit dem Agenten erscheint hier.",
-    promptPlaceholder: "Beschreibe, was der Agent im aktuellen Workspace erledigen soll.",
+    promptPlaceholder: (agentName) => `💡 Moechtest du etwas mit ${agentName} zusammen machen?`,
     disconnectedPlaceholder: "OpenClaw ist noch nicht verbunden. Bitte warte.",
     composerEnterToSendHint: "Enter zum Senden, Shift + Enter für Zeilenumbruch",
     composerDoubleEnterHint: "Zweimal Enter oder Shift + Enter zum Senden, Enter für Zeilenumbruch",

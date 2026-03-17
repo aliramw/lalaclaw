@@ -127,6 +127,31 @@ describe("ChatPanel", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
+  it("renders the agent name in the composer placeholder with semibold weight", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          agentLabel="writer"
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "writer" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByPlaceholderText("💡 想要和 writer 一起做点什么？")).toBeInTheDocument();
+    expect(screen.getByText("writer", { selector: "span" })).toHaveClass("font-semibold");
+  });
+
   it("cancels resetting the conversation when the custom dialog is dismissed", async () => {
     const onReset = vi.fn();
 
@@ -238,8 +263,39 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const composerFrame = screen.getByPlaceholderText(defaultPromptPlaceholder).parentElement;
+    const composerFrame = screen.getByPlaceholderText(defaultPromptPlaceholder).parentElement?.parentElement;
     expect(composerFrame).toHaveClass("border-[#4d88c7]", "ring-2", "ring-[#4d88c7]/20");
+  });
+
+  it("uses the dramatic connected label in chinese while keeping the tooltip detail standard", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <ChatPanel
+            busy={false}
+            formatTime={() => "10:00:00"}
+            messageViewportRef={null}
+            messages={[]}
+            onChatFontSizeChange={() => {}}
+            onPromptChange={() => {}}
+            onPromptKeyDown={() => {}}
+            onReset={() => {}}
+            onSend={() => {}}
+            prompt=""
+            promptRef={null}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByText("大钳在握"));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("OpenClaw的状态");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("已连接");
   });
 
   it("reserves stable footer width for the connection label and hint", () => {

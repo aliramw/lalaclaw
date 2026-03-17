@@ -1256,7 +1256,7 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
   const statusLabel = isOffline
     ? messages.chat.connectionStatusDisconnected
     : isOpenClaw
-      ? messages.chat.connectionStatusConnected
+      ? (messages.chat.connectionStatusConnectedDisplay || messages.chat.connectionStatusConnected)
       : messages.chat.connectionStatusLocal;
   const statusHint = isOffline
     ? messages.chat.disconnectedPlaceholder
@@ -1660,6 +1660,22 @@ export function ChatPanel({
     }
     return i18n.chat.promptPlaceholder;
   }, [currentAgentName, i18n.chat]);
+  const promptPlaceholderSegments = useMemo(() => {
+    const placeholderText = String(promptPlaceholder || "");
+    const agentName = String(currentAgentName || "");
+    if (!agentName) {
+      return { before: placeholderText, agent: "", after: "" };
+    }
+    const agentIndex = placeholderText.indexOf(agentName);
+    if (agentIndex < 0) {
+      return { before: placeholderText, agent: "", after: "" };
+    }
+    return {
+      before: placeholderText.slice(0, agentIndex),
+      agent: agentName,
+      after: placeholderText.slice(agentIndex + agentName.length),
+    };
+  }, [currentAgentName, promptPlaceholder]);
   const latestMessageCardKey = useMemo(() => {
     const lastMessage = messages[messages.length - 1];
     if (!lastMessage) {
@@ -2835,54 +2851,73 @@ export function ChatPanel({
                   <div className="border-t border-border/60" />
                 </>
               ) : null}
-              <Textarea
-                ref={setComposerTextareaNode}
-                rows={2}
-                value={prompt}
-                onChange={(event) => {
-                  const nextPrompt = event.target.value;
-                  onPromptChange(nextPrompt);
-                  syncAgentMention(nextPrompt, event.target.selectionStart ?? nextPrompt.length);
-                }}
-                onClick={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-                onKeyUp={(event) => {
-                  if (shouldIgnoreMentionKeyUp(event.key)) {
-                    return;
-                  }
-                  syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length);
-                }}
-                onKeyDown={(event) => {
-                  if (activeMention && mentionOptions.length) {
-                    if (event.key === "ArrowDown") {
-                      event.preventDefault();
-                      setHighlightedAgentIndex((current) => (current + 1) % mentionOptions.length);
+              <div className="relative">
+                {openClawConnected && !prompt ? (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-sm text-muted-foreground"
+                  >
+                    <span>{promptPlaceholderSegments.before}</span>
+                    {promptPlaceholderSegments.agent ? (
+                      <span className="font-semibold text-foreground/90">
+                        {promptPlaceholderSegments.agent}
+                      </span>
+                    ) : null}
+                    <span>{promptPlaceholderSegments.after}</span>
+                  </div>
+                ) : null}
+                <Textarea
+                  ref={setComposerTextareaNode}
+                  rows={2}
+                  value={prompt}
+                  onChange={(event) => {
+                    const nextPrompt = event.target.value;
+                    onPromptChange(nextPrompt);
+                    syncAgentMention(nextPrompt, event.target.selectionStart ?? nextPrompt.length);
+                  }}
+                  onClick={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+                  onKeyUp={(event) => {
+                    if (shouldIgnoreMentionKeyUp(event.key)) {
                       return;
                     }
-                    if (event.key === "ArrowUp") {
-                      event.preventDefault();
-                      setHighlightedAgentIndex((current) => (current - 1 + mentionOptions.length) % mentionOptions.length);
-                      return;
+                    syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length);
+                  }}
+                  onKeyDown={(event) => {
+                    if (activeMention && mentionOptions.length) {
+                      if (event.key === "ArrowDown") {
+                        event.preventDefault();
+                        setHighlightedAgentIndex((current) => (current + 1) % mentionOptions.length);
+                        return;
+                      }
+                      if (event.key === "ArrowUp") {
+                        event.preventDefault();
+                        setHighlightedAgentIndex((current) => (current - 1 + mentionOptions.length) % mentionOptions.length);
+                        return;
+                      }
+                      if (event.key === "Enter" || event.key === "Tab") {
+                        event.preventDefault();
+                        applyMention(mentionOptions[highlightedAgentIndex]?.value || mentionOptions[0]?.value);
+                        return;
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setAgentMention(null);
+                        setManualMention(null);
+                        setHighlightedAgentIndex(0);
+                        return;
+                      }
                     }
-                    if (event.key === "Enter" || event.key === "Tab") {
-                      event.preventDefault();
-                      applyMention(mentionOptions[highlightedAgentIndex]?.value || mentionOptions[0]?.value);
-                      return;
-                    }
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setAgentMention(null);
-                      setManualMention(null);
-                      setHighlightedAgentIndex(0);
-                      return;
-                    }
-                  }
-                  onPromptKeyDown(event);
-                }}
-                onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-                placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
-                disabled={composerLocked}
-                className="min-h-[3.35rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
-              />
+                    onPromptKeyDown(event);
+                  }}
+                  onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+                  placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
+                  disabled={composerLocked}
+                  className={cn(
+                    "min-h-[3.35rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0",
+                    openClawConnected ? "placeholder:text-transparent" : "",
+                  )}
+                />
+              </div>
             </div>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

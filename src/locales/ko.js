@@ -170,7 +170,7 @@ const ko = {
     },
     waitingFirstPrompt: "첫 프롬프트를 기다리는 중",
     conversationWillAppear: "에이전트와의 대화가 여기에 표시됩니다.",
-    promptPlaceholder: "현재 작업공간에서 에이전트가 수행할 작업을 설명해 주세요.",
+    promptPlaceholder: (agentName) => `💡 ${agentName}와 함께 뭔가 해볼까요?`,
     disconnectedPlaceholder: "OpenClaw가 아직 연결되지 않았습니다. 잠시만 기다려 주세요.",
     composerEnterToSendHint: "Enter로 전송, Shift + Enter로 줄바꿈",
     composerDoubleEnterHint: "Enter 두 번 또는 Shift + Enter로 전송, Enter는 줄바꿈",

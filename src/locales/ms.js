@@ -173,7 +173,7 @@ const ms = {
     },
     waitingFirstPrompt: "Menunggu prompt pertama",
     conversationWillAppear: "Perbualan anda dengan ejen akan muncul di sini.",
-    promptPlaceholder: "Terangkan apa yang anda mahu ejen siapkan dalam workspace semasa.",
+    promptPlaceholder: (agentName) => `💡 Nak buat sesuatu bersama ${agentName}?`,
     disconnectedPlaceholder: "OpenClaw belum disambungkan. Sila tunggu.",
     composerEnterToSendHint: "Enter untuk hantar, Shift + Enter untuk baris baharu",
     composerDoubleEnterHint: "Tekan Enter dua kali atau Shift + Enter untuk hantar, Enter untuk baris baharu",

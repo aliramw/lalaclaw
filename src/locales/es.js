@@ -185,7 +185,7 @@ const es = {
     waitingFirstPrompt: "Esperando la primera instrucción",
     conversationWillAppear: "Aquí aparecerá tu conversación con el Agent.",
     thinkingPlaceholder: "Pensando…",
-    promptPlaceholder: "Describe lo que quieres que el Agent complete en el workspace actual.",
+    promptPlaceholder: (agentName) => `💡 ¿Quieres hacer algo con ${agentName}?`,
     disconnectedPlaceholder: "OpenClaw aún no está conectado. Espera un momento.",
     composerEnterToSendHint: "Enter para enviar, Shift + Enter para nueva línea",
     composerDoubleEnterHint: "Doble Enter o Shift + Enter para enviar, Enter para nueva línea",
