@@ -15,6 +15,7 @@
     "dist/",
     "docs/",
     "server/",
+    "shared/",
     ".env.local.example",
     "CHANGELOG.md",
     "CODE_OF_CONDUCT.md",
