@@ -27,6 +27,20 @@ describe("LalaClaw CLI helpers", () => {
     expect(parsed.options.fix).toBe(true);
   });
 
+
+
+  it("supports -h/--help aliases", () => {
+    expect(cli.parseArgs(["-h"]).options.help).toBe(true);
+    expect(cli.parseArgs(["--help"]).options.help).toBe(true);
+  });
+
+  it("supports -v/--version aliases", () => {
+    expect(cli.parseArgs(["-v"]).options.version).toBe(true);
+    expect(cli.parseArgs(["--version"]).options.version).toBe(true);
+    expect(typeof cli.PACKAGE_VERSION).toBe("string");
+    expect(cli.PACKAGE_VERSION.length).toBeGreaterThan(0);
+  });
+
   it("parses status and stop commands without extra options", () => {
     expect(cli.parseArgs(["status"]).command).toBe("status");
     expect(cli.parseArgs(["stop"]).command).toBe("stop");
@@ -239,6 +253,28 @@ describe("LalaClaw CLI helpers", () => {
     expect(nextConfig.openclawApiPath).toBe("/v1/responses");
   });
 
+
+
+  it("applies host/port/profile overrides for runtime commands", () => {
+    const { childEnv, config } = cli.buildChildEnv(
+      "/tmp/does-not-exist.env",
+      {
+        host: "0.0.0.0",
+        backendPort: "3300",
+        frontendPort: "5300",
+        profile: "mock",
+      },
+    );
+
+    expect(config.host).toBe("0.0.0.0");
+    expect(config.backendPort).toBe("3300");
+    expect(config.frontendPort).toBe("5300");
+    expect(config.profile).toBe("mock");
+    expect(childEnv.HOST).toBe("0.0.0.0");
+    expect(childEnv.PORT).toBe("3300");
+    expect(childEnv.FRONTEND_PORT).toBe("5300");
+    expect(childEnv.COMMANDCENTER_FORCE_MOCK).toBe("1");
+  });
   it("renders an env file for mock mode with stable defaults", () => {
     const output = cli.renderEnvFile({
       host: "127.0.0.1",

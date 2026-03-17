@@ -143,7 +143,7 @@ npm run lalaclaw:start
 
 ```bash
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --host 127.0.0.1 --port 3000
 ```
 
 你也可以直接运行：
@@ -223,7 +223,7 @@ tail -f ./logs/lalaclaw-launchd.err.log
 强制使用 `mock`：
 
 ```bash
-COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --profile mock --host 127.0.0.1 --port 3000
 ```
 
 如果你使用 CLI 初始化配置：

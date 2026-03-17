@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const readline = require('node:readline/promises');
 const { spawn, spawnSync } = require('node:child_process');
+const { version: PACKAGE_VERSION } = require('../package.json');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_HOST = '127.0.0.1';
@@ -95,10 +96,10 @@ Usage:
   lalaclaw status
   lalaclaw stop
   lalaclaw restart
-  lalaclaw dev [--config-file <path>]
-  lalaclaw start [--config-file <path>]
-  lalaclaw frontend [--config-file <path>]
-  lalaclaw backend [--config-file <path>]
+  lalaclaw dev [--config-file <path>] [--host <host>] [--port <port>] [--frontend-host <host>] [--frontend-port <port>] [--profile <name>]
+  lalaclaw start [--config-file <path>] [--host <host>] [--port <port>] [--profile <name>]
+  lalaclaw frontend [--config-file <path>] [--frontend-host <host>] [--frontend-port <port>]
+  lalaclaw backend [--config-file <path>] [--host <host>] [--port <port>] [--profile <name>]
 
 Commands:
   init      Create or refresh local config, then start Server and Frontend in the background when available.
@@ -122,6 +123,16 @@ function parseArgs(argv) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token === '-h' || token === '--help') {
+      options.help = true;
+      continue;
+    }
+
+    if (token === '-v' || token === '--version') {
+      options.version = true;
+      continue;
+    }
+
     if (!token.startsWith('--')) {
       args.push(token);
       continue;
@@ -160,11 +171,6 @@ function parseArgs(argv) {
       const key = OPTION_ALIASES[token];
       options[key] = key === 'configFile' ? path.resolve(process.cwd(), value) : value;
       index += 1;
-      continue;
-    }
-
-    if (token === '--help' || token === '-h') {
-      options.help = true;
       continue;
     }
 
@@ -1571,10 +1577,10 @@ async function startInitBackgroundServer(envFilePath) {
 }
 
 
-function buildChildEnv(envFilePath) {
+function buildChildEnv(envFilePath, overrides = {}) {
   const envValues = readEnvFile(envFilePath);
   const localOpenClaw = detectLocalOpenClaw();
-  const config = resolveConfig(envValues, localOpenClaw);
+  const config = applyConfigOverrides(resolveConfig(envValues, localOpenClaw), overrides);
   const childEnv = {
     ...process.env,
     HOST: config.host,
@@ -1663,9 +1669,9 @@ function stopChild(child) {
   child.kill('SIGTERM');
 }
 
-async function runFrontend(envFilePath) {
+async function runFrontend(envFilePath, options = {}) {
   ensureDevelopmentAssetsAvailable();
-  const { childEnv, config } = buildChildEnv(envFilePath);
+  const { childEnv, config } = buildChildEnv(envFilePath, options);
   await ensurePortAvailable('Frontend port', config.frontendHost, config.frontendPort);
   console.log(`INFO  Starting frontend at http://${config.frontendHost}:${config.frontendPort}`);
   const child = runChild(
@@ -1679,8 +1685,8 @@ async function runFrontend(envFilePath) {
   });
 }
 
-async function runBackend(envFilePath) {
-  const { childEnv, config } = buildChildEnv(envFilePath);
+async function runBackend(envFilePath, options = {}) {
+  const { childEnv, config } = buildChildEnv(envFilePath, options);
   await ensurePortAvailable('Backend port', config.host, config.backendPort);
   console.log(`INFO  Starting backend at http://${config.host}:${config.backendPort} in ${config.profile} mode`);
   const child = runChild(process.execPath, ['server.js'], childEnv);
@@ -1690,9 +1696,9 @@ async function runBackend(envFilePath) {
   });
 }
 
-async function runDev(envFilePath) {
+async function runDev(envFilePath, options = {}) {
   ensureDevelopmentAssetsAvailable();
-  const { childEnv, config } = buildChildEnv(envFilePath);
+  const { childEnv, config } = buildChildEnv(envFilePath, options);
   await ensurePortAvailable('Frontend port', config.frontendHost, config.frontendPort);
   await ensurePortAvailable('Backend port', config.host, config.backendPort);
   const frontend = runChild(
@@ -1724,8 +1730,8 @@ async function runDev(envFilePath) {
   backend.on('exit', (code) => shutdown(typeof code === 'number' ? code : 0));
 }
 
-async function runStart(envFilePath) {
-  const { childEnv, config } = buildChildEnv(envFilePath);
+async function runStart(envFilePath, options = {}) {
+  const { childEnv, config } = buildChildEnv(envFilePath, options);
 
   if (!fs.existsSync(DIST_DIR)) {
     throw new Error(
@@ -1796,6 +1802,11 @@ async function main() {
   const { command, options } = parseArgs(process.argv.slice(2));
   const envFilePath = options.configFile || DEFAULT_ENV_FILE;
 
+  if (options.version) {
+    console.log(PACKAGE_VERSION);
+    return;
+  }
+
   if (options.help || command === 'help') {
     printHelp();
     return;
@@ -1842,22 +1853,22 @@ async function main() {
   }
 
   if (command === 'dev') {
-    await runDev(envFilePath);
+    await runDev(envFilePath, options);
     return;
   }
 
   if (command === 'start') {
-    await runStart(envFilePath);
+    await runStart(envFilePath, options);
     return;
   }
 
   if (command === 'frontend') {
-    await runFrontend(envFilePath);
+    await runFrontend(envFilePath, options);
     return;
   }
 
   if (command === 'backend') {
-    await runBackend(envFilePath);
+    await runBackend(envFilePath, options);
     return;
   }
 
@@ -1875,6 +1886,7 @@ module.exports = {
   DEFAULT_AGENT_ID,
   REQUIRED_NODE_MAJOR,
   PACKAGE_NAME,
+  PACKAGE_VERSION,
   LEGACY_ENV_FILE,
   DEFAULT_CONFIG_DIR,
   EXAMPLE_ENV_FILE,
