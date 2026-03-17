@@ -793,6 +793,7 @@ const MessageBubble = memo(function MessageBubble({
   const [showBubbleTopJump, setShowBubbleTopJump] = useState(false);
   const bubbleRef = useRef(null);
   const bubbleSurfaceRef = useRef(null);
+  const bubbleTopSentinelRef = useRef(null);
   const isUser = message.role === "user";
   const isPending = Boolean(message.pending);
   const renderedContent = useMemo(
@@ -858,6 +859,10 @@ const MessageBubble = memo(function MessageBubble({
     bubbleSurfaceRef.current = node;
   };
 
+  const setBubbleTopSentinelNode = (node) => {
+    bubbleTopSentinelRef.current = node;
+  };
+
   const handleJumpBubbleTop = () => {
     const viewport = messageViewportRef?.current;
     const bubble = bubbleSurfaceRef.current || bubbleRef.current;
@@ -890,6 +895,7 @@ const MessageBubble = memo(function MessageBubble({
 
     const viewport = messageViewportRef?.current;
     const bubble = bubbleSurfaceRef.current || bubbleRef.current;
+    const bubbleTopSentinel = bubbleTopSentinelRef.current;
     if (!viewport || !bubble) {
       setShowBubbleTopJump(false);
       return undefined;
@@ -906,7 +912,7 @@ const MessageBubble = memo(function MessageBubble({
     };
 
     const IntersectionObserverCtor = window.IntersectionObserver || globalThis.IntersectionObserver;
-    if (IntersectionObserverCtor) {
+    if (IntersectionObserverCtor && bubbleTopSentinel) {
       const observer = new IntersectionObserverCtor(
         (entries) => {
           const entry = entries[0];
@@ -918,17 +924,21 @@ const MessageBubble = memo(function MessageBubble({
 
           updateBubbleTopJump(
             rootBounds,
-            entry.boundingClientRect,
+            {
+              top: entry.boundingClientRect.top,
+              bottom: bubble.getBoundingClientRect().bottom,
+              height: bubble.getBoundingClientRect().height,
+            },
             rootBounds.height || viewport.clientHeight,
           );
         },
         {
           root: viewport,
-          threshold: [0, 0.01, 0.99, 1],
+          threshold: [0, 1],
         },
       );
 
-      observer.observe(bubble);
+      observer.observe(bubbleTopSentinel);
       return () => observer.disconnect();
     }
 
@@ -1082,6 +1092,11 @@ const MessageBubble = memo(function MessageBubble({
                 )}
               >
                 <CardContent className={bubbleContentClassName}>
+                <span
+                  ref={setBubbleTopSentinelNode}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-0 left-0 h-px w-px opacity-0"
+                />
                 <MarkdownContent
                   content={renderedContent}
                   files={files}
@@ -1155,18 +1170,18 @@ const MessageBubble = memo(function MessageBubble({
               )}
             >
               <CardContent className={bubbleContentClassName}>
-                  <MarkdownContent
-                    content={renderedContent}
-                    files={files}
-                    headingScopeId={headingScopeId}
-                    resolvedTheme={resolvedTheme}
-                    streaming={isStreamingAssistant}
-                    onOpenFilePreview={handleOpenFilePreview}
-                    onOpenImagePreview={handleOpenImagePreview}
-                    className={fontSizeStyles.compactMarkdown}
-                  />
-                </CardContent>
-              </Card>
+                <MarkdownContent
+                  content={renderedContent}
+                  files={files}
+                  headingScopeId={headingScopeId}
+                  resolvedTheme={resolvedTheme}
+                  streaming={isStreamingAssistant}
+                  onOpenFilePreview={handleOpenFilePreview}
+                  onOpenImagePreview={handleOpenImagePreview}
+                  className={fontSizeStyles.compactMarkdown}
+                />
+              </CardContent>
+            </Card>
             </div>
             <MessageMeta
               align="right"
@@ -1208,6 +1223,11 @@ const MessageBubble = memo(function MessageBubble({
             )}
           >
             <CardContent className={bubbleContentClassName}>
+              <span
+                ref={setBubbleTopSentinelNode}
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 left-0 h-px w-px opacity-0"
+              />
               <MarkdownContent
                 content={renderedContent}
                 files={files}
