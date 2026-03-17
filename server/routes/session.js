@@ -13,7 +13,6 @@ function createSessionHandlers({
   getDefaultAgentId,
   getDefaultModelForAgent,
   getSessionPreferences,
-  normalizeSessionUser,
   normalizeThinkMode,
   parseRequestBody,
   resolveAgentDisplayName,
@@ -22,11 +21,18 @@ function createSessionHandlers({
   resolveSessionFastMode,
   resolveSessionModel,
   resolveSessionThinkMode,
+  searchSessionsForAgent,
   sendJson,
   setSessionPreferences,
 }) {
+  function parseRequestedSessionUser(value) {
+    return String(value || 'command-center').trim() || 'command-center';
+  }
+
   function handleSession(req, res) {
-    const sessionUser = normalizeSessionUser(new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser') || 'command-center');
+    const sessionUser = parseRequestedSessionUser(
+      new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionUser'),
+    );
     const agentId = resolveSessionAgentId(sessionUser);
     const agentLabel = resolveAgentDisplayName(agentId);
     const model = resolveSessionModel(sessionUser, agentId);
@@ -50,10 +56,30 @@ function createSessionHandlers({
     });
   }
 
+  function handleSessionSearch(req, res) {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const requestedAgentId = String(url.searchParams.get('agentId') || '').trim();
+    const agentId = requestedAgentId || getDefaultAgentId();
+    const query = String(url.searchParams.get('q') || '').trim();
+    const channel = String(url.searchParams.get('channel') || '').trim();
+    const limit = Number(url.searchParams.get('limit') || 0);
+
+    sendJson(res, 200, {
+      ok: true,
+      agentId,
+      query,
+      sessions: searchSessionsForAgent(agentId, {
+        channel,
+        limit,
+        term: query,
+      }),
+    });
+  }
+
   async function handleSessionUpdate(req, res) {
     try {
       const body = await parseRequestBody(req);
-      const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+      const sessionUser = parseRequestedSessionUser(body.sessionUser);
       const currentPreferences = getSessionPreferences(sessionUser);
       const nextFastMode = typeof body.fastMode === 'boolean' ? body.fastMode : resolveSessionFastMode(sessionUser);
       const requestedThinkMode = typeof body.thinkMode === 'string' ? normalizeThinkMode(body.thinkMode) : '';
@@ -122,6 +148,7 @@ function createSessionHandlers({
 
   return {
     handleSession,
+    handleSessionSearch,
     handleSessionUpdate,
   };
 }

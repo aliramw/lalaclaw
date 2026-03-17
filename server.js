@@ -50,6 +50,7 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleFilePreviewSave,
     handleRuntime,
     handleSession,
+    handleSessionSearch,
     handleSessionUpdate,
     handleWorkspaceTree,
     getStaticDir: resolveStaticDir,
@@ -61,6 +62,11 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if (req.method === 'GET' && url.pathname === '/api/session') {
       runRouteHandler(handleSession, req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/session/search') {
+      runRouteHandler(handleSessionSearch, req, res);
       return;
     }
 

@@ -1615,6 +1615,95 @@ export function useCommandCenter() {
     }
   };
 
+  const handleSearchSessions = useCallback(async (searchTerm = "") => {
+    const agentId = String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main";
+    const params = new URLSearchParams({
+      agentId,
+      channel: "dingtalk-connector",
+      limit: "12",
+    });
+    const normalizedSearchTerm = String(searchTerm || "").trim();
+    if (normalizedSearchTerm) {
+      params.set("q", normalizedSearchTerm);
+    }
+
+    const response = await fetch(`/api/session/search?${params.toString()}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || i18n.common.requestFailed);
+    }
+
+    return Array.isArray(data.sessions) ? data.sessions : [];
+  }, [i18n.common.requestFailed, session.agentId]);
+
+  const handleSelectSearchedSession = useCallback(async (sessionMatch) => {
+    const nextSessionUser = String(sessionMatch?.sessionUser || "").trim();
+    const nextAgentId = String(sessionMatch?.agentId || sessionStateRef.current.agentId || "main").trim() || "main";
+    const activeTabId = String(activeChatTabIdRef.current || "").trim();
+
+    if (!nextSessionUser || !activeTabId) {
+      return;
+    }
+
+    if (
+      nextSessionUser === String(sessionStateRef.current.sessionUser || "").trim()
+      && nextAgentId === String(sessionStateRef.current.agentId || "").trim()
+    ) {
+      return;
+    }
+
+    flushVisibleConversationScrollTop();
+    updateTabIdentity(activeTabId, { agentId: nextAgentId, sessionUser: nextSessionUser });
+    updateTabMeta(activeTabId, {
+      agentId: nextAgentId,
+      sessionUser: nextSessionUser,
+    });
+    updateTabSession(activeTabId, (current) => ({
+      ...current,
+      agentId: nextAgentId,
+      selectedAgentId: nextAgentId,
+      sessionUser: nextSessionUser,
+      status: i18n.common.running,
+    }));
+    setMessagesForTab(activeTabId, []);
+    setBusyForTab(activeTabId, true);
+    clearSnapshotData();
+    setFocusMessageRequest(null);
+    sessionStateRef.current = {
+      ...sessionStateRef.current,
+      agentId: nextAgentId,
+      sessionUser: nextSessionUser,
+    };
+    setActiveTarget({
+      sessionUser: nextSessionUser,
+      agentId: nextAgentId,
+    });
+
+    try {
+      await loadRuntime(nextSessionUser, {
+        agentId: nextAgentId,
+      });
+      focusPrompt();
+    } catch (error) {
+      setBusyForTab(activeTabId, false);
+      setSession((current) => ({ ...current, status: i18n.common.failed }));
+      throw error;
+    }
+  }, [
+    clearSnapshotData,
+    flushVisibleConversationScrollTop,
+    focusPrompt,
+    i18n.common.failed,
+    i18n.common.running,
+    loadRuntime,
+    setBusyForTab,
+    setMessagesForTab,
+    setActiveTarget,
+    updateTabIdentity,
+    updateTabMeta,
+    updateTabSession,
+  ]);
+
   const handleActivateChatTab = (tabId) => {
     if (!tabId || tabId === activeChatTabIdRef.current) {
       return;
@@ -1808,6 +1897,7 @@ export function useCommandCenter() {
     handleComposerSendModeToggle,
     handleCloseChatTab,
     handleReorderChatTabs,
+    handleSearchSessions,
     handleFastModeChange,
     handleInspectorPanelWidthChange,
     handleModelChange,
@@ -1816,6 +1906,7 @@ export function useCommandCenter() {
     handleRemoveAttachment,
     handleReset,
     handleSend,
+    handleSelectSearchedSession,
     handleStop,
     handleThinkModeChange,
     localizedFormatTime,

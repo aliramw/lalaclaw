@@ -151,7 +151,9 @@ function createAppContext() {
   }
 
   function getCommandCenterSessionKey(agentId = getDefaultAgentId(), sessionUser = 'command-center') {
-    return `agent:${agentId}:openai-user:${normalizeSessionUser(sessionUser)}`;
+    const normalizedAgentId = String(agentId || getDefaultAgentId()).trim() || getDefaultAgentId();
+    const resolvedSessionUser = String(sessionUser || 'command-center').trim() || 'command-center';
+    return `agent:${normalizedAgentId}:openai-user:${resolvedSessionUser}`;
   }
 
   const {
@@ -167,10 +169,12 @@ function createAppContext() {
     collectToolHistory,
     extractTextSegments,
     findLatestSessionForAgent,
+    getTranscriptEntriesForSession,
     getTranscriptPath,
     listDirectoryPreview,
     parseSessionStatusText,
     readJsonLines,
+    searchSessionsForAgent,
     resolveSessionRecord,
   } = createTranscriptProjector({
     PROJECT_ROOT,
@@ -193,6 +197,7 @@ function createAppContext() {
     dispatchOpenClawStream,
     fetchBrowserPeek,
     invokeOpenClawTool,
+    mirrorOpenClawUserMessage,
     parseOpenClawResponse,
   } = createOpenClawClient({
     config,
@@ -239,6 +244,7 @@ function createAppContext() {
     getDefaultModelForAgent,
     getLocalSessionFileEntries,
     getLocalSessionConversation,
+    getTranscriptEntriesForSession,
     getTranscriptPath,
     invokeOpenClawTool,
     listDirectoryPreview,
@@ -276,6 +282,7 @@ function createAppContext() {
     getDefaultModelForAgent,
     getMessageAttachments,
     getSessionPreferences,
+    mirrorOpenClawUserMessage,
     normalizeChatMessage,
     normalizeSessionUser,
     parseFastCommand,
@@ -296,7 +303,6 @@ function createAppContext() {
     callOpenClawGateway,
     config,
     getCommandCenterSessionKey,
-    normalizeSessionUser,
     parseRequestBody,
     resolveSessionAgentId,
     sendJson,
@@ -328,7 +334,7 @@ function createAppContext() {
     sendJson,
   });
 
-  const { handleSession, handleSessionUpdate } = createSessionHandlers({
+  const { handleSession, handleSessionSearch, handleSessionUpdate } = createSessionHandlers({
     buildDashboardSnapshot,
     callOpenClawGateway,
     collectAvailableAgents,
@@ -350,6 +356,7 @@ function createAppContext() {
     resolveSessionFastMode,
     resolveSessionModel,
     resolveSessionThinkMode,
+    searchSessionsForAgent,
     sendJson,
     setSessionPreferences,
   });
@@ -365,6 +372,7 @@ function createAppContext() {
     handleFilePreviewSave,
     handleRuntime,
     handleSession,
+    handleSessionSearch,
     handleSessionUpdate,
     handleWorkspaceTree,
     helpers: {

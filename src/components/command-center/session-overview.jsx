@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Keyboard, Languages, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
 import {
   DropdownIcon,
@@ -250,6 +251,211 @@ function pickDiagonalInteriorPoint(startPoint, originRect) {
 
 function getRandomTargetDurationMs() {
   return randomBetween(LOBSTER_MIN_DURATION_MS, LOBSTER_MAX_DURATION_MS);
+}
+
+function SessionSearchDialog({
+  messages,
+  onClose,
+  onSearchSessions,
+  onSelectSearchedSession,
+  open = false,
+}) {
+  const inputRef = useRef(null);
+  const requestIdRef = useRef(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [submittedTerm, setSubmittedTerm] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [selectingSessionUser, setSelectingSessionUser] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select?.();
+    });
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose?.();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
+  const handleSubmit = async (event) => {
+    event?.preventDefault?.();
+    if (!onSearchSessions) {
+      return;
+    }
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    const nextTerm = String(searchTerm || "").trim();
+
+    setSearching(true);
+    setErrorMessage("");
+
+    try {
+      const nextResults = await onSearchSessions(nextTerm);
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      setResults(Array.isArray(nextResults) ? nextResults : []);
+      setSubmittedTerm(nextTerm);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      setResults([]);
+      setSubmittedTerm(nextTerm);
+      setErrorMessage(error?.message || messages.sessionOverview.sessionSearch.error);
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setSearching(false);
+      }
+    }
+  };
+
+  const handleSelect = async (result) => {
+    if (!result?.sessionUser || !onSelectSearchedSession) {
+      return;
+    }
+
+    setSelectingSessionUser(result.sessionUser);
+    setErrorMessage("");
+
+    try {
+      await onSelectSearchedSession(result);
+      onClose?.();
+    } catch (error) {
+      setErrorMessage(error?.message || messages.sessionOverview.sessionSearch.error);
+    } finally {
+      setSelectingSessionUser("");
+    }
+  };
+
+  if (!open) {
+    return null;
+  }
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal((
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={messages.sessionOverview.sessionSearch.title}
+        className="flex max-h-[min(80vh,48rem)] w-full max-w-[40rem] flex-col overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-2xl sm:p-6"
+      >
+        <div className="space-y-1">
+          <div className="text-lg font-semibold leading-7 text-foreground">
+            {messages.sessionOverview.sessionSearch.title}
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">
+            {messages.sessionOverview.sessionSearch.description}
+          </p>
+        </div>
+
+        <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={handleSubmit}>
+          <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm text-foreground">
+            <span className="font-medium">{messages.sessionOverview.sessionSearch.searchLabel}</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder={messages.sessionOverview.sessionSearch.placeholder}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+            />
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={searching || Boolean(selectingSessionUser)}
+              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {searching ? messages.sessionOverview.sessionSearch.searching : messages.sessionOverview.sessionSearch.search}
+            </button>
+            <button
+              type="button"
+              onClick={() => onClose?.()}
+              className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground"
+            >
+              {messages.sessionOverview.sessionSearch.close}
+            </button>
+          </div>
+        </form>
+
+        {errorMessage ? (
+          <div className="mt-4 rounded-lg border border-rose-500/35 bg-rose-500/8 px-3 py-2 text-sm text-rose-600 dark:text-rose-300">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-border/60 bg-background/40 p-2">
+          {results.length ? (
+            <div className="space-y-2">
+              {results.map((result) => (
+                <div key={result.sessionKey || result.sessionUser} className="rounded-xl border border-border/60 bg-background/80 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className="text-sm font-semibold text-foreground [overflow-wrap:anywhere]">
+                        {result.title || result.sessionUser}
+                      </div>
+                      <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                        {messages.sessionOverview.sessionSearch.sessionUserLabel}: {result.sessionUser}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {messages.sessionOverview.sessionSearch.updatedLabel}: {result.updatedLabel || messages.common.unknown}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={searching || Boolean(selectingSessionUser)}
+                      onClick={() => handleSelect(result)}
+                      className="inline-flex shrink-0 items-center justify-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {selectingSessionUser === result.sessionUser
+                        ? messages.sessionOverview.sessionSearch.switching
+                        : messages.sessionOverview.sessionSearch.useResult}
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                    <span className="font-medium text-foreground">{messages.sessionOverview.sessionSearch.previewLabel}: </span>
+                    {result.preview || messages.sessionOverview.sessionSearch.noPreview}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg px-3 py-8 text-sm leading-6 text-muted-foreground">
+              {submittedTerm
+                ? messages.sessionOverview.sessionSearch.empty(submittedTerm)
+                : messages.sessionOverview.sessionSearch.emptyPrompt}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  ), document.body);
 }
 
 function createBreakoutAnchor({ avoidPoints, bounds, originRect, startPoint }) {
@@ -1415,6 +1621,8 @@ export function SessionOverview({
   onAgentChange,
   onFastModeChange,
   onModelChange,
+  onSearchSessions,
+  onSelectSearchedSession,
   onThinkModeChange,
   onThemeChange,
   openAgentIds = [],
@@ -1423,6 +1631,7 @@ export function SessionOverview({
   theme,
 }) {
   const { messages } = useI18n();
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const thinkModeLabels = messages.thinkModes;
   const getThinkModeLabel = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).value;
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
@@ -1537,6 +1746,32 @@ export function SessionOverview({
           )}
         />
 
+        {onSearchSessions && onSelectSearchedSession ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                disabled={!openClawConnected}
+                onClick={() => setSessionSearchOpen(true)}
+                className={cn(
+                  "inline-flex h-14 min-w-[124px] items-center gap-3 rounded-lg border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55",
+                  isLightTheme ? "border-border/70 bg-white hover:bg-accent/40" : "border-border/70 bg-background/80 hover:bg-accent/40",
+                )}
+              >
+                <div className="min-w-0">
+                  <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.session}</div>
+                  <div className="text-sm font-semibold text-foreground">
+                    {messages.sessionOverview.sessionSearch.trigger}
+                  </div>
+                </div>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {messages.sessionOverview.sessionSearch.tooltip}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+
       </div>
     </div>
   );
@@ -1611,6 +1846,13 @@ export function SessionOverview({
     return (
       <section className="pt-0 pb-0">
         {statusContent}
+        <SessionSearchDialog
+          messages={messages}
+          onClose={() => setSessionSearchOpen(false)}
+          onSearchSessions={onSearchSessions}
+          onSelectSearchedSession={onSelectSearchedSession}
+          open={sessionSearchOpen}
+        />
       </section>
     );
   }

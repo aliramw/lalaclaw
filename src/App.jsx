@@ -433,11 +433,13 @@ function AppContent() {
     handleFastModeChange,
     handleInspectorPanelWidthChange,
     handleModelChange,
+    handleSearchSessions,
     handlePromptChange,
     handlePromptKeyDown,
     handleRemoveAttachment,
     handleReset,
     handleSend,
+    handleSelectSearchedSession,
     handleStop,
     handleThinkModeChange,
     dismissTaskRelationship,
@@ -642,6 +644,8 @@ function AppContent() {
                     onAgentChange={handleAgentChange}
                     onFastModeChange={handleFastModeChange}
                     onModelChange={handleModelChange}
+                    onSearchSessions={handleSearchSessions}
+                    onSelectSearchedSession={handleSelectSearchedSession}
                     onThinkModeChange={handleThinkModeChange}
                     onThemeChange={setTheme}
                     resolvedTheme={resolvedTheme}
@@ -687,6 +691,8 @@ function AppContent() {
               onAgentChange={handleAgentChange}
               onFastModeChange={handleFastModeChange}
               onModelChange={handleModelChange}
+              onSearchSessions={handleSearchSessions}
+              onSelectSearchedSession={handleSelectSearchedSession}
               onThinkModeChange={handleThinkModeChange}
               onThemeChange={setTheme}
               resolvedTheme={resolvedTheme}
@@ -747,6 +753,8 @@ function AppContent() {
                     onAgentChange={handleAgentChange}
                     onFastModeChange={handleFastModeChange}
                     onModelChange={handleModelChange}
+                    onSearchSessions={handleSearchSessions}
+                    onSelectSearchedSession={handleSelectSearchedSession}
                     onThinkModeChange={handleThinkModeChange}
                     onThemeChange={setTheme}
                     resolvedTheme={resolvedTheme}

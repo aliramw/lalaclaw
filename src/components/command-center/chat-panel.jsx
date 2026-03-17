@@ -1049,6 +1049,7 @@ const MessageBubble = memo(function MessageBubble({
                 <MarkdownContent
                   content={renderedContent}
                   files={files}
+                  fontSize={chatFontSize}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   streaming={isStreamingAssistant}
@@ -1100,6 +1101,7 @@ const MessageBubble = memo(function MessageBubble({
                 <MarkdownContent
                   content={renderedContent}
                   files={files}
+                  fontSize={chatFontSize}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   streaming={isStreamingAssistant}
@@ -1173,6 +1175,7 @@ const MessageBubble = memo(function MessageBubble({
                 <MarkdownContent
                   content={renderedContent}
                   files={files}
+                  fontSize={chatFontSize}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
                   streaming={isStreamingAssistant}
@@ -1231,6 +1234,7 @@ const MessageBubble = memo(function MessageBubble({
               <MarkdownContent
                 content={renderedContent}
                 files={files}
+                fontSize={chatFontSize}
                 headingScopeId={headingScopeId}
                 resolvedTheme={resolvedTheme}
                 streaming={isStreamingAssistant}

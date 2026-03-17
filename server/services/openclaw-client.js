@@ -407,6 +407,81 @@ function createOpenClawClient({
     return [textPrompt, ...attachmentPrompts].filter(Boolean).join('\n\n').trim();
   }
 
+  function stripDingTalkResetSuffix(value = '') {
+    return String(value || '').trim().replace(/:reset:[^:]+$/i, '');
+  }
+
+  function normalizeDingTalkAccountId(value = '') {
+    return String(value || '').trim() || '__default__';
+  }
+
+  function createDingTalkDeliveryRoute({ accountId = '', chatType = '', peerId = '' } = {}) {
+    const normalizedPeerId = stripDingTalkResetSuffix(peerId);
+    if (!normalizedPeerId) {
+      return null;
+    }
+
+    const normalizedChatType = String(chatType || '').trim().toLowerCase();
+    const targetPrefix = ['group', 'channel'].includes(normalizedChatType) ? 'channel' : 'user';
+
+    return {
+      accountId: normalizeDingTalkAccountId(accountId),
+      channel: 'dingtalk-connector',
+      to: `${targetPrefix}:${normalizedPeerId}`,
+    };
+  }
+
+  function resolveSessionDeliveryRoute(sessionUser = 'command-center') {
+    const trimmedSessionUser = String(sessionUser || '').trim();
+    if (!trimmedSessionUser) {
+      return null;
+    }
+
+    if (trimmedSessionUser.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmedSessionUser);
+        if (String(parsed?.channel || '').trim() === 'dingtalk-connector') {
+          const chatType = parsed?.chattype || parsed?.chatType || '';
+          const peerId = parsed?.peerid || parsed?.peerId || parsed?.groupid || parsed?.groupId || parsed?.conversationid || parsed?.conversationId || '';
+          return createDingTalkDeliveryRoute({
+            accountId: parsed?.accountid || parsed?.accountId || '',
+            chatType,
+            peerId,
+          });
+        }
+      } catch {}
+    }
+
+    if (!trimmedSessionUser.startsWith('dingtalk-connector:')) {
+      return null;
+    }
+
+    const parts = trimmedSessionUser.split(':');
+    if (parts.length < 2) {
+      return null;
+    }
+
+    let accountId = '__default__';
+    let chatType = 'direct';
+    let peerId = '';
+
+    if (['direct', 'group', 'channel'].includes(parts[1])) {
+      chatType = parts[1];
+      peerId = parts.slice(2).join(':');
+    } else if (parts.length >= 3) {
+      accountId = parts[1];
+      peerId = parts.slice(2).join(':');
+    } else {
+      peerId = parts[1];
+    }
+
+    return createDingTalkDeliveryRoute({
+      accountId,
+      chatType,
+      peerId,
+    });
+  }
+
   function requiresDirectOpenClawRequest(messages = [], options = {}) {
     if (options.fastMode) {
       return true;
@@ -414,6 +489,28 @@ function createOpenClawClient({
 
     return messages.some((message) =>
       getMessageAttachments(message).some((attachment) => attachment.kind === 'image' && attachment.dataUrl),
+    );
+  }
+
+  async function mirrorOpenClawUserMessage(sessionUser = 'command-center', messageText = '') {
+    const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
+    const trimmedMessage = String(messageText || '').trim();
+    if (!deliveryRoute || !trimmedMessage) {
+      return null;
+    }
+
+    const agentId = resolveSessionAgentId(sessionUser);
+    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    return await invokeOpenClawTool(
+      'message',
+      {
+        channel: deliveryRoute.channel,
+        target: deliveryRoute.to,
+        accountId: deliveryRoute.accountId,
+        message: trimmedMessage,
+      },
+      sessionKey,
+      'send',
     );
   }
 
@@ -430,6 +527,7 @@ function createOpenClawClient({
     const agentId = resolveSessionAgentId(sessionUser);
     const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
     const message = messages.map((entry) => buildOpenClawSessionMessage(entry)).filter(Boolean).join('\n\n').trim();
+    const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
 
     if (!message) {
       return null;
@@ -442,8 +540,10 @@ function createOpenClawClient({
         message,
         sessionKey,
         idempotencyKey: runId,
-        deliver: false,
-        channel: 'webchat',
+        deliver: Boolean(deliveryRoute),
+        channel: deliveryRoute?.channel || 'webchat',
+        ...(deliveryRoute?.to ? { to: deliveryRoute.to } : {}),
+        ...(deliveryRoute?.accountId ? { accountId: deliveryRoute.accountId } : {}),
         lane: 'nested',
       },
       10000,
@@ -775,6 +875,10 @@ function createOpenClawClient({
   }
 
   async function callOpenClawSessionStream(messages, sessionUser = 'command-center', timeoutMs = 30000, options = {}) {
+    if (resolveSessionDeliveryRoute(sessionUser)) {
+      return await callOpenClawSessionStreamPolling(messages, sessionUser, timeoutMs, options);
+    }
+
     try {
       return await callOpenClawSessionEventStream(messages, sessionUser, timeoutMs, options);
     } catch (error) {
@@ -1106,14 +1210,14 @@ function createOpenClawClient({
   }
 
   async function dispatchOpenClaw(messages, fastMode, sessionUser = 'command-center', options = {}) {
-    if (requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
+    if (!resolveSessionDeliveryRoute(sessionUser) && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
       return await callOpenClaw(messages, fastMode, sessionUser, options);
     }
     return await callOpenClawSession(messages, sessionUser);
   }
 
   async function dispatchOpenClawStream(messages, fastMode, sessionUser = 'command-center', options = {}) {
-    if (requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
+    if (!resolveSessionDeliveryRoute(sessionUser) && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
       return await callOpenClawStream(messages, fastMode, sessionUser, options);
     }
     return await callOpenClawSessionStream(messages, sessionUser, 30000, options);
@@ -1140,6 +1244,7 @@ function createOpenClawClient({
     dispatchOpenClawStream,
     fetchBrowserPeek,
     invokeOpenClawTool,
+    mirrorOpenClawUserMessage,
     parseOpenClawResponse,
   };
 }

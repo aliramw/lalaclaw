@@ -8,11 +8,14 @@ function createMockReply(intent = '', clip) {
   };
 }
 
+function parseRequestedSessionUser(value) {
+  return String(value || 'command-center').trim() || 'command-center';
+}
+
 function createChatStopHandler({
   callOpenClawGateway,
   config,
   getCommandCenterSessionKey,
-  normalizeSessionUser,
   parseRequestBody,
   resolveSessionAgentId,
   sendJson,
@@ -20,7 +23,7 @@ function createChatStopHandler({
   return async function handleChatStop(req, res) {
     try {
       const body = await parseRequestBody(req);
-      const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+      const sessionUser = parseRequestedSessionUser(body.sessionUser);
       const requestedAgentId = typeof body.agentId === 'string' ? body.agentId.trim() : '';
       const agentId = requestedAgentId || resolveSessionAgentId(sessionUser);
 
@@ -58,6 +61,7 @@ function createChatHandler({
   getDefaultModelForAgent,
   getMessageAttachments,
   getSessionPreferences,
+  mirrorOpenClawUserMessage,
   normalizeChatMessage,
   normalizeSessionUser,
   parseFastCommand,
@@ -141,7 +145,7 @@ function createChatHandler({
       const shouldStream = body.stream !== false;
       const usesGatewayNativeCommands = config.mode === 'openclaw';
       const fastMode = Boolean(body.fastMode);
-      const sessionUser = normalizeSessionUser(body.sessionUser || 'command-center');
+      const sessionUser = parseRequestedSessionUser(body.sessionUser);
       assistantMessageId = typeof body.assistantMessageId === 'string' && body.assistantMessageId.trim()
         ? body.assistantMessageId.trim()
         : `msg-assistant-${Date.now()}`;
@@ -401,6 +405,10 @@ function createChatHandler({
       }
 
       setSessionPreferences(sessionUser, nextPreferences);
+
+      if (config.mode === 'openclaw' && latestUserContent && !latestUserContent.startsWith('/')) {
+        await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent);
+      }
 
       if (shouldStream) {
         startChatStream(res);

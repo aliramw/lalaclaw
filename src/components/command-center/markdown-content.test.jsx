@@ -36,6 +36,16 @@ describe("MarkdownContent", () => {
     expect(document.querySelector("h1, h2, h3, pre, code, a")).toBeNull();
   });
 
+  it("scales markdown shell line height with the selected chat font size", () => {
+    const { container, rerender } = render(<MarkdownContent fontSize="small" content={"第一行\n第二行"} />);
+
+    expect(container.firstChild).toHaveClass("text-[11px]", "leading-[1.15rem]", "[&_li]:leading-[1.15rem]");
+
+    rerender(<MarkdownContent fontSize="large" content={"第一行\n第二行"} />);
+
+    expect(container.firstChild).toHaveClass("text-[14px]", "leading-6", "[&_li]:leading-6");
+  });
+
   it("renders headings, links, and inline code", async () => {
     render(<MarkdownContent content={`# 控制台\n\n访问 [OpenAI](https://openai.com)\n\n使用 \`npm test\``} />);
 

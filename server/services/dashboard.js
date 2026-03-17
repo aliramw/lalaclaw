@@ -305,6 +305,7 @@ function createDashboardService({
   getDefaultModelForAgent,
   getLocalSessionFileEntries,
   getLocalSessionConversation,
+  getTranscriptEntriesForSession,
   getTranscriptPath,
   invokeOpenClawTool,
   countWorkspaceFiles = defaultCountWorkspaceFiles,
@@ -469,7 +470,7 @@ function createDashboardService({
         agentId,
         agentLabel,
         selectedAgentId: agentId,
-        sessionUser: normalizeSessionUser(sessionUser),
+        sessionUser: String(sessionUser || 'command-center').trim() || 'command-center',
         sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
         workspaceRoot,
         status: '已完成',
@@ -599,7 +600,11 @@ function createDashboardService({
     const fastMode = typeof overrides?.fastMode === 'boolean' ? overrides.fastMode : resolveSessionFastMode(effectiveSessionUser);
     const preferredThinkMode = forcedThinkMode || resolveSessionThinkMode(effectiveSessionUser);
     const transcriptPath = sessionRecord ? getTranscriptPath(agentId, sessionRecord.sessionId) : '';
-    const entries = transcriptPath ? readJsonLines(transcriptPath).slice(-240) : [];
+    const entries = typeof getTranscriptEntriesForSession === 'function'
+      ? getTranscriptEntriesForSession(agentId, sessionRecord, sessionKey, 240)
+      : transcriptPath
+        ? readJsonLines(transcriptPath).slice(-240)
+        : [];
     const injectedFiles = sessionRecord?.systemPromptReport?.injectedWorkspaceFiles || [];
     const [statusResult, browserPeek, liveConfig] = await Promise.all([
       invokeOpenClawTool('session_status', {}, sessionKey).catch(() => null),
@@ -648,7 +653,7 @@ function createDashboardService({
         agentId,
         agentLabel,
         selectedAgentId: agentId,
-        sessionUser: normalizeSessionUser(effectiveSessionUser),
+        sessionUser: String(effectiveSessionUser || 'command-center').trim() || 'command-center',
         sessionKey: parsedStatus?.sessionKey || sessionKey,
         workspaceRoot,
         status: '就绪',
