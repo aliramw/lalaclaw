@@ -479,6 +479,43 @@ describe("ChatPanel", () => {
     );
   });
 
+
+
+  it("renders markdown images with Windows file URLs inside user messages", async () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={{ current: null }}
+          messages={[
+            {
+              id: "msg-user-markdown-image-windows",
+              role: "user",
+              content: "![image](file:///C:/Users/marila/openclaw/workspace/media/inbound/demo.jpg)",
+              timestamp: 1,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          resolvedTheme="dark"
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const image = await screen.findByAltText("image");
+    expect(image).toBeInTheDocument();
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/file-preview/content?path=C%3A%2FUsers%2Fmarila%2Fopenclaw%2Fworkspace%2Fmedia%2Finbound%2Fdemo.jpg",
+    );
+  });
   it.each(["[图片]", "[image]", "[Image]"])(
     "hides the DingTalk image placeholder label %s when a markdown image follows it",
     async (placeholder) => {

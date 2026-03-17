@@ -298,11 +298,17 @@ function resolveMarkdownImagePath(src = "", files = []) {
     try {
       const fileUrl = new URL(normalizedSrc);
       const filePath = decodeURIComponent(fileUrl.pathname || "");
-      return /^\/[A-Za-z]:\//.test(filePath) ? filePath.slice(1) : filePath;
+      if (/^\/[A-Za-z]:\//.test(filePath)) {
+        return filePath.slice(1);
+      }
+      if (fileUrl.host) {
+        return `\\\\${fileUrl.host}${filePath.replace(/\//g, "\\")}`;
+      }
+      return filePath;
     } catch {}
   }
 
-  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedSrc)) {
+  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedSrc) || /^[A-Za-z]:[\\/]/.test(normalizedSrc) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(normalizedSrc)) {
     return normalizedSrc;
   }
 
@@ -343,7 +349,7 @@ function markdownUrlTransform(url = "") {
     return normalizedUrl;
   }
 
-  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedUrl)) {
+  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedUrl) || /^[A-Za-z]:[\\/]/.test(normalizedUrl) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(normalizedUrl)) {
     return normalizedUrl;
   }
 

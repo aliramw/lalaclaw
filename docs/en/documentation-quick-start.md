@@ -136,7 +136,7 @@ http://127.0.0.1:5173
 Run this in the project root:
 
 ```bash
-PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --host 127.0.0.1 --port 3000
 ```
 
 Backend URL:
@@ -213,7 +213,7 @@ On startup, the backend first tries to read local OpenClaw config from `~/.openc
 Force `mock` mode:
 
 ```bash
-COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --profile mock --host 127.0.0.1 --port 3000
 ```
 
 The CLI writes the same values into `.env.local` when you run:

@@ -132,7 +132,7 @@ http://127.0.0.1:5173
 ### 2. 启动后端
 
 ```bash
-PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --host 127.0.0.1 --port 3000
 ```
 
 后端地址：
@@ -209,7 +209,7 @@ tail -f ./logs/lalaclaw-launchd.err.log
 强制使用 `mock`：
 
 ```bash
-COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --profile mock --host 127.0.0.1 --port 3000
 ```
 
 如果你使用 CLI 初始化配置：

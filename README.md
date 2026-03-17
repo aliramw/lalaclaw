@@ -216,11 +216,13 @@ More detail lives in [deploy/macos/README.md](./deploy/macos/README.md).
 - `npm run dev:all` starts both the frontend and backend in development mode
 - `npm run dev:frontend` starts only the Vite development server
 - `npm run dev:backend` starts only the backend server
+- Runtime commands accept overrides like `--host`, `--port`, `--frontend-host`, `--frontend-port`, and `--profile` (for example: `npm run dev:backend -- --host 127.0.0.1 --port 3000`)
 - `npm run doctor` checks Node.js, OpenClaw discovery, ports, and local config
   For `remote-gateway`, it also probes the configured gateway URL and sends a minimal API request to validate the configured model and agent.
 - `npm run doctor -- --fix` installs LibreOffice automatically on macOS when LibreOffice-backed preview support is missing
 - `npm run doctor -- --json` prints the same diagnosis as machine-readable JSON with `summary.status` and `summary.exitCode`
 - `npm run lalaclaw:init` writes a local `.env.local` bootstrap file
+- `lalaclaw -h` / `lalaclaw --help` prints CLI help, and `lalaclaw -v` / `lalaclaw --version` prints the current CLI version
 - `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
 - `npm run lalaclaw:start` starts the built app after checking `dist/`
 - `npm run lint` runs ESLint across the workspace
