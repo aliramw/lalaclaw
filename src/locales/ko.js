@@ -252,6 +252,7 @@ const ko = {
     fileMenu: {
       label: "파일 메뉴",
       preview: "미리보기",
+      edit: "편집",
       refresh: "새로고침",
       copyPath: "경로 복사",
     },

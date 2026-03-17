@@ -267,6 +267,7 @@ const ja = {
     fileMenu: {
       label: "ファイルメニュー",
       preview: "プレビュー",
+      edit: "編集",
       refresh: "更新",
       copyPath: "パスをコピー",
     },

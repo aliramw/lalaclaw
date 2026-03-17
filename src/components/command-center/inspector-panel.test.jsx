@@ -6,6 +6,20 @@ import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
+vi.mock("@monaco-editor/react", () => ({
+  default: function MockMonacoEditor({ language, onChange, value }) {
+    return (
+      <textarea
+        aria-label="Monaco editor"
+        data-language={language}
+        data-testid="file-preview-monaco-editor"
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+    );
+  },
+}));
+
 function renderWithTooltip(node, locale = "zh") {
   window.localStorage.setItem(localeStorageKey, locale);
   return render(
@@ -1357,7 +1371,7 @@ describe("InspectorPanel", () => {
     expect(document.querySelector("pre")?.textContent).toContain(expectedSnippet);
   });
 
-  it("opens a context menu on right click and shows preview above copy path", async () => {
+  it("shows edit after preview in the context menu for editable files", async () => {
     const [activeTab, setActiveTab] = ["files", () => {}];
 
     renderWithTooltip(
@@ -1386,8 +1400,87 @@ describe("InspectorPanel", () => {
 
     expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "预览" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "编辑" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["预览", "复制路径"]);
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["预览", "编辑", "复制路径"]);
+  });
+
+  it("opens the preview directly in edit mode from the context menu", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          kind: "markdown",
+          path: "/Users/marila/projects/lalaclaw/AGENTS.md",
+          name: "AGENTS.md",
+          content: "# AGENTS\n",
+        }),
+      })),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "AGENTS.md" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+    await user.click(screen.getByRole("menuitem", { name: "编辑" }));
+
+    expect(await screen.findByTestId("file-preview-monaco-editor")).toBeInTheDocument();
+    expect(screen.getByTestId("file-preview-monaco-editor")).toHaveAttribute("data-language", "markdown");
+    expect(screen.getByRole("button", { name: "保存" })).toBeInTheDocument();
+  });
+
+  it("keeps non-editable files without the edit context action", async () => {
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/report.pdf", fullPath: "/Users/marila/projects/lalaclaw/report.pdf", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "report.pdf" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+
+    expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "编辑" })).not.toBeInTheDocument();
   });
 
   it("shows refresh in the context menu for workspace directories", async () => {

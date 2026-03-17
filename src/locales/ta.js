@@ -255,6 +255,7 @@ const ta = {
     fileMenu: {
       label: "கோப்பு மெனு",
       preview: "முன்னோட்டம்",
+      edit: "திருத்து",
       refresh: "புதுப்பி",
       copyPath: "பாதையை நகலெடு",
     },

@@ -255,6 +255,7 @@ const ms = {
     fileMenu: {
       label: "Menu fail",
       preview: "Pratonton",
+      edit: "Edit",
       refresh: "Muat semula",
       copyPath: "Salin laluan",
     },

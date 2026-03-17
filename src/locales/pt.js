@@ -265,6 +265,7 @@ const pt = {
     fileMenu: {
       label: "Menu do arquivo",
       preview: "Visualizar",
+      edit: "Editar",
       refresh: "Atualizar",
       copyPath: "Copiar caminho",
     },

@@ -267,6 +267,7 @@ const fr = {
     fileMenu: {
       label: "Menu du fichier",
       preview: "Apercu",
+      edit: "Modifier",
       refresh: "Actualiser",
       copyPath: "Copier le chemin",
     },

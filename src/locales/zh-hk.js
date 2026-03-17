@@ -253,6 +253,7 @@ const zhHk = {
     fileMenu: {
       label: "檔案選單",
       preview: "預覽",
+      edit: "編輯",
       refresh: "重新整理",
       copyPath: "複製路徑",
     },

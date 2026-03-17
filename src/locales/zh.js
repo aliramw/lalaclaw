@@ -267,6 +267,7 @@ const zh = {
     fileMenu: {
       label: "文件菜单",
       preview: "预览",
+      edit: "编辑",
       refresh: "刷新",
       copyPath: "复制路径",
     },

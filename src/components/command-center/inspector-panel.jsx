@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, RotateCcw, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, Pencil, RotateCcw, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,14 @@ const previewableExtensions = new Set([
   "txt", "text", "log", "md", "markdown", "json", "csv", "xls", "xlsx", "xlsm", "pdf", "doc", "docx", "ppt", "pptx",
   "png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif",
   "mp4", "webm", "mov", "mp3", "wav", "ogg", "m4a",
+  "js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "rb", "go", "rs", "java",
+  "c", "cc", "cpp", "cxx", "h", "hpp", "cs", "php", "swift", "kt", "kts",
+  "lua", "m", "mm", "scala", "dart", "ex", "exs", "pl", "pm", "r",
+  "sh", "bash", "zsh", "fish", "ps1", "sql", "css", "scss", "sass", "less",
+  "html", "xml", "yml", "yaml", "toml", "ini", "conf", "env",
+]);
+const editableExtensions = new Set([
+  "txt", "text", "log", "md", "markdown", "json",
   "js", "jsx", "ts", "tsx", "mjs", "cjs", "py", "rb", "go", "rs", "java",
   "c", "cc", "cpp", "cxx", "h", "hpp", "cs", "php", "swift", "kt", "kts",
   "lua", "m", "mm", "scala", "dart", "ex", "exs", "pl", "pm", "r",
@@ -84,6 +92,25 @@ function canPreviewFileItem(item) {
 
   const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
   return Boolean(extension) && previewableExtensions.has(extension);
+}
+
+function canEditFileItem(item) {
+  if (!item || item.kind === "目录") {
+    return false;
+  }
+
+  const targetPath = resolveItemPath(item).toLowerCase();
+  if (!targetPath) {
+    return false;
+  }
+
+  const fileName = targetPath.split("/").pop() || "";
+  if (fileName === "dockerfile" || fileName === "makefile") {
+    return true;
+  }
+
+  const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+  return Boolean(extension) && editableExtensions.has(extension);
 }
 
 function countWorkspaceFiles(nodes = []) {
@@ -603,7 +630,7 @@ function SessionTreeNode({
   );
 }
 
-function FileContextMenu({ menu, messages, onClose, onOpenPreview, onRefreshDirectory }) {
+function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, onRefreshDirectory }) {
   const menuRef = useRef(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
 
@@ -673,6 +700,7 @@ function FileContextMenu({ menu, messages, onClose, onOpenPreview, onRefreshDire
     }
   };
   const canPreview = canPreviewFileItem(menu.item);
+  const canEdit = canEditFileItem(menu.item);
   const canRefreshDirectory = menu.item?.kind === "目录" && typeof onRefreshDirectory === "function";
 
   return (
@@ -697,22 +725,38 @@ function FileContextMenu({ menu, messages, onClose, onOpenPreview, onRefreshDire
           <span>{messages.inspector.fileMenu.refresh}</span>
         </button>
       ) : (
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canPreview}
-          onClick={() => {
-            if (!canPreview) {
-              return;
-            }
-            onOpenPreview?.(menu.item);
-            onClose();
-          }}
-          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-        >
-          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-          <span>{messages.inspector.fileMenu.preview}</span>
-        </button>
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!canPreview}
+            onClick={() => {
+              if (!canPreview) {
+                return;
+              }
+              onOpenPreview?.(menu.item);
+              onClose();
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{messages.inspector.fileMenu.preview}</span>
+          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onOpenEdit?.(menu.item);
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{messages.inspector.fileMenu.edit}</span>
+            </button>
+          ) : null}
+        </>
       )}
       <button
         type="button"
@@ -793,6 +837,7 @@ function FilesTab({
   currentSessionUser = "",
   items,
   messages,
+  onOpenEdit,
   onOpenPreview,
   workspaceCount,
   workspaceItems = [],
@@ -1219,6 +1264,7 @@ function FilesTab({
         menu={contextMenu}
         messages={messages}
         onClose={() => setContextMenu(null)}
+        onOpenEdit={onOpenEdit}
         onOpenPreview={onOpenPreview}
         onRefreshDirectory={!hasWorkspaceFilter ? handleRefreshWorkspaceDirectory : undefined}
       />
@@ -1836,6 +1882,7 @@ export function InspectorPanel({
                 currentSessionUser={currentSessionUser}
                 items={files}
                 messages={messages}
+                onOpenEdit={(item) => handleOpenPreview(item, { startInEditMode: true })}
                 onOpenPreview={handleOpenPreview}
                 currentWorkspaceRoot={currentWorkspaceRoot}
                 workspaceCount={workspaceCount}

@@ -892,7 +892,8 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
       return;
     }
 
-    setIsEditing(false);
+    const shouldStartEditing = Boolean(preview.startInEditMode) && isEditablePreview(preview) && !preview.loading && !preview.error && !preview.truncated;
+    setIsEditing(shouldStartEditing);
     setIsSaving(false);
     setEditableContent(isEditablePreview(preview) ? String(preview.content || "") : "");
     setPreviewContentOverride(null);

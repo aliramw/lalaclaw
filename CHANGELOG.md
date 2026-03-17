@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17-6]
+
+### Added
+
+- Inline Monaco editing for Markdown, plain-text, and code-like file previews, including a backend save endpoint and toolbar save / cancel controls
+- A new `Edit` action in the inspector file context menu that opens eligible files directly into preview edit mode
+
+### Changed
+
+- Updated the inspector and preview documentation to describe inline file editing, and refreshed published-version examples to `2026.3.17-6`
+- Kept oversized truncated text previews read-only so inline editing cannot overwrite content that was not fully loaded
+
+### Fixed
+
+- Stopped global composer hotkeys from stealing typed characters while focus is inside the Monaco preview editor
+- Replaced the raw `Method not allowed` save failure with a clearer hint when the running backend needs a restart to pick up the new save route
+
 ## [2026.3.17-5]
 
 ### Added

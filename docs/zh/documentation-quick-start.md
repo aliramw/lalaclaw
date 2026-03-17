@@ -64,10 +64,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-5`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-6`：
 
 ```bash
-npm install -g lalaclaw@2026.3.17-5
+npm install -g lalaclaw@2026.3.17-6
 lalaclaw init
 ```
 
@@ -83,12 +83,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.17-5`：
+如果你想切换到某个指定发布版本，比如 `2026.3.17-6`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-5
+git checkout 2026.3.17-6
 npm ci
 npm run build
 npm run lalaclaw:start

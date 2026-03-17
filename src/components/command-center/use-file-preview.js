@@ -44,11 +44,13 @@ export function useFilePreview() {
     });
   };
 
-  const handleOpenPreview = async (item) => {
+  const handleOpenPreview = async (item, options = {}) => {
     const targetPath = String(item?.fullPath || item?.path || "").trim();
     if (!targetPath) {
       return;
     }
+
+    const startInEditMode = Boolean(options?.startInEditMode);
 
     const requestId = previewRequestRef.current + 1;
     previewRequestRef.current = requestId;
@@ -56,6 +58,7 @@ export function useFilePreview() {
       item,
       path: targetPath,
       name: targetPath.split("/").filter(Boolean).pop() || targetPath,
+      startInEditMode,
       loading: true,
       error: "",
     });
@@ -81,6 +84,7 @@ export function useFilePreview() {
       setFilePreview({
         ...payload,
         item,
+        startInEditMode,
         loading: false,
         error: "",
       });
@@ -92,6 +96,7 @@ export function useFilePreview() {
         item,
         path: targetPath,
         name: targetPath.split("/").filter(Boolean).pop() || targetPath,
+        startInEditMode,
         loading: false,
         error: error.message || messages.inspector.previewErrors.loadFailed,
       });
