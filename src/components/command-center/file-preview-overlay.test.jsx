@@ -214,7 +214,7 @@ describe("FilePreviewOverlay", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Edit" }));
 
-    const editor = screen.getByTestId("file-preview-monaco-editor");
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
     expect(editor).toHaveAttribute("data-language", "markdown");
     await user.clear(editor);
     await user.type(editor, "# After{enter}{enter}Saved in preview");
@@ -260,7 +260,7 @@ describe("FilePreviewOverlay", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Edit" }));
 
-    const editor = screen.getByTestId("file-preview-monaco-editor");
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
     expect(editor).toHaveAttribute("data-language", "javascript");
     await user.clear(editor);
     await user.type(editor, "const after = true;");

@@ -47,6 +47,16 @@ http://127.0.0.1:3000
 - 发布版本必须保持 npm 兼容。同一天的第 N 个版本使用 `YYYY.M.D-N`，例如 `2026.3.17-2`，不要使用 `YYYY.M.D.N`。Release versions must stay npm-compatible. For the Nth release on the same day, use `YYYY.M.D-N`, for example `2026.3.17-2`, not `YYYY.M.D.N`.
 - `CHANGELOG.md` 需明确记录新增、修改、修复和重要行为变化。Record additions, changes, fixes, and important behavior changes clearly.
 
+### 发布顺序 / Release Order
+
+- 发布时按固定顺序执行，避免版本号、tag、npm 包和 GitHub release 中间状态不一致。Follow a fixed release order to avoid mismatches between the version, tag, npm package, and GitHub release.
+- 先把版本号从当前版本 bump 到目标版本，例如 `2026.3.17-5` -> `2026.3.17-6`。First bump the version from the current release to the target release, for example `2026.3.17-5` -> `2026.3.17-6`.
+- 写 `CHANGELOG.md`，并同步更新 `README`、`documentation-quick-start` 等文档里的示例版本号。Update `CHANGELOG.md`, then sync example version numbers in `README`, `documentation-quick-start`, and related docs.
+- 跑一轮关键测试和构建，至少覆盖 release 前最关键的 lint、test、build。Run the key validation steps before release, at minimum the critical lint, test, and build commands.
+- 验证通过后再提交并推送到 `origin/main`。Only commit and push to `origin/main` after those checks pass.
+- 推送完成后再创建 Git tag 和 GitHub release。Create the Git tag and GitHub release only after the main branch has been pushed.
+- 最后发布 npm 包。Publish the npm package last.
+
 ## 维护者规则 / Maintainer Rules
 
 ### 国际化 / Internationalization

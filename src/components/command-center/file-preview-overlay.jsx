@@ -1,4 +1,3 @@
-import Editor from "@monaco-editor/react";
 import { useEffect, useRef, useState } from "react";
 import { FolderOpen, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
@@ -141,6 +140,16 @@ const previewLanguageByExtension = {
   text: "text",
   log: "text",
 };
+
+let monacoEditorComponentPromise = null;
+
+function loadMonacoEditorComponent() {
+  if (!monacoEditorComponentPromise) {
+    monacoEditorComponentPromise = import("@monaco-editor/react").then((module) => module.default);
+  }
+
+  return monacoEditorComponentPromise;
+}
 
 function compactHomePath(filePath = "") {
   if (!filePath) {
@@ -326,6 +335,29 @@ function EditableFilePreview({
   isFullscreen = false,
   messages,
 }) {
+  const [EditorComponent, setEditorComponent] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadMonacoEditorComponent().then((component) => {
+      if (!cancelled) {
+        setEditorComponent(() => component);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const loadingState = (
+    <div className={cn("flex h-full items-center justify-center text-sm", isDark ? "text-zinc-300" : "text-slate-600")}>
+      <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+      {messages.inspector.previewActions.loadingPreview}
+    </div>
+  );
+
   return (
     <div
       data-inline-file-editor="true"
@@ -335,41 +367,38 @@ function EditableFilePreview({
         isDark ? "border-white/10 bg-[#111318]" : "border-slate-200 bg-white",
       )}
     >
-      <Editor
-        path={path || "preview.txt"}
-        language={resolveMonacoLanguage(path, kind)}
-        value={value}
-        onChange={(nextValue) => onChange(nextValue || "")}
-        theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
-        loading={
-          <div className={cn("flex h-full items-center justify-center text-sm", isDark ? "text-zinc-300" : "text-slate-600")}>
-            <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-            {messages.inspector.previewActions.loadingPreview}
-          </div>
-        }
-        onMount={(editor) => {
-          editor.focus();
-        }}
-        height="100%"
-        options={{
-          autoClosingBrackets: "always",
-          autoIndent: "advanced",
-          autoSurround: "languageDefined",
-          autoClosingQuotes: "always",
-          formatOnPaste: false,
-          formatOnType: false,
-          automaticLayout: true,
-          glyphMargin: false,
-          fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-          fontSize: editorFontSizeByPreviewSize[fontSize] || editorFontSizeByPreviewSize.medium,
-          lineNumbers: isCodeLikePreviewTarget(path, kind) || kind === "json" ? "on" : "off",
-          minimap: { enabled: false },
-          padding: { top: 16, bottom: 16 },
-          scrollBeyondLastLine: false,
-          tabSize: 2,
-          wordWrap: "on",
-        }}
-      />
+      {EditorComponent ? (
+        <EditorComponent
+          path={path || "preview.txt"}
+          language={resolveMonacoLanguage(path, kind)}
+          value={value}
+          onChange={(nextValue) => onChange(nextValue || "")}
+          theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+          loading={loadingState}
+          onMount={(editor) => {
+            editor.focus();
+          }}
+          height="100%"
+          options={{
+            autoClosingBrackets: "always",
+            autoIndent: "advanced",
+            autoSurround: "languageDefined",
+            autoClosingQuotes: "always",
+            formatOnPaste: false,
+            formatOnType: false,
+            automaticLayout: true,
+            glyphMargin: false,
+            fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            fontSize: editorFontSizeByPreviewSize[fontSize] || editorFontSizeByPreviewSize.medium,
+            lineNumbers: isCodeLikePreviewTarget(path, kind) || kind === "json" ? "on" : "off",
+            minimap: { enabled: false },
+            padding: { top: 16, bottom: 16 },
+            scrollBeyondLastLine: false,
+            tabSize: 2,
+            wordWrap: "on",
+          }}
+        />
+      ) : loadingState}
     </div>
   );
 }

@@ -52,6 +52,10 @@ export default defineConfig({
             return "react-vendor";
           }
 
+          if (packageName === "@monaco-editor/react" || packageName === "monaco-editor") {
+            return "monaco-vendor";
+          }
+
           if (packageName.startsWith("@radix-ui/")) {
             return "radix-vendor";
           }
