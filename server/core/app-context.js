@@ -153,6 +153,9 @@ function createAppContext() {
   function getCommandCenterSessionKey(agentId = getDefaultAgentId(), sessionUser = 'command-center') {
     const normalizedAgentId = String(agentId || getDefaultAgentId()).trim() || getDefaultAgentId();
     const resolvedSessionUser = String(sessionUser || 'command-center').trim() || 'command-center';
+    if (resolvedSessionUser.startsWith('agent:')) {
+      return resolvedSessionUser;
+    }
     return `agent:${normalizedAgentId}:openai-user:${resolvedSessionUser}`;
   }
 

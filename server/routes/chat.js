@@ -406,8 +406,13 @@ function createChatHandler({
 
       setSessionPreferences(sessionUser, nextPreferences);
 
+      const operatorName =
+        typeof body.userLabel === 'string' && body.userLabel.trim()
+          ? body.userLabel.trim()
+          : '';
+
       if (config.mode === 'openclaw' && latestUserContent && !latestUserContent.startsWith('/')) {
-        await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent);
+        await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent, { operatorName });
       }
 
       if (shouldStream) {

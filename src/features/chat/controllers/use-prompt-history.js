@@ -6,16 +6,17 @@ export function usePromptHistory({
   composerSendMode,
   composerAttachments,
   handleSend,
-  prompt,
   promptHistoryByConversation,
   promptRef,
   setPrompt,
+  syncPromptInput,
 }) {
   const [promptHistoryNavigation, setPromptHistoryNavigation] = useState(null);
   const lastPlainEnterRef = useRef({ timestamp: 0, expectedValue: "" });
 
   const handlePromptKeyDown = (event) => {
     const textarea = event.currentTarget;
+    const currentPrompt = String(textarea.value || "");
     const history = promptHistoryByConversation[activeConversationKey] || [];
     const hasComposerAttachments = composerAttachments.length > 0;
     const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
@@ -27,14 +28,14 @@ export function usePromptHistory({
       history.length &&
       !hasSelection &&
       !hasComposerAttachments &&
-      (!prompt || caretAtStart || promptHistoryNavigation);
+      (!currentPrompt || caretAtStart || promptHistoryNavigation);
     const canBrowseDown =
       event.key === "ArrowDown" &&
       history.length &&
       !hasSelection &&
       !hasComposerAttachments &&
       promptHistoryNavigation &&
-      (caretAtEnd || !prompt);
+      (caretAtEnd || !currentPrompt);
 
     if (canBrowseUp || canBrowseDown) {
       event.preventDefault();
@@ -45,7 +46,7 @@ export function usePromptHistory({
           setPromptHistoryNavigation({
             key: activeConversationKey,
             index: nextIndex,
-            draft: prompt,
+            draft: currentPrompt,
           });
           setPrompt(history[nextIndex] || "");
           window.requestAnimationFrame(() => moveCaretToEnd(promptRef.current));
@@ -84,7 +85,7 @@ export function usePromptHistory({
     }
 
     if (composerSendMode === "double-enter-send" && isPlainEnter && !event.isComposing) {
-      const normalizedPrompt = prompt.replace(/\r\n/g, "\n");
+      const normalizedPrompt = currentPrompt.replace(/\r\n/g, "\n");
       const expectedValue = applyTextareaEnter(normalizedPrompt, textarea.selectionStart, textarea.selectionEnd);
       const now = Date.now();
       const isRapidRepeat =
@@ -112,7 +113,7 @@ export function usePromptHistory({
   };
 
   const handlePromptChange = (nextPrompt) => {
-    setPrompt(nextPrompt);
+    syncPromptInput(nextPrompt);
     if (!promptHistoryNavigation) {
       if (nextPrompt.replace(/\r\n/g, "\n") !== lastPlainEnterRef.current.expectedValue) {
         lastPlainEnterRef.current = { timestamp: 0, expectedValue: "" };

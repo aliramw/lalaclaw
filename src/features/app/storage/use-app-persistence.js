@@ -28,6 +28,7 @@ export function useAppPersistence({
   model,
   pendingChatTurns,
   promptDraftsByConversation,
+  promptDraftsByConversationRef,
   promptHistoryByConversation,
   session,
   setMessagesByTabId,
@@ -37,9 +38,13 @@ export function useAppPersistence({
 }) {
   const storageRequestRef = useRef(0);
   const persistenceTimerRef = useRef(0);
+  const promptDraftPersistenceTimerRef = useRef(0);
+  const hasPersistedPromptDraftsRef = useRef(false);
   const pendingPersistenceRef = useRef(null);
   const previousMessagesByTabIdRef = useRef(messagesByTabId);
   const previousPendingChatTurnsRef = useRef(pendingChatTurns);
+  const previousPromptDraftsByConversationRef = useRef(promptDraftsByConversation);
+  const latestPromptDraftsByConversationRef = useRef(promptDraftsByConversation);
   const writeUiState = useCallback((payload) => {
     try {
       const persistedAt = Number(payload?._persistedAt || 0) || Date.now();
@@ -99,6 +104,20 @@ export function useAppPersistence({
     } catch {}
   }, []);
 
+  const flushPromptDraftPersistence = useCallback(() => {
+    window.clearTimeout(promptDraftPersistenceTimerRef.current);
+    promptDraftPersistenceTimerRef.current = 0;
+    try {
+      latestPromptDraftsByConversationRef.current = promptDraftsByConversationRef
+        ? promptDraftsByConversationRef.current
+        : latestPromptDraftsByConversationRef.current;
+      window.localStorage.setItem(
+        promptDraftStorageKey,
+        JSON.stringify(latestPromptDraftsByConversationRef.current),
+      );
+    } catch {}
+  }, [promptDraftsByConversationRef]);
+
   const flushPendingPersistence = useCallback(({ skipAttachmentSerialization = false } = {}) => {
     const payload = pendingPersistenceRef.current;
     if (!payload) {
@@ -145,6 +164,12 @@ export function useAppPersistence({
   }, [writePendingChatTurns, writeUiState]);
 
   useEffect(() => {
+    latestPromptDraftsByConversationRef.current = promptDraftsByConversationRef
+      ? promptDraftsByConversationRef.current
+      : promptDraftsByConversation;
+  }, [promptDraftsByConversation, promptDraftsByConversationRef]);
+
+  useEffect(() => {
     const persistedAt = Date.now();
 
     const nextStorageState = {
@@ -186,10 +211,12 @@ export function useAppPersistence({
 
     const shouldDebouncePersistence =
       previousMessagesByTabIdRef.current !== messagesByTabId
-      || previousPendingChatTurnsRef.current !== pendingChatTurns;
+      || previousPendingChatTurnsRef.current !== pendingChatTurns
+      || previousPromptDraftsByConversationRef.current !== promptDraftsByConversation;
 
     previousMessagesByTabIdRef.current = messagesByTabId;
     previousPendingChatTurnsRef.current = pendingChatTurns;
+    previousPromptDraftsByConversationRef.current = promptDraftsByConversation;
 
     if (!shouldDebouncePersistence) {
       flushPendingPersistence();
@@ -229,11 +256,13 @@ export function useAppPersistence({
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         flushPendingPersistence({ skipAttachmentSerialization: true });
+        flushPromptDraftPersistence();
       }
     };
 
     const handlePageHide = () => {
       flushPendingPersistence({ skipAttachmentSerialization: true });
+      flushPromptDraftPersistence();
     };
 
     window.addEventListener("beforeunload", handlePageHide);
@@ -245,8 +274,9 @@ export function useAppPersistence({
       window.removeEventListener("pagehide", handlePageHide);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       flushPendingPersistence({ skipAttachmentSerialization: true });
+      flushPromptDraftPersistence();
     };
-  }, [flushPendingPersistence]);
+  }, [flushPendingPersistence, flushPromptDraftPersistence]);
 
   useEffect(() => {
     try {
@@ -255,10 +285,21 @@ export function useAppPersistence({
   }, [promptHistoryByConversation]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(promptDraftStorageKey, JSON.stringify(promptDraftsByConversation));
-    } catch {}
-  }, [promptDraftsByConversation]);
+    if (!hasPersistedPromptDraftsRef.current) {
+      hasPersistedPromptDraftsRef.current = true;
+      flushPromptDraftPersistence();
+      return undefined;
+    }
+
+    window.clearTimeout(promptDraftPersistenceTimerRef.current);
+    promptDraftPersistenceTimerRef.current = window.setTimeout(() => {
+      flushPromptDraftPersistence();
+    }, chatPersistenceDebounceMs);
+
+    return () => {
+      window.clearTimeout(promptDraftPersistenceTimerRef.current);
+    };
+  }, [flushPromptDraftPersistence, promptDraftsByConversation]);
 
   useEffect(() => {
     const initialMessagesByTabId = initialStoredMessagesByTabIdRef.current;

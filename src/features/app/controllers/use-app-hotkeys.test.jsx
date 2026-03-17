@@ -29,10 +29,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange: vi.fn(),
         handleReset,
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme: vi.fn(),
       }),
     );
@@ -59,10 +58,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme,
       }),
     );
@@ -110,10 +108,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme,
       }),
     );
@@ -155,7 +152,8 @@ describe("useAppHotkeys", () => {
   });
 
   it("captures plain character input when focus is outside editable elements", () => {
-    const handlePromptChange = vi.fn((value) => {
+    textarea.value = "已有";
+    const setPromptVisible = vi.fn((value) => {
       textarea.value = value;
     });
     const otherButton = document.createElement("button");
@@ -166,10 +164,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange,
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "已有",
         promptRef: { current: textarea },
+        setPromptVisible,
         setTheme: vi.fn(),
       }),
     );
@@ -185,7 +182,7 @@ describe("useAppHotkeys", () => {
       );
     });
 
-    expect(handlePromptChange).toHaveBeenCalledWith("已有x");
+    expect(setPromptVisible).toHaveBeenCalledWith("已有x");
     expect(document.activeElement).toBe(textarea);
     expect(textarea.selectionStart).toBe(3);
     expect(textarea.selectionEnd).toBe(3);
@@ -198,10 +195,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex,
-        handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme: vi.fn(),
       }),
     );
@@ -237,10 +233,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex,
-        handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme: vi.fn(),
       }),
     );
@@ -275,10 +270,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab,
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme: vi.fn(),
       }),
     );
@@ -314,10 +308,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab,
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme: vi.fn(),
       }),
     );
@@ -354,10 +347,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab,
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange: vi.fn(),
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "",
         promptRef: { current: textarea },
+        setPromptVisible: vi.fn(),
         setTheme: vi.fn(),
       }),
     );
@@ -376,7 +368,7 @@ describe("useAppHotkeys", () => {
   });
 
   it("does not steal printable keys from an inline Monaco editor", () => {
-    const handlePromptChange = vi.fn();
+    const setPromptVisible = vi.fn();
     const editorRoot = document.createElement("div");
     editorRoot.setAttribute("data-inline-file-editor", "true");
     editorRoot.className = "monaco-editor";
@@ -390,10 +382,9 @@ describe("useAppHotkeys", () => {
       useAppHotkeys({
         handleActivateAdjacentChatTab: vi.fn(),
         handleActivateChatTabByIndex: vi.fn(),
-        handlePromptChange,
         handleReset: vi.fn().mockResolvedValue(undefined),
-        prompt: "已有",
         promptRef: { current: textarea },
+        setPromptVisible,
         setTheme: vi.fn(),
       }),
     );
@@ -409,7 +400,7 @@ describe("useAppHotkeys", () => {
       );
     });
 
-    expect(handlePromptChange).not.toHaveBeenCalled();
+    expect(setPromptVisible).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(editorSurface);
   });
 });

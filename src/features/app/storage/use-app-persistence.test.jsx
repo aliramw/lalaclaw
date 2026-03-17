@@ -1,6 +1,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppPersistence } from "@/features/app/storage";
+import { promptDraftStorageKey } from "@/features/app/storage/app-storage";
 
 const attachmentStorageMocks = vi.hoisted(() => ({
   hydrateAttachmentStateByKeyFromStorage: vi.fn(),
@@ -280,6 +281,7 @@ describe("useAppPersistence", () => {
 
     expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
     attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockClear();
+    expect(JSON.parse(window.localStorage.getItem(promptDraftStorageKey) || "{}")).toEqual({});
 
     rerender(createProps({
       messages: [
@@ -322,5 +324,52 @@ describe("useAppPersistence", () => {
       },
       {},
     );
+  });
+
+  it("debounces prompt draft persistence while typing rapidly", async () => {
+    vi.useFakeTimers();
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [{ role: "user", content: "你好", timestamp: 1, pending: false }],
+      },
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+
+    const { rerender } = renderHook((props) => useAppPersistence(props), {
+      initialProps: createProps(),
+    });
+
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockClear();
+
+    rerender(createProps({
+      promptDraftsByConversation: {
+        "command-center:main": "1",
+      },
+    }));
+
+    rerender(createProps({
+      promptDraftsByConversation: {
+        "command-center:main": "12",
+      },
+    }));
+
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).not.toHaveBeenCalled();
+    expect(JSON.parse(window.localStorage.getItem(promptDraftStorageKey) || "{}")).toEqual({});
+
+    await vi.advanceTimersByTimeAsync(449);
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).not.toHaveBeenCalled();
+    expect(JSON.parse(window.localStorage.getItem(promptDraftStorageKey) || "{}")).toEqual({});
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(window.localStorage.getItem(promptDraftStorageKey) || "{}")).toEqual({
+      "command-center:main": "12",
+    });
   });
 });

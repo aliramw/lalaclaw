@@ -15,6 +15,11 @@ function normalizeThinkMode(value = '') {
   return THINK_MODES.includes(normalized) ? normalized : '';
 }
 
+function extractAgentIdFromNativeSessionKey(sessionUser = '') {
+  const match = String(sessionUser || '').trim().match(/^agent:([^:]+):/);
+  return match?.[1] ? String(match[1]).trim() : '';
+}
+
 function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolveCanonicalModelId }) {
   const sessionPreferences = new Map();
   const localSessionConversation = new Map();
@@ -55,6 +60,11 @@ function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolv
   }
 
   function resolveSessionAgentId(sessionUser = 'command-center') {
+    const nativeAgentId = extractAgentIdFromNativeSessionKey(sessionUser);
+    if (nativeAgentId) {
+      return nativeAgentId;
+    }
+
     const preferences = getSessionPreferences(sessionUser);
     return String(preferences.agentId || getDefaultAgentId()).trim() || getDefaultAgentId();
   }
@@ -185,6 +195,7 @@ function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolv
 module.exports = {
   THINK_MODES,
   createSessionStore,
+  extractAgentIdFromNativeSessionKey,
   normalizeSessionUser,
   normalizeThinkMode,
 };

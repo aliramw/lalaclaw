@@ -141,5 +141,404 @@ describe("searchSessionsForAgent", () => {
     expect(results).toHaveLength(1);
     expect(results[0].preview).toContain("你你你");
     expect(results[0].sessionUser).toContain("sendername");
+    expect(results[0].displaySessionUser).toBe("dingtalk-connector:__default__:direct:398058:马锐拉");
+  });
+
+  it("strips markdown markers from the session search preview", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionKey = 'agent:main:openai-user:{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const sessions = {
+      [sessionKey]: {
+        updatedAt: 1773722999708,
+        sessionId: "ding-preview",
+      },
+    };
+
+    fs.writeFileSync(path.join(sessionsDir, "sessions.json"), JSON.stringify(sessions), "utf8");
+    fs.writeFileSync(
+      path.join(sessionsDir, "ding-preview.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "ding-preview", timestamp: "2026-03-17T04:40:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:49:46.186Z",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "text",
+                text: "- **改配置**：给主模型 `openai-codex/gpt-5.4` 加了 fallback",
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = createTestProjector(rootDir);
+    const results = projector.searchSessionsForAgent("main", {
+      channel: "dingtalk-connector",
+      limit: 12,
+      term: "",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].preview).toBe("改配置：给主模型 openai-codex/gpt-5.4 加了 fallback");
+  });
+
+  it("returns native Feishu sessions and formats their display session id", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionKey = "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58";
+    const sessions = {
+      [sessionKey]: {
+        updatedAt: 1773733112684,
+        sessionId: "feishu-session",
+        lastChannel: "feishu",
+        origin: {
+          label: "飞书小助手",
+          provider: "feishu",
+          surface: "feishu",
+          to: "user:ou_d249239ddfd11c4c3c4f5f1581c97a58",
+        },
+        deliveryContext: {
+          channel: "feishu",
+          to: "user:ou_d249239ddfd11c4c3c4f5f1581c97a58",
+          accountId: "default",
+        },
+      },
+    };
+
+    fs.writeFileSync(path.join(sessionsDir, "sessions.json"), JSON.stringify(sessions), "utf8");
+    fs.writeFileSync(
+      path.join(sessionsDir, "feishu-session.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "feishu-session", timestamp: "2026-03-17T04:40:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:49:46.186Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "宝塔镇河妖",
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = createTestProjector(rootDir);
+    const results = projector.searchSessionsForAgent("main", {
+      channel: "feishu",
+      limit: 12,
+      term: "宝塔镇河妖",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].sessionUser).toBe(sessionKey);
+    expect(results[0].displaySessionUser).toBe("feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58");
+    expect(results[0].title).toBe("飞书小助手");
+    expect(results[0].preview).toContain("宝塔镇河妖");
+  });
+
+  it("strips Feishu metadata envelopes from the session search preview", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionKey = "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58";
+    const sessions = {
+      [sessionKey]: {
+        updatedAt: 1773733112684,
+        sessionId: "feishu-preview",
+        lastChannel: "feishu",
+      },
+    };
+
+    fs.writeFileSync(path.join(sessionsDir, "sessions.json"), JSON.stringify(sessions), "utf8");
+    fs.writeFileSync(
+      path.join(sessionsDir, "feishu-preview.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "feishu-preview", timestamp: "2026-03-17T04:40:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:49:46.186Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: [
+                  "Conversation info (untrusted metadata):",
+                  "```json",
+                  "{\"message_id\":\"om_x100\",\"sender_id\":\"ou_d249239ddfd11c4c3c4f5f1581c97a58\"}",
+                  "```",
+                  "",
+                  "Sender (untrusted metadata):",
+                  "```json",
+                  "{\"label\":\"ou_d249239ddfd11c4c3c4f5f1581c97a58\"}",
+                  "```",
+                  "",
+                  "[message_id: om_x100]",
+                  "ou_d249239ddfd11c4c3c4f5f1581c97a58: 肥水",
+                ].join("\n"),
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = createTestProjector(rootDir);
+    const results = projector.searchSessionsForAgent("main", {
+      channel: "feishu",
+      limit: 12,
+      term: "",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].preview).toBe("肥水");
+  });
+
+  it("returns native WeCom sessions and formats their display session id", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionKey = "agent:main:wecom:direct:marila";
+    const sessions = {
+      [sessionKey]: {
+        updatedAt: 1773738213334,
+        sessionId: "wecom-session",
+        lastChannel: "wecom",
+        origin: {
+          label: "user:marila",
+          provider: "wecom",
+          surface: "wecom",
+          to: "wecom:marila",
+        },
+        deliveryContext: {
+          channel: "wecom",
+          to: "wecom:marila",
+          accountId: "default",
+        },
+      },
+    };
+
+    fs.writeFileSync(path.join(sessionsDir, "sessions.json"), JSON.stringify(sessions), "utf8");
+    fs.writeFileSync(
+      path.join(sessionsDir, "wecom-session.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "wecom-session", timestamp: "2026-03-17T09:03:16.146Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T09:03:16.156Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "宝塔镇河妖",
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = createTestProjector(rootDir);
+    const results = projector.searchSessionsForAgent("main", {
+      channel: "wecom",
+      limit: 12,
+      term: "宝塔镇河妖",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].sessionUser).toBe(sessionKey);
+    expect(results[0].displaySessionUser).toBe("wecom:direct:marila");
+    expect(results[0].title).toBe("marila");
+    expect(results[0].preview).toContain("宝塔镇河妖");
+  });
+
+  it("strips WeCom metadata envelopes from the session search preview", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionKey = "agent:main:wecom:direct:marila";
+    const sessions = {
+      [sessionKey]: {
+        updatedAt: 1773738213334,
+        sessionId: "wecom-preview",
+        lastChannel: "wecom",
+      },
+    };
+
+    fs.writeFileSync(path.join(sessionsDir, "sessions.json"), JSON.stringify(sessions), "utf8");
+    fs.writeFileSync(
+      path.join(sessionsDir, "wecom-preview.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "wecom-preview", timestamp: "2026-03-17T09:03:16.146Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T09:03:16.156Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: [
+                  "Conversation info (untrusted metadata):",
+                  "```json",
+                  "{\"message_id\":\"44e64d31\",\"sender_id\":\"marila\",\"sender\":\"marila\"}",
+                  "```",
+                  "",
+                  "Sender (untrusted metadata):",
+                  "```json",
+                  "{\"label\":\"marila\",\"id\":\"marila\"}",
+                  "```",
+                  "",
+                  "hi",
+                ].join("\n"),
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = createTestProjector(rootDir);
+    const results = projector.searchSessionsForAgent("main", {
+      channel: "wecom",
+      limit: 12,
+      term: "",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].preview).toBe("hi");
+  });
+});
+
+describe("collectConversationMessages", () => {
+  it("drops Feishu mirrored assistant echoes and their replayed inbound user turns", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
+    try {
+      const projector = createTestProjector(rootDir);
+
+      const conversation = projector.collectConversationMessages([
+        {
+          type: "message",
+          timestamp: "2026-03-17T08:04:02.489Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773734642489,
+            content: [{ type: "text", text: "marila：来自lalaclaw" }],
+          },
+        },
+        {
+          type: "message",
+          timestamp: "2026-03-17T08:04:04.912Z",
+          message: {
+            role: "user",
+            timestamp: 1773734644912,
+            content: [{ type: "text", text: "[Tue 2026-03-17 16:04 GMT+8] marila：来自lalaclaw" }],
+          },
+        },
+        {
+          type: "message",
+          timestamp: "2026-03-17T08:04:04.914Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773734644914,
+            content: [{ type: "text", text: "[[reply_to_current]] 收到。你继续说。" }],
+          },
+        },
+      ]);
+
+      expect(conversation).toEqual([
+        {
+          role: "user",
+          content: "来自lalaclaw",
+          timestamp: 1773734644912,
+        },
+        {
+          role: "assistant",
+          content: "收到。你继续说。",
+          timestamp: 1773734644914,
+        },
+      ]);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("drops Feishu mirrored assistant echoes that add an operator prefix before the replayed user turn", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
+    try {
+      const projector = createTestProjector(rootDir);
+
+      const conversation = projector.collectConversationMessages([
+        {
+          type: "message",
+          timestamp: "2026-03-17T08:25:51.239Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773735951239,
+            content: [{ type: "text", text: "marila：皮蛋" }],
+          },
+        },
+        {
+          type: "message",
+          timestamp: "2026-03-17T08:25:53.694Z",
+          message: {
+            role: "user",
+            timestamp: 1773735953694,
+            content: [{ type: "text", text: "[Tue 2026-03-17 16:25 GMT+8] 皮蛋" }],
+          },
+        },
+        {
+          type: "message",
+          timestamp: "2026-03-17T08:26:13.534Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773735973534,
+            content: [{ type: "text", text: "[[reply_to_current]] 收到，皮蛋。\n你们这是今天统一用蛋系代号是吧。要办啥，直接说。" }],
+          },
+        },
+      ]);
+
+      expect(conversation).toEqual([
+        {
+          role: "user",
+          content: "皮蛋",
+          timestamp: 1773735953694,
+        },
+        {
+          role: "assistant",
+          content: "收到，皮蛋。\n你们这是今天统一用蛋系代号是吧。要办啥，直接说。",
+          timestamp: 1773735973534,
+        },
+      ]);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
   });
 });

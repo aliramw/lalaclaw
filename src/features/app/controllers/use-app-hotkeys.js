@@ -4,10 +4,9 @@ import { isEditableElement } from "@/features/chat/utils";
 export function useAppHotkeys({
   handleActivateAdjacentChatTab,
   handleActivateChatTabByIndex,
-  handlePromptChange,
   handleReset,
-  prompt,
   promptRef,
+  setPromptVisible,
   setTheme,
 }) {
   const onResetHotkey = useEffectEvent((event) => {
@@ -98,8 +97,9 @@ export function useAppHotkeys({
     event.preventDefault();
     event.stopPropagation();
 
-    const nextPrompt = `${prompt}${event.key}`;
-    handlePromptChange(nextPrompt);
+    const currentPrompt = String(textarea.value || "");
+    const nextPrompt = `${currentPrompt}${event.key}`;
+    setPromptVisible(nextPrompt);
     window.requestAnimationFrame(() => {
       const nextTextarea = promptRef.current;
       if (!nextTextarea) {

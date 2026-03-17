@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { stripMarkdownForDisplay } = require('../../shared/strip-markdown-for-display.cjs');
 
 function createTranscriptProjector({
   PROJECT_ROOT,
@@ -16,6 +17,7 @@ function createTranscriptProjector({
   formatTimestamp,
 }) {
   const TRANSIENT_USER_REPLAY_WINDOW_MS = 10 * 60 * 1000;
+  const MIRRORED_IM_REPLAY_WINDOW_MS = 30 * 1000;
   const SESSION_SEARCH_MAX_RESULTS = 12;
   const SESSION_SEARCH_MAX_CANDIDATES = 80;
   const SESSION_SEARCH_TRANSCRIPT_WINDOW = 160;
@@ -106,23 +108,26 @@ function createTranscriptProjector({
 
   function cleanUserMessage(text) {
     let lines = String(text || '').trim().split('\n');
+    const UNTRUSTED_METADATA_SENTINELS = [
+      /^Conversation info \(untrusted metadata\):/i,
+      /^Sender \(untrusted metadata\):/i,
+      /^Thread starter \(untrusted, for context\):/i,
+      /^Replied message \(untrusted, for context\):/i,
+      /^Forwarded message context \(untrusted metadata\):/i,
+      /^Chat history since last reply \(untrusted, for context\):/i,
+    ];
+    const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
     const stripLeadingBlankLines = () => {
       while (lines.length && !String(lines[0] || '').trim()) {
         lines.shift();
       }
     };
+    const stripLeadingMetadataBlock = () => {
+      const firstLine = String(lines[0] || '').trim();
+      if (!UNTRUSTED_METADATA_SENTINELS.some((pattern) => pattern.test(firstLine))) {
+        return false;
+      }
 
-    stripLeadingBlankLines();
-
-    while (
-      lines.length &&
-      /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::/i.test(String(lines[0] || '').trim())
-    ) {
-      lines.shift();
-      stripLeadingBlankLines();
-    }
-
-    if (/^Sender \(untrusted metadata\):/i.test(String(lines[0] || '').trim())) {
       lines.shift();
       stripLeadingBlankLines();
 
@@ -137,6 +142,26 @@ function createTranscriptProjector({
       }
 
       stripLeadingBlankLines();
+      return true;
+    };
+
+    stripLeadingBlankLines();
+
+    while (
+      lines.length &&
+      /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::/i.test(String(lines[0] || '').trim())
+    ) {
+      lines.shift();
+      stripLeadingBlankLines();
+    }
+
+    while (stripLeadingMetadataBlock()) {
+      // Strip stacked metadata blocks at the head of inbound IM messages.
+    }
+
+    while (lines.length && MESSAGE_ID_LINE.test(String(lines[0] || '').trim())) {
+      lines.shift();
+      stripLeadingBlankLines();
     }
 
     let cleaned = lines.join('\n').trim();
@@ -145,6 +170,7 @@ function createTranscriptProjector({
       /^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*/i,
       '',
     );
+    cleaned = cleaned.replace(/^(?:ou_[a-z0-9_-]+|on_[a-z0-9_-]+|oc_[a-z0-9_-]+)\s*:\s*/i, '');
 
     if (
       /^OpenClaw runtime context \(internal\):/i.test(cleaned) &&
@@ -160,6 +186,53 @@ function createTranscriptProjector({
     return String(text || '')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  function isLikelyMirroredImReplayRawText(text = '') {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    return (
+      /^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s+/i.test(trimmed)
+      || /^Conversation info \(untrusted metadata\):/i.test(trimmed)
+    );
+  }
+
+  function isMirroredImReplayPair(assistantEntry, rawUserText = '', cleanedUserText = '', userTimestamp = 0) {
+    if (assistantEntry?.role !== 'assistant' || !isLikelyMirroredImReplayRawText(rawUserText)) {
+      return false;
+    }
+
+    const assistantFingerprint = normalizeConversationFingerprint(assistantEntry?.content);
+    const assistantFingerprintWithoutPrefix = normalizeConversationFingerprint(
+      stripMirroredImOperatorPrefix(assistantEntry?.content),
+    );
+    const userFingerprint = normalizeConversationFingerprint(cleanedUserText);
+    const fingerprintsMatch =
+      Boolean(userFingerprint)
+      && (
+        assistantFingerprint === userFingerprint
+        || assistantFingerprintWithoutPrefix === userFingerprint
+      );
+
+    if (!fingerprintsMatch) {
+      return false;
+    }
+
+    const assistantTimestamp = Number(assistantEntry?.timestamp || 0);
+    const normalizedUserTimestamp = Number(userTimestamp || 0);
+    if (!assistantTimestamp || !normalizedUserTimestamp) {
+      return true;
+    }
+
+    const delta = normalizedUserTimestamp - assistantTimestamp;
+    return delta >= 0 && delta <= MIRRORED_IM_REPLAY_WINDOW_MS;
+  }
+
+  function stripMirroredImOperatorPrefix(text = '') {
+    return String(text || '').trim().replace(/^[^:：\n]{1,40}[：:]\s*/, '').trim();
   }
 
   function isTransientAssistantFailure(payload = {}) {
@@ -534,8 +607,28 @@ function createTranscriptProjector({
       const timestamp = payload.timestamp || Date.parse(entry.timestamp) || Date.now();
 
       if (payload.role === 'user') {
-        const content = cleanUserMessage(extractPlainTextSegments(payload.content).join('\n\n'));
+        const rawContent = extractPlainTextSegments(payload.content).join('\n\n');
+        const content = cleanUserMessage(rawContent);
         if (!content) {
+          return;
+        }
+
+        const latestConversationEntry = conversation[conversation.length - 1];
+        if (isMirroredImReplayPair(latestConversationEntry, rawContent, content, timestamp)) {
+          conversation.pop();
+          assistantConversationIndicesAfterLastUser = assistantConversationIndicesAfterLastUser.filter(
+            (index) => index !== conversation.length,
+          );
+          const normalizedMirroredUserContent = stripMirroredImOperatorPrefix(content) || content;
+          conversation.push({
+            role: 'user',
+            content: normalizedMirroredUserContent,
+            timestamp,
+          });
+          lastVisibleUserFingerprint = normalizeConversationFingerprint(normalizedMirroredUserContent);
+          lastVisibleUserTimestamp = timestamp;
+          assistantConversationIndicesAfterLastUser = [];
+          sawTransientAssistantFailureAfterLastUser = false;
           return;
         }
 
@@ -1390,14 +1483,44 @@ function createTranscriptProjector({
     return latestEntry;
   }
 
-  function extractOpenAiUserSessionUser(agentId, sessionKey) {
+  function parseNativeChannelSessionKey(agentId, sessionKey) {
     const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
-    const prefix = `agent:${normalizedAgentId}:openai-user:`;
-    if (!String(sessionKey || '').startsWith(prefix)) {
-      return '';
+    const normalizedSessionKey = String(sessionKey || '').trim();
+    const prefix = `agent:${normalizedAgentId}:`;
+    if (!normalizedSessionKey.startsWith(prefix)) {
+      return null;
     }
 
-    return String(sessionKey).slice(prefix.length).trim();
+    const payload = normalizedSessionKey.slice(prefix.length);
+    const [channel = '', chatType = '', ...peerParts] = payload.split(':');
+    const peerId = peerParts.join(':').trim();
+
+    if (!channel || !chatType || !peerId) {
+      return null;
+    }
+
+    return {
+      channel: String(channel || '').trim(),
+      chattype: String(chatType || '').trim(),
+      peerid: peerId,
+      sessionKey: normalizedSessionKey,
+    };
+  }
+
+  function extractSearchableSessionUser(agentId, sessionKey) {
+    const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
+    const openAiUserPrefix = `agent:${normalizedAgentId}:openai-user:`;
+    const normalizedSessionKey = String(sessionKey || '').trim();
+    if (normalizedSessionKey.startsWith(openAiUserPrefix)) {
+      return normalizedSessionKey.slice(openAiUserPrefix.length).trim();
+    }
+
+    const nativeSessionIdentity = parseNativeChannelSessionKey(normalizedAgentId, normalizedSessionKey);
+    if (['feishu', 'wecom'].includes(String(nativeSessionIdentity?.channel || '').trim())) {
+      return normalizedSessionKey;
+    }
+
+    return '';
   }
 
   function normalizeSessionSearchText(value = '') {
@@ -1418,16 +1541,70 @@ function createTranscriptProjector({
     }
   }
 
+  function formatSerializedSessionIdentity(parsedSessionIdentity, fallbackSessionUser = '') {
+    if (!parsedSessionIdentity || typeof parsedSessionIdentity !== 'object') {
+      return String(fallbackSessionUser || '').trim();
+    }
+
+    const parts = [
+      parsedSessionIdentity.channel,
+      parsedSessionIdentity.accountid,
+      parsedSessionIdentity.chattype,
+      parsedSessionIdentity.peerid || parsedSessionIdentity.groupid,
+    ]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+
+    const displayName = String(
+      parsedSessionIdentity.sendername
+      || parsedSessionIdentity.peername
+      || parsedSessionIdentity.groupname
+      || '',
+    ).trim();
+
+    if (displayName) {
+      const lastPart = parts.at(-1) || '';
+      if (displayName !== lastPart) {
+        parts.push(displayName);
+      }
+    }
+
+    return parts.join(':') || String(fallbackSessionUser || '').trim();
+  }
+
+  function formatFriendlySessionLabel(value = '') {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return '';
+    }
+
+    return normalizedValue.replace(/^(?:user|group|channel|wecom):/i, '').trim();
+  }
+
   function buildSessionSearchMetadata(entry = {}) {
-    const parsedSessionIdentity = parseSerializedSessionIdentity(entry.sessionUser);
-    const friendlySessionLabel = String(
+    const parsedSerializedSessionIdentity = parseSerializedSessionIdentity(entry.sessionUser);
+    const parsedNativeSessionIdentity = parseNativeChannelSessionKey(entry.agentId, entry.sessionUser);
+    const parsedSessionIdentity = parsedSerializedSessionIdentity || parsedNativeSessionIdentity;
+    const displaySessionUser = parsedSerializedSessionIdentity
+      ? formatSerializedSessionIdentity(parsedSerializedSessionIdentity, entry.sessionUser)
+      : parsedNativeSessionIdentity
+        ? [
+            parsedNativeSessionIdentity.channel,
+            parsedNativeSessionIdentity.chattype,
+            parsedNativeSessionIdentity.peerid,
+          ].filter(Boolean).join(':')
+        : String(entry.sessionUser || '').trim();
+    const friendlySessionLabel = formatFriendlySessionLabel(String(
       parsedSessionIdentity?.groupname
       || parsedSessionIdentity?.sendername
       || parsedSessionIdentity?.peername
+      || entry.sessionRecord?.displayName
+      || entry.sessionRecord?.origin?.label
+      || entry.sessionRecord?.origin?.to
       || parsedSessionIdentity?.peerid
       || parsedSessionIdentity?.groupid
       || entry.sessionUser,
-    ).trim();
+    ).trim());
     const resolvedChannel = String(
       entry.sessionRecord?.channel
       || entry.sessionRecord?.lastChannel
@@ -1463,6 +1640,7 @@ function createTranscriptProjector({
       .join('\n');
 
     return {
+      displaySessionUser,
       friendlySessionLabel,
       normalizedMetadataHaystack: normalizeSessionSearchText(metadataHaystack),
       parsedSessionIdentity,
@@ -1482,7 +1660,7 @@ function createTranscriptProjector({
 
         return {
           normalizedText: normalizeSessionSearchText(text),
-          text,
+          text: stripMarkdownForDisplay(text),
         };
       })
       .filter((entry) => entry.text);
@@ -1600,7 +1778,8 @@ function createTranscriptProjector({
       .map(([sessionKey, sessionRecord]) => ({
         sessionKey,
         sessionRecord,
-        sessionUser: extractOpenAiUserSessionUser(normalizedAgentId, sessionKey),
+        agentId: normalizedAgentId,
+        sessionUser: extractSearchableSessionUser(normalizedAgentId, sessionKey),
         updatedAt: Number(sessionRecord?.updatedAt || 0),
       }))
       .filter((entry) => entry.sessionUser && entry.updatedAt)
@@ -1646,6 +1825,7 @@ function createTranscriptProjector({
       matches.push({
         agentId: normalizedAgentId,
         channel: entry.resolvedChannel,
+        displaySessionUser: entry.displaySessionUser,
         matchSource: metadataMatched ? 'metadata' : transcriptMatched ? 'transcript' : 'recent',
         preview,
         sessionKey: entry.sessionKey,

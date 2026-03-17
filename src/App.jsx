@@ -404,6 +404,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
 }
 
 function AppContent() {
+  const userLabel = "marila";
   const { messages: i18nMessages } = useI18n();
   const {
     activeChatTabId,
@@ -466,7 +467,7 @@ function AppContent() {
     taskRelationships,
     taskTimeline,
     theme,
-  } = useCommandCenter();
+  } = useCommandCenter({ userLabel });
   const splitLayoutRef = useRef(null);
   const resizeCleanupRef = useRef(null);
   const [isWideLayout, setIsWideLayout] = useState(
@@ -619,6 +620,202 @@ function AppContent() {
       : undefined),
     [isWideLayout, resolvedInspectorPanelWidth],
   );
+  const openAgentIds = useMemo(() => chatTabs.map((tab) => tab.agentId), [chatTabs]);
+  const tabBrandOverview = useMemo(() => (
+    <SessionOverview
+      layout="tab-brand"
+      availableAgents={availableAgents}
+      availableModels={availableModels}
+      composerSendMode={composerSendMode}
+      fastMode={fastMode}
+      formatCompactK={formatCompactK}
+      model={model}
+      onAgentChange={handleAgentChange}
+      onFastModeChange={handleFastModeChange}
+      onModelChange={handleModelChange}
+      onSearchSessions={handleSearchSessions}
+      onSelectSearchedSession={handleSelectSearchedSession}
+      onThinkModeChange={handleThinkModeChange}
+      onThemeChange={setTheme}
+      resolvedTheme={resolvedTheme}
+      session={session}
+      theme={theme}
+    />
+  ), [
+    availableAgents,
+    availableModels,
+    composerSendMode,
+    fastMode,
+    formatCompactK,
+    handleAgentChange,
+    handleFastModeChange,
+    handleModelChange,
+    handleSearchSessions,
+    handleSelectSearchedSession,
+    handleThinkModeChange,
+    model,
+    resolvedTheme,
+    session,
+    setTheme,
+    theme,
+  ]);
+  const agentTabOverview = useMemo(() => (
+    <SessionOverview
+      layout="agent-tab"
+      availableAgents={availableAgents}
+      availableModels={availableModels}
+      composerSendMode={composerSendMode}
+      fastMode={fastMode}
+      formatCompactK={formatCompactK}
+      model={model}
+      onAgentChange={handleAgentChange}
+      onFastModeChange={handleFastModeChange}
+      onModelChange={handleModelChange}
+      onSearchSessions={handleSearchSessions}
+      onSelectSearchedSession={handleSelectSearchedSession}
+      onThinkModeChange={handleThinkModeChange}
+      onThemeChange={setTheme}
+      openAgentIds={openAgentIds}
+      resolvedTheme={resolvedTheme}
+      session={session}
+      theme={theme}
+    />
+  ), [
+    availableAgents,
+    availableModels,
+    composerSendMode,
+    fastMode,
+    formatCompactK,
+    handleAgentChange,
+    handleFastModeChange,
+    handleModelChange,
+    handleSearchSessions,
+    handleSelectSearchedSession,
+    handleThinkModeChange,
+    model,
+    openAgentIds,
+    resolvedTheme,
+    session,
+    setTheme,
+    theme,
+  ]);
+  const controlsOverview = useMemo(() => (
+    <SessionOverview
+      layout="controls"
+      availableAgents={availableAgents}
+      availableModels={availableModels}
+      composerSendMode={composerSendMode}
+      fastMode={fastMode}
+      formatCompactK={formatCompactK}
+      model={model}
+      onAgentChange={handleAgentChange}
+      onFastModeChange={handleFastModeChange}
+      onModelChange={handleModelChange}
+      onSearchSessions={handleSearchSessions}
+      onSelectSearchedSession={handleSelectSearchedSession}
+      onThinkModeChange={handleThinkModeChange}
+      onThemeChange={setTheme}
+      resolvedTheme={resolvedTheme}
+      session={session}
+      theme={theme}
+    />
+  ), [
+    availableAgents,
+    availableModels,
+    composerSendMode,
+    fastMode,
+    formatCompactK,
+    handleAgentChange,
+    handleFastModeChange,
+    handleModelChange,
+    handleSearchSessions,
+    handleSelectSearchedSession,
+    handleThinkModeChange,
+    model,
+    resolvedTheme,
+    session,
+    setTheme,
+    theme,
+  ]);
+  const statusOverview = useMemo(() => (
+    <SessionOverview
+      layout="status"
+      availableAgents={availableAgents}
+      availableModels={availableModels}
+      composerSendMode={composerSendMode}
+      fastMode={fastMode}
+      formatCompactK={formatCompactK}
+      model={model}
+      onAgentChange={handleAgentChange}
+      onFastModeChange={handleFastModeChange}
+      onModelChange={handleModelChange}
+      onSearchSessions={handleSearchSessions}
+      onSelectSearchedSession={handleSelectSearchedSession}
+      onThinkModeChange={handleThinkModeChange}
+      onThemeChange={setTheme}
+      resolvedTheme={resolvedTheme}
+      session={session}
+      theme={theme}
+    />
+  ), [
+    availableAgents,
+    availableModels,
+    composerSendMode,
+    fastMode,
+    formatCompactK,
+    handleAgentChange,
+    handleFastModeChange,
+    handleModelChange,
+    handleSearchSessions,
+    handleSelectSearchedSession,
+    handleThinkModeChange,
+    model,
+    resolvedTheme,
+    session,
+    setTheme,
+    theme,
+  ]);
+  const taskRelationshipsPanel = useMemo(() => (
+    <TaskRelationshipsPanel
+      onDismissRelationship={dismissTaskRelationship}
+      relationships={taskRelationships}
+      sessionAgentId={session.agentId || "main"}
+      visible={taskRelationships.length > 0}
+    />
+  ), [dismissTaskRelationship, session.agentId, taskRelationships]);
+  const inspectorPanel = useMemo(() => (
+    <InspectorPanel
+      activeTab={activeTab}
+      agents={agents}
+      artifacts={artifacts}
+      currentAgentId={session.agentId}
+      currentSessionUser={session.sessionUser}
+      currentWorkspaceRoot={session.workspaceRoot}
+      files={files}
+      onSelectArtifact={handleArtifactSelect}
+      peeks={peeks}
+      renderPeek={renderPeek}
+      resolvedTheme={resolvedTheme}
+      setActiveTab={setActiveTab}
+      snapshots={snapshots}
+      taskTimeline={taskTimeline}
+    />
+  ), [
+    activeTab,
+    agents,
+    artifacts,
+    files,
+    handleArtifactSelect,
+    peeks,
+    renderPeek,
+    resolvedTheme,
+    session.agentId,
+    session.sessionUser,
+    session.workspaceRoot,
+    setActiveTab,
+    snapshots,
+    taskTimeline,
+  ]);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -632,75 +829,16 @@ function AppContent() {
               <ChatTabsStrip
                 className="min-w-0 pt-0 pb-0 pr-0"
                 items={chatTabs}
-                leadingControl={(
-                  <SessionOverview
-                    layout="tab-brand"
-                    availableAgents={availableAgents}
-                    availableModels={availableModels}
-                    composerSendMode={composerSendMode}
-                    fastMode={fastMode}
-                    formatCompactK={formatCompactK}
-                    model={model}
-                    onAgentChange={handleAgentChange}
-                    onFastModeChange={handleFastModeChange}
-                    onModelChange={handleModelChange}
-                    onSearchSessions={handleSearchSessions}
-                    onSelectSearchedSession={handleSelectSearchedSession}
-                    onThinkModeChange={handleThinkModeChange}
-                    onThemeChange={setTheme}
-                    resolvedTheme={resolvedTheme}
-                    session={session}
-                    theme={theme}
-                  />
-                )}
+                leadingControl={tabBrandOverview}
                 onActivate={handleActivateChatTab}
                 onClose={handleCloseChatTab}
                 onReorder={handleReorderChatTabs}
                 resolvedTheme={resolvedTheme}
-                trailingControl={(
-                  <SessionOverview
-                    layout="agent-tab"
-                    availableAgents={availableAgents}
-                    availableModels={availableModels}
-                    composerSendMode={composerSendMode}
-                    fastMode={fastMode}
-                    formatCompactK={formatCompactK}
-                    model={model}
-                    onAgentChange={handleAgentChange}
-                    onFastModeChange={handleFastModeChange}
-                    onModelChange={handleModelChange}
-                    onSearchSessions={handleSearchSessions}
-                    onSelectSearchedSession={handleSelectSearchedSession}
-                    onThinkModeChange={handleThinkModeChange}
-                    onThemeChange={setTheme}
-                    openAgentIds={chatTabs.map((tab) => tab.agentId)}
-                    resolvedTheme={resolvedTheme}
-                    session={session}
-                    theme={theme}
-                  />
-                )}
+                trailingControl={agentTabOverview}
               />
             </div>
 
-            <SessionOverview
-              layout="controls"
-              availableAgents={availableAgents}
-              availableModels={availableModels}
-              composerSendMode={composerSendMode}
-              fastMode={fastMode}
-              formatCompactK={formatCompactK}
-              model={model}
-              onAgentChange={handleAgentChange}
-              onFastModeChange={handleFastModeChange}
-              onModelChange={handleModelChange}
-              onSearchSessions={handleSearchSessions}
-              onSelectSearchedSession={handleSelectSearchedSession}
-              onThinkModeChange={handleThinkModeChange}
-              onThemeChange={setTheme}
-              resolvedTheme={resolvedTheme}
-              session={session}
-              theme={theme}
-            />
+            {controlsOverview}
           </div>
 
           <main
@@ -743,29 +881,9 @@ function AppContent() {
                 restoredScrollRevision={restoredChatScrollRevision}
                 restoredScrollState={restoredChatScrollState}
                 session={session}
-                sessionOverview={(
-                  <SessionOverview
-                    layout="status"
-                    availableAgents={availableAgents}
-                    availableModels={availableModels}
-                    composerSendMode={composerSendMode}
-                    fastMode={fastMode}
-                    formatCompactK={formatCompactK}
-                    model={model}
-                    onAgentChange={handleAgentChange}
-                    onFastModeChange={handleFastModeChange}
-                    onModelChange={handleModelChange}
-                    onSearchSessions={handleSearchSessions}
-                    onSelectSearchedSession={handleSelectSearchedSession}
-                    onThinkModeChange={handleThinkModeChange}
-                    onThemeChange={setTheme}
-                    resolvedTheme={resolvedTheme}
-                    session={session}
-                    theme={theme}
-                  />
-                )}
+                sessionOverview={statusOverview}
                 showTabsStrip={false}
-                userLabel="marila"
+                userLabel={userLabel}
               />
             </div>
 
@@ -799,29 +917,9 @@ function AppContent() {
             </div>
 
             <div className="flex min-w-0 flex-col gap-3 xl:h-full xl:min-h-0 xl:min-w-[300px] xl:overflow-hidden xl:pl-0.5">
-              <TaskRelationshipsPanel
-                onDismissRelationship={dismissTaskRelationship}
-                relationships={taskRelationships}
-                sessionAgentId={session.agentId || "main"}
-                visible={taskRelationships.length > 0}
-              />
+              {taskRelationshipsPanel}
               <div className="min-w-0 xl:min-h-0 xl:flex-1">
-                <InspectorPanel
-                  activeTab={activeTab}
-                  agents={agents}
-                  artifacts={artifacts}
-                  currentAgentId={session.agentId}
-                  currentSessionUser={session.sessionUser}
-                  currentWorkspaceRoot={session.workspaceRoot}
-                  files={files}
-                  onSelectArtifact={handleArtifactSelect}
-                  peeks={peeks}
-                  renderPeek={renderPeek}
-                  resolvedTheme={resolvedTheme}
-                  setActiveTab={setActiveTab}
-                  snapshots={snapshots}
-                  taskTimeline={taskTimeline}
-                />
+                {inspectorPanel}
               </div>
             </div>
           </main>

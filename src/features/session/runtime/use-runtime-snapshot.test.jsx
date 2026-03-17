@@ -263,6 +263,62 @@ describe("useRuntimeSnapshot", () => {
     });
   });
 
+  it("ignores a runtime snapshot that resolves to a stale DingTalk session after reset", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const resetSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058:reset:1773319871765","sendername":"马锐拉"}';
+    const staleDingTalkSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: staleDingTalkSessionUser,
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "运行中",
+        },
+        conversation: [{ role: "user", content: "旧钉钉消息", timestamp: 100 }],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession({ sessionUser: resetSessionUser }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/runtime?${new URLSearchParams({ sessionUser: resetSessionUser, agentId: "main" }).toString()}`,
+      );
+    });
+
+    expect(setMessagesSynced).not.toHaveBeenCalled();
+    expect(setModel).not.toHaveBeenCalled();
+    expect(setSession).not.toHaveBeenCalled();
+  });
+
   it("posts session updates with the active session user and applies the returned snapshot", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const setBusy = vi.fn();
@@ -480,6 +536,17 @@ describe("useRuntimeSnapshot", () => {
         busy: false,
         activePendingChat: null,
         sessionUser: '{"channel":"dingtalk-connector","peerid":"398058"}',
+      }),
+    ).toBe(4000);
+  });
+
+  it("polls Feishu sessions more aggressively even while locally idle", () => {
+    expect(
+      getRuntimePollInterval({
+        recoveringPendingReply: false,
+        busy: false,
+        activePendingChat: null,
+        sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
       }),
     ).toBe(4000);
   });

@@ -278,6 +278,75 @@ describe("useChatController", () => {
     expect(result.current.activeQueuedMessages).toHaveLength(2);
   });
 
+  it("includes the current user label in /api/chat requests", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = { current: [] };
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        assistantMessageId: "msg-assistant-userlabel",
+        outputText: "收到",
+        metadata: { status: "已完成 / 标准" },
+        sessionPatch: {
+          agentId: "main",
+          sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main::feishu",
+        activeConversationKey: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58:main",
+        applySnapshot,
+        i18n: createI18n(),
+        getMessagesForTab: () => messagesRef.current,
+        messagesRef,
+        setBusy,
+        setMessagesForTab: (_tabId, value) => {
+          messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+        },
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        userLabel: "marila",
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry({
+        id: "entry-feishu-userlabel",
+        key: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58:main",
+        content: "测试飞书",
+        attachments: [],
+        timestamp: 100,
+        userMessageId: "msg-user-feishu-userlabel",
+        agentId: "main",
+        sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
+        model: "gpt-5",
+        fastMode: false,
+      });
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/chat",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"userLabel":"marila"'),
+        }),
+      );
+    });
+  });
+
   it("aborts the active turn and calls /api/chat/stop when the user stops a running reply", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();

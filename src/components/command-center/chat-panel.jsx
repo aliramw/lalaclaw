@@ -9,8 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
+import { isDingTalkSessionUser, isImSessionUser } from "@/features/session/im-session";
 import { isOfflineStatus, normalizeStatusKey } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/storage";
+import { maxPromptRows } from "@/features/chat/utils";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useI18n } from "@/lib/i18n";
@@ -34,12 +36,6 @@ const artifactFocusScrollDurationMs = 320;
 const focusHighlightDurationMs = 1400;
 const messageOutlineViewportBottomGapPx = 20;
 const messageOutlineMinHeightPx = 96;
-
-function isDingTalkSessionUser(sessionUser = "") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  return normalizedSessionUser.startsWith('{"channel":"dingtalk-connector"')
-    || normalizedSessionUser.includes("dingtalk-connector");
-}
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -1578,7 +1574,18 @@ export function ChatTabsStrip({
               type="button"
               draggable={false}
               className="inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-              onClick={() => onActivate?.(item.id)}
+              onMouseDown={(event) => {
+                if (event.button !== 0 || item.active) {
+                  return;
+                }
+                onActivate?.(item.id);
+              }}
+              onClick={(event) => {
+                if (event.detail !== 0) {
+                  return;
+                }
+                onActivate?.(item.id);
+              }}
             >
               <span
                 className={cn(
@@ -1698,6 +1705,7 @@ export function ChatPanel({
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
+  const [composerPrompt, setComposerPrompt] = useState(prompt);
   const mentionMenuRef = useRef(null);
   const latestAssistantBubbleRef = useRef(null);
   const bottomSentinelRef = useRef(null);
@@ -1781,7 +1789,7 @@ export function ChatPanel({
   const showBusyBadge = busy
     || hasActiveAssistantReply
     || (
-      isDingTalkSessionUser(session.sessionUser)
+      isImSessionUser(session.sessionUser)
       && ["running", "dispatching"].includes(normalizeStatusKey(session.status))
     );
   const showStopButton = Boolean(onStop) && showBusyBadge;
@@ -1871,6 +1879,36 @@ export function ChatPanel({
     ? createConversationKey(session.sessionUser, session.agentId)
     : restoredScrollKey;
 
+  useEffect(() => {
+    setComposerPrompt((current) => (current === prompt ? current : prompt));
+  }, [prompt]);
+
+  useLayoutEffect(() => {
+    const textarea = composerTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    if (!String(textarea.value || "")) {
+      textarea.style.height = "";
+      textarea.style.overflowY = "hidden";
+      return;
+    }
+
+    const computed = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(computed.lineHeight) || 20;
+    const paddingTop = Number.parseFloat(computed.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(computed.paddingBottom) || 0;
+    const borderTop = Number.parseFloat(computed.borderTopWidth) || 0;
+    const borderBottom = Number.parseFloat(computed.borderBottomWidth) || 0;
+    const maxHeight = lineHeight * maxPromptRows + paddingTop + paddingBottom + borderTop + borderBottom;
+
+    textarea.style.height = "auto";
+    const scrollHeight = textarea.scrollHeight;
+    textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [composerPrompt]);
+
   const syncAgentMention = (nextPrompt, caret) => {
     setManualMention(null);
     setMentionAnchor("composer");
@@ -1895,8 +1933,9 @@ export function ChatPanel({
       return;
     }
 
-    const nextPrompt = `${prompt.slice(0, activeMention.start)}${normalizedValue} ${prompt.slice(activeMention.end)}`;
+    const nextPrompt = `${composerPrompt.slice(0, activeMention.start)}${normalizedValue} ${composerPrompt.slice(activeMention.end)}`;
     const nextCaret = activeMention.start + normalizedValue.length + 1;
+    setComposerPrompt(nextPrompt);
     onPromptChange(nextPrompt);
     setAgentMention(null);
     setManualMention(null);
@@ -1907,7 +1946,7 @@ export function ChatPanel({
       composerTextareaRef.current?.focus();
       composerTextareaRef.current?.setSelectionRange?.(nextCaret, nextCaret);
     });
-  }, [activeMention, onPromptChange, prompt]);
+  }, [activeMention, composerPrompt, onPromptChange]);
 
   const handleMentionPointerSelect = useCallback((event, value) => {
     if (event.button !== 0) {
@@ -2666,6 +2705,80 @@ export function ChatPanel({
     queueFocusHighlight(resolvedMessageId, artifactFocusScrollDurationMs);
   }, [animateViewportScroll, markUserScrollTakeover, queueFocusHighlight, resolvedMessageViewport]);
 
+  const renderedMessageBubbles = useMemo(() => {
+    if (!messages.length) {
+      return <EmptyConversation />;
+    }
+
+    let lastUserMessageId = "";
+    let lastAssistantMessageId = "";
+
+    return messages.map((message, index) => {
+      const messageId = getConversationMessageId(message, index);
+      const previousMessageId = message.role === "assistant" ? lastAssistantMessageId : lastUserMessageId;
+      const isLatestAssistant = latestAssistantMessageId === messageId;
+      const isStreamingAssistant = Boolean(
+        isLatestAssistant
+          && latestMessageIsAssistant
+          && message.role === "assistant"
+          && !message.pending
+          && message.streaming
+          && String(message.content || "").trim(),
+      );
+
+      if (message.role === "user") {
+        lastUserMessageId = messageId;
+      } else if (message.role === "assistant") {
+        lastAssistantMessageId = messageId;
+      }
+
+      return (
+        <MessageBubble
+          agentLabel={agentLabel}
+          animateViewportScroll={animateViewportScroll}
+          bubbleAnchorRef={isLatestAssistant ? latestAssistantBubbleRef : undefined}
+          handleOpenFilePreview={handleOpenPreview}
+          handleOpenImagePreview={openImagePreview}
+          isHighlighted={highlightedMessageId === messageId}
+          isLatestAssistant={isLatestAssistant}
+          isStreamingAssistant={isStreamingAssistant}
+          markUserScrollTakeover={markUserScrollTakeover}
+          key={messageId}
+          message={message}
+          messageId={messageId}
+          formatTime={formatTime}
+          files={files}
+          messageViewportRef={messageViewportRef}
+          onJumpPreviousMessage={handleJumpToUserMessage}
+          previousMessageId={previousMessageId}
+          resolvedTheme={resolvedTheme}
+          sessionUser={session?.sessionUser}
+          separated={index > 0 && messages[index - 1]?.role !== message.role}
+          chatFontSize={chatFontSize}
+          userLabel={userLabel}
+        />
+      );
+    });
+  }, [
+    agentLabel,
+    animateViewportScroll,
+    chatFontSize,
+    files,
+    formatTime,
+    handleJumpToUserMessage,
+    handleOpenPreview,
+    highlightedMessageId,
+    latestAssistantMessageId,
+    latestMessageIsAssistant,
+    markUserScrollTakeover,
+    messages,
+    messageViewportRef,
+    openImagePreview,
+    resolvedTheme,
+    session?.sessionUser,
+    userLabel,
+  ]);
+
   const handleResetWithConfirm = () => {
     setShowResetDialog(true);
   };
@@ -2766,58 +2879,7 @@ export function ChatPanel({
                 onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
               >
                 <div className="grid gap-2 px-3 pt-2 pb-6">
-                  {messages.length
-                    ? (() => {
-                        let lastUserMessageId = "";
-                        let lastAssistantMessageId = "";
-                        return messages.map((message, index) => {
-                        const messageId = getConversationMessageId(message, index);
-                        const previousMessageId = message.role === "assistant" ? lastAssistantMessageId : lastUserMessageId;
-                        const isLatestAssistant = latestAssistantMessageId === messageId;
-                        const isStreamingAssistant = Boolean(
-                          isLatestAssistant
-                            && latestMessageIsAssistant
-                            && message.role === "assistant"
-                            && !message.pending
-                            && message.streaming
-                            && String(message.content || "").trim(),
-                        );
-
-                        if (message.role === "user") {
-                          lastUserMessageId = messageId;
-                        } else if (message.role === "assistant") {
-                          lastAssistantMessageId = messageId;
-                        }
-
-                        return (
-                          <MessageBubble
-                            agentLabel={agentLabel}
-                            animateViewportScroll={animateViewportScroll}
-                            bubbleAnchorRef={isLatestAssistant ? latestAssistantBubbleRef : undefined}
-                            handleOpenFilePreview={handleOpenPreview}
-                            handleOpenImagePreview={openImagePreview}
-                            isHighlighted={highlightedMessageId === messageId}
-                            isLatestAssistant={isLatestAssistant}
-                            isStreamingAssistant={isStreamingAssistant}
-                            markUserScrollTakeover={markUserScrollTakeover}
-                            key={messageId}
-                            message={message}
-                            messageId={messageId}
-                            formatTime={formatTime}
-                            files={files}
-                            messageViewportRef={messageViewportRef}
-                            onJumpPreviousMessage={handleJumpToUserMessage}
-                            previousMessageId={previousMessageId}
-                            resolvedTheme={resolvedTheme}
-                            sessionUser={session?.sessionUser}
-                            separated={index > 0 && messages[index - 1]?.role !== message.role}
-                            chatFontSize={chatFontSize}
-                            userLabel={userLabel}
-                          />
-                        );
-                      });
-                    })()
-                    : <EmptyConversation />}
+                  {renderedMessageBubbles}
                   <div ref={bottomSentinelRef} aria-hidden="true" data-message-bottom-sentinel className="h-px w-full" />
                 </div>
               </ScrollArea>
@@ -2935,7 +2997,7 @@ export function ChatPanel({
                 </>
               ) : null}
               <div className="relative">
-                {openClawConnected && !prompt ? (
+                {openClawConnected && !composerPrompt ? (
                   <div
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-sm text-muted-foreground"
@@ -2952,9 +3014,10 @@ export function ChatPanel({
                 <Textarea
                   ref={setComposerTextareaNode}
                   rows={2}
-                  value={prompt}
+                  value={composerPrompt}
                   onChange={(event) => {
                     const nextPrompt = event.target.value;
+                    setComposerPrompt(nextPrompt);
                     onPromptChange(nextPrompt);
                     syncAgentMention(nextPrompt, event.target.selectionStart ?? nextPrompt.length);
                   }}

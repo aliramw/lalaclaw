@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Keyboard, Languages, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
 import {
@@ -260,7 +260,10 @@ function SessionSearchDialog({
   onSearchSessions,
   onSelectSearchedSession,
   open = false,
+  searchChannel = "dingtalk-connector",
+  searchMessages,
 }) {
+  const copy = searchMessages || messages.sessionOverview.sessionSearch;
   const inputRef = useRef(null);
   const requestIdRef = useRef(0);
   const [searchTerm, setSearchTerm] = useState("");
@@ -269,6 +272,19 @@ function SessionSearchDialog({
   const [searching, setSearching] = useState(false);
   const [selectingSessionUser, setSelectingSessionUser] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setSearchTerm("");
+    setSubmittedTerm("");
+    setResults([]);
+    setSearching(false);
+    setSelectingSessionUser("");
+    setErrorMessage("");
+  }, [open, searchChannel]);
 
   useEffect(() => {
     if (!open) {
@@ -310,7 +326,7 @@ function SessionSearchDialog({
     setErrorMessage("");
 
     try {
-      const nextResults = await onSearchSessions(nextTerm);
+      const nextResults = await onSearchSessions(nextTerm, { channel: searchChannel });
       if (requestId !== requestIdRef.current) {
         return;
       }
@@ -324,7 +340,7 @@ function SessionSearchDialog({
 
       setResults([]);
       setSubmittedTerm(nextTerm);
-      setErrorMessage(error?.message || messages.sessionOverview.sessionSearch.error);
+      setErrorMessage(error?.message || copy.error);
     } finally {
       if (requestId === requestIdRef.current) {
         setSearching(false);
@@ -344,7 +360,7 @@ function SessionSearchDialog({
       await onSelectSearchedSession(result);
       onClose?.();
     } catch (error) {
-      setErrorMessage(error?.message || messages.sessionOverview.sessionSearch.error);
+      setErrorMessage(error?.message || copy.error);
     } finally {
       setSelectingSessionUser("");
     }
@@ -363,27 +379,37 @@ function SessionSearchDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={messages.sessionOverview.sessionSearch.title}
+        aria-label={copy.title}
         className="flex max-h-[min(80vh,48rem)] w-full max-w-[40rem] flex-col overflow-hidden rounded-2xl border border-border/80 bg-card p-5 shadow-2xl sm:p-6"
       >
-        <div className="space-y-1">
-          <div className="text-lg font-semibold leading-7 text-foreground">
-            {messages.sessionOverview.sessionSearch.title}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="text-lg font-semibold leading-7 text-foreground">
+              {copy.title}
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">
+              {copy.description}
+            </p>
           </div>
-          <p className="text-sm leading-6 text-muted-foreground">
-            {messages.sessionOverview.sessionSearch.description}
-          </p>
+          <button
+            type="button"
+            aria-label={copy.close}
+            onClick={() => onClose?.()}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-input bg-background text-muted-foreground transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
 
         <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={handleSubmit}>
           <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm text-foreground">
-            <span className="font-medium">{messages.sessionOverview.sessionSearch.searchLabel}</span>
+            <span className="font-medium">{copy.searchLabel}</span>
             <input
               ref={inputRef}
               type="text"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder={messages.sessionOverview.sessionSearch.placeholder}
+              placeholder={copy.placeholder}
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
             />
           </label>
@@ -393,14 +419,7 @@ function SessionSearchDialog({
               disabled={searching || Boolean(selectingSessionUser)}
               className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {searching ? messages.sessionOverview.sessionSearch.searching : messages.sessionOverview.sessionSearch.search}
-            </button>
-            <button
-              type="button"
-              onClick={() => onClose?.()}
-              className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground"
-            >
-              {messages.sessionOverview.sessionSearch.close}
+              {searching ? copy.searching : copy.search}
             </button>
           </div>
         </form>
@@ -421,11 +440,8 @@ function SessionSearchDialog({
                       <div className="text-sm font-semibold text-foreground [overflow-wrap:anywhere]">
                         {result.title || result.sessionUser}
                       </div>
-                      <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                        {messages.sessionOverview.sessionSearch.sessionUserLabel}: {result.sessionUser}
-                      </div>
                       <div className="text-xs text-muted-foreground">
-                        {messages.sessionOverview.sessionSearch.updatedLabel}: {result.updatedLabel || messages.common.unknown}
+                        {copy.updatedLabel}: {result.updatedLabel || messages.common.unknown}
                       </div>
                     </div>
                     <button
@@ -435,13 +451,17 @@ function SessionSearchDialog({
                       className="inline-flex shrink-0 items-center justify-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {selectingSessionUser === result.sessionUser
-                        ? messages.sessionOverview.sessionSearch.switching
-                        : messages.sessionOverview.sessionSearch.useResult}
+                        ? copy.switching
+                        : copy.useResult}
                     </button>
                   </div>
                   <div className="mt-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-                    <span className="font-medium text-foreground">{messages.sessionOverview.sessionSearch.previewLabel}: </span>
-                    {result.preview || messages.sessionOverview.sessionSearch.noPreview}
+                    <span className="font-medium text-foreground">{copy.sessionUserLabel}: </span>
+                    {result.displaySessionUser || result.sessionUser}
+                  </div>
+                  <div className="mt-2 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                    <span className="font-medium text-foreground">{copy.previewLabel}: </span>
+                    {result.preview || copy.noPreview}
                   </div>
                 </div>
               ))}
@@ -449,8 +469,8 @@ function SessionSearchDialog({
           ) : (
             <div className="rounded-lg px-3 py-8 text-sm leading-6 text-muted-foreground">
               {submittedTerm
-                ? messages.sessionOverview.sessionSearch.empty(submittedTerm)
-                : messages.sessionOverview.sessionSearch.emptyPrompt}
+                ? copy.empty(submittedTerm)
+                : copy.emptyPrompt}
             </div>
           )}
         </div>
@@ -1633,6 +1653,7 @@ export function SessionOverview({
 }) {
   const { messages } = useI18n();
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
+  const [sessionSearchChannel, setSessionSearchChannel] = useState("dingtalk-connector");
   const thinkModeLabels = messages.thinkModes;
   const getThinkModeLabel = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).value;
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
@@ -1647,6 +1668,13 @@ export function SessionOverview({
       .filter(Boolean),
   );
   const selectableAgents = (availableAgents || []).filter((agentId) => !normalizedOpenAgentIds.has(String(agentId || "").trim()));
+  const sessionSearchCopy = useMemo(() => (
+    sessionSearchChannel === "feishu"
+      ? messages.sessionOverview.feishuSessionSearch
+      : sessionSearchChannel === "wecom"
+        ? messages.sessionOverview.wecomSessionSearch
+        : messages.sessionOverview.sessionSearch
+  ), [messages, sessionSearchChannel]);
   const defaultModel = availableModels[0] || "";
   const getModelItemLabel = (modelId) => {
     const normalized = formatModelLabel(modelId);
@@ -1656,6 +1684,11 @@ export function SessionOverview({
     return `${normalized} (${messages.common.default})`;
   };
   const contextUsageColor = getContextUsageColor(Number(session.contextUsed) || 0, Number(session.contextMax) || 0, resolvedTheme);
+  const openSessionSearch = useCallback((channel, suppressTooltip) => {
+    suppressTooltip?.();
+    setSessionSearchChannel(channel);
+    setSessionSearchOpen(true);
+  }, []);
 
   const statusContent = (
     <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
@@ -1826,14 +1859,32 @@ export function SessionOverview({
                     <DropdownMenuLabel className="px-1 pb-1 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
                       {messages.sessionOverview.menus.imConversations || messages.sessionOverview.sessionSearch.title}
                     </DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => {
-                      suppressTooltip();
-                      setSessionSearchOpen(true);
-                    }}
-                    >
+                    <DropdownMenuItem onSelect={() => openSessionSearch("dingtalk-connector", suppressTooltip)}>
                       <div className="flex items-center gap-2 leading-none">
                         <img src="/dingtalk.svg" alt="" aria-hidden="true" className="h-4 w-4 shrink-0 self-center object-contain" />
                         <span className="self-center leading-none">{messages.sessionOverview.sessionSearch.trigger}</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => openSessionSearch("feishu", suppressTooltip)}>
+                      <div className="flex items-center gap-2 leading-none">
+                        <div
+                          aria-hidden="true"
+                          className="flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] bg-[#3370ff] text-[10px] font-semibold leading-none text-white"
+                        >
+                          飞
+                        </div>
+                        <span className="self-center leading-none">{messages.sessionOverview.feishuSessionSearch.trigger}</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => openSessionSearch("wecom", suppressTooltip)}>
+                      <div className="flex items-center gap-2 leading-none">
+                        <div
+                          aria-hidden="true"
+                          className="flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] bg-[#1aad19] text-[10px] font-semibold leading-none text-white"
+                        >
+                          企
+                        </div>
+                        <span className="self-center leading-none">{messages.sessionOverview.wecomSessionSearch.trigger}</span>
                       </div>
                     </DropdownMenuItem>
                   </>
@@ -1860,6 +1911,8 @@ export function SessionOverview({
           onSearchSessions={onSearchSessions}
           onSelectSearchedSession={onSelectSearchedSession}
           open={sessionSearchOpen}
+          searchChannel={sessionSearchChannel}
+          searchMessages={sessionSearchCopy}
         />
       </>
     );
@@ -1875,6 +1928,8 @@ export function SessionOverview({
           onSearchSessions={onSearchSessions}
           onSelectSearchedSession={onSelectSearchedSession}
           open={sessionSearchOpen}
+          searchChannel={sessionSearchChannel}
+          searchMessages={sessionSearchCopy}
         />
       </section>
     );

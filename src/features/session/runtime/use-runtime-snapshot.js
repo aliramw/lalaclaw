@@ -9,13 +9,8 @@ import {
   mergePendingConversation,
   mergeStaleLocalConversationTail,
 } from "@/features/app/storage";
+import { isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
-
-function isDingTalkSessionUser(sessionUser = "") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  return normalizedSessionUser.startsWith('{"channel":"dingtalk-connector"')
-    || normalizedSessionUser.includes("dingtalk-connector");
-}
 
 export function getRuntimePollInterval({
   recoveringPendingReply = false,
@@ -27,7 +22,7 @@ export function getRuntimePollInterval({
     return 1500;
   }
 
-  if (busy || activePendingChat || isDingTalkSessionUser(sessionUser)) {
+  if (busy || activePendingChat || isImSessionUser(sessionUser)) {
     return 4000;
   }
 
@@ -114,6 +109,75 @@ function shouldClearRecoveredPendingTurn({
   // snapshot already includes the latest user turn, keep the recovered pending
   // reply alive until an assistant answer arrives.
   return (normalizedStatus === "idle" || normalizedStatus === "completed") && !snapshotHasPendingUserMessage;
+}
+
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isGeneratedAgentBootstrapSessionUser(sessionUser = "", agentId = "main") {
+  const normalizedSessionUser = String(sessionUser || "").trim();
+  const normalizedAgentId = String(agentId || "main")
+    .trim()
+    .replace(/[^\w:-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-:]+|[-:]+$/g, "");
+
+  if (!normalizedSessionUser || !normalizedAgentId) {
+    return false;
+  }
+
+  return new RegExp(`^command-center-${escapeRegExp(normalizedAgentId)}-\\d+$`).test(normalizedSessionUser);
+}
+
+function shouldApplyRuntimeSnapshot({
+  currentAgentId = "",
+  currentSessionUser = "",
+  requestedAgentId = "",
+  requestedSessionUser = "",
+  resolvedSessionUser = "",
+} = {}) {
+  const normalizedCurrentAgentId = String(currentAgentId || "").trim();
+  const normalizedCurrentSessionUser = String(currentSessionUser || "").trim();
+  const normalizedRequestedAgentId = String(requestedAgentId || "").trim();
+  const normalizedRequestedSessionUser = String(requestedSessionUser || "").trim();
+  const normalizedResolvedSessionUser = String(resolvedSessionUser || "").trim();
+
+  if (
+    normalizedRequestedAgentId
+    && normalizedCurrentAgentId
+    && normalizedRequestedAgentId !== normalizedCurrentAgentId
+  ) {
+    return false;
+  }
+
+  if (!normalizedCurrentSessionUser) {
+    return true;
+  }
+
+  if (
+    normalizedResolvedSessionUser
+    && normalizedRequestedSessionUser
+    && normalizedResolvedSessionUser !== normalizedRequestedSessionUser
+  ) {
+    const allowGeneratedBootstrapFallback =
+      normalizedRequestedAgentId
+      && normalizedResolvedSessionUser === "command-center"
+      && isGeneratedAgentBootstrapSessionUser(normalizedRequestedSessionUser, normalizedRequestedAgentId);
+
+    if (!allowGeneratedBootstrapFallback && normalizedCurrentSessionUser !== normalizedResolvedSessionUser) {
+      return false;
+    }
+  }
+
+  if (
+    normalizedCurrentSessionUser !== normalizedRequestedSessionUser
+    && normalizedCurrentSessionUser !== normalizedResolvedSessionUser
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export function useRuntimeSnapshot({
@@ -296,8 +360,9 @@ export function useRuntimeSnapshot({
 
   const loadRuntime = useCallback(async (sessionUser = sessionRef.current.sessionUser, overrides = {}) => {
     const currentSession = sessionRef.current;
+    const requestedSessionUser = String(sessionUser || currentSession.sessionUser || "").trim();
     const params = new URLSearchParams({
-      sessionUser: String(sessionUser || currentSession.sessionUser || "").trim(),
+      sessionUser: requestedSessionUser,
     });
     const resolvedAgentId = String(overrides.agentId || currentSession.agentId || "").trim();
 
@@ -320,6 +385,16 @@ export function useRuntimeSnapshot({
         throw new Error(payload.error || "Runtime snapshot failed");
       }
       if (requestId !== runtimeRequestRef.current) {
+        return payload;
+      }
+      const latestSession = sessionRef.current;
+      if (!shouldApplyRuntimeSnapshot({
+        currentAgentId: latestSession.agentId,
+        currentSessionUser: latestSession.sessionUser,
+        requestedAgentId: resolvedAgentId || currentSession.agentId,
+        requestedSessionUser,
+        resolvedSessionUser: payload.session?.sessionUser || "",
+      })) {
         return payload;
       }
       applySnapshot(payload);

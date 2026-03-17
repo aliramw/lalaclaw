@@ -445,6 +445,99 @@ function createOpenClawClient({
     }
   }
 
+  function normalizeFeishuAccountId(value = '') {
+    return String(value || '').trim() || 'default';
+  }
+
+  function stripFeishuResetSuffix(value = '') {
+    return String(value || '').trim().replace(/:reset:[^:]+$/i, '');
+  }
+
+  function createFeishuDeliveryRoute({ accountId = '', chatType = '', peerId = '' } = {}) {
+    const normalizedPeerId = stripFeishuResetSuffix(peerId);
+    if (!normalizedPeerId) {
+      return null;
+    }
+
+    const normalizedChatType = String(chatType || '').trim().toLowerCase();
+    const targetPrefix = ['group', 'channel'].includes(normalizedChatType) ? 'chat' : 'user';
+
+    return {
+      accountId: normalizeFeishuAccountId(accountId),
+      channel: 'feishu',
+      to: `${targetPrefix}:${normalizedPeerId}`,
+    };
+  }
+
+  function parseFeishuSessionUser(sessionUser = '') {
+    const normalizedSessionUser = String(sessionUser || '').trim();
+    const nativeMatch = normalizedSessionUser.match(/^agent:([^:]+):feishu:([^:]+):(.+)$/);
+    if (nativeMatch) {
+      return {
+        agentId: String(nativeMatch[1] || '').trim(),
+        channel: 'feishu',
+        chattype: String(nativeMatch[2] || '').trim(),
+        peerid: String(nativeMatch[3] || '').trim(),
+      };
+    }
+
+    const syntheticMatch = normalizedSessionUser.match(/^feishu:([^:]+):(.+)$/);
+    if (!syntheticMatch) {
+      return null;
+    }
+
+    return {
+      channel: 'feishu',
+      chattype: String(syntheticMatch[1] || '').trim(),
+      peerid: String(syntheticMatch[2] || '').trim(),
+    };
+  }
+
+  function normalizeWecomAccountId(value = '') {
+    return String(value || '').trim() || 'default';
+  }
+
+  function stripWecomResetSuffix(value = '') {
+    return String(value || '').trim().replace(/:reset:[^:]+$/i, '');
+  }
+
+  function createWecomDeliveryRoute({ peerId = '' } = {}) {
+    const normalizedPeerId = stripWecomResetSuffix(peerId);
+    if (!normalizedPeerId) {
+      return null;
+    }
+
+    return {
+      accountId: normalizeWecomAccountId(),
+      channel: 'wecom',
+      to: `wecom:${normalizedPeerId}`,
+    };
+  }
+
+  function parseWecomSessionUser(sessionUser = '') {
+    const normalizedSessionUser = String(sessionUser || '').trim();
+    const nativeMatch = normalizedSessionUser.match(/^agent:([^:]+):wecom:([^:]+):(.+)$/);
+    if (nativeMatch) {
+      return {
+        agentId: String(nativeMatch[1] || '').trim(),
+        channel: 'wecom',
+        chattype: String(nativeMatch[2] || '').trim(),
+        peerid: String(nativeMatch[3] || '').trim(),
+      };
+    }
+
+    const syntheticMatch = normalizedSessionUser.match(/^wecom:([^:]+):(.+)$/);
+    if (!syntheticMatch) {
+      return null;
+    }
+
+    return {
+      channel: 'wecom',
+      chattype: String(syntheticMatch[1] || '').trim(),
+      peerid: String(syntheticMatch[2] || '').trim(),
+    };
+  }
+
   function resolveSessionDeliveryRoute(sessionUser = 'command-center') {
     const trimmedSessionUser = String(sessionUser || '').trim();
     if (!trimmedSessionUser) {
@@ -459,6 +552,22 @@ function createOpenClawClient({
         accountId: parsedSessionUser?.accountid || parsedSessionUser?.accountId || '',
         chatType,
         peerId,
+      });
+    }
+
+    const parsedFeishuSessionUser = parseFeishuSessionUser(trimmedSessionUser);
+    if (parsedFeishuSessionUser) {
+      return createFeishuDeliveryRoute({
+        accountId: 'default',
+        chatType: parsedFeishuSessionUser.chattype,
+        peerId: parsedFeishuSessionUser.peerid,
+      });
+    }
+
+    const parsedWecomSessionUser = parseWecomSessionUser(trimmedSessionUser);
+    if (parsedWecomSessionUser) {
+      return createWecomDeliveryRoute({
+        peerId: parsedWecomSessionUser.peerid,
       });
     }
 
@@ -502,10 +611,15 @@ function createOpenClawClient({
     );
   }
 
-  function buildMirroredUserMessageText(sessionUser = 'command-center', messageText = '') {
+  function buildMirroredUserMessageText(sessionUser = 'command-center', messageText = '', options = {}) {
     const trimmedMessage = String(messageText || '').trim();
     if (!trimmedMessage) {
       return '';
+    }
+
+    const operatorName = String(options?.operatorName || '').trim();
+    if (parseFeishuSessionUser(sessionUser) || parseWecomSessionUser(sessionUser)) {
+      return operatorName ? `${operatorName}：${trimmedMessage}` : trimmedMessage;
     }
 
     const parsedSessionUser = parseDingTalkSessionUser(sessionUser);
@@ -517,9 +631,9 @@ function createOpenClawClient({
     return `${senderName}：${trimmedMessage}`;
   }
 
-  async function mirrorOpenClawUserMessage(sessionUser = 'command-center', messageText = '') {
+  async function mirrorOpenClawUserMessage(sessionUser = 'command-center', messageText = '', options = {}) {
     const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
-    const trimmedMessage = buildMirroredUserMessageText(sessionUser, messageText);
+    const trimmedMessage = buildMirroredUserMessageText(sessionUser, messageText, options);
     if (!deliveryRoute || !trimmedMessage) {
       return null;
     }

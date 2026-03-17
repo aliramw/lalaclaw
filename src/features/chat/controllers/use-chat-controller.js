@@ -334,6 +334,7 @@ export function useChatController({
   setMessagesForTab: setMessagesForTabProp,
   setPendingChatTurns,
   setSession,
+  userLabel = "",
   updateTabIdentity = () => {},
   updateTabMeta = () => {},
   updateTabSession: updateTabSessionProp,
@@ -519,6 +520,7 @@ export function useChatController({
           agentId: resolvedEntry.agentId,
           sessionUser: resolvedEntry.sessionUser,
           assistantMessageId: pendingMessage.id,
+          ...(userLabel ? { userLabel } : {}),
           fastMode: resolvedEntry.fastMode,
           messages: nextMessages
             .filter((message) => !message.pending)
@@ -720,6 +722,7 @@ export function useChatController({
     updateTabIdentity,
     updateTabMeta,
     updateTabSession,
+    userLabel,
   ]);
 
   useEffect(() => {

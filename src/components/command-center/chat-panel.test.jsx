@@ -842,6 +842,27 @@ describe("ChatPanel", () => {
     expect(onActivateChatTab).toHaveBeenCalledWith("agent:expert");
   });
 
+  it("activates an inactive tab on mousedown before mouseup", () => {
+    const onActivate = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+          onActivate={onActivate}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.mouseDown(screen.getByRole("button", { name: "expert" }), { button: 0 });
+
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(onActivate).toHaveBeenCalledWith("agent:expert");
+  });
+
   it("shows a platform-aware tooltip for inactive tab shortcuts", async () => {
     vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Win32");
 
@@ -1380,6 +1401,36 @@ describe("ChatPanel", () => {
           promptRef={null}
           session={createSession({
             sessionUser: '{"channel":"dingtalk-connector","peerid":"398058"}',
+            status: "运行中",
+          })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    expect(screen.queryByText("待命")).not.toBeInTheDocument();
+  });
+
+  it("shows busy for Feishu sessions when the runtime status says running without a local pending bubble", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "上一句", timestamp: 1 },
+            { role: "assistant", content: "上一句回复", timestamp: 2 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({
+            sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
             status: "运行中",
           })}
         />

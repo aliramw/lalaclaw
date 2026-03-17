@@ -28,6 +28,7 @@ import { useAppPersistence } from "@/features/app/storage";
 import { formatCompactK, formatTime, maxPromptRows } from "@/features/chat/utils";
 import { useChatController, usePromptHistory } from "@/features/chat/controllers";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
+import { createResetImSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
 import { useI18n } from "@/lib/i18n";
@@ -89,12 +90,6 @@ function resolveAgentIdFromTabId(tabId = "") {
   return normalized.slice("agent:".length).split("::")[0].trim() || "main";
 }
 
-export function isDingTalkSessionUser(sessionUser = "") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  return normalizedSessionUser.startsWith('{"channel":"dingtalk-connector"')
-    || normalizedSessionUser.includes("dingtalk-connector");
-}
-
 function hashSessionUser(value = "") {
   const text = String(value || "").trim();
   let hash = 0;
@@ -106,7 +101,17 @@ function hashSessionUser(value = "") {
 
 export function buildChatTabTitle(agentId = "main", sessionUser = "") {
   const normalizedAgentId = String(agentId || "main").trim() || "main";
-  return isDingTalkSessionUser(sessionUser) ? `${normalizedAgentId}：钉钉` : normalizedAgentId;
+  const imSessionType = resolveImSessionType(sessionUser);
+  if (imSessionType === "dingtalk") {
+    return `${normalizedAgentId}：钉钉`;
+  }
+  if (imSessionType === "feishu") {
+    return `${normalizedAgentId}：飞书`;
+  }
+  if (imSessionType === "wecom") {
+    return `${normalizedAgentId}：企业微信`;
+  }
+  return normalizedAgentId;
 }
 
 function createSessionScopedTabId(agentId = "main", sessionUser = "") {
@@ -135,7 +140,7 @@ export function planSearchedSessionTabTarget({
     };
   }
 
-  if (isDingTalkSessionUser(normalizedSessionUser)) {
+  if (isImSessionUser(normalizedSessionUser)) {
     return {
       create: true,
       tabId: createSessionScopedTabId(normalizedAgentId, normalizedSessionUser),
@@ -163,7 +168,7 @@ export function isChatTabBusy({
   }
 
   return tabId === activeChatTabId
-    && isDingTalkSessionUser(sessionUser)
+    && isImSessionUser(sessionUser)
     && ["running", "dispatching"].includes(normalizeStatusKey(sessionStatus));
 }
 
@@ -198,6 +203,21 @@ export function shouldApplyRuntimeSnapshotToTab({
 
   if (!normalizedCurrentSessionUser) {
     return true;
+  }
+
+  if (
+    normalizedResolvedSessionUser
+    && normalizedRequestedSessionUser
+    && normalizedResolvedSessionUser !== normalizedRequestedSessionUser
+  ) {
+    const allowGeneratedBootstrapFallback =
+      normalizedRequestedAgentId
+      && normalizedResolvedSessionUser === "command-center"
+      && isGeneratedAgentBootstrapSessionUser(normalizedRequestedSessionUser, normalizedRequestedAgentId);
+
+    if (!allowGeneratedBootstrapFallback && normalizedCurrentSessionUser !== normalizedResolvedSessionUser) {
+      return false;
+    }
   }
 
   if (
@@ -282,7 +302,7 @@ export function getLatestUserMessageKey(messages = []) {
   return "";
 }
 
-export function useCommandCenter() {
+export function useCommandCenter({ userLabel = "marila" } = {}) {
   const { intlLocale, messages: i18n } = useI18n();
   const stored = useMemo(() => loadStoredState(), []);
   const storedChatScrollTops = useMemo(() => loadStoredChatScrollTops(), []);
@@ -383,6 +403,8 @@ export function useCommandCenter() {
   const [fastMode, setFastMode] = useState(Boolean(initialActiveMeta.fastMode));
   const [prompt, setPrompt] = useState(storedPromptDrafts[initialConversationKey] || "");
   const promptRef = useRef(null);
+  const promptValueRef = useRef(storedPromptDrafts[initialConversationKey] || "");
+  const promptDraftFlushTimeoutRef = useRef(0);
   const messageViewportRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
   const messagesRef = useRef(messages);
@@ -739,6 +761,7 @@ export function useCommandCenter() {
     setMessagesForTab,
     setPendingChatTurns,
     invalidateRuntimeRequestForTab,
+    userLabel,
     updateTabIdentity,
     updateTabMeta,
     updateTabSession,
@@ -810,34 +833,64 @@ export function useCommandCenter() {
     });
   }, [adjustPromptHeight]);
 
-  const setPromptForConversation = useCallback((value, conversationKey = activeConversationKey) => {
-    setPrompt((current) => {
-      const next = typeof value === "function" ? value(current) : value;
-      const normalized = typeof next === "string" ? next : String(next || "");
+  const flushPromptDraftsState = useCallback(() => {
+    window.clearTimeout(promptDraftFlushTimeoutRef.current);
+    promptDraftFlushTimeoutRef.current = 0;
+    setPromptDraftsByConversation((current) => (
+      current === promptDraftsByConversationRef.current ? current : promptDraftsByConversationRef.current
+    ));
+  }, []);
 
-      setPromptDraftsByConversation((drafts) => {
-        if (!normalized) {
-          if (!Object.prototype.hasOwnProperty.call(drafts, conversationKey)) {
-            return drafts;
-          }
-          const nextDrafts = { ...drafts };
-          delete nextDrafts[conversationKey];
-          return nextDrafts;
-        }
+  const schedulePromptDraftsStateFlush = useCallback((delayMs = 180) => {
+    window.clearTimeout(promptDraftFlushTimeoutRef.current);
+    promptDraftFlushTimeoutRef.current = window.setTimeout(() => {
+      flushPromptDraftsState();
+    }, delayMs);
+  }, [flushPromptDraftsState]);
 
-        if (drafts[conversationKey] === normalized) {
-          return drafts;
-        }
+  const setPromptForConversation = useCallback((value, conversationKey = activeConversationKey, options = {}) => {
+    const { flushDrafts = false, syncVisible = true } = options;
+    const normalizedConversationKey = String(conversationKey || activeConversationKey || "").trim();
+    const currentPromptValue =
+      normalizedConversationKey === activeConversationKey
+        ? promptValueRef.current
+        : (promptDraftsByConversationRef.current[normalizedConversationKey] || "");
+    const next = typeof value === "function" ? value(currentPromptValue) : value;
+    const normalized = typeof next === "string" ? next : String(next || "");
 
-        return {
-          ...drafts,
-          [conversationKey]: normalized,
-        };
-      });
+    if (normalizedConversationKey === activeConversationKey) {
+      promptValueRef.current = normalized;
+      if (syncVisible) {
+        setPrompt((current) => (current === normalized ? current : normalized));
+      }
+    }
 
-      return next;
-    });
-  }, [activeConversationKey]);
+    const drafts = promptDraftsByConversationRef.current;
+    let nextDrafts = drafts;
+
+    if (!normalized) {
+      if (Object.prototype.hasOwnProperty.call(drafts, normalizedConversationKey)) {
+        nextDrafts = { ...drafts };
+        delete nextDrafts[normalizedConversationKey];
+      }
+    } else if (drafts[normalizedConversationKey] !== normalized) {
+      nextDrafts = {
+        ...drafts,
+        [normalizedConversationKey]: normalized,
+      };
+    }
+
+    if (nextDrafts !== drafts) {
+      promptDraftsByConversationRef.current = nextDrafts;
+      if (flushDrafts) {
+        flushPromptDraftsState();
+      } else {
+        schedulePromptDraftsStateFlush();
+      }
+    }
+
+    return normalized;
+  }, [activeConversationKey, flushPromptDraftsState, schedulePromptDraftsStateFlush]);
 
   const persistConversationScrollTop = useCallback((conversationKey, scrollTop) => {
     const normalizedKey = String(conversationKey || "").trim();
@@ -941,10 +994,6 @@ export function useCommandCenter() {
   }, [pendingChatTurns]);
 
   useEffect(() => {
-    promptDraftsByConversationRef.current = promptDraftsByConversation;
-  }, [promptDraftsByConversation]);
-
-  useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
 
@@ -968,6 +1017,10 @@ export function useCommandCenter() {
     schedulePromptHeightAdjustment();
     return () => window.cancelAnimationFrame(promptHeightFrameRef.current);
   }, [prompt, schedulePromptHeightAdjustment]);
+
+  useEffect(() => () => {
+    window.clearTimeout(promptDraftFlushTimeoutRef.current);
+  }, []);
 
   useEffect(() => {
     const resetPromptHeightMetrics = () => {
@@ -1019,8 +1072,10 @@ export function useCommandCenter() {
   }, [activeChatTab, activeChatTabId, hydrateRuntimeState, i18n, setActiveTarget]);
 
   useEffect(() => {
-    setPrompt(promptDraftsByConversation[activeConversationKey] || "");
-  }, [activeConversationKey, promptDraftsByConversation]);
+    const nextPrompt = promptDraftsByConversationRef.current[activeConversationKey] || "";
+    promptValueRef.current = nextPrompt;
+    setPrompt(nextPrompt);
+  }, [activeConversationKey]);
 
   useEffect(() => {
     setMessagesByTabId((current) => {
@@ -1201,7 +1256,7 @@ export function useCommandCenter() {
   }, [activeChatTabId, agents, artifacts, availableAgents, availableModels, files, peeks, snapshots, taskRelationships, taskTimeline]);
 
   useEffect(() => {
-    const backgroundTabs = chatTabs.filter((tab) => tab.id !== activeChatTabId && isDingTalkSessionUser(tab.sessionUser));
+    const backgroundTabs = chatTabs.filter((tab) => tab.id !== activeChatTabId && isImSessionUser(tab.sessionUser));
     if (!backgroundTabs.length) {
       return undefined;
     }
@@ -1317,7 +1372,7 @@ export function useCommandCenter() {
   ]);
 
   const sendCurrentPrompt = async () => {
-    const content = prompt.trim();
+    const content = String(promptRef.current?.value || promptValueRef.current || "").trim();
     const attachments = composerAttachments;
     if (!content && !attachments.length) return;
     shouldAutoScrollRef.current = true;
@@ -1377,7 +1432,7 @@ export function useCommandCenter() {
       thinkMode: targetThinkMode,
     };
 
-    setPromptForConversation("");
+    setPromptForConversation("", activeConversationKey, { flushDrafts: true, syncVisible: true });
     setComposerAttachments([]);
     setPromptHistoryNavigation(null);
     resetRapidEnterState();
@@ -1396,10 +1451,10 @@ export function useCommandCenter() {
     composerSendMode,
     composerAttachments,
     handleSend: sendCurrentPrompt,
-    prompt,
     promptHistoryByConversation,
     promptRef,
-    setPrompt: setPromptForConversation,
+    setPrompt: (value) => setPromptForConversation(value, activeConversationKey, { flushDrafts: true, syncVisible: true }),
+    syncPromptInput: (value) => setPromptForConversation(value, activeConversationKey, { syncVisible: false }),
   });
 
   useEffect(() => {
@@ -1424,6 +1479,7 @@ export function useCommandCenter() {
     model,
     pendingChatTurns,
     promptDraftsByConversation,
+    promptDraftsByConversationRef,
     promptHistoryByConversation,
     session,
     setMessagesByTabId,
@@ -1565,10 +1621,14 @@ export function useCommandCenter() {
   const handleSend = sendCurrentPrompt;
 
   const handleReset = async () => {
-    const nextSessionUser = createResetSessionUser(sessionStateRef.current.agentId);
+    const currentSessionUser = String(sessionStateRef.current.sessionUser || "").trim();
+    const nextSessionUser = isImSessionUser(currentSessionUser)
+      ? createResetImSessionUser(currentSessionUser)
+      : createResetSessionUser(sessionStateRef.current.agentId);
     const nextAgentId = sessionStateRef.current.agentId;
     const nextModel = sessionStateRef.current.model;
-    const previousConversationKey = createConversationKey(sessionStateRef.current.sessionUser, nextAgentId);
+    const previousConversationKey = createConversationKey(currentSessionUser, nextAgentId);
+    const activeTabId = activeChatTabIdRef.current;
 
     setMessagesSynced([]);
     setQueuedMessages((current) => current.filter((item) => item.tabId !== activeChatTabIdRef.current));
@@ -1582,20 +1642,31 @@ export function useCommandCenter() {
       return next;
     });
     clearSnapshotData();
+    if (activeTabId) {
+      setRuntimeCacheByTabId((current) => {
+        if (!current[activeTabId]) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[activeTabId];
+        runtimeCacheByTabIdRef.current = next;
+        return next;
+      });
+    }
     sessionStateRef.current = {
       ...sessionStateRef.current,
       sessionUser: nextSessionUser,
       agentId: nextAgentId,
       model: nextModel,
     };
-    if (activeChatTabIdRef.current) {
-      updateTabIdentity(activeChatTabIdRef.current, { sessionUser: nextSessionUser });
-      updateTabMeta(activeChatTabIdRef.current, {
+    if (activeTabId) {
+      updateTabIdentity(activeTabId, { sessionUser: nextSessionUser });
+      updateTabMeta(activeTabId, {
         agentId: nextAgentId,
         sessionUser: nextSessionUser,
         model: nextModel,
       });
-      updateTabSession(activeChatTabIdRef.current, (current) => ({
+      updateTabSession(activeTabId, (current) => ({
         ...current,
         agentId: nextAgentId,
         selectedAgentId: nextAgentId,
@@ -1811,11 +1882,12 @@ export function useCommandCenter() {
     }
   };
 
-  const handleSearchSessions = useCallback(async (searchTerm = "") => {
+  const handleSearchSessions = useCallback(async (searchTerm = "", options = {}) => {
     const agentId = String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main";
+    const channel = String(options.channel || "dingtalk-connector").trim() || "dingtalk-connector";
     const params = new URLSearchParams({
       agentId,
-      channel: "dingtalk-connector",
+      channel,
       limit: "12",
     });
     const normalizedSearchTerm = String(searchTerm || "").trim();
@@ -2066,10 +2138,9 @@ export function useCommandCenter() {
   useAppHotkeys({
     handleActivateAdjacentChatTab,
     handleActivateChatTabByIndex,
-    handlePromptChange,
     handleReset,
-    prompt,
     promptRef,
+    setPromptVisible: (value) => setPromptForConversation(value, activeConversationKey, { flushDrafts: true, syncVisible: true }),
     setTheme,
   });
 
