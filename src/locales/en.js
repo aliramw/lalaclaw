@@ -191,6 +191,8 @@ const en = {
     composerDoubleEnterHint: "Double-tap Enter or Shift + Enter to send, Enter for newline",
     composerSwitchToEnterSend: "Switch to Enter to send",
     composerSwitchToShiftEnterSend: "Switch to Shift + Enter to send",
+    composerSendModeTooltipTitle: "Enter or Shift Enter?",
+    composerSendModeTooltipDescription: "If you often send by accident when pressing Enter, and want a safer option, consider using Shift Enter to send.",
     send: "Send",
     stop: "Stop",
     stoppedResponse: "Stopped",
@@ -365,6 +367,7 @@ const en = {
       previewFontSizeOptionTooltip: (label) => `Preview font size: ${label}`,
       renderingDocx: "Rendering DOCX preview...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "This file type can't be selected while editing.",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorer",

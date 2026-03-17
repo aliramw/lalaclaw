@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -473,7 +473,7 @@ function AppContent() {
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [splitLayoutWidth, setSplitLayoutWidth] = useState(0);
 
-  const getInspectorPanelWidthBounds = (containerWidth = splitLayoutWidth) => {
+  const getInspectorPanelWidthBounds = useCallback((containerWidth = splitLayoutWidth) => {
     const minimumWidth = minInspectorPanelWidth;
     if (!isWideLayout || !Number.isFinite(containerWidth) || containerWidth <= 0) {
       return {
@@ -491,15 +491,15 @@ function AppContent() {
       minimumWidth,
       maximumWidth,
     };
-  };
+  }, [isWideLayout, splitLayoutWidth]);
 
-  const getClampedInspectorPanelWidth = (requestedWidth, containerWidth = splitLayoutWidth) => {
+  const getClampedInspectorPanelWidth = useCallback((requestedWidth, containerWidth = splitLayoutWidth) => {
     const { minimumWidth, maximumWidth } = getInspectorPanelWidthBounds(containerWidth);
     const numericWidth = Number(requestedWidth);
     const fallbackWidth = defaultInspectorPanelWidth;
     const nextWidth = Number.isFinite(numericWidth) ? numericWidth : fallbackWidth;
     return Math.round(Math.min(maximumWidth, Math.max(minimumWidth, nextWidth)));
-  };
+  }, [getInspectorPanelWidthBounds, splitLayoutWidth]);
 
   const stopPanelResize = () => {
     resizeCleanupRef.current?.();
@@ -536,10 +536,8 @@ function AppContent() {
       if (!Number.isFinite(nextWidth) || nextWidth <= 0) {
         return;
       }
-      setSplitLayoutWidth(nextWidth);
+      setSplitLayoutWidth((current) => (current === nextWidth ? current : nextWidth));
     };
-
-    updateWidth(node.getBoundingClientRect().width);
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
@@ -555,7 +553,7 @@ function AppContent() {
 
   useEffect(() => {
     handleInspectorPanelWidthChange(getClampedInspectorPanelWidth(inspectorPanelWidth));
-  }, [handleInspectorPanelWidthChange, inspectorPanelWidth, isWideLayout, splitLayoutWidth]);
+  }, [getClampedInspectorPanelWidth, handleInspectorPanelWidthChange, inspectorPanelWidth]);
 
   useEffect(() => () => stopPanelResize(), []);
 
@@ -607,12 +605,18 @@ function AppContent() {
     };
   };
 
-  const resolvedInspectorPanelWidth = getClampedInspectorPanelWidth(inspectorPanelWidth);
-  const desktopLayoutStyle = isWideLayout
-    ? {
-        gridTemplateColumns: `minmax(0, 1fr) ${dragHandleWidth}px ${resolvedInspectorPanelWidth}px`,
-      }
-    : undefined;
+  const resolvedInspectorPanelWidth = useMemo(
+    () => getClampedInspectorPanelWidth(inspectorPanelWidth),
+    [getClampedInspectorPanelWidth, inspectorPanelWidth],
+  );
+  const desktopLayoutStyle = useMemo(
+    () => (isWideLayout
+      ? {
+          gridTemplateColumns: `minmax(0, 1fr) ${dragHandleWidth}px ${resolvedInspectorPanelWidth}px`,
+        }
+      : undefined),
+    [isWideLayout, resolvedInspectorPanelWidth],
+  );
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -773,7 +777,6 @@ function AppContent() {
                 >
                   {resizeHandleDots.map((_, index) => (
                     <span
-                      // eslint-disable-next-line react/no-array-index-key
                       key={index}
                       className={cn(
                         "h-[2.4px] w-[2.4px] rounded-full transition-colors",

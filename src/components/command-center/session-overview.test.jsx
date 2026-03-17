@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionOverview } from "@/components/command-center/session-overview";
-import { lobsterWalkTuning } from "@/components/command-center/lobster-walk-tuning";
+import { lobsterWalkTuning, sampleLobsterCompanionCount, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
@@ -604,9 +604,19 @@ describe("SessionOverview", () => {
 
   it("keeps the lobster easter egg performance tuning tightened", () => {
     expect(lobsterWalkTuning).toEqual({
-      companionCount: 6,
+      companionSpawnProbability: 0.5,
+      companionMinCount: 1,
+      companionMaxCount: 10,
       rerouteCooldownMs: 900,
       primaryFontSizePx: 48,
     });
+  });
+
+  it("uses the updated lobster companion spawn rules", () => {
+    expect(shouldSpawnLobsterCompanions(0.5)).toBe(true);
+    expect(shouldSpawnLobsterCompanions(0.500001)).toBe(false);
+    expect(sampleLobsterCompanionCount(0)).toBe(1);
+    expect(sampleLobsterCompanionCount(0.42)).toBe(5);
+    expect(sampleLobsterCompanionCount(0.9999)).toBe(10);
   });
 });

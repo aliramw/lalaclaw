@@ -367,6 +367,7 @@ export function useRuntimeSnapshot({
       throw new Error(data.error || "Session update failed");
     }
     applySnapshot(data);
+    return data;
   };
 
   const clearSnapshotData = () => {

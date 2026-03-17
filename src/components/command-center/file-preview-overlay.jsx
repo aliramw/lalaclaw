@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FolderOpen, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
+import { InspectorFilesPanel } from "@/components/command-center/inspector-files-panel";
 import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -333,7 +334,6 @@ function EditableFilePreview({
   resolvedTheme = "dark",
   fontSize = "medium",
   isDark = false,
-  isFullscreen = false,
   messages,
 }) {
   const [EditorComponent, setEditorComponent] = useState(null);
@@ -362,11 +362,7 @@ function EditableFilePreview({
   return (
     <div
       data-inline-file-editor="true"
-      className={cn(
-        "overflow-hidden rounded-xl border",
-        isFullscreen ? "h-full" : "h-[min(72vh,720px)]",
-        isDark ? "border-white/10 bg-[#111318]" : "border-slate-200 bg-white",
-      )}
+      className="h-full min-h-0 flex-1 overflow-hidden"
     >
       {EditorComponent ? (
         <EditorComponent
@@ -871,7 +867,20 @@ export function ImagePreviewOverlay({ image, onClose }) {
   );
 }
 
-export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", onClose, onOpenFilePreview }) {
+export function FilePreviewOverlay({
+  currentAgentId = "",
+  currentSessionUser = "",
+  currentWorkspaceRoot = "",
+  files,
+  preview,
+  resolvedTheme = "light",
+  sessionFiles = [],
+  onClose,
+  onOpenFilePreview,
+  workspaceCount,
+  workspaceFiles = [],
+  workspaceLoaded = false,
+}) {
   const { messages } = useI18n();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
@@ -928,7 +937,7 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
     setEditableContent(isEditablePreview(preview) ? String(preview.content || "") : "");
     setPreviewContentOverride(null);
     setSaveError("");
-  }, [previewIdentity]);
+  }, [preview, previewIdentity]);
 
   useEffect(() => {
     if (!preview || !isEditablePreview(preview) || isEditing || previewContentOverride !== null) {
@@ -954,6 +963,7 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
     ? (previewContentOverride !== null ? previewContentOverride : String(preview.content || ""))
     : "";
   const canEditPreview = editablePreview && !preview.loading && !preview.error && !preview.truncated && Boolean(title);
+  const showFilesSidebar = editablePreview && Boolean(title);
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
   const showPreviewFontSizeControls = preview.kind === "markdown" || preview.kind === "text" || preview.kind === "json";
 
@@ -1051,7 +1061,6 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
           resolvedTheme={resolvedTheme}
           fontSize={filePreviewFontSize}
           isDark={isDark}
-          isFullscreen={isFullscreen}
           messages={messages}
         />
       </div>
@@ -1138,6 +1147,25 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   }
 
   const useDirectBodyLayout = isPdfPreview || isEditing;
+  const mainBody = useDirectBodyLayout ? (
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-hidden",
+        isFullscreen || isEditing ? "h-full p-0" : "px-6 py-5",
+      )}
+    >
+      {body}
+    </div>
+  ) : (
+    <ScrollArea className="min-h-0 flex-1">
+      <div className="min-h-full px-6 py-5">{body}</div>
+      {preview.truncated ? (
+        <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
+          {messages.inspector.previewActions.truncatedPreview}
+        </div>
+      ) : null}
+    </ScrollArea>
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px]" onClick={onClose}>
@@ -1315,25 +1343,40 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
               </button>
             </div>
           </div>
-          {useDirectBodyLayout ? (
-            <div
-              className={cn(
-                "min-h-0 flex-1 overflow-hidden",
-                isFullscreen ? "h-full p-0" : "px-6 py-5",
-              )}
-            >
-              {body}
-            </div>
-          ) : (
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="min-h-full px-6 py-5">{body}</div>
-              {preview.truncated ? (
-                <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
-                  {messages.inspector.previewActions.truncatedPreview}
+          {showFilesSidebar ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="flex h-full min-h-0 flex-col lg:flex-row">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                  {mainBody}
                 </div>
-              ) : null}
-            </ScrollArea>
-          )}
+                <aside
+                  data-testid="file-preview-files-sidebar"
+                  className={cn(
+                    "hidden min-h-0 w-[340px] shrink-0 border-l lg:flex lg:flex-col",
+                    isDark ? "border-white/10 bg-[#13151a]" : "border-slate-200 bg-slate-50/70",
+                  )}
+                  aria-label={messages.inspector.tabs.files}
+                >
+                  <div className="min-h-0 flex-1 px-4 py-3">
+                    <InspectorFilesPanel
+                      currentAgentId={currentAgentId}
+                      currentSessionUser={currentSessionUser}
+                      currentWorkspaceRoot={currentWorkspaceRoot}
+                      fileSelectionMode="edit"
+                      items={sessionFiles}
+                      messages={messages}
+                      onOpenEdit={(item) => onOpenFilePreview?.(item, { startInEditMode: true })}
+                      onOpenPreview={onOpenFilePreview}
+                      showHint={false}
+                      workspaceCount={workspaceCount}
+                      workspaceItems={workspaceFiles}
+                      workspaceLoaded={workspaceLoaded}
+                    />
+                  </div>
+                </aside>
+              </div>
+            </div>
+          ) : mainBody}
         </div>
       </div>
     </div>

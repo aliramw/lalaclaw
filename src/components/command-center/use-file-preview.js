@@ -1,6 +1,11 @@
 import { useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 
+function buildLocalFilePreviewUrl(filePath = "") {
+  const normalizedPath = String(filePath || "").trim();
+  return normalizedPath ? `/api/file-preview/content?path=${encodeURIComponent(normalizedPath)}` : "";
+}
+
 export function useFilePreview() {
   const { messages } = useI18n();
   const [filePreview, setFilePreview] = useState(null);
@@ -30,7 +35,12 @@ export function useFilePreview() {
   };
 
   const openImagePreview = (image) => {
-    const src = String(image?.src || image?.previewUrl || image?.dataUrl || "").trim();
+    const src = String(
+      image?.src
+      || image?.previewUrl
+      || image?.dataUrl
+      || buildLocalFilePreviewUrl(image?.path || image?.fullPath || image?.localPath),
+    ).trim();
     if (!src) {
       return;
     }

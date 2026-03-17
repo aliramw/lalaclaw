@@ -2,9 +2,12 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatPanel, ChatTabsStrip, shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel";
+import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
+import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
+
+const defaultPromptPlaceholder = "💡 想要和 main 一起做点什么？";
 
 function createSession(overrides = {}) {
   return {
@@ -113,7 +116,7 @@ describe("ChatPanel", () => {
     expect(screen.getByText("待命")).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "检查运行状态");
+    await user.type(screen.getByPlaceholderText(defaultPromptPlaceholder), "检查运行状态");
     await user.click(screen.getByLabelText("开启新会话"));
     expect(screen.getByRole("alertdialog", { name: "开启新的会话？" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "确定" }));
@@ -235,8 +238,32 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const composerFrame = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。").parentElement;
+    const composerFrame = screen.getByPlaceholderText(defaultPromptPlaceholder).parentElement;
     expect(composerFrame).toHaveClass("border-[#4d88c7]", "ring-2", "ring-[#4d88c7]/20");
+  });
+
+  it("reserves stable footer width for the connection label and hint", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ mode: "openclaw", status: "空闲" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(container.querySelector("[data-connection-status-label]")).toHaveClass("min-w-[6ch]");
+    expect(container.querySelector("[data-connection-status-hint]")).toHaveClass("md:min-w-[22rem]");
   });
 
   it("formats reset tooltip shortcuts for the current platform", async () => {
@@ -272,7 +299,7 @@ describe("ChatPanel", () => {
     render(<MentionHarness initialPrompt="hello world" />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
     textarea.focus();
     textarea.setSelectionRange(6, 6);
     fireEvent.select(textarea);
@@ -288,7 +315,7 @@ describe("ChatPanel", () => {
     render(<MentionHarness initialPrompt="hello world" />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
     textarea.focus();
     textarea.setSelectionRange(6, 6);
     fireEvent.select(textarea);
@@ -809,7 +836,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
     expect(textarea).toHaveAttribute("rows", "2");
     expect(textarea).toHaveClass("min-h-[3.35rem]");
   });
@@ -870,6 +897,34 @@ describe("ChatPanel", () => {
 
     expect(screen.getByText("快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+  });
+
+  it("shows a tooltip for the composer send mode switcher", async () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          composerSendMode="double-enter-send"
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("button", { name: "切换为回车发送" }));
+
+    expect((await screen.findAllByText("Enter 还是 Shift Enter？")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("如果你经常误触 Enter 不小心发送，希望更谨慎行事，考虑使用 Shift Enter 发送").length).toBeGreaterThan(0);
   });
 
   it("places the timestamp above the outline for assistant messages that render an outline", () => {
@@ -1644,6 +1699,53 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "向左旋转" })).toBeInTheDocument();
   });
 
+  it("renders persisted local image attachments through the file preview content route", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              role: "user",
+              content: "这是持久化后的图片附件。",
+              timestamp: 1,
+              attachments: [
+                {
+                  id: "persisted-image",
+                  kind: "image",
+                  name: "poster.png",
+                  size: 2048,
+                  path: "/Users/marila/projects/lalaclaw2/workspace/poster.png",
+                  fullPath: "/Users/marila/projects/lalaclaw2/workspace/poster.png",
+                },
+              ],
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const image = screen.getByAltText("poster.png");
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/file-preview/content?path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw2%2Fworkspace%2Fposter.png",
+    );
+
+    await user.click(image);
+    expect(await screen.findByRole("button", { name: "放大图片" })).toBeInTheDocument();
+  });
+
   it("routes pasted files from anywhere on the page through the attachment flow and refocuses the composer", async () => {
     const onAddAttachments = vi.fn(async () => {});
     const promptRef = { current: null };
@@ -1667,7 +1769,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
     const pastedFile = new File(["hello"], "paste.txt", { type: "text/plain" });
 
     fireEvent.paste(window, {
@@ -1686,7 +1788,7 @@ describe("ChatPanel", () => {
     render(<MentionHarness />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "@wr");
 
@@ -1703,7 +1805,7 @@ describe("ChatPanel", () => {
     render(<MentionHarness availableMentionAgents={["writer", "expert", "transformer"]} />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "@");
 
@@ -1720,7 +1822,7 @@ describe("ChatPanel", () => {
     render(<MentionHarness availableMentionAgents={["writer"]} availableSkills={[{ name: "coding", ownerAgentId: "expert" }, { name: "nano-banana", ownerAgentId: "paint" }]} />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "@co");
 
@@ -1737,7 +1839,7 @@ describe("ChatPanel", () => {
     render(<MentionHarness availableMentionAgents={["writer"]} availableSkills={[{ name: "coding", ownerAgentId: "expert" }]} />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "@co");
     expect(screen.getByText("Skills")).toBeInTheDocument();
@@ -1864,6 +1966,10 @@ describe("ChatPanel", () => {
     Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
     Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 1040 });
     Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 160 });
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+      fireEvent.scroll(viewport);
+    });
     viewport.getBoundingClientRect = () => ({
       top: 0,
       left: 0,
@@ -3560,6 +3666,7 @@ describe("ChatPanel", () => {
       viewport.scrollTop = top;
     });
 
+    fireEvent.wheel(viewport);
     fireEvent.scroll(viewport);
 
     const bottomButton = await screen.findByRole("button", { name: "回到底部" });
@@ -3568,7 +3675,7 @@ describe("ChatPanel", () => {
     expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 720, behavior: "smooth" });
   });
 
-  it("drives the bottom button from the bottom sentinel observer when IntersectionObserver is available", async () => {
+  it("keeps the bottom button hidden on first load until the user scrolls, even when the sentinel reports away-from-bottom", async () => {
     const viewportRef = { current: null };
     const observedEntries = [];
 
@@ -3636,7 +3743,90 @@ describe("ChatPanel", () => {
       ]);
     });
 
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+
+    fireEvent.wheel(viewport);
+    fireEvent.scroll(viewport);
+
+    act(() => {
+      bottomObserver.callback([
+        {
+          target: observedTarget,
+          isIntersecting: false,
+          intersectionRatio: 0,
+        },
+      ]);
+    });
+
     expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
+  });
+
+  it("hides the bottom button again when a layout resize brings the viewport back to the bottom", async () => {
+    const viewportRef = { current: null };
+    const resizeObservers = [];
+
+    class ResizeObserverMock {
+      constructor(callback) {
+        this.callback = callback;
+        this.targets = [];
+        resizeObservers.push(this);
+      }
+
+      disconnect() {}
+
+      observe(target) {
+        this.targets.push(target);
+      }
+
+      unobserve() {}
+    }
+
+    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "assistant", content: "第一段", timestamp: 1 },
+            { role: "assistant", content: "第二段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ sessionUser: "command-center" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 960 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 320 });
+
+    fireEvent.wheel(viewport);
+    fireEvent.scroll(viewport);
+
+    expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
+
+    viewport.scrollTop = 0;
+    viewport.scrollHeight = 240;
+
+    await act(async () => {
+      resizeObservers.forEach((observer) => observer.callback([]));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+    });
   });
 
   it("does not show the bottom button for a brand new empty conversation after restoring from a scrolled session", () => {
@@ -3672,6 +3862,85 @@ describe("ChatPanel", () => {
     fireEvent.scroll(viewport);
 
     expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+  });
+
+  it("does not show the bottom button immediately after restoring a non-bottom scroll position", async () => {
+    const viewportRef = { current: null };
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "assistant", content: "第一段", timestamp: 1 },
+            { role: "assistant", content: "第二段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          restoredScrollKey=""
+          restoredScrollState={null}
+          session={createSession({ sessionUser: "command-center" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 960 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "assistant", content: "第一段", timestamp: 1 },
+            { role: "assistant", content: "第二段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          restoredScrollKey="command-center:main"
+          restoredScrollState={{ scrollTop: 320 }}
+          session={createSession({ sessionUser: "command-center" })}
+        />
+      </TooltipProvider>,
+    );
+
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(320);
+    });
+
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+
+    fireEvent.wheel(viewport);
+    fireEvent.scroll(viewport);
+
+    expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
   });
 
   it("resets the bottom button when switching to a new conversation with the same message count", async () => {
@@ -4136,7 +4405,7 @@ describe("ChatPanel", () => {
     render(<MentionHarness availableMentionAgents={[]} />);
 
     const user = userEvent.setup();
-    const textarea = screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "@wr");
 

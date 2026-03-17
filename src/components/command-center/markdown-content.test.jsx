@@ -226,14 +226,15 @@ describe("MarkdownContent", () => {
     const { container } = render(<MarkdownContent content={"![示例图](https://example.com/demo.png)"} />);
 
     const image = await screen.findByAltText("示例图");
+    const imageButton = screen.getByRole("button", { name: "示例图" });
     expect(image).toHaveAttribute("src", "https://example.com/demo.png");
     expect(image).toHaveAttribute("loading", "eager");
     expect(image).toHaveAttribute("decoding", "async");
     expect(image.className).toContain("max-h-[28rem]");
     expect(container.querySelector("[data-scroll-anchor-id]")).toBeTruthy();
 
-    await user.click(image);
-    expect(screen.getByRole("button", { name: "关闭预览" })).toBeInTheDocument();
+    await user.click(imageButton);
+    expect(await screen.findByRole("button", { name: "关闭预览" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
@@ -254,6 +255,26 @@ describe("MarkdownContent", () => {
       path: "/tmp/nano-banana-1773525937.png",
     });
     expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
+  });
+
+  it("resolves tracked relative image paths through the file preview content route", async () => {
+    render(
+      <MarkdownContent
+        content={"![Future Hero Poster](tmp/future-hero-poster.png)"}
+        files={[
+          {
+            path: "/Users/marila/projects/lalaclaw2/workspace/tmp/future-hero-poster.png",
+            fullPath: "/Users/marila/projects/lalaclaw2/workspace/tmp/future-hero-poster.png",
+          },
+        ]}
+      />,
+    );
+
+    const image = await screen.findByAltText("Future Hero Poster");
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/file-preview/content?path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw2%2Fworkspace%2Ftmp%2Ffuture-hero-poster.png",
+    );
   });
 
   it("keeps tracked inline file buttons styled like inline code", async () => {

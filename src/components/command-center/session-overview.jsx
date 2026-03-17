@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn, formatShortcutForPlatform, isApplePlatform } from "@/lib/utils";
 import { chooseCollisionRerouteTarget, findNearbyCollisionPairs } from "@/components/command-center/lobster-collision";
 import { SelectionMenu } from "@/components/command-center/selection-menu";
-import { lobsterWalkTuning } from "@/components/command-center/lobster-walk-tuning";
+import { lobsterWalkTuning, sampleLobsterCompanionCount, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { useI18n } from "@/lib/i18n";
 
@@ -22,8 +22,6 @@ const LOBSTER_WALK_MARGIN = 32;
 const LOBSTER_SPEED_PX_PER_SECOND = 150;
 const LOBSTER_MIN_DURATION_MS = 5000;
 const LOBSTER_MAX_DURATION_MS = 15000;
-const LOBSTER_COMPANION_SPAWN_PROBABILITY = 0.9;
-const LOBSTER_COMPANION_COUNT = lobsterWalkTuning.companionCount;
 const CRAB_SPAWN_PROBABILITY = 0.05;
 const OCTOPUS_SPAWN_PROBABILITY = 0.01;
 const LOBSTER_OFFSCREEN_PADDING = 56;
@@ -1268,8 +1266,9 @@ function LobsterBrand({ compact = false, subtitle }) {
     };
     const walkers = [createPrimaryWalker(anchorRect)];
 
-    if (Math.random() <= LOBSTER_COMPANION_SPAWN_PROBABILITY) {
-      for (let index = 0; index < LOBSTER_COMPANION_COUNT; index += 1) {
+    if (shouldSpawnLobsterCompanions()) {
+      const companionCount = sampleLobsterCompanionCount();
+      for (let index = 0; index < companionCount; index += 1) {
         walkers.push(createCompanionWalker(
           anchorRect,
           walkers.map((walker) => ({ x: walker.left, y: walker.top })),

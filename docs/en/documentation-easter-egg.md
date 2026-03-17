@@ -18,6 +18,7 @@ You can find it:
 Clicking it triggers a lobster walk animation across the page:
 
 - The lobster starts from the brand area
+- There is a `50%` chance to spawn `1-10` companion lobsters for the same walk
 - The static lobster icon is temporarily hidden while the animation is active
 - When the animation finishes, the normal top-left lobster becomes visible again
 

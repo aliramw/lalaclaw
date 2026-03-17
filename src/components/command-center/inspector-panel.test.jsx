@@ -153,15 +153,15 @@ describe("InspectorPanel", () => {
     expect(screen.getByText("gateway.baseUrl").closest('[role="tabpanel"]')).toHaveClass("min-w-0");
   });
 
-  it("localizes timeline statuses and tool summaries for english UI", () => {
+  it("localizes timeline statuses and tool summaries for english UI", async () => {
     renderWithTooltip(<TestHarness />, "en");
 
-    expect(screen.getByRole("tab", { name: "Run Log" })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Run Log" })).toBeInTheDocument();
     expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
     expect(screen.getByText("Tools: edit_file(Completed)")).toBeInTheDocument();
   });
 
-  it("localizes summary titles for english UI", () => {
+  it("localizes summary titles for english UI", async () => {
     const [activeTab, setActiveTab] = ["artifacts", () => {}];
 
     renderWithTooltip(
@@ -177,7 +177,7 @@ describe("InspectorPanel", () => {
       "en",
     );
 
-    expect(screen.getByText("Reply 03/15 15:03")).toBeInTheDocument();
+    expect(await screen.findByText("Reply 03/15 15:03")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Jump to Reply 03/15 15:03" })).toBeInTheDocument();
   });
 

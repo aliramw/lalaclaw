@@ -130,6 +130,11 @@ function getPathBasename(filePath = "") {
     .pop() || "";
 }
 
+function buildLocalFilePreviewUrl(filePath = "") {
+  const normalizedPath = String(filePath || "").trim();
+  return normalizedPath ? `/api/file-preview/content?path=${encodeURIComponent(normalizedPath)}` : "";
+}
+
 function normalizeFileToken(value = "") {
   return String(value || "")
     .trim()
@@ -153,6 +158,16 @@ function resolveTrackedFile(token, files = []) {
 
   if (exactMatch) {
     return exactMatch;
+  }
+
+  const suffixMatches = files.filter((item) => {
+    const displayPath = normalizeFileToken(item.path);
+    const fullPath = normalizeFileToken(item.fullPath);
+    const compactPath = normalizeFileToken(compactHomePath(item.fullPath || item.path));
+    return [displayPath, fullPath, compactPath].some((candidate) => candidate && candidate.endsWith(`/${normalizedToken}`));
+  });
+  if (suffixMatches.length === 1) {
+    return suffixMatches[0];
   }
 
   const basenameMatches = files.filter((item) => normalizedToken === getPathBasename(item.path || item.fullPath));
@@ -273,31 +288,7 @@ function repairFencedCodeBlocks(content = "") {
   return repaired.join("\n");
 }
 
-function resolveMarkdownImageSource(src = "") {
-  const normalizedSrc = String(src || "").trim();
-  if (!normalizedSrc) {
-    return "";
-  }
-
-  if (/^file:\/\//i.test(normalizedSrc)) {
-    try {
-      const fileUrl = new URL(normalizedSrc);
-      const filePath = decodeURIComponent(fileUrl.pathname || "");
-      const normalizedPath = /^\/[A-Za-z]:\//.test(filePath) ? filePath.slice(1) : filePath;
-      if (normalizedPath) {
-        return `/api/file-preview/content?path=${encodeURIComponent(normalizedPath)}`;
-      }
-    } catch {}
-  }
-
-  if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedSrc)) {
-    return `/api/file-preview/content?path=${encodeURIComponent(normalizedSrc)}`;
-  }
-
-  return normalizedSrc;
-}
-
-function resolveMarkdownImagePath(src = "") {
+function resolveMarkdownImagePath(src = "", files = []) {
   const normalizedSrc = String(src || "").trim();
   if (!normalizedSrc) {
     return "";
@@ -308,16 +299,38 @@ function resolveMarkdownImagePath(src = "") {
       const fileUrl = new URL(normalizedSrc);
       const filePath = decodeURIComponent(fileUrl.pathname || "");
       return /^\/[A-Za-z]:\//.test(filePath) ? filePath.slice(1) : filePath;
-    } catch {
-      return "";
-    }
+    } catch {}
   }
 
   if (/^\/(Users|tmp|private|var|home|mnt|opt|Volumes|Library)\b/.test(normalizedSrc)) {
     return normalizedSrc;
   }
 
+  if (normalizedSrc.startsWith("~/")) {
+    return `${homePrefix}${normalizedSrc.slice(1)}`;
+  }
+
+  const matchedFile = resolveTrackedFile(normalizedSrc, files);
+  const matchedPath = String(matchedFile?.fullPath || matchedFile?.path || "").trim();
+  if (matchedPath) {
+    return matchedPath;
+  }
+
   return "";
+}
+
+function resolveMarkdownImageSource(src = "", files = []) {
+  const normalizedSrc = String(src || "").trim();
+  if (!normalizedSrc) {
+    return "";
+  }
+
+  const resolvedPath = resolveMarkdownImagePath(normalizedSrc, files);
+  if (resolvedPath) {
+    return buildLocalFilePreviewUrl(resolvedPath);
+  }
+
+  return normalizedSrc;
 }
 
 function markdownUrlTransform(url = "") {
@@ -958,8 +971,8 @@ export default function MarkdownRenderer({
             p: renderBlock("p"),
             table: (props) => <TableRenderer {...props} scrollAnchorId={nextScrollAnchorId()} />,
             img: ({ alt, src = "" }) => {
-              const resolvedSrc = resolveMarkdownImageSource(src);
-              const resolvedPath = resolveMarkdownImagePath(src);
+              const resolvedSrc = resolveMarkdownImageSource(src, files);
+              const resolvedPath = resolveMarkdownImagePath(src, files);
               return (
                 <button
                   type="button"

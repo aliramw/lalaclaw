@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
+import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/storage";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
@@ -176,6 +177,19 @@ function isImageAttachment(attachment) {
   return attachment?.kind === "image" || /^image\//i.test(attachment?.mimeType || "");
 }
 
+function buildLocalFilePreviewUrl(filePath = "") {
+  const normalizedPath = String(filePath || "").trim();
+  return normalizedPath ? `/api/file-preview/content?path=${encodeURIComponent(normalizedPath)}` : "";
+}
+
+function getAttachmentImageSource(attachment = {}) {
+  return String(
+    attachment.previewUrl
+    || attachment.dataUrl
+    || buildLocalFilePreviewUrl(attachment.fullPath || attachment.path),
+  ).trim();
+}
+
 function messageHasVisualMedia(message = {}) {
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
   if (attachments.some(isImageAttachment)) {
@@ -216,7 +230,7 @@ function MessageAttachments({ attachments, mode = "message", onPreviewImage, scr
               onClick={() => onPreviewImage?.(attachment)}
             >
               <img
-                src={attachment.previewUrl || attachment.dataUrl}
+                src={getAttachmentImageSource(attachment)}
                 alt={attachment.name}
                 className={cn(imageSizeClassName, "object-cover")}
               />
@@ -264,7 +278,7 @@ function ComposerAttachments({ attachments, onPreviewImage, onRemoveAttachment }
                 className="overflow-hidden rounded-sm border border-border/60 bg-background"
                 onClick={() => onPreviewImage?.(attachment)}
               >
-                <img src={attachment.previewUrl || attachment.dataUrl} alt={attachment.name} className="h-[22px] w-[22px] object-cover" />
+                <img src={getAttachmentImageSource(attachment)} alt={attachment.name} className="h-[22px] w-[22px] object-cover" />
               </button>
             ) : (
               <div className="flex w-20 items-center gap-1 rounded-sm border border-border/60 bg-background px-1.5 py-1 text-[9px] leading-3">
@@ -470,21 +484,6 @@ function calculateBubbleTopFocusScrollTop(viewport, bubble) {
   const targetTop = bubbleTop - viewport.clientHeight * 0.3;
 
   return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
-}
-
-export function shouldShowBubbleTopJumpButton({ viewportRect, bubbleRect, viewportClientHeight = 0 }) {
-  if (!viewportRect || !bubbleRect) {
-    return false;
-  }
-
-  const bubbleHeight = Number(bubbleRect.height) || Math.max(0, Number(bubbleRect.bottom || 0) - Number(bubbleRect.top || 0));
-  const minTallHeight = Math.min(96, Math.max(56, viewportClientHeight * 0.18));
-  const bubbleTallEnough = bubbleHeight >= minTallHeight;
-  const bubbleTopHidden = bubbleRect.top <= viewportRect.top - 8;
-  const bubbleNotFullyVisible = bubbleTopHidden || bubbleRect.bottom >= viewportRect.bottom - 8;
-  const bubbleStillVisible = bubbleRect.bottom > viewportRect.top + 24;
-
-  return bubbleTallEnough && bubbleTopHidden && bubbleNotFullyVisible && bubbleStillVisible;
 }
 
 function isEditableTarget(target) {
@@ -1272,15 +1271,17 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
     : isOpenClaw
       ? messages.chat.connectionStatusConnected
       : messages.chat.connectionStatusLocal;
+  const composerSendModeTooltipTitle = messages.chat.composerSendModeTooltipTitle || toggleLabel;
+  const composerSendModeTooltipDescription = messages.chat.composerSendModeTooltipDescription || statusHint;
   const toggleClassName = resolvedTheme === "dark"
     ? "border-b border-current text-[#78b7ff] transition-colors hover:text-[#a8d0ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#78b7ff]/35"
     : "border-b border-current text-[#6b7280] transition-colors hover:text-[#4b5563] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9ca3af]/35";
 
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex min-w-0 items-center gap-1.5">
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-2">
+          <span data-connection-status-label className="inline-flex min-w-[6ch] items-center gap-2">
             <span className={cn("h-2 w-2 shrink-0 rounded-full", toneClassName)} aria-hidden="true" />
             <span>{statusLabel}</span>
           </span>
@@ -1293,18 +1294,28 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
         </TooltipContent>
       </Tooltip>
       <span aria-hidden="true">-</span>
-      <span className="inline-flex items-center gap-1.5">
-        <span>{statusHint}</span>
+      <span data-connection-status-hint className="inline-flex min-w-0 items-center gap-1.5 md:min-w-[22rem]">
+        <span className="min-w-0 truncate">{statusHint}</span>
         {!isOffline ? (
           <>
             <span aria-hidden="true">-</span>
-            <button
-              type="button"
-              onClick={onToggleComposerSendMode}
-              className={toggleClassName}
-            >
-              {toggleLabel}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onToggleComposerSendMode}
+                  className={cn(toggleClassName, "shrink-0")}
+                >
+                  {toggleLabel}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-64 px-2.5 py-2">
+                <div className="space-y-0.5">
+                  <div>{composerSendModeTooltipTitle}</div>
+                  <div className="text-[11px] text-muted-foreground">{composerSendModeTooltipDescription}</div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
           </>
         ) : null}
       </span>
@@ -1606,6 +1617,7 @@ export function ChatPanel({
   const [agentMention, setAgentMention] = useState(null);
   const [manualMention, setManualMention] = useState(null);
   const [mentionAnchor, setMentionAnchor] = useState("composer");
+  const [messageViewportNode, setMessageViewportNode] = useState(null);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
@@ -1633,6 +1645,8 @@ export function ChatPanel({
   const restoredScrollRetryRef = useRef(0);
   const restoredScrollStabilizerRefs = useRef([]);
   const restoreStabilizingRef = useRef(false);
+  const suppressRestoredBottomButtonRef = useRef(false);
+  const suppressedBottomButtonAssistantKeyRef = useRef("");
   const focusHighlightStartTimeoutRef = useRef(0);
   const focusHighlightTimeoutRef = useRef(0);
   const previousConversationKeyRef = useRef("");
@@ -1640,6 +1654,12 @@ export function ChatPanel({
   const previousLatestUserMessageKeyRef = useRef("");
   const pinTopAllowedForTurnRef = useRef(true);
   const currentAgentName = session.agentId || agentLabel || "main";
+  const promptPlaceholder = useMemo(() => {
+    if (typeof i18n.chat.promptPlaceholder === "function") {
+      return i18n.chat.promptPlaceholder(currentAgentName);
+    }
+    return i18n.chat.promptPlaceholder;
+  }, [currentAgentName, i18n.chat]);
   const latestMessageCardKey = useMemo(() => {
     const lastMessage = messages[messages.length - 1];
     if (!lastMessage) {
@@ -1706,6 +1726,17 @@ export function ChatPanel({
       promptRef.current = node;
     }
   }, [promptRef]);
+  const resolvedMessageViewport = messageViewportNode || messageViewportRef?.current || null;
+  const handleMessageViewportRef = useCallback((node) => {
+    setMessageViewportNode((current) => (current === node ? current : node));
+    if (typeof messageViewportRef === "function") {
+      messageViewportRef(node);
+      return;
+    }
+    if (messageViewportRef && typeof messageViewportRef === "object") {
+      messageViewportRef.current = node;
+    }
+  }, [messageViewportRef]);
 
   const mentionableAgents = (session.availableMentionAgents || []).filter((agent) => agent && agent !== session.agentId);
   const mentionableSkills = (session.availableSkills || []).map(normalizeSkillMention).filter(Boolean);
@@ -1756,7 +1787,7 @@ export function ChatPanel({
     setHighlightedAgentIndex(0);
   };
 
-  const applyMention = (value) => {
+  const applyMention = useCallback((value) => {
     if (!activeMention) {
       return;
     }
@@ -1778,7 +1809,7 @@ export function ChatPanel({
       composerTextareaRef.current?.focus();
       composerTextareaRef.current?.setSelectionRange?.(nextCaret, nextCaret);
     });
-  };
+  }, [activeMention, onPromptChange, prompt]);
 
   const handleMentionPointerSelect = useCallback((event, value) => {
     if (event.button !== 0) {
@@ -1858,6 +1889,8 @@ export function ChatPanel({
     restoredScrollStabilizerRefs.current.forEach((timerId) => window.clearTimeout(timerId));
     restoredScrollStabilizerRefs.current = [];
     restoreStabilizingRef.current = false;
+    suppressRestoredBottomButtonRef.current = false;
+    suppressedBottomButtonAssistantKeyRef.current = "";
     if (force || !programmaticScrollRef.current) {
       pinTopAllowedForTurnRef.current = false;
       autoScrollSuppressedRef.current = true;
@@ -1877,11 +1910,17 @@ export function ChatPanel({
     persistentManualScrollLockRef.current = false;
     autoScrollSuppressedRef.current = false;
     scrollModeRef.current = nextMode;
+    suppressRestoredBottomButtonRef.current = false;
+    suppressedBottomButtonAssistantKeyRef.current = "";
   }, []);
 
   const updateViewportBottomState = useCallback((isNearBottom, { markManual = false, viewport } = {}) => {
-    const resolvedViewport = viewport || messageViewportRef?.current;
+    const resolvedViewport = viewport || resolvedMessageViewport;
     wasNearBottomRef.current = isNearBottom;
+    if (markManual) {
+      suppressRestoredBottomButtonRef.current = false;
+      suppressedBottomButtonAssistantKeyRef.current = "";
+    }
 
     if (isNearBottom) {
       if (manualScrollLockRef.current && programmaticScrollRef.current) {
@@ -1906,8 +1945,14 @@ export function ChatPanel({
     const maxTop = resolvedViewport
       ? Math.max(0, resolvedViewport.scrollHeight - resolvedViewport.clientHeight)
       : 0;
-    setShowLatestReplyButton(messages.length > 0 && maxTop > 48 && (scrollModeRef.current === "pin-top" || !isNearBottom));
-  }, [messageViewportRef, messages.length]);
+    const shouldSuppressRestoredButton = suppressRestoredBottomButtonRef.current && !markManual;
+    setShowLatestReplyButton(
+      !shouldSuppressRestoredButton
+      && messages.length > 0
+      && maxTop > 48
+      && (scrollModeRef.current === "pin-top" || !isNearBottom),
+    );
+  }, [messages.length, resolvedMessageViewport]);
 
   const scrollViewport = useCallback((viewport, top, behavior = "auto", holdMs = 0) => {
     if (!viewport) {
@@ -2014,7 +2059,7 @@ export function ChatPanel({
 
   useLayoutEffect(() => {
     if (previousConversationKeyRef.current !== visibleConversationKey) {
-      const viewport = messageViewportRef?.current;
+      const viewport = resolvedMessageViewport;
       previousConversationKeyRef.current = visibleConversationKey;
       previousLatestMessageCardKeyRef.current = latestMessageCardKey;
       previousLatestUserMessageKeyRef.current = latestUserMessageKey;
@@ -2024,6 +2069,8 @@ export function ChatPanel({
       scrollModeRef.current = "follow-bottom";
       wasNearBottomRef.current = true;
       restoredScrollKeyRef.current = "";
+      suppressRestoredBottomButtonRef.current = messages.length > 0;
+      suppressedBottomButtonAssistantKeyRef.current = messages.length > 0 ? latestAssistantRenderKey : "";
       if (viewport) {
         const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
         viewport.scrollTop = top;
@@ -2046,7 +2093,7 @@ export function ChatPanel({
       return;
     }
 
-    const viewport = messageViewportRef?.current;
+    const viewport = resolvedMessageViewport;
     resumeAutomaticLatestReplyFollow("force-bottom");
     if (viewport) {
       const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
@@ -2056,16 +2103,17 @@ export function ChatPanel({
     }
   }, [
     latestMessageCardKey,
+    latestAssistantRenderKey,
     latestUserMessageKey,
-    messageViewportRef,
     messages,
+    resolvedMessageViewport,
     resumeAutomaticLatestReplyFollow,
     scrollViewport,
     visibleConversationKey,
   ]);
 
   useLayoutEffect(() => {
-    const viewport = messageViewportRef?.current;
+    const viewport = resolvedMessageViewport;
     const restoreSignature = `${restoredScrollKey}:${restoredScrollRevision}`;
     const restoreToBottom = Boolean(restoredScrollState?.atBottom);
     const fallbackTop = Number(restoredScrollState?.scrollTop);
@@ -2084,7 +2132,7 @@ export function ChatPanel({
     }
 
     const applyRestoredScroll = () => {
-      const latestViewport = messageViewportRef?.current;
+      const latestViewport = resolvedMessageViewport;
       if (!latestViewport) {
         return false;
       }
@@ -2123,6 +2171,8 @@ export function ChatPanel({
         : isNearBottom
           ? "follow-bottom"
           : "manual";
+      suppressRestoredBottomButtonRef.current = !restoreToBottom && !isNearBottom;
+      suppressedBottomButtonAssistantKeyRef.current = !restoreToBottom && !isNearBottom ? latestAssistantRenderKey : "";
       return usedAnchor;
     };
 
@@ -2132,6 +2182,7 @@ export function ChatPanel({
     const usedAnchor = applyRestoredScroll();
     restoredScrollKeyRef.current = restoreSignature;
     restoreStabilizingRef.current = true;
+    setShowLatestReplyButton(false);
     const cleanupImageListeners = [];
     let resizeObserver = null;
     let resizeFrameId = 0;
@@ -2155,7 +2206,7 @@ export function ChatPanel({
 
     restoredScrollStabilizerRefs.current = [40, 120, 240, 480].map(scheduleRestoreStabilizer);
 
-    const latestViewport = messageViewportRef?.current;
+    const latestViewport = resolvedMessageViewport;
     if (latestViewport) {
       latestViewport.querySelectorAll("img").forEach((imageNode) => {
         if (imageNode.complete) {
@@ -2210,19 +2261,50 @@ export function ChatPanel({
       resizeObserver?.disconnect?.();
       cleanupImageListeners.forEach((cleanup) => cleanup());
     };
-  }, [messageViewportRef, messages, restoredScrollKey, restoredScrollRevision, restoredScrollState, session?.agentId, session?.sessionUser]);
+  }, [latestAssistantRenderKey, messages, resolvedMessageViewport, restoredScrollKey, restoredScrollRevision, restoredScrollState, session?.agentId, session?.sessionUser, visibleConversationKey]);
 
   useEffect(() => {
-    const viewport = messageViewportRef?.current;
+    if (!suppressRestoredBottomButtonRef.current) {
+      return;
+    }
+
+    if (!latestAssistantRenderKey || latestAssistantRenderKey === suppressedBottomButtonAssistantKeyRef.current) {
+      return;
+    }
+
+    suppressRestoredBottomButtonRef.current = false;
+    suppressedBottomButtonAssistantKeyRef.current = "";
+
+    const viewport = resolvedMessageViewport;
+    if (!viewport || !messages.length) {
+      return;
+    }
+
+    const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    const isNearBottom = maxTop <= 48
+      ? true
+      : viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 48;
+    updateViewportBottomState(isNearBottom, { viewport });
+  }, [latestAssistantRenderKey, messages.length, resolvedMessageViewport, updateViewportBottomState]);
+
+  useEffect(() => {
+    const viewport = resolvedMessageViewport;
     if (!viewport) {
       return undefined;
     }
 
     const sentinel = bottomSentinelRef.current;
     const IntersectionObserverCtor = window.IntersectionObserver || globalThis.IntersectionObserver;
+    const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
     const updateWasNearBottom = (markManual = false) => {
       const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
       updateViewportBottomState(distanceFromBottom <= 48, { markManual, viewport });
+    };
+    const scheduleBottomStateRefresh = () => {
+      window.cancelAnimationFrame(resizeFrameId);
+      resizeFrameId = window.requestAnimationFrame(() => {
+        updateWasNearBottom(false);
+      });
     };
 
     const markManualTakeover = () => {
@@ -2238,6 +2320,13 @@ export function ChatPanel({
     updateWasNearBottom(false);
     let removeViewportScrollListener = null;
     let bottomObserver = null;
+    let resizeObserver = null;
+    let resizeFrameId = 0;
+    const delayedRefreshIds = [0, 120, 320].map((delay) =>
+      window.setTimeout(() => {
+        scheduleBottomStateRefresh();
+      }, delay),
+    );
     if (IntersectionObserverCtor && sentinel) {
       bottomObserver = new IntersectionObserverCtor(
         (entries) => {
@@ -2258,6 +2347,12 @@ export function ChatPanel({
       const handleViewportScroll = () => updateWasNearBottom(pointerScrollIntentRef.current);
       viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
       removeViewportScrollListener = () => viewport.removeEventListener("scroll", handleViewportScroll);
+    }
+    if (ResizeObserverCtor) {
+      resizeObserver = new ResizeObserverCtor(() => {
+        scheduleBottomStateRefresh();
+      });
+      [viewport, viewport.firstElementChild].filter(Boolean).forEach((node) => resizeObserver.observe(node));
     }
     viewport.addEventListener("wheel", markManualTakeover, { passive: true });
     viewport.addEventListener("touchmove", markManualTakeover, { passive: true });
@@ -2281,6 +2376,9 @@ export function ChatPanel({
     window.addEventListener("pointerup", clearPointerIntent, { passive: true });
     window.addEventListener("pointercancel", clearPointerIntent, { passive: true });
     return () => {
+      delayedRefreshIds.forEach((timerId) => window.clearTimeout(timerId));
+      window.cancelAnimationFrame(resizeFrameId);
+      resizeObserver?.disconnect?.();
       bottomObserver?.disconnect?.();
       removeViewportScrollListener?.();
       viewport.removeEventListener("wheel", markManualTakeover);
@@ -2292,10 +2390,10 @@ export function ChatPanel({
       window.removeEventListener("pointerup", clearPointerIntent);
       window.removeEventListener("pointercancel", clearPointerIntent);
     };
-  }, [markUserScrollTakeover, messageViewportRef, updateViewportBottomState]);
+  }, [markUserScrollTakeover, resolvedMessageViewport, updateViewportBottomState]);
 
   const alignLatestAssistantReply = useCallback(() => {
-    const viewport = messageViewportRef?.current;
+    const viewport = resolvedMessageViewport;
     const latestBubble = latestAssistantBubbleRef.current;
     if (
       !viewport
@@ -2343,14 +2441,14 @@ export function ChatPanel({
     wasNearBottomRef.current = true;
     setShowLatestReplyButton(false);
     return true;
-  }, [latestAssistantIsCompactIntro, latestMessageIsAssistant, messageViewportRef, scrollViewport]);
+  }, [latestAssistantIsCompactIntro, latestMessageIsAssistant, resolvedMessageViewport, scrollViewport]);
 
   useLayoutEffect(() => {
     alignLatestAssistantReply();
   }, [alignLatestAssistantReply, latestAssistantMessage?.streaming, latestAssistantMessageId, latestAssistantRenderKey]);
 
   useEffect(() => {
-    const viewport = messageViewportRef?.current;
+    const viewport = resolvedMessageViewport;
     const latestBubble = latestAssistantBubbleRef.current;
     const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
     if (!viewport || !latestBubble || !latestMessageIsAssistant || latestAssistantIsCompactIntro || !ResizeObserverCtor) {
@@ -2374,10 +2472,10 @@ export function ChatPanel({
       window.cancelAnimationFrame(frameId);
       resizeObserver.disconnect?.();
     };
-  }, [alignLatestAssistantReply, latestAssistantIsCompactIntro, latestAssistantMessageId, latestAssistantRenderKey, latestMessageIsAssistant, messageViewportRef]);
+  }, [alignLatestAssistantReply, latestAssistantIsCompactIntro, latestAssistantMessageId, latestAssistantRenderKey, latestMessageIsAssistant, resolvedMessageViewport]);
 
   useEffect(() => {
-    const viewport = messageViewportRef?.current;
+    const viewport = resolvedMessageViewport;
     if (!viewport || !messages.length) {
       setShowLatestReplyButton(false);
       return undefined;
@@ -2389,7 +2487,7 @@ export function ChatPanel({
       : viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 48;
     updateViewportBottomState(isNearBottom, { viewport });
     return undefined;
-  }, [latestAssistantRenderKey, messageViewportRef, messages.length, updateViewportBottomState, visibleConversationKey]);
+  }, [latestAssistantRenderKey, messages.length, resolvedMessageViewport, updateViewportBottomState, visibleConversationKey]);
 
   useEffect(() => {
     if (!focusMessageRequest?.id) {
@@ -2437,10 +2535,10 @@ export function ChatPanel({
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [animateViewportScroll, focusMessageRequest, markUserScrollTakeover, messageViewportRef, queueFocusHighlight, scrollViewport]);
+  }, [animateViewportScroll, focusMessageRequest, markUserScrollTakeover, messageViewportRef, queueFocusHighlight, resolvedMessageViewport, scrollViewport]);
 
   const handleJumpToLatestReply = () => {
-    const viewport = messageViewportRef?.current;
+    const viewport = resolvedMessageViewport;
     if (!viewport) {
       return;
     }
@@ -2453,7 +2551,7 @@ export function ChatPanel({
   };
 
   const handleJumpToUserMessage = useCallback((targetMessageId) => {
-    const viewport = messageViewportRef?.current;
+    const viewport = resolvedMessageViewport;
     const resolvedMessageId = String(targetMessageId || "").trim();
     if (!viewport || !resolvedMessageId) {
       return;
@@ -2468,7 +2566,7 @@ export function ChatPanel({
     const top = calculateBubbleTopFocusScrollTop(viewport, targetBubble);
     animateViewportScroll(viewport, top, artifactFocusScrollDurationMs);
     queueFocusHighlight(resolvedMessageId, artifactFocusScrollDurationMs);
-  }, [animateViewportScroll, markUserScrollTakeover, messageViewportRef, queueFocusHighlight]);
+  }, [animateViewportScroll, markUserScrollTakeover, queueFocusHighlight, resolvedMessageViewport]);
 
   const handleResetWithConfirm = () => {
     setShowResetDialog(true);
@@ -2565,7 +2663,7 @@ export function ChatPanel({
             <div className="relative min-h-0">
               <ScrollArea
                 className="h-full"
-                viewportRef={messageViewportRef}
+                viewportRef={handleMessageViewportRef}
                 onWheelCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
                 onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
               >
@@ -2781,7 +2879,7 @@ export function ChatPanel({
                   onPromptKeyDown(event);
                 }}
                 onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-                placeholder={openClawConnected ? i18n.chat.promptPlaceholder : i18n.chat.disconnectedPlaceholder}
+                placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
                 disabled={composerLocked}
                 className="min-h-[3.35rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0"
               />

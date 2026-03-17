@@ -8,6 +8,7 @@ import { localeStorageKey } from "@/lib/i18n";
 const storageKey = "command-center-ui-state-v2";
 const pendingChatStorageKey = "command-center-pending-chat-v1";
 const chatScrollStorageKey = "command-center-chat-scroll-v1";
+const defaultPromptPlaceholder = "💡 想要和 main 一起做点什么？";
 
 function createSnapshot(overrides = {}) {
   return {
@@ -689,7 +690,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
     const sendButton = screen.getByRole("button", { name: "发送" });
 
     sendButton.focus();
@@ -1079,7 +1080,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
     await user.type(textarea, "这次会失败");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
@@ -1130,7 +1131,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
     await user.type(textarea, "需要被重置");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
@@ -1171,7 +1172,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "第一条");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -1211,7 +1212,7 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const firstRender = render(<App />);
-    const firstTextarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const firstTextarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(firstTextarea, "刷新后也要保留");
     expect(firstTextarea).toHaveValue("刷新后也要保留");
@@ -1220,7 +1221,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const secondTextarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const secondTextarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
     await waitFor(() => {
       expect(secondTextarea).toHaveValue("刷新后也要保留");
     });
@@ -1297,7 +1298,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "第一行");
     await user.keyboard("{Enter}");
@@ -1324,7 +1325,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "第一行");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
@@ -1357,7 +1358,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
 
@@ -1449,7 +1450,7 @@ describe("App", () => {
 
     const attachment = new File(["image-bytes"], "draft.png", { type: "image/png" });
     await user.upload(fileInput, attachment);
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
     await user.type(textarea, "图中是啥");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
@@ -1503,7 +1504,7 @@ describe("App", () => {
 
     const attachment = new File(["image-bytes"], "persisted.png", { type: "image/png" });
     await user.upload(fileInput, attachment);
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "这是什么");
+    await user.type(screen.getByPlaceholderText(defaultPromptPlaceholder), "这是什么");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByAltText("persisted.png")).toBeInTheDocument();
@@ -1691,7 +1692,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     await user.click(textarea);
     await user.keyboard("{ArrowUp}");
@@ -1859,7 +1860,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const textarea = await screen.findByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。");
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     await user.type(textarea, "旧会话消息");
     await user.click(screen.getByRole("button", { name: "发送" }));
@@ -1901,7 +1902,7 @@ describe("App", () => {
       }),
     );
 
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "整理一下当前项目");
+    await user.type(screen.getByPlaceholderText(defaultPromptPlaceholder), "整理一下当前项目");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("已处理：整理一下当前项目")).toBeInTheDocument();
@@ -1996,7 +1997,7 @@ describe("App", () => {
     await user.click(screen.getByRole("menuitem", { name: "worker" }));
     await screen.findByText("worker - 当前会话");
 
-    await user.type(screen.getByPlaceholderText("描述你希望 Agent 在当前 workspace 中完成什么。"), "继续处理 worker 任务");
+    await user.type(screen.getByPlaceholderText(defaultPromptPlaceholder), "继续处理 worker 任务");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("已处理：继续处理 worker 任务")).toBeInTheDocument();
@@ -2161,6 +2162,124 @@ describe("App", () => {
       expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toMatchObject({
         "command-center:main": { scrollTop: storedMainScrollTop },
       });
+    });
+  });
+
+  it("keeps the restored chat scroll position when IntersectionObserver has not fired yet", async () => {
+    class IntersectionObserverMock {
+      constructor() {}
+
+      observe() {}
+
+      disconnect() {}
+    }
+
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const agentId = params.get("agentId") || "main";
+        const sessionUser =
+          params.get("sessionUser")
+          || (agentId === "worker" ? "command-center-worker-1" : "command-center");
+
+        return mockJsonResponse(
+          createSnapshot({
+            conversation:
+              agentId === "worker"
+                ? [
+                    { role: "assistant", content: "worker 回复一", timestamp: 11 },
+                    { role: "assistant", content: "worker 回复二", timestamp: 12 },
+                  ]
+                : [
+                    { role: "assistant", content: "main 回复一", timestamp: 1 },
+                    { role: "assistant", content: "main 回复二", timestamp: 2 },
+                  ],
+            session: {
+              ...createSnapshot().session,
+              agentId,
+              selectedAgentId: agentId,
+              availableAgents: ["main", "worker"],
+              sessionUser,
+              sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+            },
+          }),
+        );
+      }
+
+      if (url === "/api/session" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        const agentId = body.agentId || "main";
+        const sessionUser =
+          body.sessionUser
+          || (agentId === "worker" ? "command-center-worker-1" : "command-center");
+
+        return mockJsonResponse(
+          createSnapshot({
+            conversation:
+              agentId === "worker"
+                ? [
+                    { role: "assistant", content: "worker 回复一", timestamp: 11 },
+                    { role: "assistant", content: "worker 回复二", timestamp: 12 },
+                  ]
+                : [
+                    { role: "assistant", content: "main 回复一", timestamp: 1 },
+                    { role: "assistant", content: "main 回复二", timestamp: 2 },
+                  ],
+            session: {
+              ...createSnapshot().session,
+              agentId,
+              selectedAgentId: agentId,
+              availableAgents: ["main", "worker"],
+              sessionUser,
+              sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+            },
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    const mainMessage = await screen.findByText("main 回复二");
+    const viewport = [...document.querySelectorAll("[data-radix-scroll-area-viewport]")]
+      .find((element) => element.contains(mainMessage));
+
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 1600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+
+    viewport.scrollTop = 365;
+    fireEvent.scroll(viewport);
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toHaveProperty("command-center:main");
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "worker" }));
+    await screen.findByText("worker - 当前会话");
+
+    const storedMainScrollTop = JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")?.["command-center:main"]?.scrollTop;
+    expect(Number.isFinite(storedMainScrollTop)).toBe(true);
+
+    viewport.scrollTop = 48;
+
+    await user.click(screen.getByRole("button", { name: "main" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("main - 当前会话")).toBeInTheDocument();
+      expect(viewport.scrollTop).toBe(storedMainScrollTop);
     });
   });
 });

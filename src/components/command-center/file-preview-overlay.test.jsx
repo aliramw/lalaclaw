@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -81,7 +81,7 @@ describe("FilePreviewOverlay", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByLabelText(/Expand preview|最大化/));
+    await user.click(screen.getByLabelText(/Expand preview|铺满预览窗/));
 
     expect(screen.getByTitle("report.pdf")).toHaveClass("h-full");
   });
@@ -150,7 +150,7 @@ describe("FilePreviewOverlay", () => {
     const content = screen.getByTestId("markdown-preview-content");
     expect(content.firstChild).toHaveClass("text-[14px]", "leading-6", "[&_p]:!leading-6", "[&_ul]:!my-2");
 
-    await user.click(screen.getByLabelText("Preview font size: Large"));
+    await user.click(screen.getByLabelText(/Preview font size: Large|预览字号：大/));
 
     expect(content.firstChild).toHaveClass("text-[16px]", "leading-7", "[&_p]:!leading-7", "[&_ul]:!my-2.5");
     expect(window.localStorage.getItem("file-preview-font-size")).toBe("large");
@@ -186,7 +186,7 @@ describe("FilePreviewOverlay", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Preview font size: Large")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Preview font size: Large|预览字号：大/)).toBeInTheDocument();
     expect(screen.getByText("plain preview").closest("pre")).toHaveClass("text-[16px]", "leading-7");
   });
 
@@ -212,13 +212,13 @@ describe("FilePreviewOverlay", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
 
     const editor = await screen.findByTestId("file-preview-monaco-editor");
     expect(editor).toHaveAttribute("data-language", "markdown");
     await user.clear(editor);
     await user.type(editor, "# After{enter}{enter}Saved in preview");
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: /Save|保存/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -242,6 +242,82 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByText("Saved in preview")).toBeInTheDocument();
   });
 
+  it("shows the inspector files sidebar for editable previews and opens files from it", async () => {
+    const onOpenFilePreview = vi.fn();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        sessionFiles={[
+          {
+            path: "/Users/marila/projects/lalaclaw/src/alpha.js",
+            fullPath: "/Users/marila/projects/lalaclaw/src/alpha.js",
+            primaryAction: "modified",
+          },
+          {
+            path: "/Users/marila/projects/lalaclaw/src/beta.js",
+            fullPath: "/Users/marila/projects/lalaclaw/src/beta.js",
+            primaryAction: "modified",
+          },
+        ]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={onOpenFilePreview}
+      />,
+    );
+
+    const sidebar = screen.getByTestId("file-preview-files-sidebar");
+    expect(sidebar).toHaveAttribute("aria-label", "Files");
+    expect(within(sidebar).getByText(/Session files|本次会话文件/)).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(within(sidebar).getByTitle("/Users/marila/projects/lalaclaw/src/alpha.js"));
+
+    expect(onOpenFilePreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/Users/marila/projects/lalaclaw/src/alpha.js",
+      }),
+      { startInEditMode: true },
+    );
+  });
+
+  it("disables non-editable files in the preview sidebar and shows a tooltip", async () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        sessionFiles={[
+          {
+            path: "/Users/marila/projects/lalaclaw/src/demo.pdf",
+            fullPath: "/Users/marila/projects/lalaclaw/src/demo.pdf",
+            primaryAction: "viewed",
+          },
+        ]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const disabledFile = within(screen.getByTestId("file-preview-files-sidebar")).getByTitle("/Users/marila/projects/lalaclaw/src/demo.pdf");
+
+    expect(disabledFile).toHaveAttribute("aria-disabled", "true");
+
+    await user.hover(disabledFile.parentElement || disabledFile);
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/This file type can't be selected while editing\.|编辑时无法选择此类文件/);
+  });
+
   it("uses Monaco for code-like text previews and lets cancel restore the original content", async () => {
     renderPreview(
       <FilePreviewOverlay
@@ -258,13 +334,13 @@ describe("FilePreviewOverlay", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
 
     const editor = await screen.findByTestId("file-preview-monaco-editor");
     expect(editor).toHaveAttribute("data-language", "javascript");
     await user.clear(editor);
     await user.type(editor, "const after = true;");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: /Cancel|取消/ }));
 
     expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
     expect(document.querySelector("pre")?.textContent).toContain("const before = true;");
@@ -287,7 +363,7 @@ describe("FilePreviewOverlay", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
-    expect(screen.getByText("This file is too large to edit here. Only the first 1 MB is shown.")).toBeInTheDocument();
+    expect(screen.getByText(/This file is too large to edit here\. Only the first 1 MB is shown\.|文件过大，无法在这里直接编辑。当前只显示前 1 MB 内容。/)).toBeInTheDocument();
   });
 
   it("shows a restart hint when the running backend has not picked up the save route yet", async () => {
@@ -315,10 +391,10 @@ describe("FilePreviewOverlay", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+    await user.click(screen.getByRole("button", { name: /Save|保存/ }));
 
-    expect(await screen.findByText("This running backend does not support inline save yet. Restart LalaClaw or the backend service, then try again.")).toBeInTheDocument();
+    expect(await screen.findByText(/This running backend does not support inline save yet\. Restart LalaClaw or the backend service, then try again\.|当前正在运行的后端还不支持在线保存。请重启 LalaClaw 或后端服务后再试。/)).toBeInTheDocument();
   });
 
   it("renders docx previews with docx-preview", async () => {

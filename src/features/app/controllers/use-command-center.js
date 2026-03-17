@@ -323,6 +323,7 @@ export function useCommandCenter() {
   const chatFontSizeRef = useRef(chatFontSize);
   const composerSendModeRef = useRef(composerSendMode);
   const promptHeightMetricsRef = useRef({ node: null, maxHeight: 0 });
+  const promptHeightFrameRef = useRef(0);
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
   const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
   const runtimeRequestByTabIdRef = useRef({});
@@ -674,9 +675,16 @@ export function useCommandCenter() {
     window.requestAnimationFrame(() => {
       const textarea = promptRef.current;
       if (!textarea) return;
-      textarea.focus();
+      if (document.activeElement !== textarea) {
+        textarea.focus({ preventScroll: true });
+      }
       const end = textarea.value.length;
-      textarea.setSelectionRange(end, end);
+      if (
+        end > 0 &&
+        (textarea.selectionStart !== end || textarea.selectionEnd !== end)
+      ) {
+        textarea.setSelectionRange(end, end);
+      }
     });
   }, []);
 
@@ -701,6 +709,11 @@ export function useCommandCenter() {
   const adjustPromptHeight = useCallback(() => {
     const textarea = promptRef.current;
     if (!textarea) return;
+    if (!String(textarea.value || "")) {
+      textarea.style.height = "";
+      textarea.style.overflowY = "hidden";
+      return;
+    }
     const maxHeight = resolvePromptMaxHeight(textarea);
 
     textarea.style.height = "auto";
@@ -708,6 +721,14 @@ export function useCommandCenter() {
     textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
     textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
   }, [resolvePromptMaxHeight]);
+
+  const schedulePromptHeightAdjustment = useCallback(() => {
+    window.cancelAnimationFrame(promptHeightFrameRef.current);
+    promptHeightFrameRef.current = window.requestAnimationFrame(() => {
+      promptHeightFrameRef.current = 0;
+      adjustPromptHeight();
+    });
+  }, [adjustPromptHeight]);
 
   const setPromptForConversation = useCallback((value, conversationKey = activeConversationKey) => {
     setPrompt((current) => {
@@ -864,18 +885,19 @@ export function useCommandCenter() {
   }, [dismissedTaskRelationshipIdsByConversation]);
 
   useEffect(() => {
-    adjustPromptHeight();
-  }, [adjustPromptHeight, prompt]);
+    schedulePromptHeightAdjustment();
+    return () => window.cancelAnimationFrame(promptHeightFrameRef.current);
+  }, [prompt, schedulePromptHeightAdjustment]);
 
   useEffect(() => {
     const resetPromptHeightMetrics = () => {
       promptHeightMetricsRef.current = { node: promptRef.current, maxHeight: 0 };
-      adjustPromptHeight();
+      schedulePromptHeightAdjustment();
     };
 
     window.addEventListener("resize", resetPromptHeightMetrics);
     return () => window.removeEventListener("resize", resetPromptHeightMetrics);
-  }, [adjustPromptHeight]);
+  }, [schedulePromptHeightAdjustment]);
 
   useEffect(() => {
     focusPrompt();
@@ -1297,10 +1319,10 @@ export function useCommandCenter() {
       persistConversationScrollTop(activeConversationKey, viewport.scrollTop);
     };
 
-    syncAutoScroll();
     let removeAutoScrollSync = null;
     let bottomObserver = null;
 
+    syncAutoScroll();
     if (IntersectionObserverCtor && bottomSentinel) {
       bottomObserver = new IntersectionObserverCtor(
         (entries) => {
@@ -1412,13 +1434,14 @@ export function useCommandCenter() {
 
   const applySessionUpdate = async (payload) => {
     try {
-      await updateSessionSettings(payload);
+      return await updateSessionSettings(payload);
     } catch {
       await loadRuntime(sessionStateRef.current.sessionUser, {
         agentId: sessionStateRef.current.agentId,
       }).catch(() => {
         setSession((current) => ({ ...current, status: i18n.common.failed }));
       });
+      return null;
     }
   };
 
@@ -1488,7 +1511,24 @@ export function useCommandCenter() {
       agentId: nextAgent,
       sessionUser,
     });
-    const nextSession = createSessionForTab(i18n, nextTab, nextMeta, sessionByTabIdRef.current[tabId]);
+    const nextSession = sessionByTabIdRef.current[tabId] || {
+      ...createSessionForTab(i18n, nextTab, nextMeta),
+      ...sessionStateRef.current,
+      ...session,
+      agentId: nextAgent,
+      agentLabel: nextAgent,
+      selectedAgentId: nextAgent,
+      sessionUser,
+      sessionKey: `agent:${nextAgent}:openai-user:${sessionUser}`,
+      model: nextMeta.model || session.model || "",
+      selectedModel: nextMeta.model || session.selectedModel || session.model || "",
+      fastMode: session.fastMode,
+      thinkMode: nextMeta.thinkMode || session.thinkMode || "off",
+      availableAgents: availableAgents.length ? availableAgents : session.availableAgents || [],
+      availableModels: availableModels.length ? availableModels : session.availableModels || [],
+      availableMentionAgents: session.availableMentionAgents || [],
+      availableSkills: session.availableSkills || [],
+    };
 
     setChatTabs((current) => {
       const updated = [...current, nextTab];
@@ -1502,7 +1542,7 @@ export function useCommandCenter() {
     setActiveChatTabId(tabId);
 
     return { created: true, tabId };
-  }, [flushVisibleConversationScrollTop, i18n, updateTabMeta, updateTabSession]);
+  }, [availableAgents, availableModels, flushVisibleConversationScrollTop, i18n, session, updateTabMeta, updateTabSession]);
 
   const handleAgentChange = async (nextAgent) => {
     if (!nextAgent) return;
@@ -1546,10 +1586,28 @@ export function useCommandCenter() {
         }));
       }
 
-      await applySessionUpdate({
+      const sessionUpdate = await applySessionUpdate({
         agentId: nextAgent,
         sessionUser: targetSessionUser,
       });
+      const resolvedSession = sessionUpdate?.session || null;
+
+      if (targetTabId && resolvedSession) {
+        updateTabMeta(targetTabId, {
+          agentId: resolvedSession.agentId || nextAgent,
+          sessionUser: resolvedSession.sessionUser || targetSessionUser,
+          model: resolvedSession.selectedModel || resolvedSession.model || "",
+        });
+        updateTabSession(targetTabId, (current) => ({
+          ...current,
+          ...(resolvedSession || {}),
+          agentId: resolvedSession.agentId || nextAgent,
+          selectedAgentId: resolvedSession.selectedAgentId || resolvedSession.agentId || nextAgent,
+          sessionUser: resolvedSession.sessionUser || targetSessionUser,
+          model: resolvedSession.model || current.model,
+          selectedModel: resolvedSession.selectedModel || resolvedSession.model || current.selectedModel,
+        }));
+      }
     } finally {
       if (shouldShowOverlay) {
         setSwitchingAgentOverlay(null);
