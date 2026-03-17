@@ -1032,7 +1032,7 @@ describe("InspectorPanel", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain("filter=lesson");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("filter=lesson");
     expect(screen.getByText("lesson.md")).toBeInTheDocument();
   });
 

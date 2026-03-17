@@ -974,6 +974,68 @@ describe("LalaClaw CLI helpers", () => {
     }
   });
 
+
+
+  it("parses listening PID values from windows netstat output", () => {
+    const pids = cli.findWindowsListeningPids("3000", () => ({
+      status: 0,
+      stdout: [
+        "  TCP    0.0.0.0:3000           0.0.0.0:0              LISTENING       4567",
+        "  TCP    127.0.0.1:9229         0.0.0.0:0              LISTENING       7654",
+        "  TCP    [::]:3000              [::]:0                 LISTENING       4567",
+      ].join("\n"),
+      stderr: "",
+    }));
+
+    expect(pids).toEqual([4567]);
+  });
+
+  it("stops windows background listeners on the configured backend port", () => {
+    const previousConfigFile = process.env.LALACLAW_CONFIG_FILE;
+    const tempConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-stop-win-"));
+    const envFile = path.join(tempConfigDir, ".env.local");
+    fs.writeFileSync(envFile, "PORT=3900\n", "utf8");
+    process.env.LALACLAW_CONFIG_FILE = envFile;
+
+    const calls = [];
+
+    try {
+      const result = cli.stopWindowsBackgroundService(envFile, (command, args) => {
+        calls.push({ command, args });
+        if (command === "netstat") {
+          return {
+            status: 0,
+            stdout: "  TCP    0.0.0.0:3900           0.0.0.0:0              LISTENING       7890\n",
+            stderr: "",
+          };
+        }
+        if (command === "taskkill") {
+          return { status: 0, stdout: "", stderr: "" };
+        }
+
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      expect(result).toMatchObject({
+        port: "3900",
+        pids: [7890],
+        stopped: true,
+        failedPids: [],
+      });
+      expect(calls).toEqual([
+        { command: "netstat", args: ["-ano", "-p", "tcp"] },
+        { command: "taskkill", args: ["/pid", "7890", "/t", "/f"] },
+      ]);
+    } finally {
+      fs.rmSync(tempConfigDir, { recursive: true, force: true });
+      if (previousConfigFile === undefined) {
+        delete process.env.LALACLAW_CONFIG_FILE;
+      } else {
+        process.env.LALACLAW_CONFIG_FILE = previousConfigFile;
+      }
+    }
+  });
+
   it("restarts the launchd service with kickstart when a plist exists", () => {
     const previousConfigDir = process.env.LALACLAW_CONFIG_DIR;
     const tempConfigDir = path.join(os.tmpdir(), "lalaclaw-restart-test");

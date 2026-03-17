@@ -187,7 +187,10 @@ async function requestWorkspaceTree({
     params.set("filter", filter);
   }
 
-  const response = await fetch(`/api/workspace-tree?${params.toString()}`);
+  const origin = typeof window !== "undefined" && window.location?.origin
+    ? window.location.origin
+    : "http://127.0.0.1";
+  const response = await fetch(new URL(`/api/workspace-tree?${params.toString()}`, origin));
   const payload = await response.json();
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || "Workspace tree failed");
