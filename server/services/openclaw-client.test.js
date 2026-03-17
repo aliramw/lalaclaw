@@ -141,7 +141,7 @@ describe('createOpenClawClient', () => {
         channel: 'dingtalk-connector',
         target: 'user:398058',
         accountId: '__default__',
-        message: '你你你',
+        message: '马锐拉：你你你',
       },
       sessionKey: `agent:main:openai-user:${rawSessionUser}`,
       tool: 'message',

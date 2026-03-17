@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
-import { isOfflineStatus } from "@/features/session/status-display";
+import { isOfflineStatus, normalizeStatusKey } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/storage";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
@@ -35,10 +35,23 @@ const focusHighlightDurationMs = 1400;
 const messageOutlineViewportBottomGapPx = 20;
 const messageOutlineMinHeightPx = 96;
 
+function isDingTalkSessionUser(sessionUser = "") {
+  const normalizedSessionUser = String(sessionUser || "").trim();
+  return normalizedSessionUser.startsWith('{"channel":"dingtalk-connector"')
+    || normalizedSessionUser.includes("dingtalk-connector");
+}
+
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
   small: {
     userText: "text-[12px] font-normal leading-5",
+    userMarkdown:
+      "text-[12px] font-normal leading-5 text-white " +
+      "[&_a]:text-white/95 [&_a]:underline [&_a]:decoration-white/45 [&_a:hover]:text-white " +
+      "[&_blockquote]:border-l-white/35 [&_blockquote]:text-white/82 " +
+      "[&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white/88 " +
+      "[&_hr]:border-white/18 [&_thead]:bg-white/8 [&_th]:border-white/18 [&_td]:border-white/18 " +
+      "[&_img]:bg-white/4",
     markdown: "text-[11px] leading-[1.15rem]",
     compactMarkdown: "text-[11px] leading-[1.15rem] [&_p]:mb-0 [&_p]:whitespace-nowrap",
     pendingMarkdown: "text-[11px] font-semibold leading-[1.15rem] [&_p]:mb-0 [&_p]:whitespace-nowrap",
@@ -49,6 +62,13 @@ const chatFontSizeClassNames = {
   },
   medium: {
     userText: "text-[13px] font-normal leading-6",
+    userMarkdown:
+      "text-[13px] font-normal leading-6 text-white " +
+      "[&_a]:text-white/95 [&_a]:underline [&_a]:decoration-white/45 [&_a:hover]:text-white " +
+      "[&_blockquote]:border-l-white/35 [&_blockquote]:text-white/82 " +
+      "[&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white/88 " +
+      "[&_hr]:border-white/18 [&_thead]:bg-white/8 [&_th]:border-white/18 [&_td]:border-white/18 " +
+      "[&_img]:bg-white/4",
     markdown: "text-[12px] leading-5",
     compactMarkdown: "text-[12px] leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap",
     pendingMarkdown: "text-[12px] font-semibold leading-5 [&_p]:mb-0 [&_p]:whitespace-nowrap",
@@ -59,6 +79,13 @@ const chatFontSizeClassNames = {
   },
   large: {
     userText: "text-[15px] font-normal leading-7",
+    userMarkdown:
+      "text-[15px] font-normal leading-7 text-white " +
+      "[&_a]:text-white/95 [&_a]:underline [&_a]:decoration-white/45 [&_a:hover]:text-white " +
+      "[&_blockquote]:border-l-white/35 [&_blockquote]:text-white/82 " +
+      "[&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white/88 " +
+      "[&_hr]:border-white/18 [&_thead]:bg-white/8 [&_th]:border-white/18 [&_td]:border-white/18 " +
+      "[&_img]:bg-white/4",
     markdown: "text-[14px] leading-6",
     compactMarkdown: "text-[14px] leading-6 [&_p]:mb-0 [&_p]:whitespace-nowrap",
     pendingMarkdown: "text-[14px] font-semibold leading-6 [&_p]:mb-0 [&_p]:whitespace-nowrap",
@@ -92,6 +119,15 @@ function unwrapAssistantEnvelope(content = "", role = "") {
 
   const unwrapped = match[1].trim();
   return unwrapped || text;
+}
+
+function stripDingTalkImagePlaceholderForDisplay(content = "", sessionUser = "") {
+  const text = String(content || "");
+  if (!isDingTalkSessionUser(sessionUser)) {
+    return text;
+  }
+
+  return text.replace(/^\[(?:图片|image)\]\s*\n+(?=!\[[^\]]*\]\([^)]+\))/iu, "");
 }
 
 function formatAttachmentSize(size = 0) {
@@ -787,6 +823,7 @@ const MessageBubble = memo(function MessageBubble({
   onJumpPreviousMessage,
   previousMessageId,
   resolvedTheme,
+  sessionUser,
   chatFontSize,
   userLabel,
 }) {
@@ -797,8 +834,11 @@ const MessageBubble = memo(function MessageBubble({
   const isUser = message.role === "user";
   const isPending = Boolean(message.pending);
   const renderedContent = useMemo(
-    () => unwrapAssistantEnvelope(message.content, message.role),
-    [message.content, message.role],
+    () => stripDingTalkImagePlaceholderForDisplay(
+      unwrapAssistantEnvelope(message.content, message.role),
+      sessionUser,
+    ),
+    [message.content, message.role, sessionUser],
   );
   const supportsBubbleTopJump = !messageHasVisualMedia(message);
   const useCompactAssistantBubble = useMemo(
@@ -1006,13 +1046,17 @@ const MessageBubble = memo(function MessageBubble({
                     scrollAnchorBaseId={`${headingScopeId}-attachment`}
                   />
                   {message.content ? (
-                    <div
-                      data-scroll-anchor-id={`${headingScopeId}-text`}
-                      className={cn("whitespace-pre-wrap", fontSizeStyles.userText)}
-                      style={{ color: "#ffffff" }}
-                    >
-                      {message.content}
-                    </div>
+                    <MarkdownContent
+                      content={renderedContent}
+                      files={files}
+                      fontSize={chatFontSize}
+                      headingScopeId={headingScopeId}
+                      resolvedTheme={resolvedTheme}
+                      streaming={false}
+                      onOpenFilePreview={handleOpenFilePreview}
+                      onOpenImagePreview={handleOpenImagePreview}
+                      className={fontSizeStyles.userMarkdown}
+                    />
                   ) : null}
                 </CardContent>
               </Card>
@@ -1544,7 +1588,7 @@ export function ChatTabsStrip({
                     : item.active ? "bg-white/65" : "bg-muted-foreground/35",
                 )}
               />
-              <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>{item.agentId}</span>
+              <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>{item.title || item.agentId}</span>
               {shortcutNumber && !isClosableActiveTab ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1583,7 +1627,7 @@ export function ChatTabsStrip({
                       event.stopPropagation();
                       onClose?.(item.id);
                     }}
-                    aria-label={messages.chat.closeTabAriaLabel(item.agentId)}
+                    aria-label={messages.chat.closeTabAriaLabel(item.title || item.agentId)}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -1734,7 +1778,12 @@ export function ChatPanel({
     () => messages.some((message) => message?.role === "assistant" && (message?.pending || message?.streaming)),
     [messages],
   );
-  const showBusyBadge = busy || hasActiveAssistantReply;
+  const showBusyBadge = busy
+    || hasActiveAssistantReply
+    || (
+      isDingTalkSessionUser(session.sessionUser)
+      && ["running", "dispatching"].includes(normalizeStatusKey(session.status))
+    );
   const showStopButton = Boolean(onStop) && showBusyBadge;
   const latestAssistantMessage = useMemo(() => {
     if (!latestAssistantMessageId) {
@@ -2760,6 +2809,7 @@ export function ChatPanel({
                             onJumpPreviousMessage={handleJumpToUserMessage}
                             previousMessageId={previousMessageId}
                             resolvedTheme={resolvedTheme}
+                            sessionUser={session?.sessionUser}
                             separated={index > 0 && messages[index - 1]?.role !== message.role}
                             chatFontSize={chatFontSize}
                             userLabel={userLabel}

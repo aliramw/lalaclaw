@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
+import { getRuntimePollInterval } from "@/features/session/runtime/use-runtime-snapshot";
 
 function mockJsonResponse(payload, ok = true, status = ok ? 200 : 500) {
   return Promise.resolve({
@@ -470,6 +471,17 @@ describe("useRuntimeSnapshot", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 1500);
+  });
+
+  it("polls DingTalk sessions more aggressively even while locally idle", () => {
+    expect(
+      getRuntimePollInterval({
+        recoveringPendingReply: false,
+        busy: false,
+        activePendingChat: null,
+        sessionUser: '{"channel":"dingtalk-connector","peerid":"398058"}',
+      }),
+    ).toBe(4000);
   });
 
   it("keeps the session in running state when the snapshot has an assistant reply but is still missing the current pending user message", async () => {

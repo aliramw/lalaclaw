@@ -6,6 +6,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -1746,32 +1747,6 @@ export function SessionOverview({
           )}
         />
 
-        {onSearchSessions && onSelectSearchedSession ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                disabled={!openClawConnected}
-                onClick={() => setSessionSearchOpen(true)}
-                className={cn(
-                  "inline-flex h-14 min-w-[124px] items-center gap-3 rounded-lg border px-2.5 py-1.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55",
-                  isLightTheme ? "border-border/70 bg-white hover:bg-accent/40" : "border-border/70 bg-background/80 hover:bg-accent/40",
-                )}
-              >
-                <div className="min-w-0">
-                  <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.session}</div>
-                  <div className="text-sm font-semibold text-foreground">
-                    {messages.sessionOverview.sessionSearch.trigger}
-                  </div>
-                </div>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {messages.sessionOverview.sessionSearch.tooltip}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-
       </div>
     </div>
   );
@@ -1815,30 +1790,78 @@ export function SessionOverview({
 
   if (layout === "agent-tab") {
     return (
-      <SelectionMenu
-        disabled={!openClawConnected}
-        label={messages.sessionOverview.menus.switchAgent}
-        triggerLabel={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
-        items={selectableAgents}
-        value={session.agentId}
-        onSelect={onAgentChange}
-        showSelectionIndicator={false}
-        contentClassName="w-[300px] max-w-[calc(100vw-1rem)] p-2"
-        emptyText={messages.sessionOverview.menus.noAvailableAgentSessionsHint || messages.sessionOverview.menus.noAgents}
-        tooltipContent={messages.sessionOverview.tooltips.switchAgentSession}
-      >
-        <button
-          type="button"
-          disabled={!openClawConnected}
-          aria-label={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
-          className={cn(
-            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55",
-            "border-border/45 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/30 focus-visible:border-border/70 focus-visible:bg-muted/30 focus-visible:ring-border/50",
-          )}
-        >
-          <Plus className="h-4 w-4 text-foreground" aria-hidden="true" />
-        </button>
-      </SelectionMenu>
+      <>
+        <div className="flex items-center">
+          <SelectionMenu
+            disabled={!openClawConnected}
+            label={messages.sessionOverview.menus.switchAgent}
+            triggerLabel={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
+            value={session.agentId}
+            onSelect={onAgentChange}
+            showSelectionIndicator={false}
+            contentClassName="w-[300px] max-w-[calc(100vw-1rem)] p-2"
+            emptyText={messages.sessionOverview.menus.noAvailableAgentSessionsHint || messages.sessionOverview.menus.noAgents}
+            tooltipContent={messages.sessionOverview.tooltips.switchAgentSession}
+            renderContent={({ handleSelect, suppressTooltip }) => (
+              <>
+                <DropdownMenuLabel className="px-1 pb-1 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                  {messages.sessionOverview.menus.agentConversations || messages.sessionOverview.menus.switchAgent}
+                </DropdownMenuLabel>
+                {selectableAgents.length ? (
+                  selectableAgents.map((agentId) => (
+                    <DropdownMenuItem key={agentId} onSelect={() => handleSelect(agentId)}>
+                      {agentId}
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <div className="px-1 py-1">
+                    <div className="rounded-md bg-background/70 px-3 py-2.5 text-xs leading-5 text-muted-foreground whitespace-pre-line break-words">
+                      {messages.sessionOverview.menus.noAvailableAgentSessionsHint || messages.sessionOverview.menus.noAgents}
+                    </div>
+                  </div>
+                )}
+                {onSearchSessions && onSelectSearchedSession ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="px-1 pb-1 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.sessionOverview.menus.imConversations || messages.sessionOverview.sessionSearch.title}
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => {
+                      suppressTooltip();
+                      setSessionSearchOpen(true);
+                    }}
+                    >
+                      <div className="flex items-center gap-2 leading-none">
+                        <img src="/dingtalk.svg" alt="" aria-hidden="true" className="h-4 w-4 shrink-0 self-center object-contain" />
+                        <span className="self-center leading-none">{messages.sessionOverview.sessionSearch.trigger}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </>
+            )}
+          >
+            <button
+              type="button"
+              disabled={!openClawConnected}
+              aria-label={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
+              className={cn(
+                "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55",
+                "border-border/45 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/30 focus-visible:border-border/70 focus-visible:bg-muted/30 focus-visible:ring-border/50",
+              )}
+            >
+              <Plus className="h-4 w-4 text-foreground" aria-hidden="true" />
+            </button>
+          </SelectionMenu>
+        </div>
+        <SessionSearchDialog
+          messages={messages}
+          onClose={() => setSessionSearchOpen(false)}
+          onSearchSessions={onSearchSessions}
+          onSelectSearchedSession={onSelectSearchedSession}
+          open={sessionSearchOpen}
+        />
+      </>
     );
   }
 

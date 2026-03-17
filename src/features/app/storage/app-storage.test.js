@@ -862,6 +862,51 @@ describe("loadStoredState", () => {
     expect(stored.tabMetaById["agent:main"]).toMatchObject({ agentId: "main" });
   });
 
+  it("preserves serialized DingTalk session users for dedicated chat tabs", () => {
+    const dingtalkSessionUser = '{"channel":"dingtalk-connector","peerid":"398058","sendername":"马锐拉"}';
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main::abc123",
+        activeTab: "timeline",
+        agentId: "main",
+        sessionUser: dingtalkSessionUser,
+        chatTabs: [
+          { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+          { id: "agent:main::abc123", agentId: "main", sessionUser: dingtalkSessionUser },
+        ],
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+          "agent:main::abc123": {
+            agentId: "main",
+            fastMode: false,
+            model: "",
+            sessionUser: dingtalkSessionUser,
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    const stored = loadStoredState();
+
+    expect(stored.chatTabs).toEqual([
+      { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+      { id: "agent:main::abc123", agentId: "main", sessionUser: dingtalkSessionUser },
+    ]);
+    expect(stored.tabMetaById["agent:main::abc123"]).toMatchObject({
+      agentId: "main",
+      sessionUser: dingtalkSessionUser,
+    });
+    expect(stored.sessionUser).toBe(dingtalkSessionUser);
+  });
+
   it("loads the global chat font size from the current storage shape", () => {
     window.localStorage.setItem(
       storageKey,

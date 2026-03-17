@@ -15,7 +15,7 @@
 For the simplest end-user setup:
 
 ```bash
-npm install -g lalaclaw
+npm install -g lalaclaw@latest
 lalaclaw init
 ```
 

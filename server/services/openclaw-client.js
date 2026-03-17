@@ -431,25 +431,35 @@ function createOpenClawClient({
     };
   }
 
+  function parseDingTalkSessionUser(sessionUser = '') {
+    const trimmedSessionUser = String(sessionUser || '').trim();
+    if (!trimmedSessionUser.startsWith('{')) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmedSessionUser);
+      return String(parsed?.channel || '').trim() === 'dingtalk-connector' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
   function resolveSessionDeliveryRoute(sessionUser = 'command-center') {
     const trimmedSessionUser = String(sessionUser || '').trim();
     if (!trimmedSessionUser) {
       return null;
     }
 
-    if (trimmedSessionUser.startsWith('{')) {
-      try {
-        const parsed = JSON.parse(trimmedSessionUser);
-        if (String(parsed?.channel || '').trim() === 'dingtalk-connector') {
-          const chatType = parsed?.chattype || parsed?.chatType || '';
-          const peerId = parsed?.peerid || parsed?.peerId || parsed?.groupid || parsed?.groupId || parsed?.conversationid || parsed?.conversationId || '';
-          return createDingTalkDeliveryRoute({
-            accountId: parsed?.accountid || parsed?.accountId || '',
-            chatType,
-            peerId,
-          });
-        }
-      } catch {}
+    const parsedSessionUser = parseDingTalkSessionUser(trimmedSessionUser);
+    if (parsedSessionUser) {
+      const chatType = parsedSessionUser?.chattype || parsedSessionUser?.chatType || '';
+      const peerId = parsedSessionUser?.peerid || parsedSessionUser?.peerId || parsedSessionUser?.groupid || parsedSessionUser?.groupId || parsedSessionUser?.conversationid || parsedSessionUser?.conversationId || '';
+      return createDingTalkDeliveryRoute({
+        accountId: parsedSessionUser?.accountid || parsedSessionUser?.accountId || '',
+        chatType,
+        peerId,
+      });
     }
 
     if (!trimmedSessionUser.startsWith('dingtalk-connector:')) {
@@ -492,9 +502,24 @@ function createOpenClawClient({
     );
   }
 
+  function buildMirroredUserMessageText(sessionUser = 'command-center', messageText = '') {
+    const trimmedMessage = String(messageText || '').trim();
+    if (!trimmedMessage) {
+      return '';
+    }
+
+    const parsedSessionUser = parseDingTalkSessionUser(sessionUser);
+    const senderName = String(parsedSessionUser?.sendername || parsedSessionUser?.senderName || '').trim();
+    if (!senderName) {
+      return trimmedMessage;
+    }
+
+    return `${senderName}：${trimmedMessage}`;
+  }
+
   async function mirrorOpenClawUserMessage(sessionUser = 'command-center', messageText = '') {
     const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
-    const trimmedMessage = String(messageText || '').trim();
+    const trimmedMessage = buildMirroredUserMessageText(sessionUser, messageText);
     if (!deliveryRoute || !trimmedMessage) {
       return null;
     }

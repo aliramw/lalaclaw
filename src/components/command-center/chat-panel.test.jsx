@@ -443,6 +443,77 @@ describe("ChatPanel", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("复制");
   });
 
+  it("renders markdown images inside user messages", async () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={{ current: null }}
+          messages={[
+            {
+              id: "msg-user-markdown-image",
+              role: "user",
+              content: "![image](file:///Users/marila/openclaw/workspace/media/inbound/openclaw-media-1773729468593-nd9non.jpg)",
+              timestamp: 1,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          resolvedTheme="dark"
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const image = await screen.findByAltText("image");
+    expect(image).toBeInTheDocument();
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/file-preview/content?path=%2FUsers%2Fmarila%2Fopenclaw%2Fworkspace%2Fmedia%2Finbound%2Fopenclaw-media-1773729468593-nd9non.jpg",
+    );
+  });
+
+  it.each(["[图片]", "[image]", "[Image]"])(
+    "hides the DingTalk image placeholder label %s when a markdown image follows it",
+    async (placeholder) => {
+      render(
+        <TooltipProvider>
+          <ChatPanel
+            busy={false}
+            formatTime={() => "10:00:00"}
+            messageViewportRef={{ current: null }}
+            messages={[
+              {
+                id: "msg-user-dingtalk-image",
+                role: "user",
+                content: `${placeholder}\n\n![image](file:///Users/marila/openclaw/workspace/media/inbound/openclaw-media-1773729468593-nd9non.jpg)`,
+                timestamp: 1,
+              },
+            ]}
+            onChatFontSizeChange={() => {}}
+            onPromptChange={() => {}}
+            onPromptKeyDown={() => {}}
+            onReset={() => {}}
+            onSend={() => {}}
+            prompt=""
+            promptRef={null}
+            resolvedTheme="dark"
+            session={createSession({ sessionUser: '{"channel":"dingtalk-connector","peerid":"398058"}' })}
+          />
+        </TooltipProvider>,
+      );
+
+      expect(screen.queryByText(placeholder)).not.toBeInTheDocument();
+      expect(await screen.findByAltText("image")).toBeInTheDocument();
+    },
+  );
+
   it("treats jumping to the previous user message as manual takeover and blocks later auto-follow", async () => {
     const viewportRef = { current: null };
     vi.spyOn(window.performance, "now").mockReturnValue(0);
@@ -1287,6 +1358,36 @@ describe("ChatPanel", () => {
 
     expect(screen.getByText("待命")).toBeInTheDocument();
     expect(screen.queryByText("消化 Token 中")).not.toBeInTheDocument();
+  });
+
+  it("shows busy for DingTalk sessions when the runtime status says running without a local pending bubble", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "上一句", timestamp: 1 },
+            { role: "assistant", content: "上一句回复", timestamp: 2 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({
+            sessionUser: '{"channel":"dingtalk-connector","peerid":"398058"}',
+            status: "运行中",
+          })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    expect(screen.queryByText("待命")).not.toBeInTheDocument();
   });
 
   it("adds a breathing class to the latest streaming assistant bubble without reusing the pending card style", () => {

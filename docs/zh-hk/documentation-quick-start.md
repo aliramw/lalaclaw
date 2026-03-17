@@ -7,7 +7,7 @@
 ## npm 安裝
 
 ~~~bash
-npm install -g lalaclaw
+npm install -g lalaclaw@latest
 lalaclaw init
 ~~~
 

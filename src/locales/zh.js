@@ -130,7 +130,7 @@ const zh = {
       mode: "模式",
     },
     tooltips: {
-      switchAgentSession: "选择 Agent 对话",
+      switchAgentSession: "选择 Agent 或渠道对话",
       switchModel: "切换大模型",
       fastMode: "切换是否开启快速模式，开启时模型会更快回复",
       fastModeTitle: "切换快速模式",
@@ -145,8 +145,10 @@ const zh = {
       queue: "当前队列任务排队信息",
     },
     menus: {
-      switchAgent: "选择 Agent 对话",
+      switchAgent: "选择 Agent 或渠道对话",
       switchAgentTrigger: "切换 Agent",
+      agentConversations: "Agent 对话",
+      imConversations: "IM 对话",
       noAgents: "暂无可选 Agent",
       noAvailableAgentSessionsHint: "可以和主 Agent 对话让他帮你创建新的 Agent，比如：\n\n帮我创建一个新的 Agent，名字叫 Developer（中文名：程序员），他的职责是...",
       switchModel: "切换模型",
@@ -155,7 +157,7 @@ const zh = {
       noThinkModes: "暂无可选思考模式",
     },
     sessionSearch: {
-      trigger: "定位钉钉",
+      trigger: "钉钉",
       tooltip: "输入关键词，定位匹配的钉钉会话",
       title: "定位钉钉会话",
       description: "输入关键词搜索当前 Agent 最近的钉钉会话。为了控制开销，只会在你提交后发起搜索，并优先匹配 session 标识与最近一段内容。",

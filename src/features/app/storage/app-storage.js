@@ -27,7 +27,17 @@ function resolveAgentIdFromTabId(tabId = "") {
   if (!normalized.startsWith("agent:")) {
     return "main";
   }
-  return normalizeAgentId(normalized.slice("agent:".length));
+  return normalizeAgentId(normalized.slice("agent:".length).split("::")[0]);
+}
+
+function shouldPreserveSessionUser(value = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return (normalized.startsWith("{") && normalized.endsWith("}"))
+    || normalized.includes("dingtalk-connector");
 }
 
 export function createAgentTabId(agentId = "main") {
@@ -35,7 +45,12 @@ export function createAgentTabId(agentId = "main") {
 }
 
 function sanitizeSessionUser(value = defaultSessionUser) {
-  const normalized = String(value || defaultSessionUser)
+  const rawValue = String(value || defaultSessionUser).trim();
+  if (shouldPreserveSessionUser(rawValue)) {
+    return rawValue;
+  }
+
+  const normalized = rawValue
     .trim()
     .replace(/[^\w:-]+/g, "-")
     .replace(/-+/g, "-")

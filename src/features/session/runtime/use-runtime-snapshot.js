@@ -11,6 +11,29 @@ import {
 } from "@/features/app/storage";
 import { normalizeStatusKey } from "@/features/session/status-display";
 
+function isDingTalkSessionUser(sessionUser = "") {
+  const normalizedSessionUser = String(sessionUser || "").trim();
+  return normalizedSessionUser.startsWith('{"channel":"dingtalk-connector"')
+    || normalizedSessionUser.includes("dingtalk-connector");
+}
+
+export function getRuntimePollInterval({
+  recoveringPendingReply = false,
+  busy = false,
+  activePendingChat = null,
+  sessionUser = "",
+} = {}) {
+  if (recoveringPendingReply) {
+    return 1500;
+  }
+
+  if (busy || activePendingChat || isDingTalkSessionUser(sessionUser)) {
+    return 4000;
+  }
+
+  return 15000;
+}
+
 export function mergeTaskRelationships(previousRelationships, nextRelationships) {
   const previousById = new Map(
     (previousRelationships || [])
@@ -340,7 +363,12 @@ export function useRuntimeSnapshot({
       }, INITIAL_RUNTIME_RETRY_DELAY_MS);
     });
 
-    const pollInterval = recoveringPendingReply ? 1500 : busy || activePendingChat ? 4000 : 15000;
+    const pollInterval = getRuntimePollInterval({
+      recoveringPendingReply,
+      busy,
+      activePendingChat,
+      sessionUser: session.sessionUser,
+    });
     const id = window.setInterval(() => {
       loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {});
     }, pollInterval);

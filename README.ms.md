@@ -27,7 +27,7 @@ Pengarang: Marila Wang
 ## Mula Cepat
 
 ~~~bash
-npm install -g lalaclaw
+npm install -g lalaclaw@latest
 lalaclaw init
 ~~~
 

@@ -103,7 +103,7 @@ describe("SessionOverview", () => {
     expect(screen.getByText("暂无可选模型")).toBeInTheDocument();
   });
 
-  it("searches DingTalk sessions by keyword and switches to the selected result", async () => {
+  it("searches DingTalk sessions from the agent tab trigger and switches to the selected result", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
     const onSearchSessions = vi.fn().mockResolvedValue([
       {
@@ -125,7 +125,7 @@ describe("SessionOverview", () => {
             availableModels={["openclaw"]}
             fastMode={false}
             formatCompactK={(value) => `${value}`}
-            layout="status"
+            layout="agent-tab"
             model="openclaw"
             onAgentChange={() => {}}
             onFastModeChange={() => {}}
@@ -140,7 +140,23 @@ describe("SessionOverview", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "会话 定位钉钉" }));
+    const trigger = screen.getByRole("button", { name: "切换 Agent" });
+
+    await user.hover(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("选择 Agent 或渠道对话");
+
+    await user.click(trigger);
+    expect(screen.getByText("Agent 对话")).toBeInTheDocument();
+    expect(screen.getByText("IM 对话")).toBeInTheDocument();
+    const dingTalkItem = screen.getByRole("menuitem", { name: "钉钉" });
+    const dingTalkIcon = dingTalkItem.querySelector('img[src="/dingtalk.svg"]');
+    expect(dingTalkIcon).toHaveClass("self-center");
+    await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    });
+
     await user.type(screen.getByLabelText("搜索词"), "发布群");
     await user.click(screen.getByRole("button", { name: "搜索" }));
 
@@ -586,14 +602,14 @@ describe("SessionOverview", () => {
     const trigger = screen.getByRole("button", { name: "切换 Agent" });
 
     await user.hover(trigger);
-    expect(await screen.findByText("选择 Agent 对话", { selector: "div" })).toBeInTheDocument();
+    expect(await screen.findByText("选择 Agent 或渠道对话", { selector: "div" })).toBeInTheDocument();
 
     await user.click(trigger);
     await user.click(screen.getByRole("menuitem", { name: "expert" }));
 
     expect(onAgentChange).toHaveBeenCalledWith("expert");
     await waitFor(() => {
-      expect(screen.queryByText("选择 Agent 对话", { selector: "div" })).not.toBeInTheDocument();
+      expect(screen.queryByText("选择 Agent 或渠道对话", { selector: "div" })).not.toBeInTheDocument();
     });
   });
 

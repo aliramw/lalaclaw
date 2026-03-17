@@ -63,7 +63,7 @@ flowchart LR
 如果你是普通用户，最简单的安装方式是：
 
 ```bash
-npm install -g lalaclaw
+npm install -g lalaclaw@latest
 lalaclaw init
 ```
 

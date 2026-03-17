@@ -19,9 +19,10 @@ export function SelectionMenu({
   emptyText,
   getItemDescription,
   getItemLabel,
-  items,
+  items = [],
   label,
   onSelect,
+  renderContent,
   showSelectionIndicator = true,
   tooltipContent,
   triggerLabel,
@@ -35,8 +36,9 @@ export function SelectionMenu({
     setTooltipSuppressed(false);
   }, []);
 
-  const closeTooltip = useCallback(() => {
+  const suppressTooltip = useCallback(() => {
     setTooltipOpen(false);
+    setTooltipSuppressed(true);
   }, []);
 
   const handleMenuOpenChange = useCallback((nextOpen) => {
@@ -46,10 +48,9 @@ export function SelectionMenu({
     }
     setMenuOpen(nextOpen);
     if (nextOpen) {
-      setTooltipOpen(false);
-      setTooltipSuppressed(true);
+      suppressTooltip();
     }
-  }, [disabled]);
+  }, [disabled, suppressTooltip]);
 
   const handleTooltipOpenChange = useCallback((nextOpen) => {
     if (menuOpen || tooltipSuppressed) {
@@ -60,16 +61,15 @@ export function SelectionMenu({
   }, [menuOpen, tooltipSuppressed]);
 
   const handleSelect = useCallback((item) => {
-    setTooltipOpen(false);
-    setTooltipSuppressed(true);
+    suppressTooltip();
     onSelect(item);
-  }, [onSelect]);
+  }, [onSelect, suppressTooltip]);
 
   const triggerChild = useMemo(() => {
     const triggerProps = {
       disabled,
       onBlur: clearTooltipSuppression,
-      onPointerDown: closeTooltip,
+      onPointerDown: suppressTooltip,
       onPointerLeave: clearTooltipSuppression,
     };
 
@@ -82,7 +82,7 @@ export function SelectionMenu({
         },
         onPointerDown: (event) => {
           children.props.onPointerDown?.(event);
-          closeTooltip();
+          suppressTooltip();
         },
         onPointerLeave: (event) => {
           children.props.onPointerLeave?.(event);
@@ -96,7 +96,7 @@ export function SelectionMenu({
         <DropdownIcon />
       </Button>
     );
-  }, [children, clearTooltipSuppression, closeTooltip, label, triggerLabel]);
+  }, [children, clearTooltipSuppression, label, suppressTooltip, triggerLabel]);
 
   return (
     <DropdownMenu onOpenChange={handleMenuOpenChange}>
@@ -109,7 +109,7 @@ export function SelectionMenu({
       <DropdownMenuContent align="end" className={contentClassName}>
         <DropdownMenuLabel>{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {items.length ? (
+        {renderContent ? renderContent({ handleSelect, suppressTooltip }) : items.length ? (
           items.map((item) => (
             showSelectionIndicator ? (
               <DropdownMenuCheckboxItem key={item} checked={item === value} onCheckedChange={() => handleSelect(item)}>

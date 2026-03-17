@@ -669,6 +669,8 @@ function AppContent() {
                     onAgentChange={handleAgentChange}
                     onFastModeChange={handleFastModeChange}
                     onModelChange={handleModelChange}
+                    onSearchSessions={handleSearchSessions}
+                    onSelectSearchedSession={handleSelectSearchedSession}
                     onThinkModeChange={handleThinkModeChange}
                     onThemeChange={setTheme}
                     openAgentIds={chatTabs.map((tab) => tab.agentId)}

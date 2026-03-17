@@ -331,6 +331,33 @@ function createDashboardService({
     value: null,
   };
 
+  function inferOpenClawSessionStatus(parsedStatus, conversation = []) {
+    const latestUserTimestamp = [...conversation]
+      .reverse()
+      .find((entry) => entry?.role === 'user')
+      ?.timestamp || 0;
+    const latestAssistantTimestamp = [...conversation]
+      .reverse()
+      .find((entry) => entry?.role === 'assistant')
+      ?.timestamp || 0;
+
+    if (latestUserTimestamp && (!latestAssistantTimestamp || latestUserTimestamp > latestAssistantTimestamp)) {
+      return '运行中';
+    }
+
+    const runtimeDisplay = String(parsedStatus?.runtimeDisplay || '');
+    if (/running|thinking|dispatch|进行|执行中|处理中|思考中/i.test(runtimeDisplay)) {
+      return '运行中';
+    }
+
+    const queueDisplay = String(parsedStatus?.queueDisplay || '');
+    if (/\bdepth\s*[1-9]\d*\b/i.test(queueDisplay)) {
+      return '运行中';
+    }
+
+    return '就绪';
+  }
+
   async function resolveLiveConfig() {
     if (config.mode !== 'openclaw') {
       return config.localConfig;
@@ -630,6 +657,7 @@ function createDashboardService({
     const availableMentionAgents = collectAllowedSubagents(config.localConfig, agentId);
     const availableSkills = collectAvailableSkills(liveConfig || config.localConfig, agentId);
     const gatewayConversation = collectConversationMessages(entries);
+    const mergedConversation = mergeConversationMessages(gatewayConversation, localConversation);
     const latestRunUsage = collectLatestRunUsage(entries);
     const tokenBadge = formatTokenBadge(
       latestRunUsage || {
@@ -656,7 +684,7 @@ function createDashboardService({
         sessionUser: String(effectiveSessionUser || 'command-center').trim() || 'command-center',
         sessionKey: parsedStatus?.sessionKey || sessionKey,
         workspaceRoot,
-        status: '就绪',
+        status: inferOpenClawSessionStatus(parsedStatus, mergedConversation),
         fastMode: fastMode ? '开启' : '关闭',
         thinkMode: parsedStatus?.thinkMode || preferredThinkMode,
         contextUsed: parsedStatus?.contextUsed || null,
@@ -678,7 +706,7 @@ function createDashboardService({
         availableMentionAgents,
         availableSkills,
       },
-      conversation: mergeConversationMessages(gatewayConversation, localConversation),
+      conversation: mergedConversation,
       taskRelationships: collectTaskRelationships(entries, agentId),
       taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }),
       toolHistory: collectToolHistory(entries),

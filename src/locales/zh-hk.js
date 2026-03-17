@@ -133,6 +133,8 @@ const zhHk = {
     menus: {
       switchAgent: "選擇 Agent 對話",
       switchAgentTrigger: "切換 Agent",
+      agentConversations: "Agent 對話",
+      imConversations: "IM 對話",
       noAgents: "沒有可用 Agent",
       noAvailableAgentSessionsHint: "你可以與主 Agent 對話，請他幫你建立新的 Agent，例如：\n\n幫我建立一個新的 Agent，名字叫 Developer（中文名：程式員），他的職責是...",
       switchModel: "切換模型",

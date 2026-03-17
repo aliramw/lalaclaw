@@ -27,7 +27,7 @@
 ## 빠른 시작
 
 ~~~bash
-npm install -g lalaclaw
+npm install -g lalaclaw@latest
 lalaclaw init
 ~~~
 

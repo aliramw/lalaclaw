@@ -130,7 +130,7 @@ const en = {
       mode: "Mode",
     },
     tooltips: {
-      switchAgentSession: "Choose Agent conversation",
+      switchAgentSession: "Choose an Agent or channel conversation",
       switchModel: "Switch model",
       fastMode: "Toggle fast mode. When enabled, the model responds faster.",
       fastModeTitle: "Toggle fast mode",
@@ -145,8 +145,10 @@ const en = {
       queue: "Current queued task information",
     },
     menus: {
-      switchAgent: "Choose Agent conversation",
+      switchAgent: "Choose an Agent or channel conversation",
       switchAgentTrigger: "Switch Agent",
+      agentConversations: "Agent Conversations",
+      imConversations: "IM Conversations",
       noAgents: "No agents available",
       noAvailableAgentSessionsHint: "Chat with the main Agent to create a new Agent, for example: Help me create a new Agent named Developer (Chinese name: 程序员). Their responsibilities are...",
       switchModel: "Switch model",
@@ -155,7 +157,7 @@ const en = {
       noThinkModes: "No thinking modes available",
     },
     sessionSearch: {
-      trigger: "Locate DingTalk",
+      trigger: "DingTalk",
       tooltip: "Enter a keyword and locate the matching DingTalk session",
       title: "Locate DingTalk session",
       description: "Search recent DingTalk sessions for the current Agent. To keep the request light, the search only runs after you submit and it prioritizes session identifiers plus a recent transcript window.",

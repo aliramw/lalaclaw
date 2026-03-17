@@ -29,7 +29,7 @@ Autor: Marila Wang
 Para la instalacion mas simple:
 
 ```bash
-npm install -g lalaclaw
+npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
