@@ -2,7 +2,7 @@
 
 [Voltar ao inicio](./documentation.md) | [Visao geral da interface](./documentation-interface.md) | [Sessoes, agentes e modos de execucao](./documentation-sessions.md) | [Atalhos de teclado](./documentation-shortcuts.md) | [Persistencia local e recuperacao](./documentation-persistence.md)
 
-# Chat, anexos e comandos
+# Conversa, anexos e comandos
 
 O composer suporta dois modos de envio alternaveis:
 
@@ -18,4 +18,4 @@ Nos dois modos:
 
 - `ArrowUp / ArrowDown`: historico de prompts
 
-O frontend insere mensagem otimista, placeholder de thinking quando aplicavel e recebe resposta em NDJSON por streaming.
+A interface insere mensagem otimista, marcador de pensamento quando aplicavel e recebe resposta em NDJSON por streaming.

@@ -2,7 +2,7 @@
 
 # LalaClaw-Dokumentation
 
-Diese Dokumentation basiert auf dem aktuellen Frontend, Backend, den Tests und der Konfiguration dieses Repositories. Sie fasst das tatsächliche Verhalten der Anwendung in navigierbaren Markdown-Seiten zusammen.
+Diese Dokumentation basiert auf dem aktuellen Frontend, Backend, den Tests und der Konfiguration dieses Projekts. Sie fasst das tatsächliche Verhalten der Anwendung in navigierbaren Markdown-Seiten zusammen.
 
 Autor: Marila Wang
 
@@ -11,17 +11,17 @@ Autor: Marila Wang
 - [Schnellstart](./documentation-quick-start.md)
 - [Oberflächenüberblick](./documentation-interface.md)
 - [Chat, Anhänge und Befehle](./documentation-chat.md)
-- [Inspector, Dateivorschau und Tracing](./documentation-inspector.md)
+- [Inspektor, Dateivorschau und Ablaufverfolgung](./documentation-inspector.md)
 - [Sitzungen, Agenten und Ausführungsmodi](./documentation-sessions.md)
 - [Tastenkürzel](./documentation-shortcuts.md)
 - [Lokale Persistenz und Wiederherstellung](./documentation-persistence.md)
 - [API und Fehlerbehebung](./documentation-api-troubleshooting.md)
-- [Easter Egg](./documentation-easter-egg.md)
+- [Überraschungseffekt](./documentation-easter-egg.md)
 
 ## Empfohlene Lesereihenfolge
 
 1. Starte mit [Schnellstart](./documentation-quick-start.md).
 2. Lies danach [Oberflächenüberblick](./documentation-interface.md) und [Chat, Anhänge und Befehle](./documentation-chat.md).
-3. Für die rechte Seitenleiste lies [Inspector, Dateivorschau und Tracing](./documentation-inspector.md).
-4. Für Agenten, Modelle und mock vs. openclaw lies [Sitzungen, Agenten und Ausführungsmodi](./documentation-sessions.md).
+3. Für die rechte Seitenleiste lies [Inspektor, Dateivorschau und Ablaufverfolgung](./documentation-inspector.md).
+4. Für Agenten, Modelle und den Unterschied zwischen `mock` und `openclaw` lies [Sitzungen, Agenten und Ausführungsmodi](./documentation-sessions.md).
 5. Für Bedienung und Debugging lies [Tastenkürzel](./documentation-shortcuts.md), [Lokale Persistenz und Wiederherstellung](./documentation-persistence.md) und [API und Fehlerbehebung](./documentation-api-troubleshooting.md).

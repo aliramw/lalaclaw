@@ -333,6 +333,8 @@ const fr = {
     },
     previewErrors: {
       loadFailed: "File preview failed.",
+      saveFailed: "Impossible d'enregistrer le fichier. Veuillez réessayer.",
+      saveRequiresRestart: "Le backend en cours d'exécution ne prend pas encore en charge l'enregistrement en ligne. Redémarrez LalaClaw ou le service backend, puis réessayez.",
       officeFailed: "Office document preview failed. Please try again.",
       officeRequiresLibreOffice: "Installez LibreOffice pour previsualiser les fichiers DOC, PPT et PPTX.",
       officeRequiresLibreOfficeWithCommand: (command) => `Installez LibreOffice pour previsualiser les fichiers DOC, PPT et PPTX. Ouvrez un terminal et executez : ${command}`,
@@ -343,6 +345,14 @@ const fr = {
     previewActions: {
       maximize: "Agrandir l'aperçu",
       restore: "Restaurer l'aperçu",
+      previewTitle: "Aperçu du fichier",
+      loadingPreview: "Chargement de l'aperçu...",
+      unsupportedInlinePreview: "Ce type de fichier ne prend pas encore en charge l'aperçu intégré.",
+      truncatedPreview: "Ce fichier est trop volumineux pour être modifié ici. Seul le premier 1 MB est affiché.",
+      editFile: "Modifier",
+      cancelEdit: "Annuler",
+      saveFile: "Enregistrer",
+      savingFile: "Enregistrement...",
       openInCodeEditor: "Ouvrir dans VS Code",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `Afficher dans ${label}`,

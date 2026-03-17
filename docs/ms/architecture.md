@@ -2,10 +2,10 @@
 
 # Ringkasan Seni Bina
 
-> Navigation: [Halaman utama dokumentasi](./documentation.md) | [Mula cepat](./documentation-quick-start.md) | [Gambaran antara muka](./documentation-interface.md) | [Showcase produk](./showcase.md) | [Pelan hala tuju refaktor](./refactor-roadmap.md)
+> Navigasi: [Halaman utama dokumentasi](./documentation.md) | [Mula cepat](./documentation-quick-start.md) | [Gambaran antara muka](./documentation-interface.md) | [Pameran produk](./showcase.md) | [Pelan hala tuju refaktor](./refactor-roadmap.md)
 
 LalaClaw dibahagikan kepada titik masuk UI yang ringan, titik masuk server yang ringan dan modul pertengahan yang mudah diuji.
 
-- src menempatkan UI React dan controller ciri
-- server menempatkan route, service dan integrasi runtime
+- src menempatkan UI React dan pengawal ciri
+- server menempatkan laluan, perkhidmatan dan integrasi runtime
 - docs menyelaraskan dokumentasi pelbagai bahasa dengan tingkah laku sebenar aplikasi

@@ -321,6 +321,8 @@ const de = {
     },
     previewErrors: {
       loadFailed: "Dateivorschau fehlgeschlagen.",
+      saveFailed: "Die Datei konnte nicht gespeichert werden. Bitte versuche es erneut.",
+      saveRequiresRestart: "Das aktuell laufende Backend unterstützt Inline-Speichern noch nicht. Starte LalaClaw oder den Backend-Dienst neu und versuche es erneut.",
       officeFailed: "Vorschau des Office-Dokuments fehlgeschlagen. Bitte erneut versuchen.",
       officeRequiresLibreOffice: "Installiere LibreOffice, um DOC-, PPT- und PPTX-Dateien vorzuschauen.",
       officeRequiresLibreOfficeWithCommand: (command) => `Installiere LibreOffice, um DOC-, PPT- und PPTX-Dateien vorzuschauen. Öffne ein Terminal und führe aus: ${command}`,
@@ -331,6 +333,14 @@ const de = {
     previewActions: {
       maximize: "Vorschau erweitern",
       restore: "Vorschau wiederherstellen",
+      previewTitle: "Dateivorschau",
+      loadingPreview: "Vorschau wird geladen...",
+      unsupportedInlinePreview: "Dieser Dateityp unterstützt noch keine Inline-Vorschau.",
+      truncatedPreview: "Diese Datei ist zu groß, um sie hier direkt zu bearbeiten. Es werden nur die ersten 1 MB angezeigt.",
+      editFile: "Bearbeiten",
+      cancelEdit: "Abbrechen",
+      saveFile: "Speichern",
+      savingFile: "Speichern...",
       openInCodeEditor: "In VS Code öffnen",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `In ${label} anzeigen`,

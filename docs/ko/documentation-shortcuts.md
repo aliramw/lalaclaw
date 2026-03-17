@@ -9,16 +9,16 @@
 - Cmd/Ctrl + 1-9: 번호로 세션 전환
 - Cmd/Ctrl + Left: 이전 탭
 - Cmd/Ctrl + Right: 다음 탭
-- Shift + Cmd/Ctrl + F: 시스템 테마
-- Shift + Cmd/Ctrl + L: 라이트 테마
-- Shift + Cmd/Ctrl + D: 다크 테마
+- Shift + Cmd/Ctrl + F: 시스템 외형
+- Shift + Cmd/Ctrl + L: 라이트 외형
+- Shift + Cmd/Ctrl + D: 다크 외형
 
-Enter 전송 모드:
+Enter 로 전송 모드:
 
 - Enter: 전송
 - Shift + Enter: 줄바꿈
 
-Double Enter 전송 모드:
+Enter 두 번 전송 모드:
 
 - Enter 두 번: 전송
 - Shift + Enter: 전송

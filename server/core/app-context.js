@@ -309,7 +309,8 @@ function createAppContext() {
     sendJson,
   });
 
-  const { handleFilePreview, handleFilePreviewContent } = createFilePreviewHandlers({
+  const { handleFilePreview, handleFilePreviewContent, handleFilePreviewSave } = createFilePreviewHandlers({
+    parseRequestBody,
     sendFile,
     sendJson,
   });
@@ -361,6 +362,7 @@ function createAppContext() {
     handleFileManagerReveal,
     handleFilePreview,
     handleFilePreviewContent,
+    handleFilePreviewSave,
     handleRuntime,
     handleSession,
     handleSessionUpdate,

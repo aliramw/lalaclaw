@@ -1,6 +1,6 @@
 [English](../en/documentation-quick-start.md) | [中文](../zh/documentation-quick-start.md) | [繁體中文（香港）](../zh-hk/documentation-quick-start.md) | [日本語](../ja/documentation-quick-start.md) | [한국어](../ko/documentation-quick-start.md) | [Français](../fr/documentation-quick-start.md) | [Español](../es/documentation-quick-start.md) | [Português](../pt/documentation-quick-start.md) | [Deutsch](../de/documentation-quick-start.md) | [Bahasa Melayu](../ms/documentation-quick-start.md) | [தமிழ்](../ta/documentation-quick-start.md)
 
-[ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md) | [API とトラブルシューティング](./documentation-api-troubleshooting.md)
+[ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [セッション、エージェント、ランタイムモード](./documentation-sessions.md) | [API とトラブルシューティング](./documentation-api-troubleshooting.md)
 
 # クイックスタート
 
@@ -240,9 +240,9 @@ export OPENCLAW_API_PATH="/v1/responses"
 ## 起動後に見えるもの
 
 - 左上に `LalaClaw`
-- ヘッダーに model、context、fast mode、thinking mode の制御
+- ヘッダーにモデル、コンテキスト、高速モード、思考モードの制御
 - 添付ボタンと送信ボタン付きの composer
-- `Run Log / Files / Summaries / Environment / Collab / Preview` の inspector タブ
+- `実行ログ / ファイル / 要約 / 環境 / 協調 / プレビュー` のインスペクタータブ
 - `mock` モードでも動作するチャット返信
 
 ## 次に読むもの

@@ -314,6 +314,7 @@ function buildHeicPreviewImage(filePath, {
 function createFilePreviewHandlers({
   sendFile,
   sendJson,
+  parseRequestBody = async () => ({}),
   platform = process.platform,
   convertOfficeDocumentToPdf = buildOfficePreviewPdf,
   convertHeicImageToPreview = buildHeicPreviewImage,
@@ -342,6 +343,24 @@ function createFilePreviewHandlers({
 
   function buildMediaUrl(filePath) {
     return `/api/file-preview/content?path=${encodeURIComponent(filePath)}`;
+  }
+
+  function validateEditableTargetPath(targetPath) {
+    const validated = validateTargetPath(targetPath);
+    if (validated.error) {
+      return validated;
+    }
+
+    const fileBuffer = fs.readFileSync(validated.path);
+    const detected = detectPreviewType(validated.path, fileBuffer);
+    if (detected.kind === 'text' || detected.kind === 'markdown' || detected.kind === 'json') {
+      return {
+        ...validated,
+        kind: detected.kind,
+      };
+    }
+
+    return { error: 'Preview target is not an editable text file' };
   }
 
   async function handleFilePreview(req, res) {
@@ -442,9 +461,40 @@ function createFilePreviewHandlers({
     sendFile(res, validated.path);
   }
 
+  async function handleFilePreviewSave(req, res) {
+    try {
+      const body = await parseRequestBody(req);
+      const validated = validateEditableTargetPath(body?.path);
+      if (validated.error) {
+        sendJson(res, 400, { ok: false, error: validated.error });
+        return;
+      }
+
+      if (typeof body?.content !== 'string') {
+        sendJson(res, 400, { ok: false, error: 'Invalid file content' });
+        return;
+      }
+
+      fs.writeFileSync(validated.path, body.content, 'utf8');
+      const stat = fs.statSync(validated.path);
+      sendJson(res, 200, {
+        ok: true,
+        path: validated.path,
+        kind: validated.kind,
+        size: stat.size,
+      });
+    } catch (error) {
+      sendJson(res, 500, {
+        ok: false,
+        error: error.message || 'File save failed',
+      });
+    }
+  }
+
   return {
     handleFilePreview,
     handleFilePreviewContent,
+    handleFilePreviewSave,
   };
 }
 

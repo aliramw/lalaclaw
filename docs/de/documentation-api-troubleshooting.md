@@ -4,15 +4,15 @@
 
 # API und Fehlerbehebung
 
-## Entwicklungssetup
+## Entwicklungsumgebung
 
-- Frontend: npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-- Backend: PORT=3000 HOST=127.0.0.1 node server.js
+- Frontend: `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`
+- Backend: `PORT=3000 HOST=127.0.0.1 node server.js`
 - Vite leitet /api/* an http://127.0.0.1:3000 weiter
 
 ## Häufige Prüfungen
 
 - Prüfe, ob OpenClaw oder der Mock-Modus aktiv ist
-- Lade den Inspector Environment für Gateway-, Auth- und Runtime-Informationen
-- Nutze npm run doctor, um Ports, Konfiguration und Abhängigkeiten zu prüfen
+- Öffne den Bereich Umgebung im Inspektor für Gateway-, Auth- und Laufzeitinformationen
+- Nutze `npm run doctor`, um Ports, Konfiguration und Abhängigkeiten zu prüfen
 - Für Vorschauprobleme mit Office-Dateien installiere LibreOffice

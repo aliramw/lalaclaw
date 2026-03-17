@@ -331,6 +331,8 @@ const es = {
     },
     previewErrors: {
       loadFailed: "File preview failed.",
+      saveFailed: "No se pudo guardar el archivo. Inténtalo de nuevo.",
+      saveRequiresRestart: "El backend en ejecución todavía no admite guardado en línea. Reinicia LalaClaw o el servicio backend y vuelve a intentarlo.",
       officeFailed: "Office document preview failed. Please try again.",
       officeRequiresLibreOffice: "Instala LibreOffice para previsualizar archivos DOC, PPT y PPTX.",
       officeRequiresLibreOfficeWithCommand: (command) => `Instala LibreOffice para previsualizar archivos DOC, PPT y PPTX. Abre una terminal y ejecuta: ${command}`,
@@ -341,6 +343,14 @@ const es = {
     previewActions: {
       maximize: "Expandir vista previa",
       restore: "Restaurar vista previa",
+      previewTitle: "Vista previa del archivo",
+      loadingPreview: "Cargando vista previa...",
+      unsupportedInlinePreview: "Este tipo de archivo aún no admite vista previa en línea.",
+      truncatedPreview: "Este archivo es demasiado grande para editarlo aquí. Solo se muestran los primeros 1 MB.",
+      editFile: "Editar",
+      cancelEdit: "Cancelar",
+      saveFile: "Guardar",
+      savingFile: "Guardando...",
       openInCodeEditor: "Abrir en VS Code",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `Mostrar en ${label}`,

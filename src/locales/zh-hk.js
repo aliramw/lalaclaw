@@ -319,6 +319,8 @@ const zhHk = {
     },
     previewErrors: {
       loadFailed: "檔案預覽失敗。",
+      saveFailed: "檔案儲存失敗，請稍後再試。",
+      saveRequiresRestart: "目前執行中的後端尚未支援線上儲存。請重新啟動 LalaClaw 或後端服務後再試。",
       officeFailed: "Office 文件預覽失敗，請再試一次。",
       officeRequiresLibreOffice: "請安裝 LibreOffice 以預覽 DOC、PPT 及 PPTX 檔案。",
       officeRequiresLibreOfficeWithCommand: (command) => `請安裝 LibreOffice 以預覽 DOC、PPT 及 PPTX 檔案。請開啟終端機並執行：${command}`,
@@ -329,6 +331,14 @@ const zhHk = {
     previewActions: {
       maximize: "放大預覽",
       restore: "還原預覽",
+      previewTitle: "檔案預覽",
+      loadingPreview: "正在載入預覽…",
+      unsupportedInlinePreview: "此檔案類型暫不支援內嵌預覽。",
+      truncatedPreview: "檔案過大，無法在這裡直接編輯。當前只顯示前 1 MB 內容。",
+      editFile: "編輯",
+      cancelEdit: "取消",
+      saveFile: "儲存",
+      savingFile: "儲存中…",
       openInCodeEditor: "用 VS Code 開啟",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `在 ${label} 中顯示`,

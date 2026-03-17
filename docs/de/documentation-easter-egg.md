@@ -2,10 +2,10 @@
 
 [Zur Startseite](./documentation.md) | [Oberflächenüberblick](./documentation-interface.md)
 
-# Easter Egg
+# Überraschungseffekt
 
-LalaClaw enthält ein kleines Marken-Easter-Egg rund um den Hummer im oberen linken Bereich.
+LalaClaw enthält einen kleinen Markeneffekt rund um den Hummer im oberen linken Bereich.
 
 - Ein Klick kann eine animierte Szene starten
-- Das Verhalten ist rein dekorativ und beeinflusst Chat oder Runtime nicht
-- Die Animation folgt weiterhin den aktiven Theme- und UI-Einstellungen
+- Das Verhalten ist rein dekorativ und beeinflusst Chat oder Laufzeit nicht
+- Die Animation folgt weiterhin dem aktiven Erscheinungsbild und den UI-Einstellungen

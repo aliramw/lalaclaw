@@ -223,4 +223,35 @@ describe("createFilePreviewHandlers", () => {
       }),
     );
   });
+
+  it("saves editable text previews back to disk", async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "lalaclaw-preview-route-"));
+    const markdownPath = path.join(tempDir, "notes.md");
+    await fs.writeFile(markdownPath, "# Before\n");
+
+    const sendJson = vi.fn();
+    const parseRequestBody = vi.fn(async () => ({
+      path: markdownPath,
+      content: "# After\n\nUpdated in preview.\n",
+    }));
+    const { handleFilePreviewSave } = createFilePreviewHandlers({
+      sendFile: vi.fn(),
+      sendJson,
+      parseRequestBody,
+    });
+
+    await handleFilePreviewSave({}, {});
+
+    expect(parseRequestBody).toHaveBeenCalledTimes(1);
+    await expect(fs.readFile(markdownPath, "utf8")).resolves.toBe("# After\n\nUpdated in preview.\n");
+    expect(sendJson).toHaveBeenCalledWith(
+      {},
+      200,
+      expect.objectContaining({
+        ok: true,
+        path: markdownPath,
+        kind: "markdown",
+      }),
+    );
+  });
 });

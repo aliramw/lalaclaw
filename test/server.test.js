@@ -727,4 +727,35 @@ describe("server routes", () => {
     expect(pdfContentResponse.ok).toBe(true);
     expect(pdfContentResponse.headers.get("content-type")).toContain("application/pdf");
   });
+
+  it("saves editable file previews through the HTTP API", async () => {
+    const markdownPath = path.join(tempDir, "editable-preview.md");
+    await fs.writeFile(markdownPath, "# Before\n");
+
+    const saveResponse = await fetch(`${baseUrl}/api/file-preview/save`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        path: markdownPath,
+        content: "# After\n\nSaved from preview.\n",
+      }),
+    });
+    const savePayload = await readJson(saveResponse);
+
+    expect(saveResponse.ok).toBe(true);
+    expect(savePayload).toMatchObject({
+      ok: true,
+      path: markdownPath,
+      kind: "markdown",
+    });
+    await expect(fs.readFile(markdownPath, "utf8")).resolves.toBe("# After\n\nSaved from preview.\n");
+
+    const previewResponse = await fetch(`${baseUrl}/api/file-preview?path=${encodeURIComponent(markdownPath)}`);
+    const previewPayload = await readJson(previewResponse);
+
+    expect(previewResponse.ok).toBe(true);
+    expect(previewPayload.content).toBe("# After\n\nSaved from preview.\n");
+  });
 });

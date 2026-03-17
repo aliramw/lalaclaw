@@ -7,7 +7,7 @@
 ## 訊息傳送
 
 - Enter 傳送模式：Enter 傳送，Shift + Enter 換行
-- Double Enter 傳送模式：連按兩次 Enter 傳送，Shift + Enter 亦可傳送，Enter 單按則換行
+- 連按兩次 Enter 傳送模式：連按兩次 Enter 傳送，Shift + Enter 亦可傳送，單按 Enter 則換行
 - ArrowUp / ArrowDown 可瀏覽提示歷史
 - Stop 可中止目前回覆
 
@@ -15,8 +15,8 @@
 
 若目前分頁正忙碌，新訊息會先進入隊列，待目前回覆完成後自動送出。
 
-## 附件與 slash 命令
+## 附件與 slash 指令
 
 - 圖片會提供預覽
 - 文字檔會讀取內容，過長時會截斷
-- 支援 /model、/think、/new、/reset 等 slash 命令
+- 支援 /model、/think、/new、/reset 等 slash 指令

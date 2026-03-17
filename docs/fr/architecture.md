@@ -2,16 +2,16 @@
 
 # Vue d'ensemble de l'architecture
 
-> Navigation: [Documentation Home](./documentation.md) | [Démarrage rapide](./documentation-quick-start.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Showcase produit](./showcase.md) | [Feuille de route de refactorisation](./refactor-roadmap.md)
+> Navigation : [Accueil de la documentation](./documentation.md) | [Démarrage rapide](./documentation-quick-start.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Présentation produit](./showcase.md) | [Feuille de route de refactorisation](./refactor-roadmap.md)
 
 LalaClaw est organisé autour d'une entrée UI légère, d'une entrée serveur légère et de modules intermédiaires faciles à tester.
 
-## Interface frontend
+## Interface
 
 - `src/App.jsx` sert de shell de page
 - `src/features/app/controllers/` orchestre le comportement global
 - `src/features/chat/controllers/` gère le composer et le flux d'exécution du chat
-- `src/features/session/runtime/` gère le polling runtime et l'hydratation de snapshot
+- `src/features/session/runtime/` gère le polling runtime et l'hydratation des instantanés
 - `storage`, `state` et `utils` isolent la persistance et les helpers purs
 
 ## Backend serveur

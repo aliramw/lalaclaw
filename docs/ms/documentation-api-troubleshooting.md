@@ -4,15 +4,15 @@
 
 # API dan Penyelesaian Masalah
 
-## Setup pembangunan
+## Persediaan pembangunan
 
-- Frontend: npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-- Backend: PORT=3000 HOST=127.0.0.1 node server.js
+- Frontend: `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`
+- Backend: `PORT=3000 HOST=127.0.0.1 node server.js`
 - Vite memproxy /api/* ke http://127.0.0.1:3000
 
 ## Semakan biasa
 
 - Pastikan OpenClaw atau mod mock aktif seperti yang dijangka
-- Lihat tab Environment untuk maklumat gateway, auth dan runtime
-- Gunakan npm run doctor untuk menyemak port, konfigurasi dan dependensi
+- Lihat tab Persekitaran untuk maklumat gateway, auth dan runtime
+- Gunakan `npm run doctor` untuk menyemak port, konfigurasi dan dependensi
 - Untuk masalah pratonton Office, pasang LibreOffice

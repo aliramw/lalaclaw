@@ -2,18 +2,18 @@
 
 [Zur Startseite](./documentation.md) | [Oberflächenüberblick](./documentation-interface.md) | [Chat, Anhänge und Befehle](./documentation-chat.md)
 
-# Inspector, Dateivorschau und Tracing
+# Inspektor, Dateivorschau und Ablaufverfolgung
 
-Der rechte Inspector bündelt Ausführungsdaten der aktuellen Sitzung.
+Der rechte Inspektor bündelt Ausführungsdaten der aktuellen Sitzung.
 
 ## Hauptbereiche
 
-- Run Log: Tool-Aufrufe, Ein- und Ausgaben sowie Dateiänderungen
-- Files: getrennte Bäume für Sitzungsdateien und Workspace-Dateien
-- Summaries: Zusammenfassungen der Antworten mit Sprungmarken
-- Environment: Agent-, Modell-, Runtime- und Gateway-Informationen
-- Collab: Beziehungsgraph für Kind-Agenten und Aufgaben
-- Preview: Datei-, Tabellen- und Mediavorschau
+- Laufprotokoll: Tool-Aufrufe, Ein- und Ausgaben sowie Dateiänderungen
+- Dateien: getrennte Bäume für Sitzungsdateien und Workspace-Dateien
+- Zusammenfassungen: Zusammenfassungen der Antworten mit Sprungmarken
+- Umgebung: Agent-, Modell-, Laufzeit- und Gateway-Informationen
+- Zusammenarbeit: Beziehungsansicht für Kind-Agenten und Aufgaben
+- Vorschau: Datei-, Tabellen- und Mediavorschau
 
 ## Workspace-Dateien
 

@@ -2,10 +2,10 @@
 
 [홈으로 돌아가기](./documentation.md) | [인터페이스 개요](./documentation-interface.md)
 
-# Easter Egg
+# 이스터에그
 
-LalaClaw 는 왼쪽 위 lobster 를 중심으로 한 작은 브랜드 Easter egg 를 포함합니다.
+LalaClaw 는 왼쪽 위 lobster 를 중심으로 한 작은 브랜드 연출을 포함합니다.
 
 - 클릭하면 장식용 애니메이션이 시작될 수 있습니다
-- chat 또는 runtime 동작에는 영향을 주지 않습니다
-- 애니메이션은 현재 theme 과 UI 설정을 따릅니다
+- 채팅 또는 런타임 동작에는 영향을 주지 않습니다
+- 애니메이션은 현재 테마와 UI 설정을 따릅니다

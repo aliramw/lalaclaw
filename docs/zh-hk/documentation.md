@@ -2,7 +2,7 @@
 
 # LalaClaw 文件
 
-這份文件根據目前 repo 的 frontend、backend、tests 與設定整理，目的是把實際行為轉成可瀏覽的 Markdown 文件樹。
+這份文件根據目前儲存庫的前端、後端、測試與設定整理，目的是把實際行為轉成可瀏覽的 Markdown 文件樹。
 
 作者：Marila Wang
 

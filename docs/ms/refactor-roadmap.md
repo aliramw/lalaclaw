@@ -4,7 +4,7 @@
 
 Beberapa langkah seterusnya yang masuk akal:
 
-- Menyeragamkan lagi controller session dan runtime
-- Menambah ujian peringkat controller untuk queueing, hydration dan streaming
-- Mengautomasikan lagi aliran kerja dokumentasi dan lokalisasi
-- Memecahkan logik inspector yang kompleks kepada modul UI dan data yang lebih kecil
+- Menyeragamkan lagi pengawal sesi dan runtime
+- Menambah ujian peringkat pengawal untuk baris gilir, pemulihan dan penstriman
+- Mengautomasikan lagi aliran kerja dokumentasi dan penyetempatan
+- Memecahkan logik pemeriksa yang kompleks kepada modul UI dan data yang lebih kecil

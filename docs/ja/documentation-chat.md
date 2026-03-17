@@ -1,6 +1,6 @@
 [English](../en/documentation-chat.md) | [中文](../zh/documentation-chat.md) | [繁體中文（香港）](../zh-hk/documentation-chat.md) | [日本語](../ja/documentation-chat.md) | [한국어](../ko/documentation-chat.md) | [Français](../fr/documentation-chat.md) | [Español](../es/documentation-chat.md) | [Português](../pt/documentation-chat.md) | [Deutsch](../de/documentation-chat.md) | [Bahasa Melayu](../ms/documentation-chat.md) | [தமிழ்](../ta/documentation-chat.md)
 
-[ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md) | [キーボードショートカット](./documentation-shortcuts.md) | [ローカル保存と復元](./documentation-persistence.md)
+[ホームへ戻る](./documentation.md) | [画面概要](./documentation-interface.md) | [セッション、エージェント、ランタイムモード](./documentation-sessions.md) | [キーボードショートカット](./documentation-shortcuts.md) | [ローカル保存と復元](./documentation-persistence.md)
 
 # チャット、添付、コマンド
 
@@ -23,7 +23,7 @@ Composer は 2 つの送信モードを切り替えられます。
 送信後の流れ:
 
 - フロントエンドはまず楽観的なユーザーメッセージを挿入
-- Slash コマンドでなければ、アシスタントの thinking プレースホルダーを挿入
+- Slash コマンドでなければ、アシスタントの思考中プレースホルダーを挿入
 - バックエンドは既定で NDJSON ストリームを返す
 - 返信中は `Stop` を押せる
 
@@ -44,8 +44,8 @@ Composer は 2 つの送信モードを切り替えられます。
 
 候補の由来:
 
-- メンション可能 Agent: 現在の Agent の `subagents.allowAgents`
-- メンション可能 Skill: 現在の Agent、許可された subagent、ローカルに見つかった skill
+- メンション可能なエージェント: 現在のエージェントの `subagents.allowAgents`
+- メンション可能なスキル: 現在のエージェント、許可された subagent、ローカルに見つかった skill
 
 操作:
 
@@ -90,8 +90,8 @@ Composer は 2 つの送信モードを切り替えられます。
 
 動作:
 
-- `status` は現在の fast mode を表示
-- `on/off` は現在のセッションに fast mode 設定を保存する
+- `status` は現在の高速モードを表示
+- `on/off` は現在のセッションに高速モード設定を保存する
 
 ### `/think <mode>`
 
@@ -132,17 +132,17 @@ Composer は 2 つの送信モードを切り替えられます。
 動作:
 
 - 新しい `sessionUser` を作成
-- 現在の model、agent、fast mode、thinking mode を引き継ぐ
+- 現在のモデル、エージェント、高速モード、思考モードを引き継ぐ
 - 後ろに prompt があれば、そのまま新セッションで続行する
 
 よく使う場面:
 
-- context が大きくなってきたとき
+- コンテキストが大きくなってきたとき
 - 会話履歴はリセットしたいが制御設定は残したいとき
 
 ## 利用のヒント
 
-- 長い作業の前に current agent、model、thinking mode を確認する
+- 長い作業の前に現在のエージェント、モデル、思考モードを確認する
 - 長文素材は text attachment、画像素材は image attachment にする
-- context をきれいに分けたいときは新規セッションまたは `/new` を使う
+- コンテキストをきれいに分けたいときは新規セッションまたは `/new` を使う
 - 現在の返信を待たずに追加入力をキューに積んでよい

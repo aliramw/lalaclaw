@@ -2,12 +2,12 @@
 
 [Kembali ke utama](./documentation.md) | [Gambaran antara muka](./documentation-interface.md) | [Sesi, ejen dan mod pelaksanaan](./documentation-sessions.md) | [Pintasan papan kekunci](./documentation-shortcuts.md) | [Persistensi tempatan dan pemulihan](./documentation-persistence.md)
 
-# Chat, Lampiran dan Arahan
+# Sembang, Lampiran dan Arahan
 
 ## Menghantar mesej
 
 - Mod Enter untuk hantar: Enter menghantar, Shift + Enter menambah baris baharu
-- Mod Double Enter untuk hantar: tekan Enter dua kali untuk hantar, Shift + Enter juga menghantar, Enter biasa menambah baris baharu
+- Mod tekan Enter dua kali untuk hantar: tekan Enter dua kali untuk hantar, Shift + Enter juga menghantar, Enter biasa menambah baris baharu
 - ArrowUp dan ArrowDown membuka sejarah prompt
 - Stop menghentikan balasan aktif
 
@@ -15,8 +15,8 @@
 
 Jika tab semasa sedang sibuk, mesej baharu akan masuk ke baris gilir dan dihantar secara automatik selepas balasan semasa selesai.
 
-## Lampiran dan slash command
+## Lampiran dan arahan slash
 
 - Imej diberi pratonton
 - Fail teks dibaca dan dipotong jika terlalu panjang
-- Slash command seperti /model, /think, /new dan /reset disokong
+- Arahan slash seperti /model, /think, /new dan /reset disokong

@@ -96,6 +96,7 @@ Notable behavior:
 When you open preview from the file list, markdown links, or image thumbnails, the app supports:
 
 - Syntax-highlighted text, JSON, and Markdown
+- Inline editing for Markdown, plain-text, and code-like text previews with Monaco, with save / cancel controls
 - Separate rendering of Markdown front matter
 - Mermaid diagram rendering in completed markdown replies, with diagram preview through the shared image-preview flow
 - Spreadsheet tables for `csv`, `xls`, `xlsx`, and `xlsm`

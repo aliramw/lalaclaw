@@ -14,9 +14,9 @@
 
 ## 外観
 
-- `Shift + Cmd/Ctrl + F`: system theme に切替
-- `Shift + Cmd/Ctrl + L`: light theme に切替
-- `Shift + Cmd/Ctrl + D`: dark theme に切替
+- `Shift + Cmd/Ctrl + F`: システム外観に切替
+- `Shift + Cmd/Ctrl + L`: ライト外観に切替
+- `Shift + Cmd/Ctrl + D`: ダーク外観に切替
 
 ## 入力欄
 

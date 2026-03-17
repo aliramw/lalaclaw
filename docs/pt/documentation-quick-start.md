@@ -104,7 +104,7 @@ Notas:
 
 O modo de desenvolvimento exige um checkout do GitHub com `npm ci` ja executado.
 
-Inicie frontend e backend ao mesmo tempo e use a pagina do Vite como entrada do navegador.
+Inicie a interface e o backend ao mesmo tempo e use a pagina do Vite como entrada do navegador.
 
 Voce tambem pode fazer isso com um unico comando:
 
@@ -216,4 +216,4 @@ export OPENCLAW_API_PATH="/v1/responses"
 ## Proximos passos
 
 - Para entender a interface: [Visao geral da interface](./documentation-interface.md)
-- Para ir direto ao fluxo de uso: [Chat, anexos e comandos](./documentation-chat.md)
+- Para ir direto ao fluxo de uso: [Conversa, anexos e comandos](./documentation-chat.md)

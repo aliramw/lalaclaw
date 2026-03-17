@@ -1,6 +1,6 @@
 [English](../en/documentation-inspector.md) | [中文](../zh/documentation-inspector.md) | [繁體中文（香港）](../zh-hk/documentation-inspector.md) | [日本語](../ja/documentation-inspector.md) | [한국어](../ko/documentation-inspector.md) | [Français](../fr/documentation-inspector.md) | [Español](../es/documentation-inspector.md) | [Português](../pt/documentation-inspector.md) | [Deutsch](../de/documentation-inspector.md) | [Bahasa Melayu](../ms/documentation-inspector.md) | [தமிழ்](../ta/documentation-inspector.md)
 
-[Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Chat, pièces jointes et commandes](./documentation-chat.md) | [API et dépannage](./documentation-api-troubleshooting.md)
+[Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Discussion, pièces jointes et commandes](./documentation-chat.md) | [API et dépannage](./documentation-api-troubleshooting.md)
 
 # Inspecteur, aperçu de fichiers et traçage
 
@@ -8,7 +8,7 @@ L'inspecteur de droite est l'une des surfaces les plus importantes de LalaClaw. 
 
 ## Journal d'execution
 
-Le `Run Log` affiche, par exécution :
+Le `Journal d'exécution` affiche, par exécution :
 
 - Le titre et l'heure
 - Le résumé du prompt
@@ -19,11 +19,11 @@ Le `Run Log` affiche, par exécution :
 
 ## Fichiers
 
-Le panneau `Files` classe l'activité en :
+Le panneau `Fichiers` classe l'activité en :
 
-- Created
-- Modified
-- Viewed
+- Créés
+- Modifiés
+- Consultés
 
 Actions :
 
@@ -32,11 +32,11 @@ Actions :
 
 ## Résumés
 
-Le panneau `Summaries` liste les résumés des réponses assistant de la session et permet de revenir rapidement au bon message du chat.
+Le panneau `Résumés` liste les résumés des réponses assistant de la session et permet de revenir rapidement au bon message de la discussion.
 
 ## Environnement
 
-Le panneau `Environment` agrège :
+Le panneau `Environnement` agrège :
 
 - Le mode courant `mock` ou `openclaw`
 - L'agent, le modèle, la session et le workspace
@@ -45,7 +45,7 @@ Le panneau `Environment` agrège :
 
 ## Collaboration
 
-`Collab` montre les relations et tâches dérivées :
+`Collaboration` montre les relations et tâches dérivées :
 
 - `dispatching`
 - `running`
@@ -55,12 +55,12 @@ Le panneau `Environment` agrège :
 
 ## Aperçu
 
-`Preview` offre quatre vues en lecture seule :
+`Aperçu` offre quatre vues en lecture seule :
 
-- Workspace preview
-- Terminal preview
-- Browser preview
-- Environment preview
+- Aperçu de l'espace de travail
+- Aperçu du terminal
+- Aperçu du navigateur
+- Aperçu de l'environnement
 
 ## Capacités d'aperçu de fichiers
 

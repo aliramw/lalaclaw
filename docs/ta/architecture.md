@@ -2,9 +2,9 @@
 
 # கட்டமைப்பு சுருக்கம்
 
-> Navigation: [ஆவண முகப்பு](./documentation.md) | [விரைவு தொடக்கம்](./documentation-quick-start.md) | [இடைமுக அறிமுகம்](./documentation-interface.md) | [தயாரிப்பு காட்சி](./showcase.md) | [மறுசீரமைப்பு சாலை வரைபடம்](./refactor-roadmap.md)
+> வழிசெலுத்தல்: [ஆவண முகப்பு](./documentation.md) | [விரைவு தொடக்கம்](./documentation-quick-start.md) | [இடைமுக அறிமுகம்](./documentation-interface.md) | [தயாரிப்பு காட்சி](./showcase.md) | [மறுசீரமைப்பு சாலை வரைபடம்](./refactor-roadmap.md)
 
-LalaClaw இலகுவான UI entry point, இலகுவான server entry point மற்றும் test செய்ய எளிதான இடைமுறை modules ஆக ஒழுங்குபடுத்தப்பட்டுள்ளது.
+LalaClaw இலகுவான UI நுழைவு பகுதி, இலகுவான server நுழைவு பகுதி, மற்றும் சோதிக்க எளிதான இடைமுறை modules ஆக ஒழுங்குபடுத்தப்பட்டுள்ளது.
 
 - src இல் React UI மற்றும் feature controllers உள்ளன
 - server இல் routes, services மற்றும் runtime integration உள்ளன

@@ -6,13 +6,13 @@
 
 ## 開發環境
 
-- Frontend: npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-- Backend: PORT=3000 HOST=127.0.0.1 node server.js
+- 前端：`npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`
+- 後端：`PORT=3000 HOST=127.0.0.1 node server.js`
 - Vite 會把 /api/* 代理到 http://127.0.0.1:3000
 
 ## 常見檢查項目
 
 - 確認 OpenClaw 或 mock 模式是否按預期運作
-- 在 Environment 分頁查看 gateway、auth、runtime 資訊
-- 使用 npm run doctor 檢查 port、設定與依賴
+- 在環境分頁查看 gateway、auth、runtime 資訊
+- 使用 `npm run doctor` 檢查 port、設定與依賴
 - 若 Office 預覽有問題，請確認 LibreOffice 已安裝

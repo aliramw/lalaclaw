@@ -1,5 +1,6 @@
+import Editor from "@monaco-editor/react";
 import { useEffect, useRef, useState } from "react";
-import { FolderOpen, LoaderCircle, Maximize2, Minimize2, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
+import { FolderOpen, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
@@ -28,6 +29,11 @@ const codePreviewFontSizeClassNames = {
   small: "text-[12px] leading-5 [&_.token-line]:min-h-5 [&_.token-line]:text-[12px]",
   medium: "text-[13px] leading-6 [&_.token-line]:min-h-6 [&_.token-line]:text-[13px]",
   large: "text-[15px] leading-7 [&_.token-line]:min-h-7 [&_.token-line]:text-[15px]",
+};
+const editorFontSizeByPreviewSize = {
+  small: 12,
+  medium: 14,
+  large: 16,
 };
 const frontMatterDarkTheme = {
   plain: {
@@ -205,6 +211,28 @@ function inferPreviewLanguage(filePath = "", kind = "") {
   return previewLanguageByExtension[extension] || "text";
 }
 
+function resolveMonacoLanguage(filePath = "", kind = "") {
+  const inferred = inferPreviewLanguage(filePath, kind);
+  if (inferred === "text") {
+    return "plaintext";
+  }
+  if (inferred === "markup") {
+    return "html";
+  }
+  if (inferred === "bash") {
+    return "shell";
+  }
+  if (inferred === "objectivec") {
+    return "objective-c";
+  }
+  return inferred;
+}
+
+function isEditablePreview(preview) {
+  const kind = String(preview?.kind || "").toLowerCase();
+  return kind === "markdown" || kind === "json" || kind === "text";
+}
+
 function resolveFileManagerLocaleLabel(messages, rawLabel = "") {
   const label = String(rawLabel || "").trim().toLowerCase();
   if (label === "finder") {
@@ -283,6 +311,65 @@ function FilePreviewCodeBlock({
           </pre>
         )}
       </Highlight>
+    </div>
+  );
+}
+
+function EditableFilePreview({
+  path,
+  kind,
+  value,
+  onChange,
+  resolvedTheme = "dark",
+  fontSize = "medium",
+  isDark = false,
+  isFullscreen = false,
+  messages,
+}) {
+  return (
+    <div
+      data-inline-file-editor="true"
+      className={cn(
+        "overflow-hidden rounded-xl border",
+        isFullscreen ? "h-full" : "h-[min(72vh,720px)]",
+        isDark ? "border-white/10 bg-[#111318]" : "border-slate-200 bg-white",
+      )}
+    >
+      <Editor
+        path={path || "preview.txt"}
+        language={resolveMonacoLanguage(path, kind)}
+        value={value}
+        onChange={(nextValue) => onChange(nextValue || "")}
+        theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+        loading={
+          <div className={cn("flex h-full items-center justify-center text-sm", isDark ? "text-zinc-300" : "text-slate-600")}>
+            <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+            {messages.inspector.previewActions.loadingPreview}
+          </div>
+        }
+        onMount={(editor) => {
+          editor.focus();
+        }}
+        height="100%"
+        options={{
+          autoClosingBrackets: "always",
+          autoIndent: "advanced",
+          autoSurround: "languageDefined",
+          autoClosingQuotes: "always",
+          formatOnPaste: false,
+          formatOnType: false,
+          automaticLayout: true,
+          glyphMargin: false,
+          fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          fontSize: editorFontSizeByPreviewSize[fontSize] || editorFontSizeByPreviewSize.medium,
+          lineNumbers: isCodeLikePreviewTarget(path, kind) || kind === "json" ? "on" : "off",
+          minimap: { enabled: false },
+          padding: { top: 16, bottom: 16 },
+          scrollBeyondLastLine: false,
+          tabSize: 2,
+          wordWrap: "on",
+        }}
+      />
     </div>
   );
 }
@@ -759,6 +846,12 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
   const [filePreviewFontSize, setFilePreviewFontSize] = useState(() => loadStoredFilePreviewFontSize());
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editableContent, setEditableContent] = useState("");
+  const [previewContentOverride, setPreviewContentOverride] = useState(null);
+  const [saveError, setSaveError] = useState("");
+  const previewIdentity = `${preview?.path || preview?.item?.path || preview?.name || ""}:${preview?.kind || ""}`;
 
   useEffect(() => {
     try {
@@ -789,6 +882,31 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
     }
   }, [preview]);
 
+  useEffect(() => {
+    if (!preview) {
+      setIsEditing(false);
+      setIsSaving(false);
+      setEditableContent("");
+      setPreviewContentOverride(null);
+      setSaveError("");
+      return;
+    }
+
+    setIsEditing(false);
+    setIsSaving(false);
+    setEditableContent(isEditablePreview(preview) ? String(preview.content || "") : "");
+    setPreviewContentOverride(null);
+    setSaveError("");
+  }, [previewIdentity]);
+
+  useEffect(() => {
+    if (!preview || !isEditablePreview(preview) || isEditing || previewContentOverride !== null) {
+      return;
+    }
+
+    setEditableContent(String(preview.content || ""));
+  }, [isEditing, preview, previewContentOverride]);
+
   if (!preview) {
     return null;
   }
@@ -800,8 +918,13 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   const showVsCodeButton = isCodeLikePreviewTarget(title, preview.kind);
   const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || "Folder");
   const isPdfPreview = preview.kind === "pdf" && Boolean(preview.contentUrl);
+  const editablePreview = isEditablePreview(preview);
+  const effectivePreviewContent = editablePreview
+    ? (previewContentOverride !== null ? previewContentOverride : String(preview.content || ""))
+    : "";
+  const canEditPreview = editablePreview && !preview.loading && !preview.error && !preview.truncated && Boolean(title);
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
-  const showPreviewFontSizeControls = preview.kind === "markdown" || preview.kind === "text";
+  const showPreviewFontSizeControls = preview.kind === "markdown" || preview.kind === "text" || preview.kind === "json";
 
   const handleRevealInFileManager = async () => {
     if (!title || openingInFileManager) {
@@ -824,18 +947,86 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
     }
   };
 
+  const handleStartEditing = () => {
+    if (!canEditPreview) {
+      return;
+    }
+
+    setEditableContent(effectivePreviewContent);
+    setSaveError("");
+    setIsEditing(true);
+  };
+
+  const handleCancelEditing = () => {
+    setEditableContent(effectivePreviewContent);
+    setSaveError("");
+    setIsEditing(false);
+  };
+
+  const handleSaveEditing = async () => {
+    if (!canEditPreview || isSaving) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      setSaveError("");
+      const response = await fetch("/api/file-preview/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: title,
+          content: editableContent,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.status === 405 && payload?.error === "Method not allowed") {
+        throw new Error(messages.inspector.previewErrors.saveRequiresRestart);
+      }
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || messages.inspector.previewErrors.saveFailed);
+      }
+
+      setPreviewContentOverride(editableContent);
+      setIsEditing(false);
+    } catch (error) {
+      setSaveError(error.message || messages.inspector.previewErrors.saveFailed);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   let body = null;
   if (preview.loading) {
     body = (
       <div className={cn("flex min-h-[40vh] items-center justify-center text-sm", isDark ? "text-zinc-300" : "text-slate-600")}>
         <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-        正在加载预览…
+        {messages.inspector.previewActions.loadingPreview}
       </div>
     );
   } else if (preview.error) {
     body = <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-200">{preview.error}</div>;
+  } else if (isEditing) {
+    body = (
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        {saveError ? (
+          <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-200">{saveError}</div>
+        ) : null}
+        <EditableFilePreview
+          path={title}
+          kind={preview.kind}
+          value={editableContent}
+          onChange={setEditableContent}
+          resolvedTheme={resolvedTheme}
+          fontSize={filePreviewFontSize}
+          isDark={isDark}
+          isFullscreen={isFullscreen}
+          messages={messages}
+        />
+      </div>
+    );
   } else if (preview.kind === "markdown") {
-    const { frontMatter, body: markdownBody } = splitMarkdownFrontMatter(preview.content);
+    const { frontMatter, body: markdownBody } = splitMarkdownFrontMatter(effectivePreviewContent);
     body = (
       <div className="mx-auto flex max-w-4xl flex-col gap-4">
         {frontMatter ? (
@@ -870,13 +1061,13 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   } else if (preview.kind === "docx" && preview.contentUrl) {
     body = <DocxPreviewContent preview={preview} resolvedTheme={resolvedTheme} />;
   } else if (preview.kind === "json") {
-    body = <FilePreviewCodeBlock content={preview.content} language="json" fontSize={filePreviewFontSize} />;
+    body = <FilePreviewCodeBlock content={effectivePreviewContent} language="json" fontSize={filePreviewFontSize} />;
   } else if (preview.kind === "text") {
     body = isCodeLikePreviewTarget(title, preview.kind)
-      ? <FilePreviewCodeBlock content={preview.content} language={inferPreviewLanguage(title, preview.kind)} fontSize={filePreviewFontSize} />
+      ? <FilePreviewCodeBlock content={effectivePreviewContent} language={inferPreviewLanguage(title, preview.kind)} fontSize={filePreviewFontSize} />
       : (
         <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-border/70 bg-background/80" : "border-slate-200 bg-white")}>
-          <pre className={cn("overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-foreground", richTextPreviewFontSizeClassName)}>{preview.content}</pre>
+          <pre className={cn("overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-foreground", richTextPreviewFontSizeClassName)}>{effectivePreviewContent}</pre>
         </div>
       );
   } else if (preview.kind === "spreadsheet") {
@@ -910,10 +1101,12 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
   } else {
     body = (
       <div className="rounded-xl border border-border/70 bg-background/80 p-4 text-sm text-muted-foreground">
-        该文件类型暂不支持内联预览。
+        {messages.inspector.previewActions.unsupportedInlinePreview}
       </div>
     );
   }
+
+  const useDirectBodyLayout = isPdfPreview || isEditing;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px]" onClick={onClose}>
@@ -941,7 +1134,9 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
                 {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
               </button>
               <div className="min-w-0">
-                <div className={cn("truncate text-sm font-semibold", isDark ? "text-white" : "text-slate-950")}>{preview.name || preview.item?.name || "文件预览"}</div>
+                <div className={cn("truncate text-sm font-semibold", isDark ? "text-white" : "text-slate-950")}>
+                  {preview.name || preview.item?.name || messages.inspector.previewActions.previewTitle}
+                </div>
                 <div className={cn("truncate text-xs", isDark ? "text-zinc-400" : "text-slate-500")}>{displayPath}</div>
               </div>
             </div>
@@ -978,6 +1173,49 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
                     })}
                   </div>
                 </>
+              ) : null}
+              {canEditPreview ? (
+                isEditing ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-3 text-xs"
+                      onClick={handleCancelEditing}
+                      disabled={isSaving}
+                    >
+                      {messages.inspector.previewActions.cancelEdit}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 gap-1.5 px-3 text-xs"
+                      aria-label={isSaving ? messages.inspector.previewActions.savingFile : messages.inspector.previewActions.saveFile}
+                      onClick={handleSaveEditing}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : null}
+                      <span>{isSaving ? messages.inspector.previewActions.savingFile : messages.inspector.previewActions.saveFile}</span>
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "h-8 gap-1.5 px-3 text-xs",
+                      isDark
+                        ? "border-white/8 bg-white/[0.045] text-zinc-300 hover:border-white/12 hover:bg-white/8 hover:text-white"
+                        : "border-slate-200 bg-slate-50/90 text-slate-700 hover:border-slate-300 hover:bg-white hover:text-slate-950",
+                    )}
+                    onClick={handleStartEditing}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    {messages.inspector.previewActions.editFile}
+                  </Button>
+                )
               ) : null}
               <div
                 className={cn(
@@ -1046,7 +1284,7 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
               </button>
             </div>
           </div>
-          {isPdfPreview ? (
+          {useDirectBodyLayout ? (
             <div
               className={cn(
                 "min-h-0 flex-1 overflow-hidden",
@@ -1058,7 +1296,11 @@ export function FilePreviewOverlay({ files, preview, resolvedTheme = "light", on
           ) : (
             <ScrollArea className="min-h-0 flex-1">
               <div className="min-h-full px-6 py-5">{body}</div>
-              {preview.truncated ? <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>文件过大，当前只显示前 1 MB 内容。</div> : null}
+              {preview.truncated ? (
+                <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
+                  {messages.inspector.previewActions.truncatedPreview}
+                </div>
+              ) : null}
             </ScrollArea>
           )}
         </div>

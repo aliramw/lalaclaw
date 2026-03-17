@@ -7,8 +7,8 @@
 LalaClaw speichert einen Teil des UI-Zustands lokal, damit die Oberfläche nach einem Reload schnell wiederhergestellt werden kann.
 
 - Offene Tabs und aktive Sitzung
-- Breite des Inspectors
+- Breite des Inspektors
 - Schriftgröße im Chat
-- Gewählte Sprache und Theme
+- Gewählte Sprache und Erscheinungsbild
 
 Beim Wiederherstellen versucht die App, Laufzeitdaten und gespeicherten Zustand erneut zu synchronisieren, statt die Unterhaltung stillschweigend zu verwerfen.

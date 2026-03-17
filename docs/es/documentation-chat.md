@@ -2,7 +2,7 @@
 
 [Volver al inicio](./documentation.md) | [Resumen de la interfaz](./documentation-interface.md) | [Sesiones, agentes y modos de ejecucion](./documentation-sessions.md) | [Atajos de teclado](./documentation-shortcuts.md) | [Persistencia local y recuperacion](./documentation-persistence.md)
 
-# Chat, adjuntos y comandos
+# Conversacion, adjuntos y comandos
 
 ## Envio de mensajes
 
@@ -23,7 +23,7 @@ En ambos modos:
 Despues de enviar:
 
 - El frontend inserta primero un mensaje optimista del usuario
-- Si no es un slash command, agrega un placeholder de thinking
+- Si no es un comando slash, agrega un marcador de pensamiento
 - El backend responde en NDJSON por streaming
 - `Stop` interrumpe la respuesta activa
 
@@ -43,7 +43,7 @@ Si la pestana ya esta ocupada:
 
 ## Adjuntos
 
-- Imagenes: `data URL` con preview
+- Imagenes: `data URL` con vista previa
 - Texto: lectura y truncado a `120000` caracteres
 - Otros archivos: solo metadatos
 

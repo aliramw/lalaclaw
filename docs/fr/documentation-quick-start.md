@@ -226,4 +226,4 @@ export OPENCLAW_API_PATH="/v1/responses"
 ## Étapes suivantes
 
 - Pour la structure visuelle : [Vue d'ensemble de l'interface](./documentation-interface.md)
-- Pour le flux d'interaction : [Chat, pièces jointes et commandes](./documentation-chat.md)
+- Pour le flux d'interaction : [Discussion, pièces jointes et commandes](./documentation-chat.md)

@@ -321,6 +321,8 @@ const ms = {
     },
     previewErrors: {
       loadFailed: "Pratonton fail gagal.",
+      saveFailed: "Fail tidak dapat disimpan. Cuba lagi.",
+      saveRequiresRestart: "Backend yang sedang berjalan belum menyokong simpanan sebaris. Mulakan semula LalaClaw atau servis backend, kemudian cuba lagi.",
       officeFailed: "Pratonton dokumen Office gagal. Sila cuba lagi.",
       officeRequiresLibreOffice: "Pasang LibreOffice untuk mempratonton fail DOC, PPT dan PPTX.",
       officeRequiresLibreOfficeWithCommand: (command) => `Pasang LibreOffice untuk mempratonton fail DOC, PPT dan PPTX. Buka terminal dan jalankan: ${command}`,
@@ -331,6 +333,14 @@ const ms = {
     previewActions: {
       maximize: "Besarkan pratonton",
       restore: "Pulihkan pratonton",
+      previewTitle: "Pratonton fail",
+      loadingPreview: "Memuatkan pratonton...",
+      unsupportedInlinePreview: "Jenis fail ini belum menyokong pratonton sebaris.",
+      truncatedPreview: "Fail ini terlalu besar untuk diedit di sini. Hanya 1 MB pertama dipaparkan.",
+      editFile: "Edit",
+      cancelEdit: "Batal",
+      saveFile: "Simpan",
+      savingFile: "Menyimpan...",
       openInCodeEditor: "Buka dalam VS Code",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `Tunjukkan dalam ${label}`,

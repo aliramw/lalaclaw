@@ -6,14 +6,14 @@
 
 ## 工作階段
 
-- 標籤頁依 agent 組織
+- 標籤頁依 Agent 組織
 - 實際的工作階段識別由 agentId + sessionUser 組成
 - 關閉標籤頁只會隱藏視圖，不會刪除工作階段
 
 ## Agent 與模型
 
-- agent 來自允許的 runtime 設定
-- model 與 think mode 來自 backend 回報的選項
+- Agent 來自允許的 runtime 設定
+- 模型與思考模式來自後端回報的選項
 - fast mode 與 think mode 會按工作階段同步
 
 ## 執行模式

@@ -1,6 +1,6 @@
 [English](../en/documentation-sessions.md) | [中文](../zh/documentation-sessions.md) | [繁體中文（香港）](../zh-hk/documentation-sessions.md) | [日本語](../ja/documentation-sessions.md) | [한국어](../ko/documentation-sessions.md) | [Français](../fr/documentation-sessions.md) | [Español](../es/documentation-sessions.md) | [Português](../pt/documentation-sessions.md) | [Deutsch](../de/documentation-sessions.md) | [Bahasa Melayu](../ms/documentation-sessions.md) | [தமிழ்](../ta/documentation-sessions.md)
 
-[Volver al inicio](./documentation.md) | [Inicio rapido](./documentation-quick-start.md) | [Chat, adjuntos y comandos](./documentation-chat.md) | [Atajos de teclado](./documentation-shortcuts.md) | [Persistencia local y recuperacion](./documentation-persistence.md)
+[Volver al inicio](./documentation.md) | [Inicio rapido](./documentation-quick-start.md) | [Conversacion, adjuntos y comandos](./documentation-chat.md) | [Atajos de teclado](./documentation-shortcuts.md) | [Persistencia local y recuperacion](./documentation-persistence.md)
 
 # Sesiones, agentes y modos de ejecucion
 

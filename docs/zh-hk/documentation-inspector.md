@@ -8,15 +8,15 @@
 
 ## 主要區塊
 
-- Run Log：tool 呼叫、輸入輸出與檔案變更
-- Files：工作階段檔案與 workspace 檔案的分離樹狀檢視
-- Summaries：帶跳轉連結的回覆摘要
-- Environment：agent、model、runtime 與 gateway 資訊
-- Collab：子 agent 與任務關係
-- Preview：檔案、試算表與媒體預覽
+- 執行記錄：tool 呼叫、輸入輸出與檔案變更
+- 檔案：工作階段檔案與 workspace 檔案的分離樹狀檢視
+- 摘要：帶跳轉連結的回覆摘要
+- 環境：Agent、模型、runtime 與 gateway 資訊
+- 協作：子 Agent 與任務關係
+- 預覽：檔案、試算表與媒體預覽
 
 ## Workspace 檔案
 
-- workspace tree 會分層載入
+- workspace 樹狀檢視會分層載入
 - 資料夾可過濾、重新整理與再次載入
-- CSV 與 XLSX 可直接在 preview 區開啟
+- CSV 與 XLSX 可直接在預覽區開啟

@@ -321,6 +321,8 @@ const ta = {
     },
     previewErrors: {
       loadFailed: "கோப்பு முன்னோட்டம் தோல்வியடைந்தது.",
+      saveFailed: "கோப்பை சேமிக்க முடியவில்லை. மீண்டும் முயற்சிக்கவும்.",
+      saveRequiresRestart: "இப்போது இயங்கிக் கொண்டிருக்கும் backend இன்னும் inline save-ஐ ஆதரிக்கவில்லை. LalaClaw அல்லது backend service-ஐ மறுதொடக்கம் செய்து மீண்டும் முயற்சிக்கவும்.",
       officeFailed: "Office ஆவண முன்னோட்டம் தோல்வியடைந்தது. மீண்டும் முயற்சிக்கவும்.",
       officeRequiresLibreOffice: "DOC, PPT மற்றும் PPTX கோப்புகளை முன்னோட்டம் காண LibreOffice நிறுவவும்.",
       officeRequiresLibreOfficeWithCommand: (command) => `DOC, PPT மற்றும் PPTX கோப்புகளை முன்னோட்டம் காண LibreOffice நிறுவவும். ஒரு terminal-ஐத் திறந்து இதை இயக்கவும்: ${command}`,
@@ -331,6 +333,14 @@ const ta = {
     previewActions: {
       maximize: "முன்னோட்டத்தை பெரிதாக்கு",
       restore: "முன்னோட்டத்தை மீட்டமை",
+      previewTitle: "கோப்பு முன்னோட்டம்",
+      loadingPreview: "முன்னோட்டம் ஏற்றப்படுகிறது...",
+      unsupportedInlinePreview: "இந்த கோப்பு வகை இன்னும் inline preview-ஐ ஆதரிக்கவில்லை.",
+      truncatedPreview: "இந்த கோப்பு இங்கே நேரடியாகத் திருத்துவதற்கு மிகவும் பெரியது. முதல் 1 MB மட்டும் காட்டப்படுகிறது.",
+      editFile: "திருத்து",
+      cancelEdit: "ரத்து செய்",
+      saveFile: "சேமி",
+      savingFile: "சேமிக்கப்படுகிறது...",
       openInCodeEditor: "VS Code-ல் திற",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `${label} இல் காட்டு`,

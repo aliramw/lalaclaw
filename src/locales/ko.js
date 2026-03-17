@@ -318,6 +318,8 @@ const ko = {
     },
     previewErrors: {
       loadFailed: "파일 미리보기에 실패했습니다.",
+      saveFailed: "파일을 저장하지 못했습니다. 다시 시도해 주세요.",
+      saveRequiresRestart: "현재 실행 중인 백엔드는 아직 인라인 저장을 지원하지 않습니다. LalaClaw 또는 백엔드 서비스를 다시 시작한 뒤 다시 시도해 주세요.",
       officeFailed: "Office 문서 미리보기에 실패했습니다. 다시 시도해 주세요.",
       officeRequiresLibreOffice: "DOC, PPT, PPTX 파일을 미리보려면 LibreOffice를 설치하세요.",
       officeRequiresLibreOfficeWithCommand: (command) => `DOC, PPT, PPTX 파일을 미리보려면 LibreOffice를 설치하세요. 터미널을 열고 다음을 실행하세요: ${command}`,
@@ -328,6 +330,14 @@ const ko = {
     previewActions: {
       maximize: "미리보기 확장",
       restore: "미리보기 복원",
+      previewTitle: "파일 미리보기",
+      loadingPreview: "미리보기를 불러오는 중...",
+      unsupportedInlinePreview: "이 파일 형식은 아직 인라인 미리보기를 지원하지 않습니다.",
+      truncatedPreview: "이 파일은 너무 커서 여기서 바로 편집할 수 없습니다. 처음 1MB만 표시됩니다.",
+      editFile: "편집",
+      cancelEdit: "취소",
+      saveFile: "저장",
+      savingFile: "저장 중...",
       openInCodeEditor: "VS Code에서 열기",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `${label}에서 보기`,

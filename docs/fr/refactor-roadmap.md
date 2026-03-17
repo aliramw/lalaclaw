@@ -2,17 +2,17 @@
 
 # Feuille de route de refactorisation
 
-> Navigation: [Documentation Home](./documentation.md) | [Sessions, agents et modes d'exécution](./documentation-sessions.md) | [API et dépannage](./documentation-api-troubleshooting.md) | [Vue d'ensemble de l'architecture](./architecture.md) | [Showcase produit](./showcase.md)
+> Navigation : [Accueil de la documentation](./documentation.md) | [Sessions, agents et modes d'exécution](./documentation-sessions.md) | [API et dépannage](./documentation-api-troubleshooting.md) | [Vue d'ensemble de l'architecture](./architecture.md) | [Présentation produit](./showcase.md)
 
 ## Objectifs
 
 - Réduire le risque de maintenance de `src/App.jsx` et `server.js`
-- Séparer la composition UI, l'orchestration de données et l'intégration OpenClaw
+- Séparer la composition d'interface, l'orchestration de données et l'intégration OpenClaw
 - Garder le comportement actuel stable tout en rendant les tests plus ciblés
 
 ## Forme cible
 
-### Frontend applicatif
+### Interface applicative
 
 - `src/app/bootstrap/`
 - `src/features/session/`
@@ -20,7 +20,7 @@
 - `src/features/inspector/`
 - `src/shared/`
 
-### Backend serveur
+### Serveur backend
 
 - `server/config.js`
 - `server/session-store.js`
@@ -32,7 +32,7 @@
 ## Premiers PR suggérés
 
 1. Extraire la configuration runtime côté serveur
-2. Extraire le flux d'envoi du chat côté frontend
-3. Extraire le polling runtime côté frontend
+2. Extraire le flux d'envoi de la discussion côté interface
+3. Extraire le polling runtime côté interface
 4. Ajouter des fixtures de transcript
 5. Supprimer définitivement l'ancienne app statique

@@ -2,10 +2,10 @@
 
 [Kembali ke utama](./documentation.md) | [Gambaran antara muka](./documentation-interface.md)
 
-# Easter Egg
+# Telur Paskah
 
-LalaClaw mempunyai easter egg kecil yang berkaitan dengan lobster di penjuru kiri atas.
+LalaClaw mempunyai telur paskah kecil yang berkaitan dengan lobster di penjuru kiri atas.
 
 - Klik boleh memulakan animasi hiasan
-- Tingkah laku ini tidak mengubah chat atau runtime
+- Tingkah laku ini tidak mengubah sembang atau runtime
 - Animasi masih mengikuti tema dan tetapan UI aktif

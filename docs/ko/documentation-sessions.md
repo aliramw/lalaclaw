@@ -6,18 +6,18 @@
 
 ## 세션
 
-- 탭은 agent 기준으로 정리됩니다
-- 실제 세션 식별자는 agentId + sessionUser 입니다
+- 탭은 에이전트 기준으로 정리됩니다
+- 실제 세션 식별자는 `agentId + sessionUser` 입니다
 - 탭을 닫아도 보기만 숨겨질 뿐 세션은 삭제되지 않습니다
 
 ## 에이전트와 모델
 
-- agent 는 허용된 runtime 설정에서 가져옵니다
-- model 과 think mode 는 backend 가 보고한 옵션을 사용합니다
-- fast mode 와 think mode 는 세션별로 동기화됩니다
+- 에이전트는 허용된 런타임 설정에서 가져옵니다
+- 모델과 사고 모드는 백엔드가 보고한 옵션을 사용합니다
+- 고속 모드와 사고 모드는 세션별로 동기화됩니다
 
 ## 실행 모드
 
 - 앱은 기본적으로 mock 모드로도 동작할 수 있습니다
 - gateway 가 연결되면 실제 OpenClaw endpoint 를 사용합니다
-- runtime, auth, queue 상태는 헤더에 표시됩니다
+- 런타임, 인증, 대기열 상태는 헤더에 표시됩니다

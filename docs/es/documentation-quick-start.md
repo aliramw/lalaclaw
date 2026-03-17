@@ -226,4 +226,4 @@ export OPENCLAW_API_PATH="/v1/responses"
 ## Siguientes pasos
 
 - Para entender la interfaz: [Resumen de la interfaz](./documentation-interface.md)
-- Para ir directo al flujo de uso: [Chat, adjuntos y comandos](./documentation-chat.md)
+- Para ir directo al flujo de uso: [Conversacion, adjuntos y comandos](./documentation-chat.md)

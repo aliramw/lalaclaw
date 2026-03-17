@@ -2,7 +2,7 @@
 
 # Documentacao do LalaClaw
 
-Esta documentacao foi criada a partir do frontend, backend, testes e configuracao atuais do repositorio. O objetivo e transformar o comportamento real do LalaClaw em uma arvore de documentos Markdown navegavel.
+Esta documentacao foi criada a partir da interface, do backend, dos testes e da configuracao atuais do repositorio. O objetivo e transformar o comportamento real do LalaClaw em uma arvore de documentos Markdown navegavel.
 
 Autora: Marila Wang
 
@@ -10,10 +10,10 @@ Autora: Marila Wang
 
 - [Inicio rapido](./documentation-quick-start.md)
 - [Visao geral da interface](./documentation-interface.md)
-- [Chat, anexos e comandos](./documentation-chat.md)
-- [Inspector, preview de arquivos e rastreamento](./documentation-inspector.md)
+- [Conversa, anexos e comandos](./documentation-chat.md)
+- [Inspetor, pre-visualizacao de arquivos e rastreamento](./documentation-inspector.md)
 - [Sessoes, agentes e modos de execucao](./documentation-sessions.md)
 - [Atalhos de teclado](./documentation-shortcuts.md)
 - [Persistencia local e recuperacao](./documentation-persistence.md)
 - [API e solucao de problemas](./documentation-api-troubleshooting.md)
-- [Easter egg](./documentation-easter-egg.md)
+- [Detalhe visual](./documentation-easter-egg.md)

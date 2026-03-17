@@ -11,7 +11,7 @@
 - ArrowUp und ArrowDown durchlaufen den Prompt-Verlauf
 - Stop bricht die aktive Antwort ab
 
-## Queue
+## Warteschlange
 
 Wenn ein Tab bereits beschäftigt ist, wird die neue Nachricht eingereiht und automatisch gesendet, sobald die aktuelle Antwort abgeschlossen ist.
 

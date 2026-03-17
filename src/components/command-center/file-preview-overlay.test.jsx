@@ -10,6 +10,20 @@ vi.mock("docx-preview", () => ({
   renderAsync: renderAsyncMock,
 }));
 
+vi.mock("@monaco-editor/react", () => ({
+  default: function MockMonacoEditor({ language, onChange, value }) {
+    return (
+      <textarea
+        aria-label="Monaco editor"
+        data-language={language}
+        data-testid="file-preview-monaco-editor"
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+    );
+  },
+}));
+
 import { FilePreviewOverlay, ImagePreviewOverlay } from "@/components/command-center/file-preview-overlay";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n";
@@ -174,6 +188,137 @@ describe("FilePreviewOverlay", () => {
 
     expect(screen.getByLabelText("Preview font size: Large")).toBeInTheDocument();
     expect(screen.getByText("plain preview").closest("pre")).toHaveClass("text-[16px]", "leading-7");
+  });
+
+  it("lets markdown previews switch into Monaco editing mode and save inline", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# Before\n\nPreview body",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const editor = screen.getByTestId("file-preview-monaco-editor");
+    expect(editor).toHaveAttribute("data-language", "markdown");
+    await user.clear(editor);
+    await user.type(editor, "# After{enter}{enter}Saved in preview");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/file-preview/save",
+        expect.objectContaining({
+          method: "POST",
+        }),
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/file-preview/save",
+      expect.objectContaining({
+        body: JSON.stringify({
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# After\n\nSaved in preview",
+        }),
+      }),
+    );
+    expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
+    expect(screen.getByText("After")).toBeInTheDocument();
+    expect(screen.getByText("Saved in preview")).toBeInTheDocument();
+  });
+
+  it("uses Monaco for code-like text previews and lets cancel restore the original content", async () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const editor = screen.getByTestId("file-preview-monaco-editor");
+    expect(editor).toHaveAttribute("data-language", "javascript");
+    await user.clear(editor);
+    await user.type(editor, "const after = true;");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
+    expect(document.querySelector("pre")?.textContent).toContain("const before = true;");
+  });
+
+  it("keeps oversized text previews read-only to avoid saving truncated content", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "large.log",
+          path: "/Users/marila/projects/lalaclaw/large.log",
+          content: "partial content",
+          truncated: true,
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.getByText("This file is too large to edit here. Only the first 1 MB is shown.")).toBeInTheDocument();
+  });
+
+  it("shows a restart hint when the running backend has not picked up the save route yet", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 405,
+        json: async () => ({ error: "Method not allowed" }),
+      })),
+    );
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "AGENTS.md",
+          path: "/Users/marila/.openclaw/workspace-writer/AGENTS.md",
+          content: "# Agents\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("This running backend does not support inline save yet. Restart LalaClaw or the backend service, then try again.")).toBeInTheDocument();
   });
 
   it("renders docx previews with docx-preview", async () => {

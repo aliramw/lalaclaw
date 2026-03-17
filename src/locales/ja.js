@@ -333,6 +333,8 @@ const ja = {
     },
     previewErrors: {
       loadFailed: "File preview failed.",
+      saveFailed: "ファイルを保存できませんでした。もう一度お試しください。",
+      saveRequiresRestart: "現在実行中のバックエンドはまだインライン保存に対応していません。LalaClaw またはバックエンドサービスを再起動してからもう一度お試しください。",
       officeFailed: "Office document preview failed. Please try again.",
       officeRequiresLibreOffice: "DOC、PPT、PPTX ファイルをプレビューするには LibreOffice が必要です。",
       officeRequiresLibreOfficeWithCommand: (command) => `DOC、PPT、PPTX ファイルをプレビューするには LibreOffice が必要です。ターミナルを開いて次を実行してください: ${command}`,
@@ -343,6 +345,14 @@ const ja = {
     previewActions: {
       maximize: "プレビューを拡大",
       restore: "プレビューを戻す",
+      previewTitle: "ファイルプレビュー",
+      loadingPreview: "プレビューを読み込み中...",
+      unsupportedInlinePreview: "この種類のファイルはまだインラインプレビューに対応していません。",
+      truncatedPreview: "このファイルは大きすぎるため、ここでは直接編集できません。先頭 1 MB のみ表示しています。",
+      editFile: "編集",
+      cancelEdit: "キャンセル",
+      saveFile: "保存",
+      savingFile: "保存中...",
       openInCodeEditor: "VS Code で開く",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `${label} で表示`,

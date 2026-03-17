@@ -2,18 +2,18 @@
 
 # リファクタリングロードマップ
 
-> Navigation: [Documentation Home](./documentation.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md) | [API とトラブルシューティング](./documentation-api-troubleshooting.md) | [アーキテクチャ概要](./architecture.md) | [プロダクトショーケース](./showcase.md)
+> ナビゲーション: [ドキュメントホーム](./documentation.md) | [セッション、エージェント、ランタイムモード](./documentation-sessions.md) | [API とトラブルシューティング](./documentation-api-troubleshooting.md) | [アーキテクチャ概要](./architecture.md) | [製品紹介](./showcase.md)
 
 ## 目標
 
 - `src/App.jsx` と `server.js` の保守リスクを下げる
-- UI composition、data orchestration、OpenClaw integration を分離する
+- UI の構成、データの調整処理、OpenClaw 連携を分離する
 - 挙動を保ちながら、より焦点の合ったテストにする
 
 ## 現在の課題
 
-- `src/App.jsx` は persistence、polling、composer behavior、queue management、theming、runtime synchronization を混在させている
-- `server.js` は HTTP routing、runtime config detection、session preference storage、OpenClaw transport、transcript parsing、dashboard projection を混在させている
+- `src/App.jsx` は保存、ポーリング、composer の挙動、キュー管理、テーマ制御、ランタイム同期を混在させている
+- `server.js` は HTTP ルーティング、ランタイム設定検出、セッション設定保存、OpenClaw 通信、transcript 解析、ダッシュボード投影を混在させている
 - リポジトリには Vite app entrypoint と古い static app の痕跡が残っている
 - 一部の server tests は mock 固定にしない限り、ローカル OpenClaw 発見に依存する
 
@@ -24,24 +24,24 @@
 - `src/app/bootstrap/`
   - App bootstrap、providers、global styles、root rendering
 - `src/features/session/`
-  - Session runtime polling、model / agent selection、fast mode、think mode
+  - セッションのランタイムポーリング、モデル / エージェント選択、高速モード、思考モード
 - `src/features/chat/`
-  - Composer、queueing、send flow、prompt history、attachment handling
+  - Composer、キュー処理、送信フロー、プロンプト履歴、添付処理
 - `src/features/inspector/`
-  - Timeline、files、artifacts、snapshots、agents、peeks
+  - タイムライン、ファイル、成果物、スナップショット、エージェント、プレビュー情報
 - `src/shared/`
   - UI primitives、markdown rendering、formatting helpers、storage helpers
 
 ### バックエンド
 
 - `server/config.js`
-  - Runtime config detection、mock override、local OpenClaw discovery
+  - ランタイム設定検出、mock 上書き、ローカル OpenClaw 発見
 - `server/session-store.js`
-  - Session preferences、local conversation cache
+  - セッション設定、ローカル会話キャッシュ
 - `server/openclaw-client.js`
-  - HTTP / gateway RPC calls、session patching、direct request vs session mode
+  - HTTP / gateway RPC 呼び出し、セッション更新、直接リクエストとセッションモード
 - `server/transcript.js`
-  - Transcript reading、message normalization、file extraction、timeline / snapshot projection
+  - transcript 読み込み、メッセージ正規化、ファイル抽出、タイムライン / スナップショット投影
 - `server/routes.js`
   - `/api/session`、`/api/runtime`、`/api/chat`、static file handling
 - `server/index.js`
@@ -89,10 +89,10 @@
   - session preference resolution
   - attachment persistence and hydration
   - prompt history navigation
-- 実 route の integration test は少数にし、明示的な環境設定で保護する
+- 実ルートの統合テストは少数にし、明示的な環境設定で保護する
 
 ## 注意すべきリスク
 
-- Session reset は frontend local state と backend session identity の両方に影響する
-- Attachment persistence は `localStorage` と IndexedDB をまたぐため、移行挙動を壊さない必要がある
+- セッションリセットはフロントエンドのローカル状態とバックエンドのセッション識別子の両方に影響する
+- 添付の永続化は `localStorage` と IndexedDB をまたぐため、移行挙動を壊さない必要がある
 - `OpenClaw` モードは polling と session patch の順序に敏感であり、transport 分離時も順序保持が必要

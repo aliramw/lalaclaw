@@ -1,19 +1,19 @@
 [English](../en/documentation-inspector.md) | [中文](../zh/documentation-inspector.md) | [繁體中文（香港）](../zh-hk/documentation-inspector.md) | [日本語](../ja/documentation-inspector.md) | [한국어](../ko/documentation-inspector.md) | [Français](../fr/documentation-inspector.md) | [Español](../es/documentation-inspector.md) | [Português](../pt/documentation-inspector.md) | [Deutsch](../de/documentation-inspector.md) | [Bahasa Melayu](../ms/documentation-inspector.md) | [தமிழ்](../ta/documentation-inspector.md)
 
-[Kembali ke utama](./documentation.md) | [Gambaran antara muka](./documentation-interface.md) | [Chat, lampiran dan arahan](./documentation-chat.md)
+[Kembali ke utama](./documentation.md) | [Gambaran antara muka](./documentation-interface.md) | [Sembang, lampiran dan arahan](./documentation-chat.md)
 
-# Inspector, Pratonton Fail dan Tracing
+# Pemeriksa, Pratonton Fail dan Penjejakan
 
-Inspector di sebelah kanan mengumpulkan data pelaksanaan untuk sesi semasa.
+Pemeriksa di sebelah kanan mengumpulkan data pelaksanaan untuk sesi semasa.
 
 ## Permukaan utama
 
-- Run Log: panggilan tool, input/output dan perubahan fail
-- Files: pokok fail session dan workspace yang berasingan
-- Summaries: ringkasan balasan dengan pautan lompat
-- Environment: maklumat agent, model, runtime dan gateway
-- Collab: hubungan tugasan dan ejen anak
-- Preview: pratonton fail, jadual dan media
+- Log pelaksanaan: panggilan alat, input/output dan perubahan fail
+- Fail: pokok fail sesi dan workspace yang berasingan
+- Ringkasan: ringkasan balasan dengan pautan lompat
+- Persekitaran: maklumat ejen, model, runtime dan gateway
+- Kerjasama: hubungan tugasan dan ejen anak
+- Pratonton: pratonton fail, jadual dan media
 
 ## Fail workspace
 

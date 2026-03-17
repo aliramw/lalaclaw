@@ -70,5 +70,9 @@ export function isEditableElement(element) {
     return true;
   }
 
+  if (element.closest?.("[data-inline-file-editor='true'], .monaco-editor, .monaco-editor *")) {
+    return true;
+  }
+
   return ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName);
 }

@@ -1,6 +1,6 @@
 [English](../en/documentation-api-troubleshooting.md) | [中文](../zh/documentation-api-troubleshooting.md) | [繁體中文（香港）](../zh-hk/documentation-api-troubleshooting.md) | [日本語](../ja/documentation-api-troubleshooting.md) | [한국어](../ko/documentation-api-troubleshooting.md) | [Français](../fr/documentation-api-troubleshooting.md) | [Español](../es/documentation-api-troubleshooting.md) | [Português](../pt/documentation-api-troubleshooting.md) | [Deutsch](../de/documentation-api-troubleshooting.md) | [Bahasa Melayu](../ms/documentation-api-troubleshooting.md) | [தமிழ்](../ta/documentation-api-troubleshooting.md)
 
-[ホームへ戻る](./documentation.md) | [クイックスタート](./documentation-quick-start.md) | [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md)
+[ホームへ戻る](./documentation.md) | [クイックスタート](./documentation-quick-start.md) | [インスペクター、ファイルプレビュー、トレース](./documentation-inspector.md) | [セッション、エージェント、ランタイムモード](./documentation-sessions.md)
 
 # API とトラブルシューティング
 
@@ -10,21 +10,21 @@
 
 目的:
 
-- 基本的な session metadata を取得する
+- 基本的なセッションメタデータを取得する
 - model、agent、think mode、available models、available agents、available skills などを返す
 
 ### `POST /api/session`
 
 目的:
 
-- session preference を更新する
+- セッション設定を更新する
 - `agentId`、`model`、`fastMode`、`thinkMode` をサポートする
 
 ### `GET /api/runtime`
 
 目的:
 
-- 現在の runtime snapshot を取得する
+- 現在のランタイムスナップショットを取得する
 - `conversation`、`timeline`、`files`、`artifacts`、`snapshots`、`agents`、`peeks` を返す
 
 ### `POST /api/chat`
@@ -45,7 +45,7 @@
 
 目的:
 
-- ファイル preview metadata を取得する
+- ファイルプレビュー用のメタデータを取得する
 - インライン text content か media `contentUrl` を返す
 
 ### `GET /api/file-preview/content`
@@ -128,7 +128,7 @@ npm run doctor
 
 確認ポイント:
 
-- `Runtime profile` が想定どおり
+- `ランタイムプロファイル` が想定どおり
 - `OpenClaw CLI found` が正常表示になる
 - そのあと最初のメッセージを再送する
 
@@ -142,7 +142,7 @@ npm run doctor
 
 確認場所:
 
-- [Inspector、ファイルプレビュー、トレース](./documentation-inspector.md) の `Environment`
+- [インスペクター、ファイルプレビュー、トレース](./documentation-inspector.md) の `環境`
 - バックエンドのコンソール出力
 
 ### ファイルがプレビューできない

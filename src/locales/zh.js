@@ -333,6 +333,8 @@ const zh = {
     },
     previewErrors: {
       loadFailed: "文件预览失败。",
+      saveFailed: "文件保存失败，请稍后重试。",
+      saveRequiresRestart: "当前正在运行的后端还不支持在线保存。请重启 LalaClaw 或后端服务后再试。",
       officeFailed: "Office 文档预览失败，请稍后重试。",
       officeRequiresLibreOffice: "安装 LibreOffice 后即可预览 DOC、PPT 和 PPTX 文件。",
       officeRequiresLibreOfficeWithCommand: (command) => `安装 LibreOffice 后即可预览 DOC、PPT 和 PPTX 文件。可打开终端执行：${command}`,
@@ -343,6 +345,14 @@ const zh = {
     previewActions: {
       maximize: "铺满预览窗",
       restore: "还原预览窗",
+      previewTitle: "文件预览",
+      loadingPreview: "正在加载预览…",
+      unsupportedInlinePreview: "该文件类型暂不支持内联预览。",
+      truncatedPreview: "文件过大，无法在这里直接编辑。当前只显示前 1 MB 内容。",
+      editFile: "编辑",
+      cancelEdit: "取消",
+      saveFile: "保存",
+      savingFile: "保存中…",
       openInCodeEditor: "在 VS Code 中打开",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `在 ${label} 中显示`,

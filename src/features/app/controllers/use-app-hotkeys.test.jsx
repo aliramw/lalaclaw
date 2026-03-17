@@ -374,4 +374,42 @@ describe("useAppHotkeys", () => {
 
     expect(handleActivateAdjacentChatTab).not.toHaveBeenCalled();
   });
+
+  it("does not steal printable keys from an inline Monaco editor", () => {
+    const handlePromptChange = vi.fn();
+    const editorRoot = document.createElement("div");
+    editorRoot.setAttribute("data-inline-file-editor", "true");
+    editorRoot.className = "monaco-editor";
+    const editorSurface = document.createElement("div");
+    editorSurface.tabIndex = 0;
+    editorRoot.appendChild(editorSurface);
+    document.body.appendChild(editorRoot);
+    editorSurface.focus();
+
+    renderHook(() =>
+      useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
+        handleActivateChatTabByIndex: vi.fn(),
+        handlePromptChange,
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        prompt: "已有",
+        promptRef: { current: textarea },
+        setTheme: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      editorSurface.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "x",
+          code: "KeyX",
+        }),
+      );
+    });
+
+    expect(handlePromptChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(editorSurface);
+  });
 });

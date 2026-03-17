@@ -2,11 +2,11 @@
 
 # 產品展示
 
-LalaClaw 把 chat、工作階段控制與觀察能力整合到同一個介面。
+LalaClaw 把對話、工作階段控制與觀察能力整合到同一個介面。
 
 ## 特色
 
-- 可快速切換的多個 agent 工作階段
-- VS Code 風格的檔案樹、preview 與 context menu
-- 用於 timeline、environment 狀態與 summaries 的右側面板
+- 可快速切換的多個 Agent 工作階段
+- VS Code 風格的檔案樹、預覽與 context menu
+- 用於時間線、environment 狀態與摘要的右側面板
 - 多語言介面、主題與快捷鍵說明

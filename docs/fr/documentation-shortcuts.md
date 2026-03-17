@@ -1,6 +1,6 @@
 [English](../en/documentation-shortcuts.md) | [中文](../zh/documentation-shortcuts.md) | [繁體中文（香港）](../zh-hk/documentation-shortcuts.md) | [日本語](../ja/documentation-shortcuts.md) | [한국어](../ko/documentation-shortcuts.md) | [Français](../fr/documentation-shortcuts.md) | [Español](../es/documentation-shortcuts.md) | [Português](../pt/documentation-shortcuts.md) | [Deutsch](../de/documentation-shortcuts.md) | [Bahasa Melayu](../ms/documentation-shortcuts.md) | [தமிழ்](../ta/documentation-shortcuts.md)
 
-[Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Chat, pièces jointes et commandes](./documentation-chat.md) | [Persistance locale et reprise](./documentation-persistence.md)
+[Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Discussion, pièces jointes et commandes](./documentation-chat.md) | [Persistance locale et reprise](./documentation-persistence.md)
 
 # Raccourcis clavier
 

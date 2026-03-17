@@ -1,8 +1,8 @@
 [English](../en/documentation-inspector.md) | [中文](../zh/documentation-inspector.md) | [繁體中文（香港）](../zh-hk/documentation-inspector.md) | [日本語](../ja/documentation-inspector.md) | [한국어](../ko/documentation-inspector.md) | [Français](../fr/documentation-inspector.md) | [Español](../es/documentation-inspector.md) | [Português](../pt/documentation-inspector.md) | [Deutsch](../de/documentation-inspector.md) | [Bahasa Melayu](../ms/documentation-inspector.md) | [தமிழ்](../ta/documentation-inspector.md)
 
-[Volver al inicio](./documentation.md) | [Resumen de la interfaz](./documentation-interface.md) | [Chat, adjuntos y comandos](./documentation-chat.md) | [API y solucion de problemas](./documentation-api-troubleshooting.md)
+[Volver al inicio](./documentation.md) | [Resumen de la interfaz](./documentation-interface.md) | [Conversacion, adjuntos y comandos](./documentation-chat.md) | [API y solucion de problemas](./documentation-api-troubleshooting.md)
 
-# Inspector, vista previa de archivos y trazas
+# Inspector, vista previa de archivos y rastreo
 
 El inspector derecho concentra la traza de ejecucion, actividad de archivos, resumenes y datos de entorno de la sesion actual.
 
@@ -13,7 +13,7 @@ Muestra por ejecucion:
 - Titulo y hora
 - Resumen del prompt
 - Lista de herramientas
-- Input, output y estado de cada herramienta
+- Entrada, salida y estado de cada herramienta
 - Cambios de archivos
 - Snapshots relacionados
 
@@ -21,9 +21,9 @@ Muestra por ejecucion:
 
 Agrupa por:
 
-- Created
-- Modified
-- Viewed
+- Creados
+- Modificados
+- Vistos
 
 ## Resumenes
 
@@ -35,4 +35,4 @@ Agrupa el modo actual, agente, modelo, session key, workspace root y datos de ga
 
 ## Vista previa
 
-Incluye previews de workspace, terminal, navegador y entorno.
+Incluye vistas previas de workspace, terminal, navegador y entorno.

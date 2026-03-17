@@ -2,7 +2,7 @@
 
 [Retour à l'accueil](./documentation.md) | [Vue d'ensemble de l'interface](./documentation-interface.md) | [Sessions, agents et modes d'exécution](./documentation-sessions.md) | [Raccourcis clavier](./documentation-shortcuts.md) | [Persistance locale et reprise](./documentation-persistence.md)
 
-# Chat, pièces jointes et commandes
+# Discussion, pièces jointes et commandes
 
 ## Envoi de messages
 
@@ -18,13 +18,13 @@ Le composer propose désormais deux modes d'envoi commutables :
 
 Dans les deux modes :
 
-- `ArrowUp / ArrowDown` : historique de prompts de la conversation courante
+- `ArrowUp / ArrowDown` : historique des prompts de la conversation courante
 
 Après l'envoi :
 
-- Le frontend insère d'abord un message utilisateur optimiste
-- Si ce n'est pas une slash command, il ajoute un placeholder de réflexion côté assistant
-- Le backend renvoie la réponse en NDJSON streamé par défaut
+- L'interface insère d'abord un message utilisateur optimiste
+- Si ce n'est pas une commande slash, elle ajoute un espace réservé de réflexion côté assistant
+- Le backend renvoie la réponse en NDJSON diffusé par défaut
 - Le bouton `Stop` interrompt la réponse en cours
 
 ## File d'attente
@@ -100,5 +100,5 @@ Modes pris en charge :
 ### `/new [prompt]` et `/reset [prompt]`
 
 - Créent un nouveau `sessionUser`
-- Reprennent les préférences courantes de model, agent, fast mode et thinking mode
+- Reprennent les préférences courantes de modèle, agent, mode rapide et mode de réflexion
 - Peuvent continuer immédiatement avec un prompt fourni

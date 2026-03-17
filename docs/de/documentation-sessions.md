@@ -14,10 +14,10 @@
 
 - Agenten kommen aus der erlaubten Laufzeitkonfiguration
 - Modelle und Denkmodi werden aus den vom Backend gemeldeten Optionen gelesen
-- Fast Mode und Think Mode werden pro Sitzung synchronisiert
+- Schnellmodus und Denkmodus werden pro Sitzung synchronisiert
 
 ## Ausführungsmodi
 
 - Standardmäßig kann die App im mock-Modus laufen
 - Mit aktivem Gateway verwendet sie einen echten OpenClaw-Endpunkt
-- Runtime-, Auth- und Queue-Status sind im Kopfbereich sichtbar
+- Laufzeit-, Authentifizierungs- und Warteschlangenstatus sind im Kopfbereich sichtbar

@@ -18,6 +18,7 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleFileManagerReveal,
     handleFilePreview,
     handleFilePreviewContent,
+    handleFilePreviewSave,
     handleRuntime,
     handleSession,
     handleSessionUpdate,
@@ -51,6 +52,11 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if (req.method === 'GET' && url.pathname === '/api/file-preview/content') {
       handleFilePreviewContent(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/file-preview/save') {
+      handleFilePreviewSave(req, res);
       return;
     }
 

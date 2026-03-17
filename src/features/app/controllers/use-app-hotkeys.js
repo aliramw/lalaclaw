@@ -90,7 +90,8 @@ export function useAppHotkeys({
     }
 
     const activeElement = document.activeElement;
-    if (activeElement === textarea || isEditableElement(activeElement)) {
+    const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+    if (activeElement === textarea || isEditableElement(activeElement) || isEditableElement(eventTarget)) {
       return;
     }
 

@@ -331,6 +331,8 @@ const pt = {
     },
     previewErrors: {
       loadFailed: "File preview failed.",
+      saveFailed: "Não foi possível salvar o arquivo. Tente novamente.",
+      saveRequiresRestart: "O backend em execução ainda não oferece suporte a salvamento inline. Reinicie o LalaClaw ou o serviço de backend e tente novamente.",
       officeFailed: "Office document preview failed. Please try again.",
       officeRequiresLibreOffice: "Instale o LibreOffice para visualizar arquivos DOC, PPT e PPTX.",
       officeRequiresLibreOfficeWithCommand: (command) => `Instale o LibreOffice para visualizar arquivos DOC, PPT e PPTX. Abra um terminal e execute: ${command}`,
@@ -341,6 +343,14 @@ const pt = {
     previewActions: {
       maximize: "Expandir visualização",
       restore: "Restaurar visualização",
+      previewTitle: "Visualização do arquivo",
+      loadingPreview: "Carregando visualização...",
+      unsupportedInlinePreview: "Este tipo de arquivo ainda não oferece suporte à visualização inline.",
+      truncatedPreview: "Este arquivo é grande demais para editar aqui. Apenas o primeiro 1 MB é exibido.",
+      editFile: "Editar",
+      cancelEdit: "Cancelar",
+      saveFile: "Salvar",
+      savingFile: "Salvando...",
       openInCodeEditor: "Abrir no VS Code",
       codeEditorLabel: "VS Code",
       revealInFileManager: (label) => `Mostrar em ${label}`,

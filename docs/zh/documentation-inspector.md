@@ -96,6 +96,7 @@
 从文件列表、Markdown 链接或图片缩略图进入预览时，支持：
 
 - 文本、JSON 和 Markdown 语法高亮
+- Markdown、普通文本和代码类文本可直接在预览里用 Monaco 在线编辑，并支持保存 / 取消
 - Markdown front matter 单独渲染
 - 已完成 Markdown 回复中的 Mermaid 图渲染，并可通过统一图片预览入口查看
 - `csv`、`xls`、`xlsx`、`xlsm` 表格预览

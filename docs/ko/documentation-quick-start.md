@@ -26,6 +26,6 @@ npm run dev:all
 
 ## 중요 참고
 
-- 로컬 UI 개발에는 npm start 가 아니라 npm run dev:all 을 사용합니다
+- 로컬 UI 개발에는 `npm start` 가 아니라 `npm run dev:all` 을 사용합니다
 - doc, ppt, pptx 미리보기에는 LibreOffice가 필요합니다
 - COMMANDCENTER_FORCE_MOCK=1 로 mock 모드를 강제할 수 있습니다

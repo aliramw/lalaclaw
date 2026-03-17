@@ -2,10 +2,10 @@
 
 [முகப்பிற்கு திரும்பு](./documentation.md) | [இடைமுக அறிமுகம்](./documentation-interface.md)
 
-# Easter Egg
+# மறைச்சிறப்பு
 
-மேல் இடது மூலையில் உள்ள lobster-ஐச் சுற்றி LalaClaw ஒரு சிறிய brand easter egg-ஐ கொண்டுள்ளது.
+மேல் இடது மூலையில் உள்ள lobster-ஐ மையமாகக் கொண்டு LalaClaw ஒரு சிறிய பிராண்ட் மறைச்சிறப்பைக் கொண்டுள்ளது.
 
-- click செய்தால் அலங்கார animation தொடங்கலாம்
-- இந்த நடத்தையால் chat அல்லது runtime மாறாது
+- சொடுக்கினால் அலங்கார animation தொடங்கலாம்
+- இந்த நடத்தையால் அரட்டை அல்லது runtime மாறாது
 - animation நடப்பு theme மற்றும் UI settings-ஐப் பின்பற்றும்

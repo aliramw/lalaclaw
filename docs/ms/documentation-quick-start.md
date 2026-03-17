@@ -26,6 +26,6 @@ Kemudian buka [http://127.0.0.1:5173](http://127.0.0.1:5173).
 
 ## Nota penting
 
-- Untuk pembangunan tempatan gunakan npm run dev:all, bukan npm start
+- Untuk pembangunan tempatan gunakan `npm run dev:all`, bukan `npm start`
 - LibreOffice diperlukan untuk pratonton doc, ppt dan pptx
 - COMMANDCENTER_FORCE_MOCK=1 boleh memaksa mod mock

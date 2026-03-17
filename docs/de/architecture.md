@@ -2,10 +2,10 @@
 
 # Architekturüberblick
 
-> Navigation: [Dokumentationsstart](./documentation.md) | [Schnellstart](./documentation-quick-start.md) | [Oberflächenüberblick](./documentation-interface.md) | [Produkt-Showcase](./showcase.md) | [Refactoring-Roadmap](./refactor-roadmap.md)
+> Navigation: [Dokumentationsstart](./documentation.md) | [Schnellstart](./documentation-quick-start.md) | [Oberflächenüberblick](./documentation-interface.md) | [Produktübersicht](./showcase.md) | [Refaktorierungs-Roadmap](./refactor-roadmap.md)
 
 LalaClaw ist in einen leichten UI-Einstieg, einen leichten Server-Einstieg und gut testbare Zwischenmodule gegliedert.
 
-- src enthält die React-Oberfläche und Feature-Controller
-- server enthält Routen, Services und Laufzeitintegration
-- docs spiegelt das reale Verhalten der Anwendung in mehreren Sprachen
+- `src` enthält die React-Oberfläche und Feature-Controller
+- `server` enthält Routen, Services und Laufzeitintegration
+- `docs` spiegelt das reale Verhalten der Anwendung in mehreren Sprachen

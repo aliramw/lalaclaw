@@ -1,6 +1,6 @@
 [English](../en/documentation-persistence.md) | [中文](../zh/documentation-persistence.md) | [繁體中文（香港）](../zh-hk/documentation-persistence.md) | [日本語](../ja/documentation-persistence.md) | [한국어](../ko/documentation-persistence.md) | [Français](../fr/documentation-persistence.md) | [Español](../es/documentation-persistence.md) | [Português](../pt/documentation-persistence.md) | [Deutsch](../de/documentation-persistence.md) | [Bahasa Melayu](../ms/documentation-persistence.md) | [தமிழ்](../ta/documentation-persistence.md)
 
-[ホームへ戻る](./documentation.md) | [キーボードショートカット](./documentation-shortcuts.md) | [チャット、添付、コマンド](./documentation-chat.md) | [セッション、Agent、ランタイムモード](./documentation-sessions.md)
+[ホームへ戻る](./documentation.md) | [キーボードショートカット](./documentation-shortcuts.md) | [チャット、添付、コマンド](./documentation-chat.md) | [セッション、エージェント、ランタイムモード](./documentation-sessions.md)
 
 # ローカル保存と復元
 
@@ -8,15 +8,15 @@
 
 フロントエンドは次の内容をブラウザに保存します。
 
-- アクティブな chat tab と inspector tab
-- タブごとの message history
-- 会話ごとの prompt draft
-- Prompt history
-- Theme と locale
-- Inspector の幅
-- Chat の文字サイズ
-- Chat の scroll state
-- Pending chat turn
+- アクティブなチャットタブとインスペクタータブ
+- タブごとのメッセージ履歴
+- 会話ごとのプロンプト下書き
+- プロンプト履歴
+- テーマと言語
+- インスペクターの幅
+- チャットの文字サイズ
+- チャットのスクロール位置
+- 保留中のチャット送信
 
 ## 添付の保存方法
 

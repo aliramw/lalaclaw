@@ -4,11 +4,11 @@
 
 # விசைப்பலகை குறுக்கு வழிகள்
 
-- Cmd/Ctrl + /: shortcut உதவியைத் திற
-- Cmd/Ctrl + N: புதிய session
-- Cmd/Ctrl + 1-9: எண் மூலம் session மாறு
-- Cmd/Ctrl + Left: முந்தைய tab
-- Cmd/Ctrl + Right: அடுத்த tab
+- Cmd/Ctrl + /: குறுக்கு வழி உதவியைத் திற
+- Cmd/Ctrl + N: புதிய அமர்வு
+- Cmd/Ctrl + 1-9: எண் மூலம் அமர்வை மாற்று
+- Cmd/Ctrl + Left: முந்தைய தாவல்
+- Cmd/Ctrl + Right: அடுத்த தாவல்
 - Shift + Cmd/Ctrl + F: system theme
 - Shift + Cmd/Ctrl + L: light theme
 - Shift + Cmd/Ctrl + D: dark theme

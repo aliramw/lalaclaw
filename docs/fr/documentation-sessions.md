@@ -1,6 +1,6 @@
 [English](../en/documentation-sessions.md) | [中文](../zh/documentation-sessions.md) | [繁體中文（香港）](../zh-hk/documentation-sessions.md) | [日本語](../ja/documentation-sessions.md) | [한국어](../ko/documentation-sessions.md) | [Français](../fr/documentation-sessions.md) | [Español](../es/documentation-sessions.md) | [Português](../pt/documentation-sessions.md) | [Deutsch](../de/documentation-sessions.md) | [Bahasa Melayu](../ms/documentation-sessions.md) | [தமிழ்](../ta/documentation-sessions.md)
 
-[Retour à l'accueil](./documentation.md) | [Démarrage rapide](./documentation-quick-start.md) | [Chat, pièces jointes et commandes](./documentation-chat.md) | [Raccourcis clavier](./documentation-shortcuts.md) | [Persistance locale et reprise](./documentation-persistence.md)
+[Retour à l'accueil](./documentation.md) | [Démarrage rapide](./documentation-quick-start.md) | [Discussion, pièces jointes et commandes](./documentation-chat.md) | [Raccourcis clavier](./documentation-shortcuts.md) | [Persistance locale et reprise](./documentation-persistence.md)
 
 # Sessions, agents et modes d'exécution
 
@@ -27,9 +27,9 @@ En pratique :
 Les préférences persistées côté backend comprennent :
 
 - Agent
-- Model
-- Fast mode
-- Think mode
+- Modèle
+- Mode rapide
+- Mode de réflexion
 
 ## Nouveau contexte
 
@@ -43,7 +43,7 @@ Pour repartir avec un contexte propre :
 
 Le mode `mock` est utilisé si :
 
-- Aucune gateway OpenClaw locale n'est détectée
+- Aucune passerelle OpenClaw locale n'est détectée
 - Ou si `COMMANDCENTER_FORCE_MOCK=1` est défini
 
 Il permet d'utiliser l'interface complète sans gateway réelle.

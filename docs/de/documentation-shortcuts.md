@@ -9,9 +9,9 @@
 - Cmd/Ctrl + 1-9: Sitzung per Nummer wechseln
 - Cmd/Ctrl + Left: vorheriger Tab
 - Cmd/Ctrl + Right: nächster Tab
-- Shift + Cmd/Ctrl + F: Systemtheme
-- Shift + Cmd/Ctrl + L: helles Theme
-- Shift + Cmd/Ctrl + D: dunkles Theme
+- Shift + Cmd/Ctrl + F: Systemerscheinungsbild
+- Shift + Cmd/Ctrl + L: helles Erscheinungsbild
+- Shift + Cmd/Ctrl + D: dunkles Erscheinungsbild
 
 Modus Enter zum Senden:
 

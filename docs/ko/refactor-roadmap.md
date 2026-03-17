@@ -4,7 +4,7 @@
 
 다음 단계로 고려할 수 있는 항목:
 
-- session 과 runtime controller 를 더 일관되게 정리하기
-- queueing, hydration, streaming 을 위한 controller 수준 테스트 보강
-- 문서와 localization workflow 자동화 강화
-- 복잡한 inspector 로직을 더 작은 UI / 데이터 모듈로 분리하기
+- 세션과 런타임 컨트롤러를 더 일관되게 정리하기
+- 대기열 처리, 복원, 스트리밍을 위한 컨트롤러 수준 테스트 보강
+- 문서와 현지화 워크플로 자동화 강화
+- 복잡한 인스펙터 로직을 더 작은 UI / 데이터 모듈로 분리하기
