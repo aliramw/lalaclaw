@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.3.17-7]
+
+### Added
+
+- A dedicated `InspectorFilesPanel` module for the inspector file view, with richer session/workspace navigation coverage and additional regression tests around file previews, filters, and context-menu actions
+- Agent-aware composer placeholder copy across every locale, including a semibold highlighted agent name inside the empty composer state
+
+### Changed
+
+- Reduced initial page-load work by deduplicating runtime bootstrap requests, lazy-loading locale bundles, Prism languages, markdown plugins, preview overlays, and heavy markdown rendering paths until they are actually needed
+- Refined command-center polish around connection labels, localized tooltip copy, and responsive inspector filter sizing on narrow layouts
+- Updated published-version examples in the root README and localized quick-start guides to `2026.3.17-7`
+
+### Fixed
+
+- Prevented the language-switch tooltip from reappearing immediately after a locale change
+- Reduced layout thrash in the chat/app shell by stabilizing composer sizing, scroll-follow behavior, focus handling, and footer status layout during first load
+
 ## [2026.3.17-6]
 
 ### Added

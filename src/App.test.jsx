@@ -1997,7 +1997,7 @@ describe("App", () => {
     await user.click(screen.getByRole("menuitem", { name: "worker" }));
     await screen.findByText("worker - 当前会话");
 
-    await user.type(screen.getByPlaceholderText(defaultPromptPlaceholder), "继续处理 worker 任务");
+    await user.type(screen.getByRole("textbox"), "继续处理 worker 任务");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("已处理：继续处理 worker 任务")).toBeInTheDocument();

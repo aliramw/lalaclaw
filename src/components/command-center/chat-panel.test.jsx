@@ -294,7 +294,7 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     await user.hover(screen.getByText("大钳在握"));
 
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("OpenClaw的状态");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("OpenClaw 连接状态");
     expect(screen.getByRole("tooltip")).toHaveTextContent("已连接");
   });
 
@@ -3874,6 +3874,7 @@ describe("ChatPanel", () => {
 
     viewport.scrollTop = 0;
     viewport.scrollHeight = 240;
+    fireEvent.scroll(viewport);
 
     await act(async () => {
       resizeObservers.forEach((observer) => observer.callback([]));
@@ -4028,6 +4029,7 @@ describe("ChatPanel", () => {
     Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
     Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 960 });
     Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 320 });
+    fireEvent.wheel(viewport);
     fireEvent.scroll(viewport);
 
     await screen.findByRole("button", { name: "回到底部" });
