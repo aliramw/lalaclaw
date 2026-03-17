@@ -52,6 +52,43 @@ Notas:
 - Se a configuracao local ja estiver pronta, voce pode pular `npm run lalaclaw:init`
 - Se preferir configurar manualmente, use [`.env.local.example`](../../.env.local.example) como ponto de partida
 
+## Instalar em um host remoto via OpenClaw
+
+Se voce tiver uma maquina remota que o OpenClaw consegue controlar e tambem puder acessar essa maquina por SSH, pode deixar o OpenClaw instalar e iniciar o LalaClaw remotamente, e depois acessa-lo localmente por meio de encaminhamento de porta SSH.
+
+Exemplo de instrucao para o OpenClaw:
+
+```text
+安装这个 https://github.com/aliramw/lalaclaw
+```
+
+Fluxo tipico:
+
+1. O OpenClaw clona o repositorio na maquina remota
+2. O OpenClaw instala as dependencias e inicia a aplicacao
+3. O LalaClaw escuta em `127.0.0.1:3000` na maquina remota
+4. Voce encaminha essa porta remota para sua maquina local via SSH
+5. Depois abre no navegador o endereco local encaminhado
+
+Exemplo de encaminhamento SSH:
+
+```bash
+ssh -N -L 3000:127.0.0.1:3000 root@your-remote-server-ip
+```
+
+Depois abra:
+
+```text
+http://127.0.0.1:3000
+```
+
+Notas:
+
+- Nesse modo, o seu `127.0.0.1:3000` local aponta na pratica para o `127.0.0.1:3000` da maquina remota
+- O processo do app, a configuracao do OpenClaw, os transcripts, os logs e os workspaces ficam na maquina remota
+- Essa abordagem e mais segura do que expor o dashboard diretamente na internet publica, porque caso contrario qualquer pessoa que conheca a URL pode usar esse painel sem senha
+- Se a porta local `3000` ja estiver ocupada, voce pode usar outra porta local como `3300:127.0.0.1:3000` e depois abrir `http://127.0.0.1:3300`
+
 ## Atualizar uma instalacao existente
 
 Se voce instalou o LalaClaw com npm e quer a versao mais recente:

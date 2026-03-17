@@ -55,6 +55,43 @@ npm run dev:all
 
 macOS source checkout இலிருந்து production background service வேண்டும் என்றால் `npm run doctor` பிறகு `npm run lalaclaw:init` இயக்கவும்.
 
+## OpenClaw மூலம் remote host இல் நிறுவுதல்
+
+OpenClaw கட்டுப்படுத்தக்கூடிய ஒரு remote machine உங்களிடம் இருந்தும், அதே machine இல் SSH மூலம் உள்நுழையவும் முடிந்தால், இந்த project ஐ GitHub இலிருந்து OpenClaw மூலம் நிறுவச்செய்து, remote host இல் app ஐ தொடங்க வைத்து, பிறகு SSH port forwarding மூலம் உங்கள் local browser இல் dashboard ஐ பயன்படுத்தலாம்.
+
+OpenClaw க்கு அனுப்பும் உதாரண கட்டளை:
+
+~~~text
+安装这个 https://github.com/aliramw/lalaclaw
+~~~
+
+பொதுவான நடைமுறை:
+
+1. OpenClaw remote machine இல் இந்த repository ஐ clone செய்யும்
+2. OpenClaw dependencies ஐ நிறுவி LalaClaw ஐ தொடங்கும்
+3. App remote machine இன் `127.0.0.1:3000` இல் listen செய்யும்
+4. அந்த remote port ஐ SSH மூலம் உங்கள் local machine க்கு forward செய்வீர்கள்
+5. பின்னர் forwarded local address ஐ browser இல் திறப்பீர்கள்
+
+உதாரண SSH port forwarding:
+
+~~~bash
+ssh -N -L 3000:127.0.0.1:3000 root@your-remote-server-ip
+~~~
+
+பிறகு திறக்க:
+
+~~~text
+http://127.0.0.1:3000
+~~~
+
+குறிப்புகள்:
+
+- இந்த அமைப்பில் உங்கள் local `127.0.0.1:3000` உண்மையில் remote machine இன் `127.0.0.1:3000` க்கு forward செய்யப்படுகிறது
+- App process, OpenClaw configuration, transcript, logs, workspace ஆகிய அனைத்தும் remote machine இல்தான் இருக்கும்
+- இந்த முறை dashboard ஐ நேரடியாக public internet இல் வெளியிடுவதைவிட பாதுகாப்பானது, இல்லையெனில் அந்த URL ஐ அறிந்த யாரும் password இல்லாமல் இந்த console ஐ பயன்படுத்த முடியும்
+- உங்கள் local `3000` port ஏற்கனவே பயன்படுத்தப்பட்டால் `3300:127.0.0.1:3000` போன்ற வேறு local port ஐ பயன்படுத்தி `http://127.0.0.1:3300` ஐ திறக்கலாம்
+
 ## புதுப்பிப்பு
 
 ~~~bash

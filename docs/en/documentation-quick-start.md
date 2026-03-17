@@ -55,6 +55,43 @@ Notes:
 - If your setup is already ready, you can skip `npm run lalaclaw:init`
 - If you prefer manual setup, use [`.env.local.example`](../../.env.local.example) as a starting point
 
+## Install On A Remote Host Through OpenClaw
+
+If you have a remote machine that OpenClaw can control, and you can also log in to that machine with SSH, you can let OpenClaw install and start LalaClaw there, then access it locally through SSH port forwarding.
+
+Example instruction to OpenClaw:
+
+```text
+安装这个 https://github.com/aliramw/lalaclaw
+```
+
+Typical flow:
+
+1. OpenClaw clones the repository on the remote machine
+2. OpenClaw installs dependencies and starts the app there
+3. LalaClaw listens on `127.0.0.1:3000` on the remote machine
+4. You forward that remote port to your local machine with SSH
+5. You open the forwarded local address in your browser
+
+Example SSH port forward:
+
+```bash
+ssh -N -L 3000:127.0.0.1:3000 root@your-remote-server-ip
+```
+
+Then open:
+
+```text
+http://127.0.0.1:3000
+```
+
+Notes:
+
+- Your local `127.0.0.1:3000` becomes a tunnel to the remote host's `127.0.0.1:3000`
+- The running app process, OpenClaw config, transcripts, logs, and workspaces belong to the remote machine
+- This is safer than exposing the dashboard directly on the public internet, because otherwise anyone who knows the URL can use the control panel without a password
+- If your local port `3000` is occupied, forward another local port such as `3300:127.0.0.1:3000`, then open `http://127.0.0.1:3300`
+
 ## Update An Existing Install
 
 If you installed LalaClaw from npm and want the newest version:

@@ -55,6 +55,43 @@ Im Entwicklungsmodus verwende [http://127.0.0.1:5173](http://127.0.0.1:5173).
 
 Für den Produktions-Hintergrunddienst aus einem Source-Checkout unter macOS: zuerst `npm run doctor`, dann `npm run lalaclaw:init`.
 
+## Über OpenClaw auf einem entfernten Host installieren
+
+Wenn du bereits eine von OpenClaw verwaltete Remote-Maschine hast und dich zusätzlich per SSH darauf anmelden kannst, kannst du OpenClaw bitten, dieses Projekt direkt von GitHub zu installieren, es auf dem Remote-Host zu starten und anschließend über SSH-Portweiterleitung lokal auf das Dashboard zuzugreifen.
+
+Beispielanweisung für OpenClaw:
+
+~~~text
+安装这个 https://github.com/aliramw/lalaclaw
+~~~
+
+Typischer Ablauf:
+
+1. OpenClaw klont dieses Repository auf die Remote-Maschine
+2. OpenClaw installiert die Abhängigkeiten und startet LalaClaw
+3. Die Anwendung lauscht auf der Remote-Maschine unter `127.0.0.1:3000`
+4. Du leitest diesen Remote-Port per SSH auf deinen lokalen Rechner weiter
+5. Anschließend öffnest du die weitergeleitete lokale Adresse im Browser
+
+Beispiel für SSH-Portweiterleitung:
+
+~~~bash
+ssh -N -L 3000:127.0.0.1:3000 root@your-remote-server-ip
+~~~
+
+Danach öffnen:
+
+~~~text
+http://127.0.0.1:3000
+~~~
+
+Hinweise:
+
+- In dieser Konfiguration zeigt dein lokales `127.0.0.1:3000` tatsächlich auf das `127.0.0.1:3000` der Remote-Maschine
+- App-Prozess, OpenClaw-Konfiguration, Transcripts, Logs und Workspaces befinden sich auf der Remote-Maschine
+- Dieser Ansatz ist sicherer, als das Dashboard direkt im öffentlichen Internet bereitzustellen, denn sonst kann jede Person mit der URL dieses Kontrollpanel ohne Passwort verwenden
+- Wenn der lokale Port `3000` bereits belegt ist, kannst du einen anderen lokalen Port wie `3300:127.0.0.1:3000` verwenden und danach `http://127.0.0.1:3300` öffnen
+
 ## Aktualisierung
 
 ~~~bash

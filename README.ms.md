@@ -55,6 +55,43 @@ Dalam mod pembangunan gunakan [http://127.0.0.1:5173](http://127.0.0.1:5173).
 
 Jika anda mahu servis pengeluaran latar belakang daripada source checkout di macOS, jalankan `npm run doctor` kemudian `npm run lalaclaw:init`.
 
+## Pasang pada hos jauh melalui OpenClaw
+
+Jika anda sudah mempunyai mesin jauh yang diurus oleh OpenClaw dan anda juga boleh log masuk ke mesin itu melalui SSH, anda boleh meminta OpenClaw memasang projek ini terus dari GitHub, memulakannya pada hos jauh, kemudian mengakses dashboard itu secara tempatan melalui port forwarding SSH.
+
+Contoh arahan kepada OpenClaw:
+
+~~~text
+安装这个 https://github.com/aliramw/lalaclaw
+~~~
+
+Aliran biasa:
+
+1. OpenClaw mengklon repositori ini pada mesin jauh
+2. OpenClaw memasang dependensi dan memulakan LalaClaw
+3. Aplikasi mendengar pada `127.0.0.1:3000` di mesin jauh
+4. Anda memajukan port jauh itu ke mesin tempatan anda melalui SSH
+5. Anda membuka alamat tempatan yang telah dimajukan dalam pelayar
+
+Contoh port forwarding SSH:
+
+~~~bash
+ssh -N -L 3000:127.0.0.1:3000 root@your-remote-server-ip
+~~~
+
+Kemudian buka:
+
+~~~text
+http://127.0.0.1:3000
+~~~
+
+Nota:
+
+- Dalam konfigurasi ini, `127.0.0.1:3000` tempatan anda sebenarnya menghala ke `127.0.0.1:3000` pada mesin jauh
+- Proses aplikasi, konfigurasi OpenClaw, transcript, log dan workspace semuanya berada pada mesin jauh
+- Pendekatan ini lebih selamat berbanding mendedahkan dashboard terus ke internet awam, kerana jika tidak sesiapa sahaja yang mengetahui URL itu boleh menggunakan konsol ini tanpa kata laluan
+- Jika port tempatan `3000` sudah digunakan, anda boleh guna port tempatan lain seperti `3300:127.0.0.1:3000` dan kemudian buka `http://127.0.0.1:3300`
+
 ## Kemas Kini
 
 ~~~bash

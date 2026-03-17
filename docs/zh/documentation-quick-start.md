@@ -55,6 +55,43 @@ npm run lalaclaw:start
 - 如果你的本地配置已经准备好，可以跳过 `npm run lalaclaw:init`
 - 如果你更想手动编辑配置，可以从 [`.env.local.example`](../../.env.local.example) 开始
 
+## 通过 OpenClaw 安装到远端主机
+
+如果你有一台可以被 OpenClaw 控制的远端机器，并且你也能通过 SSH 登录这台机器，那么你可以让 OpenClaw 在远端安装并启动 LalaClaw，然后通过 SSH 端口转发在本地访问它。
+
+给 OpenClaw 的示例指令：
+
+```text
+安装这个 https://github.com/aliramw/lalaclaw
+```
+
+典型流程：
+
+1. OpenClaw 在远端机器上克隆仓库
+2. OpenClaw 安装依赖并启动应用
+3. LalaClaw 在远端机器的 `127.0.0.1:3000` 上监听
+4. 你用 SSH 把这个远端端口转发到本地机器
+5. 你在本地浏览器中打开转发后的地址
+
+示例 SSH 端口转发：
+
+```bash
+ssh -N -L 3000:127.0.0.1:3000 root@your-remote-server-ip
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:3000
+```
+
+说明：
+
+- 这种方式下，本地的 `127.0.0.1:3000` 实际上对应的是远端机器的 `127.0.0.1:3000`
+- 应用进程、OpenClaw 配置、transcript、日志和工作区都在远端机器上
+- 这种方式比直接把 dashboard 暴露在公网更安全，因为否则任何知道这个地址的人，都可以在没有密码的情况下直接使用这个控制台
+- 如果你本地的 `3000` 端口已经被占用，可以改用 `3300:127.0.0.1:3000`，然后打开 `http://127.0.0.1:3300`
+
 ## 更新已安装的 LalaClaw
 
 如果你是通过 npm 安装的，想更新到最新版：

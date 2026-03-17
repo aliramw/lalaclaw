@@ -57,6 +57,43 @@ En développement, utilisez [http://127.0.0.1:5173](http://127.0.0.1:5173).
 
 Si vous voulez le service de production en arrière-plan depuis un checkout source sur macOS, exécutez `npm run doctor` puis `npm run lalaclaw:init`.
 
+## Installer sur un hôte distant via OpenClaw
+
+Si vous avez déjà une machine distante gérée par OpenClaw et que vous pouvez aussi vous y connecter en SSH, vous pouvez demander à OpenClaw d'installer ce projet depuis GitHub, de le démarrer sur la machine distante, puis d'accéder au dashboard en local grâce au transfert de port SSH.
+
+Exemple d'instruction à envoyer à OpenClaw :
+
+```text
+安装这个 https://github.com/aliramw/lalaclaw
+```
+
+Flux typique :
+
+1. OpenClaw clone ce dépôt sur la machine distante
+2. OpenClaw installe les dépendances et démarre LalaClaw
+3. L'application écoute sur `127.0.0.1:3000` sur cette machine distante
+4. Vous transférez ce port distant vers votre machine locale avec SSH
+5. Vous ouvrez ensuite l'adresse locale transférée dans votre navigateur
+
+Exemple de transfert de port SSH :
+
+```bash
+ssh -N -L 3000:127.0.0.1:3000 root@your-remote-server-ip
+```
+
+Puis ouvrez :
+
+```text
+http://127.0.0.1:3000
+```
+
+Remarques :
+
+- Dans cette configuration, votre `127.0.0.1:3000` local pointe en fait vers le `127.0.0.1:3000` de la machine distante
+- Le processus de l'application, la configuration OpenClaw, les transcripts, les logs et les workspaces restent sur la machine distante
+- Cette approche est plus sure que d'exposer directement le dashboard sur l'internet public, car sinon toute personne qui connait l'URL peut utiliser cette console sans mot de passe
+- Si le port local `3000` est déjà utilisé, vous pouvez transférer un autre port local comme `3300:127.0.0.1:3000`, puis ouvrir `http://127.0.0.1:3300`
+
 ## Mise à jour
 
 Mettre à jour vers la dernière version :
