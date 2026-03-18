@@ -17,6 +17,9 @@ const desktopBreakpointQuery = "(min-width: 1280px)";
 const dragHandleWidth = 8;
 const resizeHandleDots = Array.from({ length: 12 });
 const minChatPanelWidth = 560;
+const compactInspectorPanelMinWidth = 58;
+const compactInspectorPanelMaxWidth = 72;
+const compactChatPanelMinWidth = 220;
 
 function getRelationshipDisplay(relationship, messages) {
   const fallbackLabel =
@@ -437,7 +440,9 @@ function AppContent() {
     handleSearchSessions,
     handlePromptChange,
     handlePromptKeyDown,
+    handleClearQueuedMessages,
     handleRemoveAttachment,
+    handleRemoveQueuedMessage,
     handleReset,
     handleSend,
     handleSelectSearchedSession,
@@ -452,6 +457,7 @@ function AppContent() {
     inspectorPanelWidth,
     peeks,
     prompt,
+    promptSyncVersion,
     promptRef,
     renderPeek,
     resolvedTheme,
@@ -503,6 +509,23 @@ function AppContent() {
     const nextWidth = Number.isFinite(numericWidth) ? numericWidth : fallbackWidth;
     return Math.round(Math.min(maximumWidth, Math.max(minimumWidth, nextWidth)));
   }, [getInspectorPanelWidthBounds, splitLayoutWidth]);
+
+  const getCompactInspectorPanelWidth = useCallback((containerWidth = splitLayoutWidth) => {
+    if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
+      return 64;
+    }
+
+    const desiredWidth = 64;
+    const maximumWidth = Math.max(
+      compactInspectorPanelMinWidth,
+      Math.min(compactInspectorPanelMaxWidth, containerWidth - compactChatPanelMinWidth),
+    );
+
+    return Math.max(
+      compactInspectorPanelMinWidth,
+      Math.min(maximumWidth, desiredWidth),
+    );
+  }, [splitLayoutWidth]);
 
   const stopPanelResize = () => {
     resizeCleanupRef.current?.();
@@ -612,13 +635,19 @@ function AppContent() {
     () => getClampedInspectorPanelWidth(inspectorPanelWidth),
     [getClampedInspectorPanelWidth, inspectorPanelWidth],
   );
-  const desktopLayoutStyle = useMemo(
+  const compactInspectorPanelWidth = useMemo(
+    () => getCompactInspectorPanelWidth(splitLayoutWidth),
+    [getCompactInspectorPanelWidth, splitLayoutWidth],
+  );
+  const splitLayoutStyle = useMemo(
     () => (isWideLayout
       ? {
           gridTemplateColumns: `minmax(0, 1fr) ${dragHandleWidth}px ${resolvedInspectorPanelWidth}px`,
         }
-      : undefined),
-    [isWideLayout, resolvedInspectorPanelWidth],
+      : {
+          gridTemplateColumns: `minmax(0, 1fr) ${compactInspectorPanelWidth}px`,
+        }),
+    [compactInspectorPanelWidth, isWideLayout, resolvedInspectorPanelWidth],
   );
   const openAgentIds = useMemo(() => chatTabs.map((tab) => tab.agentId), [chatTabs]);
   const tabBrandOverview = useMemo(() => (
@@ -788,6 +817,7 @@ function AppContent() {
       activeTab={activeTab}
       agents={agents}
       artifacts={artifacts}
+      compact={!isWideLayout}
       currentAgentId={session.agentId}
       currentSessionUser={session.sessionUser}
       currentWorkspaceRoot={session.workspaceRoot}
@@ -806,6 +836,7 @@ function AppContent() {
     artifacts,
     files,
     handleArtifactSelect,
+    isWideLayout,
     peeks,
     renderPeek,
     resolvedTheme,
@@ -820,11 +851,11 @@ function AppContent() {
   return (
     <TooltipProvider delayDuration={150}>
       <div
-        className="min-h-dvh bg-background text-foreground xl:h-dvh xl:overflow-hidden"
+        className="h-dvh overflow-hidden bg-background text-foreground"
         aria-busy={switchingAgentOverlay || switchingModelOverlay ? "true" : "false"}
       >
-        <div className="mx-auto flex min-h-dvh w-full max-w-[1760px] flex-col gap-2 overflow-y-auto px-3 py-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
-          <div className="flex items-center justify-between gap-3">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-2 overflow-hidden px-3 py-3">
+          <div className="flex shrink-0 items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               <ChatTabsStrip
                 className="min-w-0 pt-0 pb-0 pr-0"
@@ -843,10 +874,10 @@ function AppContent() {
 
           <main
             ref={splitLayoutRef}
-            className="grid content-start gap-3 xl:min-h-0 xl:flex-1 xl:grid-rows-[minmax(0,1fr)] xl:gap-0 xl:overflow-hidden"
-            style={desktopLayoutStyle}
+            className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden"
+            style={splitLayoutStyle}
           >
-            <div className="xl:min-h-0 xl:pr-0.5">
+            <div className="min-h-0 min-w-0 pr-1.5 xl:pr-0.5">
               <ChatPanel
                 agentLabel={session.agentLabel || session.agentId || "main"}
                 activeChatTabId={activeChatTabId}
@@ -871,10 +902,13 @@ function AppContent() {
                 onRemoveAttachment={handleRemoveAttachment}
                 onPromptChange={handlePromptChange}
                 onPromptKeyDown={handlePromptKeyDown}
+                onClearQueuedMessages={handleClearQueuedMessages}
+                onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onReset={() => handleReset().catch(() => {})}
                 onSend={handleSend}
                 onStop={() => handleStop().catch(() => {})}
                 prompt={prompt}
+                promptSyncVersion={promptSyncVersion}
                 promptRef={promptRef}
                 resolvedTheme={resolvedTheme}
                 restoredScrollKey={restoredChatScrollKey}
@@ -887,38 +921,40 @@ function AppContent() {
               />
             </div>
 
-            <div className="hidden xl:flex xl:min-h-0 xl:items-stretch xl:justify-center">
-              <button
-                type="button"
-                aria-label={i18nMessages.common.resizePanels}
-                onPointerDown={handleResizeStart}
-                className="group relative h-full w-full cursor-col-resize touch-none select-none"
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "absolute left-1/2 top-1/2 inline-grid h-[22px] w-[6.8px] -translate-x-1/2 -translate-y-1/2 grid-cols-2 grid-rows-6 gap-x-[2px] gap-y-[2px] transition-colors",
-                    isResizingPanels
-                      ? "bg-transparent"
-                      : "bg-transparent",
-                  )}
+            {isWideLayout ? (
+              <div className="xl:flex xl:min-h-0 xl:items-stretch xl:justify-center">
+                <button
+                  type="button"
+                  aria-label={i18nMessages.common.resizePanels}
+                  onPointerDown={handleResizeStart}
+                  className="group relative h-full w-full cursor-col-resize touch-none select-none"
                 >
-                  {resizeHandleDots.map((_, index) => (
-                    <span
-                      key={index}
-                      className={cn(
-                        "h-[2.4px] w-[2.4px] rounded-full transition-colors",
-                        isResizingPanels ? "bg-primary/80" : "bg-muted-foreground/45 group-hover:bg-foreground/55",
-                      )}
-                    />
-                  ))}
-                </span>
-              </button>
-            </div>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "absolute left-1/2 top-1/2 inline-grid h-[22px] w-[6.8px] -translate-x-1/2 -translate-y-1/2 grid-cols-2 grid-rows-6 gap-x-[2px] gap-y-[2px] transition-colors",
+                      isResizingPanels
+                        ? "bg-transparent"
+                        : "bg-transparent",
+                    )}
+                  >
+                    {resizeHandleDots.map((_, index) => (
+                      <span
+                        key={index}
+                        className={cn(
+                          "h-[2.4px] w-[2.4px] rounded-full transition-colors",
+                          isResizingPanels ? "bg-primary/80" : "bg-muted-foreground/45 group-hover:bg-foreground/55",
+                        )}
+                      />
+                    ))}
+                  </span>
+                </button>
+              </div>
+            ) : null}
 
-            <div className="flex min-w-0 flex-col gap-3 xl:h-full xl:min-h-0 xl:min-w-[300px] xl:overflow-hidden xl:pl-0.5">
+            <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden pl-1.5 xl:min-w-[300px] xl:pl-0.5">
               {taskRelationshipsPanel}
-              <div className="min-w-0 xl:min-h-0 xl:flex-1">
+              <div className="min-h-0 min-w-0 flex-1">
                 {inspectorPanel}
               </div>
             </div>

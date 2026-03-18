@@ -263,6 +263,8 @@ const zh = {
     uploadAttachment: "上传图片或附件",
     queuedCount: (count) => `待发送 ${count}`,
     queuedHint: "当前回复结束后将按顺序发送",
+    clearQueuedMessages: "清空待发送",
+    removeQueuedMessage: (index) => `删除第 ${index} 条待发送消息`,
     outline: "大纲",
     copyMessage: "复制消息文本",
     copiedMessage: "已复制消息",
@@ -290,6 +292,8 @@ const zh = {
     jumpToPreviousUserMessage: "定位到上一句",
     tabShortcutHint: (number) => `Cmd + ${number}`,
     tabSwitchTooltip: (number) => `Cmd + ${number} 切换到此会话`,
+    scrollTabsLeft: "向左滚动会话标签",
+    scrollTabsRight: "向右滚动会话标签",
     closeTab: "关闭会话",
     closeTabHint: "该操作不会清除会话内容，可再次打开",
     closeTabAriaLabel: (agent) => `关闭会话 ${agent}`,
@@ -297,6 +301,9 @@ const zh = {
   inspector: {
     title: "追踪与观察",
     subtitle: "当前会话的文件、摘要、运行记录与环境",
+    compact: {
+      closeSheet: "关闭追踪面板",
+    },
     relationships: {
       title: "协同任务",
       subtitle: "主 Agent 派发的会话与子 Agent",

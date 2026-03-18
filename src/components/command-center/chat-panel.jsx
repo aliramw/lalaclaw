@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, Copy, Paperclip, RotateCcw, Send, Square, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Paperclip, RotateCcw, Send, Square, X } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,7 @@ const artifactFocusScrollDurationMs = 320;
 const focusHighlightDurationMs = 1400;
 const messageOutlineViewportBottomGapPx = 20;
 const messageOutlineMinHeightPx = 96;
+const chatTabsScrollStepPx = 220;
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -1436,7 +1437,7 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
   );
 }
 
-function QueuedMessages({ items, textClassName }) {
+function QueuedMessages({ items, onClearAll, onRemoveItem, textClassName }) {
   const { messages } = useI18n();
 
   if (!items.length) {
@@ -1445,17 +1446,41 @@ function QueuedMessages({ items, textClassName }) {
 
   return (
     <div className="border-b border-border/70 bg-muted/20 px-3 py-2">
-      <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-        <Badge variant="default" className="h-5 px-1.5 py-0 text-[10px]">
-          {messages.chat.queuedCount(items.length)}
-        </Badge>
-        <span>{messages.chat.queuedHint}</span>
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-2">
+          <Badge variant="default" className="h-5 px-1.5 py-0 text-[10px]">
+            {messages.chat.queuedCount(items.length)}
+          </Badge>
+          <span>{messages.chat.queuedHint}</span>
+        </div>
+        {onClearAll ? (
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center rounded-sm px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label={messages.chat.clearQueuedMessages}
+            onClick={() => onClearAll()}
+          >
+            {messages.chat.clearQueuedMessages}
+          </button>
+        ) : null}
       </div>
       <div className="grid gap-1.5">
         {items.map((item, index) => (
-          <div key={item.id} className={cn("rounded-md border border-border/70 bg-background/80 px-2.5 py-1.5", textClassName)}>
-            <span className="mr-2 text-[10px] text-muted-foreground">#{index + 1}</span>
-            <span className="line-clamp-2 whitespace-pre-wrap">{item.content}</span>
+          <div key={item.id} className={cn("flex items-start gap-2 rounded-md border border-border/70 bg-background/80 px-2.5 py-1.5", textClassName)}>
+            <div className="min-w-0 flex-1">
+              <span className="mr-2 text-[10px] text-muted-foreground">#{index + 1}</span>
+              <span className="line-clamp-2 whitespace-pre-wrap">{item.content}</span>
+            </div>
+            {onRemoveItem ? (
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={messages.chat.removeQueuedMessage(index + 1)}
+                onClick={() => onRemoveItem(item.id)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
         ))}
       </div>
@@ -1475,11 +1500,51 @@ export function ChatTabsStrip({
 }) {
   const { messages } = useI18n();
   const [draggingTabId, setDraggingTabId] = useState("");
+  const [tabScrollState, setTabScrollState] = useState({
+    canScrollLeft: false,
+    canScrollRight: false,
+    hasOverflow: false,
+  });
   const tabNodeMapRef = useRef(new Map());
   const previousTabRectsRef = useRef(new Map());
   const previousOrderSignatureRef = useRef("");
   const draggingTabIdRef = useRef("");
   const lastReorderIntentRef = useRef("");
+  const scrollViewportRef = useRef(null);
+  const scrollContentRef = useRef(null);
+
+  const updateTabScrollState = useCallback(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) {
+      setTabScrollState((current) => (
+        current.canScrollLeft || current.canScrollRight || current.hasOverflow
+          ? {
+              canScrollLeft: false,
+              canScrollRight: false,
+              hasOverflow: false,
+            }
+          : current
+      ));
+      return;
+    }
+
+    const { clientWidth, scrollLeft, scrollWidth } = viewport;
+    const hasOverflow = (scrollWidth - clientWidth) > 1;
+    const canScrollLeft = scrollLeft > 1;
+    const canScrollRight = hasOverflow && (scrollLeft + clientWidth) < (scrollWidth - 1);
+
+    setTabScrollState((current) => (
+      current.canScrollLeft === canScrollLeft
+      && current.canScrollRight === canScrollRight
+      && current.hasOverflow === hasOverflow
+        ? current
+        : {
+            canScrollLeft,
+            canScrollRight,
+            hasOverflow,
+          }
+    ));
+  }, []);
 
   useLayoutEffect(() => {
     const currentOrderSignature = items.map((item) => item.id).join("|");
@@ -1530,176 +1595,305 @@ export function ChatTabsStrip({
     previousOrderSignatureRef.current = currentOrderSignature;
   }, [draggingTabId, items]);
 
+  useLayoutEffect(() => {
+    updateTabScrollState();
+  }, [items, updateTabScrollState]);
+
+  useLayoutEffect(() => {
+    const activeItem = items.find((item) => item.active);
+    if (!activeItem) {
+      return;
+    }
+
+    const viewport = scrollViewportRef.current;
+    const activeNode = tabNodeMapRef.current.get(activeItem.id);
+    if (!viewport || !activeNode) {
+      return;
+    }
+
+    const nodeLeft = activeNode.offsetLeft;
+    const nodeRight = nodeLeft + activeNode.offsetWidth;
+    const viewLeft = viewport.scrollLeft;
+    const viewRight = viewLeft + viewport.clientWidth;
+
+    if (nodeLeft >= viewLeft && nodeRight <= viewRight) {
+      return;
+    }
+
+    activeNode.scrollIntoView?.({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [items]);
+
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) {
+      return undefined;
+    }
+
+    updateTabScrollState();
+
+    const handleScroll = () => updateTabScrollState();
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleScroll);
+
+    const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
+    const resizeObserver = ResizeObserverCtor ? new ResizeObserverCtor(() => updateTabScrollState()) : null;
+
+    resizeObserver?.observe(viewport);
+    if (scrollContentRef.current) {
+      resizeObserver?.observe(scrollContentRef.current);
+    }
+
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+      resizeObserver?.disconnect?.();
+    };
+  }, [items.length, updateTabScrollState]);
+
   if (!items.length && !leadingControl && !trailingControl) {
     return null;
   }
 
   const closable = items.length > 1;
+  const scrollTabsBy = (direction) => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const delta = Math.max(chatTabsScrollStepPx, Math.round(viewport.clientWidth * 0.72)) * direction;
+    if (typeof viewport.scrollBy === "function") {
+      viewport.scrollBy({ left: delta, behavior: "smooth" });
+    } else {
+      viewport.scrollLeft += delta;
+    }
+
+    window.requestAnimationFrame(() => updateTabScrollState());
+  };
+
+  const scrollButtonClassName = "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground/85 transition hover:border-foreground/25 hover:bg-accent/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:border-border/45 disabled:bg-muted/28 disabled:text-muted-foreground/45 disabled:opacity-100";
 
   return (
-    <div className={cn("flex items-center gap-1 overflow-x-auto overflow-y-hidden pt-1 pb-0 pr-3", className)}>
+    <div className={cn("flex min-w-0 items-center gap-1 pt-1 pb-0", className)}>
       {leadingControl ? <div className="shrink-0">{leadingControl}</div> : null}
-      {items.map((item, index) => {
-        const shortcutNumber = index < 9 ? String(index + 1) : null;
-        const isClosableActiveTab = closable && item.active;
-        const tabTitle = item.title || item.agentId;
-        const imTitleParts = splitImTabTitleForDisplay(tabTitle, item.agentId, item.sessionUser);
-
-        return (
-          <div
-            key={item.id}
-            ref={(node) => {
-              if (node) {
-                tabNodeMapRef.current.set(item.id, node);
-                return;
-              }
-              tabNodeMapRef.current.delete(item.id);
-            }}
-            draggable={items.length > 1}
-            onDragStart={(event) => {
-              draggingTabIdRef.current = item.id;
-              setDraggingTabId(item.id);
-              lastReorderIntentRef.current = "";
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", item.id);
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              const currentDraggingTabId = draggingTabIdRef.current || draggingTabId;
-              if (!currentDraggingTabId || currentDraggingTabId === item.id) {
-                return;
-              }
-
-              const sourceIndex = items.findIndex((entry) => entry.id === currentDraggingTabId);
-              const targetIndex = items.findIndex((entry) => entry.id === item.id);
-              if (sourceIndex === -1 || targetIndex === -1) {
-                return;
-              }
-
-              const rect = event.currentTarget.getBoundingClientRect();
-              const placeAfter = event.clientX > rect.left + rect.width / 2;
-              const currentIntentKey = `${currentDraggingTabId}:${item.id}:${placeAfter ? "after" : "before"}`;
-              if (lastReorderIntentRef.current === currentIntentKey) {
-                return;
-              }
-
-              if ((placeAfter && sourceIndex === targetIndex + 1) || (!placeAfter && sourceIndex === targetIndex - 1)) {
-                return;
-              }
-
-              lastReorderIntentRef.current = currentIntentKey;
-              onReorder?.(currentDraggingTabId, item.id, placeAfter ? "after" : "before");
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              draggingTabIdRef.current = "";
-              setDraggingTabId("");
-              lastReorderIntentRef.current = "";
-            }}
-            onDragEnd={() => {
-              draggingTabIdRef.current = "";
-              setDraggingTabId("");
-              lastReorderIntentRef.current = "";
-            }}
-            className={cn(
-              "group inline-flex h-9 max-w-[13rem] items-center rounded-md border transition",
-              item.active
-                ? resolvedTheme === "dark"
-                  ? "border-transparent bg-[#0f3e6a] text-white shadow-sm hover:bg-[#0f3e6a]"
-                  : "border-transparent bg-[#1677eb] text-white shadow-sm hover:bg-[#0f6fe0]"
-                : "border-border/45 bg-muted/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/88",
-              draggingTabId === item.id ? "cursor-grabbing opacity-75" : "cursor-grab",
-            )}
-          >
+      {tabScrollState.hasOverflow ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
             <button
               type="button"
-              draggable={false}
-              className="inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-              onMouseDown={(event) => {
-                if (event.button !== 0 || item.active) {
-                  return;
-                }
-                onActivate?.(item.id);
-              }}
-              onClick={(event) => {
-                if (event.detail !== 0) {
-                  return;
-                }
-                onActivate?.(item.id);
-              }}
+              className={scrollButtonClassName}
+              aria-label={messages.chat.scrollTabsLeft}
+              disabled={!tabScrollState.canScrollLeft}
+              onClick={() => scrollTabsBy(-1)}
             >
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 shrink-0 rounded-full",
-                  item.busy
-                    ? "cc-chat-tab-busy-dot bg-emerald-500"
-                    : item.active ? "bg-white/65" : "bg-muted-foreground/35",
-                )}
-              />
-              <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>
-                {imTitleParts ? (
-                  <>
-                    <span>{imTitleParts.platformLabel}</span>
-                    {" "}
-                    <span className={cn("text-[11px]", item.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
-                  </>
-                ) : tabTitle}
-              </span>
-              {shortcutNumber && !isClosableActiveTab ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[7px] border text-[11px] font-semibold leading-none tabular-nums",
-                        item.active
-                          ? "border-white/20 bg-white/12 text-white"
-                          : "border-border/60 bg-background/80 text-foreground/80",
-                      )}
-                    >
-                      {shortcutNumber}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {formatShortcutForPlatform(messages.chat.tabSwitchTooltip(shortcutNumber))}
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
+              <ChevronLeft className="h-3 w-3" />
             </button>
-          {shortcutNumber ? (
-            isClosableActiveTab ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    draggable={false}
-                    className={cn(
-                      "mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[11px] font-semibold leading-none transition",
-                      item.active
-                        ? "text-white/90 hover:bg-white/14 hover:text-white"
-                        : "text-foreground/80 hover:bg-accent/60 hover:text-foreground",
-                    )}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onClose?.(item.id);
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{messages.chat.scrollTabsLeft}</TooltipContent>
+        </Tooltip>
+      ) : null}
+      {items.length ? (
+        <div className="min-w-0 flex-1">
+          <div
+            ref={scrollViewportRef}
+            className="cc-chat-tabs-viewport cc-tab-scrollbar-hidden min-w-0 overflow-x-auto overflow-y-hidden pt-4"
+          >
+            <div ref={scrollContentRef} className="inline-flex min-w-max items-center gap-1 px-1 pt-0 pb-1">
+              {items.map((item, index) => {
+                const shortcutNumber = index < 9 ? String(index + 1) : null;
+                const isClosableActiveTab = closable && item.active;
+                const tabTitle = item.title || item.agentId;
+                const imTitleParts = splitImTabTitleForDisplay(tabTitle, item.agentId, item.sessionUser);
+
+                return (
+                  <div
+                    key={item.id}
+                    ref={(node) => {
+                      if (node) {
+                        tabNodeMapRef.current.set(item.id, node);
+                        return;
+                      }
+                      tabNodeMapRef.current.delete(item.id);
                     }}
-                    aria-label={messages.chat.closeTabAriaLabel(tabTitle)}
+                    draggable={items.length > 1}
+                    onDragStart={(event) => {
+                      draggingTabIdRef.current = item.id;
+                      setDraggingTabId(item.id);
+                      lastReorderIntentRef.current = "";
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", item.id);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      const currentDraggingTabId = draggingTabIdRef.current || draggingTabId;
+                      if (!currentDraggingTabId || currentDraggingTabId === item.id) {
+                        return;
+                      }
+
+                      const sourceIndex = items.findIndex((entry) => entry.id === currentDraggingTabId);
+                      const targetIndex = items.findIndex((entry) => entry.id === item.id);
+                      if (sourceIndex === -1 || targetIndex === -1) {
+                        return;
+                      }
+
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const placeAfter = event.clientX > rect.left + rect.width / 2;
+                      const currentIntentKey = `${currentDraggingTabId}:${item.id}:${placeAfter ? "after" : "before"}`;
+                      if (lastReorderIntentRef.current === currentIntentKey) {
+                        return;
+                      }
+
+                      if ((placeAfter && sourceIndex === targetIndex + 1) || (!placeAfter && sourceIndex === targetIndex - 1)) {
+                        return;
+                      }
+
+                      lastReorderIntentRef.current = currentIntentKey;
+                      onReorder?.(currentDraggingTabId, item.id, placeAfter ? "after" : "before");
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      draggingTabIdRef.current = "";
+                      setDraggingTabId("");
+                      lastReorderIntentRef.current = "";
+                    }}
+                    onDragEnd={() => {
+                      draggingTabIdRef.current = "";
+                      setDraggingTabId("");
+                      lastReorderIntentRef.current = "";
+                    }}
+                    className={cn(
+                      "group relative inline-flex h-9 max-w-[13rem] items-center overflow-visible rounded-md border transition",
+                      item.active
+                        ? resolvedTheme === "dark"
+                          ? "border-transparent bg-[#0f3e6a] text-white shadow-sm hover:bg-[#0f3e6a]"
+                          : "border-transparent bg-[#1677eb] text-white shadow-sm hover:bg-[#0f6fe0]"
+                        : "border-border/45 bg-muted/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/88",
+                      draggingTabId === item.id ? "cursor-grabbing opacity-75" : "cursor-grab",
+                    )}
                   >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-[16rem] px-2.5 py-2 text-left">
-                  <div className="text-xs font-medium leading-4">{messages.chat.closeTab}</div>
-                  <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{messages.chat.closeTabHint}</div>
-                </TooltipContent>
-              </Tooltip>
-            ) : null
-          ) : null}
+	                    {shortcutNumber ? (
+	                      <Tooltip>
+	                        <TooltipTrigger asChild>
+	                          <button
+	                            type="button"
+	                            draggable={false}
+	                            className={cn(
+	                              "absolute left-3 top-[-0.72rem] z-10 inline-flex min-w-3 items-center justify-center px-0.5 text-[11px] font-semibold leading-none tabular-nums",
+	                              item.active ? "text-primary" : "text-muted-foreground",
+	                            )}
+	                            onMouseDown={(event) => {
+	                              event.stopPropagation();
+	                              if (event.button !== 0 || item.active) {
+	                                return;
+	                              }
+	                              onActivate?.(item.id);
+	                            }}
+	                            onClick={(event) => {
+	                              event.stopPropagation();
+	                              onActivate?.(item.id);
+	                            }}
+	                          >
+	                            {shortcutNumber}
+	                          </button>
+	                        </TooltipTrigger>
+	                        <TooltipContent side="bottom">
+	                          {formatShortcutForPlatform(messages.chat.tabSwitchTooltip(shortcutNumber))}
+	                        </TooltipContent>
+	                      </Tooltip>
+	                    ) : null}
+	                    <button
+	                      type="button"
+	                      draggable={false}
+	                      className="relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+	                      onMouseDown={(event) => {
+                        if (event.button !== 0 || item.active) {
+                          return;
+                        }
+                        onActivate?.(item.id);
+                      }}
+                      onClick={(event) => {
+                        if (event.detail !== 0) {
+                          return;
+                        }
+                        onActivate?.(item.id);
+                      }}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          item.busy
+                            ? "cc-chat-tab-busy-dot bg-emerald-500"
+                            : item.active ? "bg-white/65" : "bg-muted-foreground/35",
+                        )}
+                      />
+                      <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>
+                        {imTitleParts ? (
+                          <>
+                            <span>{imTitleParts.platformLabel}</span>
+                            {" "}
+                            <span className={cn("text-[11px]", item.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
+                          </>
+                        ) : tabTitle}
+                      </span>
+	                    </button>
+                    {shortcutNumber ? (
+                      isClosableActiveTab ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              draggable={false}
+                              className={cn(
+                                "mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[11px] font-semibold leading-none transition",
+                                item.active
+                                  ? "text-white/90 hover:bg-white/14 hover:text-white"
+                                  : "text-foreground/80 hover:bg-accent/60 hover:text-foreground",
+                              )}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onClose?.(item.id);
+                              }}
+                              aria-label={messages.chat.closeTabAriaLabel(tabTitle)}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-[16rem] px-2.5 py-2 text-left">
+                            <div className="text-xs font-medium leading-4">{messages.chat.closeTab}</div>
+                            <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{messages.chat.closeTabHint}</div>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null
+                    ) : null}
+                  </div>
+                );
+              })}
+              {trailingControl ? <div className="shrink-0 pl-1">{trailingControl}</div> : null}
+            </div>
           </div>
-        );
-      })}
-      {trailingControl ? <div className="shrink-0">{trailingControl}</div> : null}
+        </div>
+      ) : null}
+      {tabScrollState.hasOverflow ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className={scrollButtonClassName}
+              aria-label={messages.chat.scrollTabsRight}
+              disabled={!tabScrollState.canScrollRight}
+              onClick={() => scrollTabsBy(1)}
+            >
+              <ChevronRight className="h-3 w-3" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{messages.chat.scrollTabsRight}</TooltipContent>
+        </Tooltip>
+      ) : null}
     </div>
   );
 }
@@ -1727,10 +1921,13 @@ export function ChatPanel({
   onRemoveAttachment,
   onPromptChange,
   onPromptKeyDown,
+  onClearQueuedMessages,
+  onRemoveQueuedMessage,
   onReset,
   onSend,
   onStop,
   prompt,
+  promptSyncVersion = 0,
   promptRef,
   queuedMessages,
   resolvedTheme,
@@ -1796,8 +1993,12 @@ export function ChatPanel({
     }
     return i18n.chat.promptPlaceholder;
   }, [currentAgentName, i18n.chat]);
+  const promptPlaceholderVisual = useMemo(
+    () => String(promptPlaceholder || "").replace(/^\s*💡\s*/, ""),
+    [promptPlaceholder],
+  );
   const promptPlaceholderSegments = useMemo(() => {
-    const placeholderText = String(promptPlaceholder || "");
+    const placeholderText = String(promptPlaceholderVisual || "");
     const agentName = String(currentAgentName || "");
     if (!agentName) {
       return { before: placeholderText, agent: "", after: "" };
@@ -1811,7 +2012,7 @@ export function ChatPanel({
       agent: agentName,
       after: placeholderText.slice(agentIndex + agentName.length),
     };
-  }, [currentAgentName, promptPlaceholder]);
+  }, [currentAgentName, promptPlaceholderVisual]);
   const latestMessageCardKey = useMemo(() => {
     const lastMessage = messages[messages.length - 1];
     if (!lastMessage) {
@@ -1932,7 +2133,7 @@ export function ChatPanel({
 
   useEffect(() => {
     setComposerPrompt((current) => (current === prompt ? current : prompt));
-  }, [prompt]);
+  }, [prompt, promptSyncVersion]);
 
   useLayoutEffect(() => {
     const textarea = composerTextareaRef.current;
@@ -2921,7 +3122,12 @@ export function ChatPanel({
             {sessionOverview ? <div className="mt-2">{sessionOverview}</div> : null}
           </div>
           <CardContent className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] p-0">
-            <QueuedMessages items={queuedMessages || []} textClassName={fontSizeStyles.queued} />
+            <QueuedMessages
+              items={queuedMessages || []}
+              onClearAll={onClearQueuedMessages}
+              onRemoveItem={onRemoveQueuedMessage}
+              textClassName={fontSizeStyles.queued}
+            />
             <div className="relative min-h-0">
               <ScrollArea
                 className="h-full"
@@ -3051,15 +3257,17 @@ export function ChatPanel({
                 {openClawConnected && !composerPrompt ? (
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-sm text-muted-foreground"
+                    data-testid="composer-placeholder-overlay"
+                    className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-sm text-muted-foreground/75"
                   >
                     <span>{promptPlaceholderSegments.before}</span>
                     {promptPlaceholderSegments.agent ? (
-                      <span className="font-semibold text-foreground/90">
+                      <span className="font-medium text-muted-foreground/75">
                         {promptPlaceholderSegments.agent}
                       </span>
                     ) : null}
                     <span>{promptPlaceholderSegments.after}</span>
+                    <span className="ml-1 text-inherit">💡</span>
                   </div>
                 ) : null}
                 <Textarea

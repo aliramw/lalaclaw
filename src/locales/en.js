@@ -263,6 +263,8 @@ const en = {
     uploadAttachment: "Upload images or files",
     queuedCount: (count) => `Queued ${count}`,
     queuedHint: "These messages will be sent in order after the current reply finishes",
+    clearQueuedMessages: "Clear queued",
+    removeQueuedMessage: (index) => `Remove queued message ${index}`,
     outline: "Outline",
     copyMessage: "Copy message text",
     copiedMessage: "Message copied",
@@ -287,6 +289,8 @@ const en = {
     jumpToPreviousUserMessage: "Jump to previous user message",
     tabShortcutHint: (number) => `Cmd + ${number}`,
     tabSwitchTooltip: (number) => `Cmd + ${number} to switch to this session`,
+    scrollTabsLeft: "Scroll session tabs left",
+    scrollTabsRight: "Scroll session tabs right",
     closeTab: "Close session",
     closeTabHint: "This does not clear the conversation. You can open it again later.",
     closeTabAriaLabel: (agent) => `Close session ${agent}`,
@@ -294,6 +298,9 @@ const en = {
   inspector: {
     title: "Trace & Observe",
     subtitle: "Files, summaries, run logs, and environment for the current session",
+    compact: {
+      closeSheet: "Close trace panel",
+    },
     relationships: {
       title: "Collaborative Tasks",
       subtitle: "Sessions and child agents dispatched by the main Agent",

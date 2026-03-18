@@ -397,6 +397,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const [model, setModel] = useState(initialActiveMeta.model || "");
   const [fastMode, setFastMode] = useState(Boolean(initialActiveMeta.fastMode));
   const [prompt, setPrompt] = useState(storedPromptDrafts[initialConversationKey] || "");
+  const [promptSyncVersion, setPromptSyncVersion] = useState(0);
   const promptRef = useRef(null);
   const promptValueRef = useRef(storedPromptDrafts[initialConversationKey] || "");
   const promptDraftFlushTimeoutRef = useRef(0);
@@ -736,11 +737,13 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
 
   const {
     activeQueuedMessages,
+    clearQueuedEntries,
     composerAttachments,
     enqueueOrRunEntry,
     handleAddAttachments,
     handleRemoveAttachment,
     handleStop,
+    removeQueuedEntry,
     setComposerAttachments,
     setQueuedMessages,
   } = useChatController({
@@ -857,6 +860,9 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       promptValueRef.current = normalized;
       if (syncVisible) {
         setPrompt((current) => (current === normalized ? current : normalized));
+        if (prompt === normalized) {
+          setPromptSyncVersion((current) => current + 1);
+        }
       }
     }
 
@@ -885,7 +891,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     }
 
     return normalized;
-  }, [activeConversationKey, flushPromptDraftsState, schedulePromptDraftsStateFlush]);
+  }, [activeConversationKey, flushPromptDraftsState, prompt, schedulePromptDraftsStateFlush]);
 
   const persistConversationScrollTop = useCallback((conversationKey, scrollTop) => {
     const normalizedKey = String(conversationKey || "").trim();
@@ -1614,6 +1620,8 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   }, [activeConversationKey, persistConversationScrollTop]);
 
   const handleSend = sendCurrentPrompt;
+  const handleRemoveQueuedMessage = removeQueuedEntry;
+  const handleClearQueuedMessages = clearQueuedEntries;
 
   const handleReset = async () => {
     const currentSessionUser = String(sessionStateRef.current.sessionUser || "").trim();
@@ -2231,7 +2239,9 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     handleModelChange,
     handlePromptChange,
     handlePromptKeyDown,
+    handleClearQueuedMessages,
     handleRemoveAttachment,
+    handleRemoveQueuedMessage,
     handleReset,
     handleSend,
     handleSelectSearchedSession,
@@ -2245,6 +2255,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     inspectorPanelWidth,
     peeks,
     prompt,
+    promptSyncVersion,
     promptRef,
     renderPeek,
     resolvedTheme,

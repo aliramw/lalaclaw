@@ -241,6 +241,21 @@ function mockDesktopLayout(width = 1200) {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 }
 
+function mockNarrowLayout() {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation(() => ({
+      matches: false,
+      media: "(min-width: 1280px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+}
+
 function hasMessageText(text, role = "") {
   const selector = role ? `[data-message-role="${role}"]` : "[data-message-role]";
   const expectedText = String(text || "").trim();
@@ -334,6 +349,34 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Switch language" })).toBeInTheDocument();
     expect(screen.getByText("main - Current session")).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("keeps Trace & Observe docked as a narrow icon rail on narrow screens", async () => {
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    mockNarrowLayout();
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "文件" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "回复摘要" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拖动调整聊天区与追踪区宽度" })).not.toBeInTheDocument();
+    expect(screen.queryByText("追踪与观察")).not.toBeInTheDocument();
+
+    const main = container.querySelector("main");
+    expect(main).toBeTruthy();
+    expect(main?.style.gridTemplateColumns).toMatch(/^minmax\(0, 1fr\) \d+px$/);
   });
 
   it("requests the initial runtime snapshot only once on first load", async () => {
@@ -509,6 +552,192 @@ describe("App", () => {
     });
   }, 10_000);
 
+  it("removes a queued message and skips sending it later", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    let resolveFirstChat;
+    let resolveSecondChat;
+    let chatCallCount = 0;
+    const chatBodies = [];
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        chatCallCount += 1;
+
+        if (chatCallCount === 1) {
+          return new Promise((resolve) => {
+            resolveFirstChat = () =>
+              resolve(
+                mockJsonResponse({
+                  ...openClawSnapshot,
+                  outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+                  metadata: { status: "已完成 / 标准" },
+                }),
+              );
+          });
+        }
+
+        if (chatCallCount === 2) {
+          return new Promise((resolve) => {
+            resolveSecondChat = () =>
+              resolve(
+                mockJsonResponse({
+                  ...openClawSnapshot,
+                  outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+                  metadata: { status: "已完成 / 标准" },
+                }),
+              );
+          });
+        }
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const composer = await screen.findByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+
+    await user.type(composer, "甲");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await user.type(composer, "乙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await user.type(composer, "丙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await waitFor(() => {
+      expect(screen.getByText("待发送 2")).toBeInTheDocument();
+      expect(hasMessageText("乙", "user")).toBe(true);
+      expect(hasMessageText("丙", "user")).toBe(true);
+    });
+
+    await user.click(screen.getByRole("button", { name: "删除第 1 条待发送消息" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("待发送 1")).toBeInTheDocument();
+      expect(hasMessageText("乙", "user")).toBe(false);
+      expect(hasMessageText("丙", "user")).toBe(true);
+    });
+
+    expect(chatBodies).toHaveLength(1);
+
+    resolveFirstChat?.();
+
+    await waitFor(() => {
+      expect(chatBodies).toHaveLength(2);
+      expect(chatBodies[1]?.messages.at(-1)?.content).toBe("丙");
+    });
+
+    resolveSecondChat?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：丙")).toBeInTheDocument();
+    });
+  }, 10_000);
+
+  it("clears all queued messages and does not send them later", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    let resolveFirstChat;
+    let chatCallCount = 0;
+    const chatBodies = [];
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        chatCallCount += 1;
+
+        if (chatCallCount === 1) {
+          return new Promise((resolve) => {
+            resolveFirstChat = () =>
+              resolve(
+                mockJsonResponse({
+                  ...openClawSnapshot,
+                  outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+                  metadata: { status: "已完成 / 标准" },
+                }),
+              );
+          });
+        }
+
+        return mockJsonResponse({
+          ...openClawSnapshot,
+          outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const composer = await screen.findByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+
+    await user.type(composer, "甲");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await user.type(composer, "乙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await user.type(composer, "丙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await waitFor(() => {
+      expect(screen.getByText("待发送 2")).toBeInTheDocument();
+      expect(hasMessageText("乙", "user")).toBe(true);
+      expect(hasMessageText("丙", "user")).toBe(true);
+    });
+
+    await user.click(screen.getByRole("button", { name: "清空待发送" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("待发送 2")).not.toBeInTheDocument();
+      expect(screen.queryByText("待发送 1")).not.toBeInTheDocument();
+      expect(hasMessageText("乙", "user")).toBe(false);
+      expect(hasMessageText("丙", "user")).toBe(false);
+    });
+
+    resolveFirstChat?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：甲")).toBeInTheDocument();
+    });
+
+    expect(chatBodies).toHaveLength(1);
+  }, 10_000);
+
   it("suppresses dispatching a rapid duplicate while the current reply is still pending", async () => {
     const openClawSnapshot = createSnapshot({
       session: {
@@ -664,6 +893,7 @@ describe("App", () => {
     });
 
     vi.stubGlobal("fetch", fetchMock);
+    mockDesktopLayout();
 
     render(<App />);
 
@@ -1395,6 +1625,7 @@ describe("App", () => {
     expect(await screen.findByText("已发送：第一行")).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
+      expect(textarea).toHaveValue("");
     });
   });
 

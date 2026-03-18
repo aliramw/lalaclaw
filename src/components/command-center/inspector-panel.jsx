@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
@@ -1735,6 +1736,7 @@ function EnvironmentTab({ section, messages }) {
 export function InspectorPanel({
   activeTab,
   artifacts,
+  compact = false,
   currentAgentId = "",
   currentSessionUser = "",
   currentWorkspaceRoot = "",
@@ -1750,6 +1752,7 @@ export function InspectorPanel({
   const tabsListRef = useRef(null);
   const [showTabLabels, setShowTabLabels] = useState(true);
   const [tooltipTabKey, setTooltipTabKey] = useState("");
+  const [compactSheetOpen, setCompactSheetOpen] = useState(false);
   const workspaceFiles = peeks?.workspace?.entries || [];
   const workspaceCount = Number(peeks?.workspace?.totalCount);
   const workspaceLoaded = Array.isArray(peeks?.workspace?.entries);
@@ -1806,6 +1809,185 @@ export function InspectorPanel({
       setTooltipTabKey("");
     }
   }, [showTabLabels, tooltipTabKey]);
+
+  useEffect(() => {
+    if (!compact && compactSheetOpen) {
+      setCompactSheetOpen(false);
+    }
+  }, [compact, compactSheetOpen]);
+
+  useEffect(() => {
+    if ((filePreview || imagePreview) && compactSheetOpen) {
+      setCompactSheetOpen(false);
+    }
+  }, [compactSheetOpen, filePreview, imagePreview]);
+
+  useEffect(() => {
+    if (!compactSheetOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setCompactSheetOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [compactSheetOpen]);
+
+  const filesTabContent = (
+    <FilesTab
+      currentAgentId={currentAgentId}
+      currentSessionUser={currentSessionUser}
+      items={files}
+      messages={messages}
+      onOpenEdit={(item) => handleOpenPreview(item, { startInEditMode: true })}
+      onOpenPreview={handleOpenPreview}
+      currentWorkspaceRoot={currentWorkspaceRoot}
+      workspaceCount={workspaceCount}
+      workspaceItems={workspaceFiles}
+      workspaceLoaded={workspaceLoaded}
+    />
+  );
+  const artifactsTabContent = (
+    <DataList
+      items={artifacts}
+      hint={messages.inspector.artifactsHint}
+      empty={messages.inspector.empty.artifacts}
+      getItemActionLabel={(item) => `${messages.inspector.artifactJumpTo} ${localizeArtifactTitle(item.title || messages.inspector.tabs.artifacts, messages)}`}
+      onSelect={onSelectArtifact}
+      render={(item) => (
+        <>
+          <div className="text-sm font-medium">{localizeArtifactTitle(item.title, messages)}</div>
+          <div className="text-xs text-muted-foreground">{stripMarkdownForDisplay(item.detail)}</div>
+        </>
+      )}
+    />
+  );
+  const timelineTabContent = (
+    <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
+  );
+  const environmentTabContent = <EnvironmentTab section={peeks?.environment} messages={messages} />;
+  const tabContentByKey = {
+    files: filesTabContent,
+    artifacts: artifactsTabContent,
+    timeline: timelineTabContent,
+    environment: environmentTabContent,
+  };
+  const activeCompactTab = tabDefinitions.find((tab) => tab.key === resolvedActiveTab) || tabDefinitions[0];
+
+  if (compact) {
+    return (
+      <>
+        <div className="flex h-full min-h-0 min-w-0 flex-col items-center gap-2 rounded-[18px] border border-border/70 bg-card/80 px-1.5 py-2 backdrop-blur">
+          {tabDefinitions.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = compactSheetOpen && resolvedActiveTab === tab.key;
+            return (
+              <Tooltip key={tab.key}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={tab.label}
+                    onClick={() => {
+                      setActiveTab(tab.key);
+                      setCompactSheetOpen(true);
+                    }}
+                    className={cn(
+                      "relative inline-flex h-10 w-10 items-center justify-center rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                      isActive
+                        ? resolvedTheme === "dark"
+                          ? "border-[#0f3e6a] bg-[#0f3e6a] text-white"
+                          : "border-[#1677eb] bg-[#1677eb] text-white"
+                        : "border-transparent bg-background/75 text-muted-foreground hover:border-border/70 hover:bg-muted/60 hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="h-4.5 w-4.5 shrink-0 stroke-[1.9]" />
+                    {tab.count ? (
+                      <span
+                        className={cn(
+                          "absolute -right-1 -top-1 min-w-[1.15rem] rounded-full px-1 py-[1px] text-center text-[10px] font-semibold leading-none",
+                          isActive ? "bg-white/22 text-white" : "bg-muted text-foreground",
+                        )}
+                      >
+                        {tab.count}
+                      </span>
+                    ) : null}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="left">{tab.label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
+        {compactSheetOpen ? (
+          <>
+            <button
+              type="button"
+              aria-label={messages.inspector.compact.closeSheet}
+              className="fixed inset-0 z-40 bg-background/42 backdrop-blur-[1px]"
+              onClick={() => setCompactSheetOpen(false)}
+            />
+            <div className="fixed inset-y-0 right-0 z-[41] w-[min(28rem,calc(100vw-5.5rem))] min-w-[18rem] max-w-[30rem] pl-3">
+              <Card
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${messages.inspector.title} - ${activeCompactTab.label}`}
+                className="flex h-full min-h-0 flex-col overflow-hidden rounded-none rounded-l-[1.5rem] border-y-0 border-r-0 shadow-[0_18px_55px_rgba(15,23,42,0.18)]"
+              >
+                <CardHeader className="flex min-h-12 flex-row items-start justify-between gap-3 border-b border-border/70 bg-card/92 px-4 py-3 text-left backdrop-blur">
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="truncate text-sm leading-[1.15]">{activeCompactTab.label}</CardTitle>
+                    <CardDescription className="mt-1 line-clamp-2 text-[11px] leading-4">
+                      {messages.inspector.subtitle}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={messages.inspector.compact.closeSheet}
+                    className="h-8 w-8 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                    onClick={() => setCompactSheetOpen(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
+                  {tabContentByKey[resolvedActiveTab]}
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        ) : null}
+        {filePreview ? (
+          <Suspense fallback={null}>
+            <LazyFilePreviewOverlay
+              currentAgentId={currentAgentId}
+              currentSessionUser={currentSessionUser}
+              currentWorkspaceRoot={currentWorkspaceRoot}
+              files={previewFiles}
+              preview={filePreview}
+              resolvedTheme={resolvedTheme}
+              sessionFiles={files}
+              onClose={closeFilePreview}
+              onOpenFilePreview={handleOpenPreview}
+              workspaceCount={workspaceCount}
+              workspaceFiles={workspaceFiles}
+              workspaceLoaded={workspaceLoaded}
+            />
+          </Suspense>
+        ) : null}
+        {imagePreview ? (
+          <Suspense fallback={null}>
+            <LazyImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
+          </Suspense>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>
@@ -1884,42 +2066,19 @@ export function InspectorPanel({
             </TabsList>
 
             <TabsContent value="files" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-              <FilesTab
-                currentAgentId={currentAgentId}
-                currentSessionUser={currentSessionUser}
-                items={files}
-                messages={messages}
-                onOpenEdit={(item) => handleOpenPreview(item, { startInEditMode: true })}
-                onOpenPreview={handleOpenPreview}
-                currentWorkspaceRoot={currentWorkspaceRoot}
-                workspaceCount={workspaceCount}
-                workspaceItems={workspaceFiles}
-                workspaceLoaded={workspaceLoaded}
-              />
+              {filesTabContent}
             </TabsContent>
 
             <TabsContent value="artifacts" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-              <DataList
-                items={artifacts}
-                hint={messages.inspector.artifactsHint}
-                empty={messages.inspector.empty.artifacts}
-                getItemActionLabel={(item) => `${messages.inspector.artifactJumpTo} ${localizeArtifactTitle(item.title || messages.inspector.tabs.artifacts, messages)}`}
-                onSelect={onSelectArtifact}
-                render={(item) => (
-                  <>
-                    <div className="text-sm font-medium">{localizeArtifactTitle(item.title, messages)}</div>
-                    <div className="text-xs text-muted-foreground">{stripMarkdownForDisplay(item.detail)}</div>
-                  </>
-                )}
-              />
+              {artifactsTabContent}
             </TabsContent>
 
             <TabsContent value="timeline" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-              <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
+              {timelineTabContent}
             </TabsContent>
 
             <TabsContent value="environment" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-              <EnvironmentTab section={peeks?.environment} messages={messages} />
+              {environmentTabContent}
             </TabsContent>
           </Tabs>
         </CardContent>

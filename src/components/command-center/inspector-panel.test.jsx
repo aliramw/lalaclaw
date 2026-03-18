@@ -341,6 +341,125 @@ describe("InspectorPanel", () => {
     expect(screen.getByTestId("inspector-tab-tooltip-environment")).toHaveTextContent("环境");
   });
 
+  it("renders a compact vertical icon rail with tooltips", async () => {
+    const [activeTab, setActiveTab] = ["timeline", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        compact
+        agents={[]}
+        artifacts={[]}
+        files={[{ path: "src/App.jsx", kind: "文件" }]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "文件" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "回复摘要" })).toBeInTheDocument();
+    expect(screen.queryByText("追踪与观察")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("button", { name: "环境" }));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("环境");
+  });
+
+  it("opens a right-side sheet for the selected compact inspector tab", async () => {
+    function CompactHarness() {
+      const [activeTab, setActiveTab] = useState("timeline");
+
+      return (
+        <InspectorPanel
+          activeTab={activeTab}
+          compact
+          artifacts={[]}
+          files={[{ path: "src/App.jsx", kind: "文件" }]}
+          peeks={{
+            environment: {
+              summary: "这里列出 Gateway 与会话环境信息。",
+              items: [{ label: "gateway.baseUrl", value: "http://127.0.0.1:18789" }],
+            },
+            workspace: null,
+            terminal: null,
+            browser: null,
+          }}
+          renderPeek={(_, fallback) => fallback}
+          setActiveTab={setActiveTab}
+          taskTimeline={[]}
+        />
+      );
+    }
+
+    renderWithTooltip(<CompactHarness />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "环境" }));
+
+    const sheet = await screen.findByRole("dialog", { name: "追踪与观察 - 环境" });
+    expect(within(sheet).getByText("环境")).toBeInTheDocument();
+    expect(within(sheet).getByText("gateway.baseUrl")).toBeInTheDocument();
+    expect(within(sheet).getByText("http://127.0.0.1:18789")).toBeInTheDocument();
+
+    await user.click(within(sheet).getByRole("button", { name: "关闭追踪面板" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "追踪与观察 - 环境" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("closes the compact sheet before showing a file preview overlay", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          kind: "markdown",
+          path: "/Users/marila/projects/lalaclaw/AGENTS.md",
+          name: "AGENTS.md",
+          content: "# AGENTS\n\nhello compact preview",
+        }),
+      })),
+    );
+
+    function CompactPreviewHarness() {
+      const [activeTab, setActiveTab] = useState("files");
+
+      return (
+        <InspectorPanel
+          activeTab={activeTab}
+          compact
+          artifacts={[]}
+          currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+          files={[
+            { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+          ]}
+          peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+          renderPeek={(_, fallback) => fallback}
+          setActiveTab={setActiveTab}
+          taskTimeline={[]}
+        />
+      );
+    }
+
+    renderWithTooltip(<CompactPreviewHarness />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "文件" }));
+    expect(await screen.findByRole("dialog", { name: "追踪与观察 - 文件" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "AGENTS.md" }));
+
+    expect(await screen.findByText("hello compact preview")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "追踪与观察 - 文件" })).not.toBeInTheDocument();
+    });
+  });
+
   it("keeps the active tab highlighted in icon-only mode after click", async () => {
     mockResizeObserver(360);
 
