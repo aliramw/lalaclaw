@@ -495,12 +495,21 @@ export function useRuntimeSnapshot({
     setTaskTimeline,
   ]);
 
-  const wsEnabled = enableWebSocket && !isImSessionUser(session.sessionUser);
-  const { connected: wsConnected, setOnMessage } = useRuntimeSocket({
-    sessionUser: session.sessionUser,
+  const requestedRuntimeSessionUser = String(runtimeSessionUser || session.sessionUser || "").trim() || session.sessionUser;
+  const wsEnabled = enableWebSocket;
+  const {
+    connected: wsConnected,
+    lastDisconnectReason,
+    reconnectAttempts,
+    status: runtimeSocketStatus,
+    setOnMessage,
+  } = useRuntimeSocket({
+    sessionUser: requestedRuntimeSessionUser,
     agentId: session.agentId,
     enabled: wsEnabled,
   });
+  const runtimeTransport = wsEnabled && wsConnected ? "ws" : "polling";
+  const runtimeFallbackReason = !wsConnected ? String(lastDisconnectReason || "").trim() : "";
 
   const applyIncrementalConversation = useCallback((nextConversation) => {
     const currentSession = sessionRef.current;
@@ -718,7 +727,6 @@ export function useRuntimeSnapshot({
       return;
     }
 
-    const requestedRuntimeSessionUser = String(runtimeSessionUser || session.sessionUser || "").trim();
     const runtimeOverrides = {
       agentId: session.agentId,
     };
@@ -755,7 +763,7 @@ export function useRuntimeSnapshot({
       window.clearInterval(id);
       window.clearTimeout(retryTimerId);
     };
-  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, recoveringPendingReply, runtimeSessionUser, session.agentId, session.sessionUser, setSession, wsConnected]);
+  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, recoveringPendingReply, requestedRuntimeSessionUser, runtimeSessionUser, session.agentId, session.sessionUser, setSession, wsConnected]);
 
   const updateSessionSettings = async (payload) => {
     const targetSessionUser = String(payload?.sessionUser || session.sessionUser || "").trim();
@@ -805,6 +813,10 @@ export function useRuntimeSnapshot({
     hydrateRuntimeState,
     loadRuntime,
     peeks,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts: reconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     snapshots,
     taskRelationships,
     taskTimeline,

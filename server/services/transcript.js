@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { stripMarkdownForDisplay } = require('../../shared/strip-markdown-for-display.cjs');
 
@@ -22,6 +23,17 @@ function createTranscriptProjector({
   const SESSION_SEARCH_MAX_CANDIDATES = 80;
   const SESSION_SEARCH_TRANSCRIPT_WINDOW = 160;
   const SESSION_SEARCH_PREVIEW_CHARS = 180;
+  const UNTRUSTED_METADATA_SENTINELS = [
+    /^Conversation info \(untrusted metadata\):/i,
+    /^Sender \(untrusted metadata\):/i,
+    /^Thread starter \(untrusted, for context\):/i,
+    /^Replied message \(untrusted, for context\):/i,
+    /^Forwarded message context \(untrusted metadata\):/i,
+    /^Chat history since last reply \(untrusted, for context\):/i,
+  ];
+  const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
+  const QUEUED_BUSY_TITLE_LINE = /^\[Queued messages while agent was busy\]\s*$/i;
+  const QUEUED_BUSY_ITEM_LINE = /^Queued #\d+\s*$/i;
 
   function getSessionsIndexPath(agentId) {
     return path.join(LOCAL_OPENCLAW_DIR, 'agents', agentId, 'sessions', 'sessions.json');
@@ -131,17 +143,8 @@ function createTranscriptProjector({
     return cleaned;
   }
 
-  function cleanUserMessage(text) {
+  function cleanSingleUserMessage(text) {
     let lines = String(text || '').trim().split('\n');
-    const UNTRUSTED_METADATA_SENTINELS = [
-      /^Conversation info \(untrusted metadata\):/i,
-      /^Sender \(untrusted metadata\):/i,
-      /^Thread starter \(untrusted, for context\):/i,
-      /^Replied message \(untrusted, for context\):/i,
-      /^Forwarded message context \(untrusted metadata\):/i,
-      /^Chat history since last reply \(untrusted, for context\):/i,
-    ];
-    const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
     const stripLeadingBlankLines = () => {
       while (lines.length && !String(lines[0] || '').trim()) {
         lines.shift();
@@ -205,6 +208,61 @@ function createTranscriptProjector({
     }
 
     return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function cleanQueuedBusyUserMessage(text) {
+    const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+    if (!normalized || !QUEUED_BUSY_TITLE_LINE.test(normalized.split('\n')[0] || '')) {
+      return '';
+    }
+
+    const lines = normalized.split('\n');
+    const cleanedItems = [];
+    let index = 1;
+
+    while (index < lines.length) {
+      const trimmed = String(lines[index] || '').trim();
+
+      if (trimmed === '---' && QUEUED_BUSY_ITEM_LINE.test(String(lines[index + 1] || '').trim())) {
+        index += 1;
+        continue;
+      }
+
+      if (!QUEUED_BUSY_ITEM_LINE.test(trimmed)) {
+        index += 1;
+        continue;
+      }
+
+      index += 1;
+      const itemLines = [];
+      while (index < lines.length) {
+        const currentTrimmed = String(lines[index] || '').trim();
+        if (
+          QUEUED_BUSY_ITEM_LINE.test(currentTrimmed)
+          || (currentTrimmed === '---' && QUEUED_BUSY_ITEM_LINE.test(String(lines[index + 1] || '').trim()))
+        ) {
+          break;
+        }
+        itemLines.push(lines[index]);
+        index += 1;
+      }
+
+      const cleanedItem = cleanSingleUserMessage(itemLines.join('\n'));
+      if (cleanedItem) {
+        cleanedItems.push(cleanedItem);
+      }
+    }
+
+    return cleanedItems.join('\n\n').trim();
+  }
+
+  function cleanUserMessage(text) {
+    const cleanedQueued = cleanQueuedBusyUserMessage(text);
+    if (cleanedQueued) {
+      return cleanedQueued;
+    }
+
+    return cleanSingleUserMessage(text);
   }
 
   function normalizeConversationFingerprint(text = '') {
@@ -371,12 +429,18 @@ function createTranscriptProjector({
       return null;
     }
 
-    if (path.isAbsolute(cleaned) && fileExists(cleaned)) {
-      return cleaned;
+    const expanded = cleaned === '~'
+      ? os.homedir()
+      : cleaned.startsWith('~/')
+        ? path.join(os.homedir(), cleaned.slice(2))
+        : cleaned;
+
+    if (path.isAbsolute(expanded) && fileExists(expanded)) {
+      return expanded;
     }
 
     for (const root of roots) {
-      const resolved = path.resolve(root, cleaned);
+      const resolved = path.resolve(root, expanded);
       if (fileExists(resolved)) {
         return resolved;
       }
@@ -492,7 +556,7 @@ function createTranscriptProjector({
   }
 
   function extractResolvedPathsFromSource(source, roots) {
-    const pathPattern = /(?:\/Users\/[^\s"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
+    const pathPattern = /(?:~\/[^\s"'`]+|\/Users\/[^\s"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
     const matches = String(source || '').match(pathPattern) || [];
     const resolvedPaths = [];
 
@@ -570,7 +634,7 @@ function createTranscriptProjector({
       const plainText = extractPlainTextSegments(content).join('\n');
       const mentionedPaths = [
         ...extractResolvedPathsFromSource(plainText, roots),
-        ...collectMentionedInjectedPaths(plainText, injectedFiles),
+        ...(payload.role === 'toolResult' ? [] : collectMentionedInjectedPaths(plainText, injectedFiles)),
       ];
 
       for (const resolved of mentionedPaths) {

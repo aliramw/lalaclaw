@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000];
 const PING_TIMEOUT_MS = 45000;
+export const RUNTIME_SOCKET_STATES = {
+  CONNECTING: "connecting",
+  CONNECTED: "connected",
+  DISCONNECTED: "disconnected",
+  RECONNECTING: "reconnecting",
+};
 
 function buildWsUrl(sessionUser, agentId) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -21,7 +27,13 @@ function buildWsUrl(sessionUser, agentId) {
  */
 export function useRuntimeSocket({ sessionUser, agentId, enabled = true }) {
   const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState(
+    enabled ? RUNTIME_SOCKET_STATES.CONNECTING : RUNTIME_SOCKET_STATES.DISCONNECTED,
+  );
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [lastDisconnectReason, setLastDisconnectReason] = useState("");
   const wsRef = useRef(null);
+  const connectTimerRef = useRef(0);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef(0);
   const pingTimerRef = useRef(0);
@@ -39,13 +51,17 @@ export function useRuntimeSocket({ sessionUser, agentId, enabled = true }) {
       return;
     }
 
+    setStatus(reconnectAttemptRef.current > 0 ? RUNTIME_SOCKET_STATES.RECONNECTING : RUNTIME_SOCKET_STATES.CONNECTING);
     const url = buildWsUrl(sessionUser, agentId);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setConnected(true);
+      setStatus(RUNTIME_SOCKET_STATES.CONNECTED);
       reconnectAttemptRef.current = 0;
+      setReconnectAttempts(0);
+      setLastDisconnectReason("");
     };
 
     ws.onmessage = (event) => {
@@ -69,16 +85,23 @@ export function useRuntimeSocket({ sessionUser, agentId, enabled = true }) {
       } catch {}
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setConnected(false);
       clearTimeout(pingTimerRef.current);
       wsRef.current = null;
+      const nextReason = String(event?.reason || "").trim() || (event?.code ? `code ${event.code}` : "closed");
+      setLastDisconnectReason(nextReason);
 
-      if (!enabledRef.current) return;
+      if (!enabledRef.current) {
+        setStatus(RUNTIME_SOCKET_STATES.DISCONNECTED);
+        return;
+      }
 
       const attempt = reconnectAttemptRef.current;
       const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
       reconnectAttemptRef.current = attempt + 1;
+       setReconnectAttempts(attempt + 1);
+      setStatus(RUNTIME_SOCKET_STATES.RECONNECTING);
       reconnectTimerRef.current = window.setTimeout(() => {
         connect();
       }, delay);
@@ -86,10 +109,15 @@ export function useRuntimeSocket({ sessionUser, agentId, enabled = true }) {
 
     ws.onerror = () => {
       clearTimeout(pingTimerRef.current);
+      if (enabledRef.current && ws.readyState !== WebSocket.OPEN) {
+        setLastDisconnectReason((current) => current || "WebSocket error");
+        setStatus(RUNTIME_SOCKET_STATES.RECONNECTING);
+      }
     };
   }, [sessionUser, agentId]);
 
   const disconnect = useCallback(() => {
+    clearTimeout(connectTimerRef.current);
     clearTimeout(reconnectTimerRef.current);
     clearTimeout(pingTimerRef.current);
     reconnectAttemptRef.current = 0;
@@ -99,11 +127,16 @@ export function useRuntimeSocket({ sessionUser, agentId, enabled = true }) {
       wsRef.current = null;
     }
     setConnected(false);
+    setStatus(RUNTIME_SOCKET_STATES.DISCONNECTED);
+    setReconnectAttempts(0);
   }, []);
 
   useEffect(() => {
     if (enabled) {
-      connect();
+      clearTimeout(connectTimerRef.current);
+      connectTimerRef.current = window.setTimeout(() => {
+        connect();
+      }, 0);
     } else {
       disconnect();
     }
@@ -115,6 +148,9 @@ export function useRuntimeSocket({ sessionUser, agentId, enabled = true }) {
 
   return {
     connected,
+    lastDisconnectReason,
+    reconnectAttempts,
+    status,
     setOnMessage,
     disconnect,
   };

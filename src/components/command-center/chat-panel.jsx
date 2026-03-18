@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
-import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
+import { shouldShowBubbleTopJumpButton, shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { getImSessionDisplayName, isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
 import { isOfflineStatus, normalizeStatusKey } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/storage";
@@ -41,7 +41,6 @@ const chatTabsScrollStepPx = 220;
 const chatTabDragActivationDistancePx = 4;
 const chatTabReorderSnapThresholdPx = 12;
 const chatTabShortcutBandHeightPx = 14;
-const chatTabDragVisualOffsetYPx = -1;
 const chatTabBodyHeightPx = 36;
 const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx;
 
@@ -1527,7 +1526,7 @@ export function ChatTabsStrip({
   const scrollViewportRef = useRef(null);
   const scrollContentRef = useRef(null);
   const dragSessionRef = useRef(null);
-  const dragBodyNodeRef = useRef(null);
+  const dragOverlayRef = useRef(null);
   const cachedTabRectsRef = useRef(new Map());
   const itemsRef = useRef(items);
   const onReorderRef = useRef(onReorder);
@@ -1728,6 +1727,14 @@ export function ChatTabsStrip({
       return false;
     };
 
+    const updateDragOverlayPosition = (left) => {
+      if (!dragOverlayRef.current) {
+        return;
+      }
+
+      dragOverlayRef.current.style.left = `${left}px`;
+    };
+
     const handlePointerMove = (event) => {
       const currentSession = dragSessionRef.current;
       if (!currentSession || event.pointerId !== currentSession.pointerId) {
@@ -1747,7 +1754,7 @@ export function ChatTabsStrip({
       const clampedLeft = Math.min(Math.max(unclampedLeft, minLeft), maxLeft);
 
       currentSession.active = active;
-      currentSession.currentX = clampedLeft + currentSession.xOffset;
+      currentSession.currentLeft = clampedLeft;
 
       if (!active) {
         return;
@@ -1759,10 +1766,7 @@ export function ChatTabsStrip({
         snapshotTabRects();
         setDragSession({ ...currentSession });
       } else {
-        const bodyNode = dragBodyNodeRef.current;
-        if (bodyNode) {
-          bodyNode.style.left = `${clampedLeft}px`;
-        }
+        updateDragOverlayPosition(clampedLeft);
       }
 
       const didScroll = maybeAutoScrollTabs(event.clientX);
@@ -1906,18 +1910,16 @@ export function ChatTabsStrip({
                       setDraggingTabId(item.id);
                       setDragSession({
                         active: false,
-                        currentX: event.clientX,
-                        currentY: rect.top,
-                        dragBodyTop: rect.top + chatTabShortcutBandHeightPx + chatTabDragVisualOffsetYPx,
+                        currentLeft: rect.left,
                         height: rect.height,
                         pointerId: event.pointerId,
+                        rectLeft: rect.left,
                         rectTop: rect.top,
                         startX: event.clientX,
                         startY: event.clientY,
                         tabId: item.id,
                         width: rect.width,
                         xOffset: event.clientX - rect.left,
-                        yOffset: event.clientY - rect.top,
                       });
                     }}
                     className={cn(
@@ -1925,7 +1927,7 @@ export function ChatTabsStrip({
                       draggingTabId === item.id ? "cursor-grabbing" : "cursor-grab",
                     )}
                     style={dragSession?.tabId === item.id && dragSession?.active
-                      ? { height: `${chatTabWrapperHeightPx}px`, width: `${dragSession.width}px` }
+                      ? { height: `${chatTabWrapperHeightPx}px`, opacity: 0, width: `${dragSession.width}px` }
                       : undefined}
                   >
 	                    {shortcutNumber ? (
@@ -1959,7 +1961,6 @@ export function ChatTabsStrip({
 	                      </Tooltip>
 	                    ) : null}
 	                    <div
-                        ref={isDraggingThisTab && dragSession?.active ? dragBodyNodeRef : undefined}
 	                      className={cn(
 	                        "inline-flex h-9 items-center overflow-visible rounded-md border transition",
 	                        item.active
@@ -1968,17 +1969,6 @@ export function ChatTabsStrip({
 	                            : "border-transparent bg-[#1677eb] text-white shadow-sm hover:bg-[#0f6fe0]"
 	                          : "border-border/45 bg-muted/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/88",
 	                      )}
-                        style={isDraggingThisTab && dragSession?.active
-                          ? {
-                              boxShadow: "none",
-                              left: `${dragSession.currentX - dragSession.xOffset}px`,
-                              pointerEvents: "none",
-                              position: "fixed",
-                              top: `${dragSession.dragBodyTop}px`,
-                              width: `${dragSession.width}px`,
-                              zIndex: 40,
-                            }
-                          : undefined}
 	                    >
 	                      <button
 	                        type="button"
@@ -2012,6 +2002,14 @@ export function ChatTabsStrip({
                             </>
                           ) : tabTitle}
                         </span>
+                        {item.unreadCount > 0 && !item.active ? (
+                          <span
+                            aria-hidden="true"
+                            className="cc-chat-tab-unread-badge inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
+                          >
+                            {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                          </span>
+                        ) : null}
 	                      </button>
                       {shortcutNumber ? (
                         isClosableActiveTab ? (
@@ -2052,6 +2050,91 @@ export function ChatTabsStrip({
           </div>
         </div>
       ) : null}
+      {dragSession?.active && (() => {
+        const draggedItem = items.find((item) => item.id === dragSession.tabId) || null;
+        if (!draggedItem || typeof document === "undefined") {
+          return null;
+        }
+        const draggedItemIndex = items.findIndex((item) => item.id === draggedItem.id);
+        const draggedShortcutNumber = draggedItemIndex >= 0 && draggedItemIndex < 9
+          ? String(draggedItemIndex + 1)
+          : null;
+        const tabTitle = draggedItem.title || draggedItem.agentId;
+        const imTitleParts = splitImTabTitleForDisplay(tabTitle, draggedItem.agentId, draggedItem.sessionUser);
+
+        return createPortal(
+          <div
+            ref={dragOverlayRef}
+            data-dragging-tab-overlay="true"
+            className="pointer-events-none fixed z-40 inline-flex box-border h-[50px] max-w-[13rem] pt-[14px] will-change-[left]"
+            style={{
+              left: `${typeof dragSession.currentLeft === "number" ? dragSession.currentLeft : dragSession.rectLeft}px`,
+              top: `${dragSession.rectTop}px`,
+              width: `${dragSession.width}px`,
+            }}
+          >
+            {draggedShortcutNumber ? (
+              <div
+                className={cn(
+                  "absolute left-[0.8125rem] top-0 z-10 inline-flex min-w-3 -translate-x-1/2 items-center justify-center px-0.5 text-[12px] font-bold leading-none tabular-nums",
+                  draggedItem.active ? "text-primary/22" : "text-muted-foreground/22",
+                )}
+              >
+                {draggedShortcutNumber}
+              </div>
+            ) : null}
+            <div
+              className={cn(
+                "inline-flex h-9 items-center overflow-visible rounded-md border transition",
+                draggedItem.active
+                  ? resolvedTheme === "dark"
+                    ? "border-transparent bg-[#0f3e6a] text-white shadow-sm"
+                    : "border-transparent bg-[#1677eb] text-white shadow-sm"
+                  : "border-border/45 bg-muted/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]",
+              )}
+            >
+              <div className="relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm">
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    draggedItem.busy
+                      ? "cc-chat-tab-busy-dot bg-emerald-500"
+                      : draggedItem.active ? "bg-white/65" : "bg-muted-foreground/35",
+                  )}
+                />
+                <span className={cn("min-w-0 flex-1 truncate font-medium", draggedItem.active ? "text-white" : "text-inherit")}>
+                  {imTitleParts ? (
+                    <>
+                      <span>{imTitleParts.platformLabel}</span>
+                      {" "}
+                      <span className={cn("text-[11px]", draggedItem.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
+                    </>
+                  ) : tabTitle}
+                </span>
+                {draggedItem.unreadCount > 0 && !draggedItem.active ? (
+                  <span
+                    aria-hidden="true"
+                    className="cc-chat-tab-unread-badge inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
+                  >
+                    {draggedItem.unreadCount > 99 ? "99+" : draggedItem.unreadCount}
+                  </span>
+                ) : null}
+              </div>
+              {closable && draggedItem.active ? (
+                <div
+                  className={cn(
+                    "mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[11px] font-semibold leading-none",
+                    draggedItem.active ? "text-white/90" : "text-foreground/80",
+                  )}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </div>
+              ) : null}
+            </div>
+          </div>,
+          document.body,
+        );
+      })()}
       {tabScrollState.hasOverflow ? (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -2118,6 +2201,12 @@ export function ChatPanel({
   const { intlLocale, messages: i18n } = useI18n();
   const attachmentInputRef = useRef(null);
   const composerTextareaRef = useRef(null);
+  const composerCompositionActiveRef = useRef(false);
+  const composerCompositionGuardTimeoutRef = useRef(0);
+  const composerCompositionGuardArmedAtRef = useRef(0);
+  const composerLastCompositionAtRef = useRef(0);
+  const ignoreNextComposerCompositionCommitRef = useRef(false);
+  const guardedComposerReplaySourceRef = useRef("");
   const { filePreview, imagePreview, handleOpenPreview, openImagePreview, closeFilePreview, closeImagePreview } = useFilePreview();
   const [agentMention, setAgentMention] = useState(null);
   const [manualMention, setManualMention] = useState(null);
@@ -2249,6 +2338,61 @@ export function ChatPanel({
         : "",
     [latestAssistantMessage],
   );
+  const disarmComposerCompositionGuard = useCallback(() => {
+    ignoreNextComposerCompositionCommitRef.current = false;
+    composerCompositionGuardArmedAtRef.current = 0;
+    guardedComposerReplaySourceRef.current = "";
+    window.clearTimeout(composerCompositionGuardTimeoutRef.current);
+    composerCompositionGuardTimeoutRef.current = 0;
+  }, []);
+  const clearComposerInput = useCallback((syncExternal = true) => {
+    setComposerPrompt("");
+    setAgentMention(null);
+    setManualMention(null);
+    setMentionAnchor("composer");
+    setHighlightedAgentIndex(0);
+    if (composerTextareaRef.current && String(composerTextareaRef.current.value || "")) {
+      composerTextareaRef.current.value = "";
+    }
+    if (syncExternal) {
+      onPromptChange("");
+    }
+  }, [onPromptChange]);
+  const armComposerCompositionGuard = useCallback(() => {
+    const replaySource = String(composerTextareaRef.current?.value || composerPrompt || "").trim();
+    const recentlyComposed = composerCompositionActiveRef.current || Date.now() - composerLastCompositionAtRef.current <= 320;
+    if (!recentlyComposed) {
+      disarmComposerCompositionGuard();
+      return;
+    }
+
+    ignoreNextComposerCompositionCommitRef.current = true;
+    composerCompositionGuardArmedAtRef.current = Date.now();
+    guardedComposerReplaySourceRef.current = replaySource;
+    window.clearTimeout(composerCompositionGuardTimeoutRef.current);
+    composerCompositionGuardTimeoutRef.current = window.setTimeout(() => {
+      ignoreNextComposerCompositionCommitRef.current = false;
+      guardedComposerReplaySourceRef.current = "";
+      composerCompositionGuardTimeoutRef.current = 0;
+    }, 320);
+  }, [composerPrompt, disarmComposerCompositionGuard]);
+  const shouldIgnoreComposerCompositionReplay = useCallback((event, nextPrompt = "") => {
+    const nativeEvent = event?.nativeEvent || {};
+    return shouldSuppressComposerReplay({
+      armed: ignoreNextComposerCompositionCommitRef.current,
+      armedAt: composerCompositionGuardArmedAtRef.current,
+      eventType: event?.type,
+      inputType: nativeEvent.inputType,
+      isNativeComposing: nativeEvent.isComposing,
+      nextPrompt,
+      replaySource: guardedComposerReplaySourceRef.current,
+    });
+  }, []);
+  const handleComposerSend = useCallback(() => {
+    armComposerCompositionGuard();
+    onSend?.();
+    clearComposerInput();
+  }, [armComposerCompositionGuard, clearComposerInput, onSend]);
   const setComposerTextareaNode = useCallback((node) => {
     composerTextareaRef.current = node;
     if (typeof promptRef === "function") {
@@ -2309,6 +2453,10 @@ export function ChatPanel({
   useEffect(() => {
     setComposerPrompt((current) => (current === prompt ? current : prompt));
   }, [prompt, promptSyncVersion]);
+
+  useEffect(() => () => {
+    window.clearTimeout(composerCompositionGuardTimeoutRef.current);
+  }, []);
 
   useLayoutEffect(() => {
     const textarea = composerTextareaRef.current;
@@ -3440,16 +3588,23 @@ export function ChatPanel({
                   <div
                     aria-hidden="true"
                     data-testid="composer-placeholder-overlay"
-                    className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-sm text-muted-foreground/75"
+                    className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-1 px-3 py-2 text-muted-foreground/75"
                   >
-                    <span>{promptPlaceholderSegments.before}</span>
-                    {promptPlaceholderSegments.agent ? (
-                      <span className="font-medium text-muted-foreground/75">
-                        {promptPlaceholderSegments.agent}
-                      </span>
+                    <div className="text-sm">
+                      <span>{promptPlaceholderSegments.before}</span>
+                      {promptPlaceholderSegments.agent ? (
+                        <span className="font-medium text-muted-foreground/75">
+                          {promptPlaceholderSegments.agent}
+                        </span>
+                      ) : null}
+                      <span>{promptPlaceholderSegments.after}</span>
+                      <span className="ml-1 text-inherit">💡</span>
+                    </div>
+                    {i18n.chat.composerFocusHint ? (
+                      <div className="text-xs leading-4 text-[#6b7280] dark:text-[#9ca3af]">
+                        {i18n.chat.composerFocusHint}
+                      </div>
                     ) : null}
-                    <span>{promptPlaceholderSegments.after}</span>
-                    <span className="ml-1 text-inherit">💡</span>
                   </div>
                 ) : null}
                 <Textarea
@@ -3458,9 +3613,29 @@ export function ChatPanel({
                   value={composerPrompt}
                   onChange={(event) => {
                     const nextPrompt = event.target.value;
+                    if (shouldIgnoreComposerCompositionReplay(event, nextPrompt)) {
+                      disarmComposerCompositionGuard();
+                      clearComposerInput();
+                      return;
+                    }
                     setComposerPrompt(nextPrompt);
                     onPromptChange(nextPrompt);
                     syncAgentMention(nextPrompt, event.target.selectionStart ?? nextPrompt.length);
+                  }}
+                  onCompositionStart={() => {
+                    composerCompositionActiveRef.current = true;
+                    composerLastCompositionAtRef.current = Date.now();
+                  }}
+                  onCompositionEnd={(event) => {
+                    composerCompositionActiveRef.current = false;
+                    composerLastCompositionAtRef.current = Date.now();
+                    const nextPrompt = event.currentTarget.value;
+                    if (shouldIgnoreComposerCompositionReplay(event, nextPrompt)) {
+                      disarmComposerCompositionGuard();
+                      clearComposerInput();
+                      return;
+                    }
+                    syncAgentMention(nextPrompt, event.currentTarget.selectionStart ?? nextPrompt.length);
                   }}
                   onClick={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
                   onKeyUp={(event) => {
@@ -3500,7 +3675,7 @@ export function ChatPanel({
                   placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
                   disabled={composerLocked}
                   className={cn(
-                    "min-h-[3.35rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0",
+                    "min-h-[4.6rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0",
                     openClawConnected ? "placeholder:text-transparent" : "",
                   )}
                 />
@@ -3611,7 +3786,12 @@ export function ChatPanel({
                 </Tooltip>
               </div>
               <Button
-                onClick={showStopButton ? onStop : onSend}
+                onMouseDown={(event) => {
+                  if (!showStopButton) {
+                    event.preventDefault();
+                  }
+                }}
+                onClick={showStopButton ? onStop : handleComposerSend}
                 disabled={showStopButton ? interactionLocked : composerLocked}
                 className="cc-send-button h-9 min-w-[6.25rem] rounded-md px-3 text-sm font-medium"
               >

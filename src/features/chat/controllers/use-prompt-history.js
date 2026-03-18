@@ -1,6 +1,15 @@
 import { useRef, useState } from "react";
 import { applyTextareaEnter, moveCaretToEnd, rapidEnterSendThresholdMs } from "@/features/chat/utils";
 
+function isImeComposingEvent(event) {
+  return Boolean(
+    event?.isComposing
+    || event?.nativeEvent?.isComposing
+    || event?.keyCode === 229
+    || event?.which === 229,
+  );
+}
+
 export function usePromptHistory({
   activeConversationKey,
   composerSendMode,
@@ -77,14 +86,14 @@ export function usePromptHistory({
     }
 
     const isPlainEnter = event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
-    if (composerSendMode === "enter-send" && isPlainEnter && !event.isComposing) {
+    if (composerSendMode === "enter-send" && isPlainEnter && !isImeComposingEvent(event)) {
       event.preventDefault();
       lastPlainEnterRef.current = { timestamp: 0, expectedValue: "" };
       handleSend();
       return;
     }
 
-    if (composerSendMode === "double-enter-send" && isPlainEnter && !event.isComposing) {
+    if (composerSendMode === "double-enter-send" && isPlainEnter && !isImeComposingEvent(event)) {
       const normalizedPrompt = currentPrompt.replace(/\r\n/g, "\n");
       const expectedValue = applyTextareaEnter(normalizedPrompt, textarea.selectionStart, textarea.selectionEnd);
       const now = Date.now();

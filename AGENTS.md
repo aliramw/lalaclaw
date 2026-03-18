@@ -57,6 +57,55 @@ http://127.0.0.1:3000
 - 推送完成后再创建 Git tag 和 GitHub release。Create the Git tag and GitHub release only after the main branch has been pushed.
 - 最后发布 npm 包。Publish the npm package last.
 
+## WebSocket 第二阶段 / WebSocket Phase 2
+
+- 第二阶段目标：把当前“runtime WebSocket 已落地，但 IM/钉钉等投递会话仍主要依赖 polling fallback”的状态，推进到“关键会话默认事件驱动，polling 只做兜底”。Phase 2 should move the app from runtime-only WebSocket usage toward event-first sync for IM and delivery-routed sessions, with polling kept only as a fallback.
+- 默认按以下顺序推进，避免同时改太多高风险链路。Implement Phase 2 in the order below unless a task explicitly requires a different sequence.
+
+### 执行顺序 / Execution Order
+
+- 先修 `runtimeHub` 的 `sessionKey` 解析，不要继续依赖字符串 `split(':')` 去路由 gateway event。First replace ad-hoc `sessionKey` splitting in `runtimeHub` with a shared parser that can handle JSON-style `sessionUser` values safely.
+- 再放开 IM session 的 runtime WebSocket 订阅，让钉钉、飞书、企微也能接入 `/api/runtime/ws`。Then enable runtime WebSocket subscriptions for IM sessions instead of excluding them by default.
+- 再让 delivery-routed session 优先走 gateway event stream，而不是一开始就落回 polling。After that, make delivery-routed sessions prefer gateway event streams before falling back to polling.
+- 最后再考虑把 `runtimeHub` 从“收到 event 后 refresh 快照”推进到“直接消费 event 并广播增量 patch”。Only after the routing and IM cases are stable should `runtimeHub` move from event-triggered refresh to direct event-driven patch emission.
+
+### 范围要求 / Scope Expectations
+
+- 修改 IM session 的 WebSocket 行为时，同时检查 bootstrap session、resolved session、runtime anchor 三类 `sessionUser` 的映射是否一致。When changing IM WebSocket behavior, verify bootstrap, resolved, and runtime-anchor session identity mapping together.
+- 修改 gateway event 路由时，优先复用统一的 session key / session user 解析逻辑，不要在多个模块里复制字符串解析。Reuse shared parsing helpers for session keys and session users instead of duplicating string parsing across modules.
+- 修改 delivery-routed stream 行为时，保留 polling fallback，不要把现有兜底路径删掉。Keep the polling fallback in place when extending delivery-routed streams to gateway events.
+- 如果聊天主链路是否迁移到 WebSocket 没被明确要求，第二阶段默认不把 `/api/chat` 的 SSE/streaming 响应整体改成 WebSocket。Do not migrate the `/api/chat` streaming transport to WebSocket as part of Phase 2 unless the task explicitly asks for it.
+
+### 测试要求 / Phase 2 Testing
+
+- `runtime-hub` 必须补精确路由测试，覆盖 command-center session、IM JSON sessionUser、bootstrap session、异常 session key。Add precise routing tests for `runtime-hub`, including command-center, IM JSON session users, bootstrap sessions, and malformed session keys.
+- `use-runtime-socket` 和 `use-runtime-snapshot` 必须补 IM session 建连、断线重连、切 tab、pending 清理、stop override 的回归测试。Add IM-focused regressions for `use-runtime-socket` and `use-runtime-snapshot`, covering connect, reconnect, tab switching, pending clearing, and stop overrides.
+- `openclaw-client` 必须补 delivery-routed event stream、delta/final/error、fallback polling 的回归测试。Add regressions for `openclaw-client` covering delivery-routed event streams, delta/final/error handling, and fallback polling.
+- 涉及钉钉/飞书/企微的改动，至少验证一次真实或等价的端到端消息链路。For DingTalk, Feishu, or WeCom changes, validate at least one real or equivalent end-to-end message flow.
+
+## WebSocket 后续收口 / WebSocket Follow-up
+
+- 第二阶段完成后，优先进入稳定化收口，不要立刻把 `/api/chat` 主聊天传输整体迁到 WebSocket。After Phase 2, prioritize stabilization before considering any full `/api/chat` transport migration.
+
+### 第一优先级 / Priority 1
+
+- 先把 `App` 级和 `use-command-center` 级回归收绿，特别是聊天发送、stop、pending 恢复、bootstrap IM tab、agent 切换等全局流程。First restore green coverage for `App`-level and `use-command-center` regressions, especially send/stop flows, pending recovery, bootstrap IM tabs, and agent switching.
+- 任何修复这类全局回归的改动，都要优先补控制器级或 `App` 级测试，而不是只补 hook 局部测试。When fixing these regressions, prefer controller-level or `App`-level coverage rather than hook-only tests.
+
+### 第二优先级 / Priority 2
+
+- 至少做一次真实或等价的 IM 联调验收，覆盖钉钉、飞书、企微里至少一个完整链路：发消息 -> gateway event stream -> runtime WS -> 前端落盘。Run at least one real or equivalent IM end-to-end validation covering send -> gateway event stream -> runtime WS -> frontend persistence.
+- 联调时记录当前是否走 `ws` 还是 `polling`、最近一次 fallback 原因、以及 `runtimeHub` 的 `lastRefreshReason/lastGatewayEvent`。During IM validation, record whether the session stayed on `ws` or fell back to `polling`, along with the latest fallback reason and `runtimeHub` refresh metadata.
+
+### 第三优先级 / Priority 3
+
+- 把 `runtimeHub` 当前支持的 direct patch 事件整理成稳定协议，至少固定 `session.sync`、`conversation.sync`、`taskRelationships.sync`、`taskTimeline.sync`、`artifacts.sync`。Stabilize the direct patch event contract used by `runtimeHub`, at minimum for `session`, `conversation`, `taskRelationships`, `taskTimeline`, and `artifacts`.
+- 新增事件类型时，优先沿用已有 `*.sync` 结构，不要继续扩散“仅靠宽松识别 payload.data”的临时协议。When adding new event types, prefer the existing `*.sync` structure instead of relying on increasingly loose `payload.data` heuristics.
+
+### 暂不做 / Out of Scope For Now
+
+- 如果任务没有明确要求，不要把 `/api/chat` 的 SSE/streaming 主链路并入 WebSocket 第三阶段之前的日常修复。Do not migrate the `/api/chat` SSE/streaming transport as part of routine follow-up work unless a task explicitly asks for it.
+
 ## 维护者规则 / Maintainer Rules
 
 ### 国际化 / Internationalization

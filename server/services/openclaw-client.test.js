@@ -1,5 +1,8 @@
 /* global describe, expect, it */
 const { createOpenClawClient } = require('./openclaw-client');
+const unavailableGatewaySdk = async () => {
+  throw new Error('Gateway SDK unavailable in this test');
+};
 
 describe('createOpenClawClient', () => {
   it('delivers DingTalk session messages through the agent gateway route', async () => {
@@ -65,6 +68,7 @@ describe('createOpenClawClient', () => {
       resolveSessionModel: () => 'openai-codex/gpt-5.4',
       readTextIfExists: () => '',
       tailLines: () => [],
+      loadGatewaySdk: unavailableGatewaySdk,
     });
 
     const reply = await client.dispatchOpenClawStream(
@@ -137,6 +141,7 @@ describe('createOpenClawClient', () => {
         resolveSessionModel: () => 'openai-codex/gpt-5.4',
         readTextIfExists: () => '',
         tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
       });
 
       await client.mirrorOpenClawUserMessage(rawSessionUser, '你你你');
@@ -221,6 +226,7 @@ describe('createOpenClawClient', () => {
       resolveSessionModel: () => 'openai-codex/gpt-5.4',
       readTextIfExists: () => '',
       tailLines: () => [],
+      loadGatewaySdk: unavailableGatewaySdk,
     });
 
     const reply = await client.dispatchOpenClawStream(
@@ -282,6 +288,7 @@ describe('createOpenClawClient', () => {
         resolveSessionModel: () => 'openai-codex/gpt-5.4',
         readTextIfExists: () => '',
         tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
       });
 
       await client.mirrorOpenClawUserMessage(feishuSessionKey, '测试飞书', { operatorName: 'marila' });
@@ -379,6 +386,7 @@ describe('createOpenClawClient', () => {
         resolveSessionModel: () => 'openai-codex/gpt-5.4',
         readTextIfExists: () => '',
         tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
       });
 
       const reply = await client.dispatchOpenClawStream(
@@ -479,6 +487,7 @@ describe('createOpenClawClient', () => {
       resolveSessionModel: () => 'openai-codex/gpt-5.4',
       readTextIfExists: () => '',
       tailLines: () => [],
+      loadGatewaySdk: unavailableGatewaySdk,
     });
 
     const reply = await client.dispatchOpenClawStream(
@@ -540,6 +549,7 @@ describe('createOpenClawClient', () => {
         resolveSessionModel: () => 'openai-codex/gpt-5.4',
         readTextIfExists: () => '',
         tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
       });
 
       await client.mirrorOpenClawUserMessage(wecomSessionKey, '测试企业微信', { operatorName: 'marila' });
@@ -637,6 +647,7 @@ describe('createOpenClawClient', () => {
         resolveSessionModel: () => 'openai-codex/gpt-5.4',
         readTextIfExists: () => '',
         tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
       });
 
       const reply = await client.dispatchOpenClawStream(

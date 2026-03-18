@@ -970,6 +970,30 @@ function ContextTooltipContent({ messages }) {
   );
 }
 
+function TransportTooltipContent({
+  messages,
+  runtimeFallbackReason = "",
+  runtimeReconnectAttempts = 0,
+  runtimeSocketLabel = "",
+  runtimeTransportLabel = "",
+}) {
+  return (
+    <div className="max-w-[22rem] space-y-1">
+      <div>{messages.sessionOverview.tooltips.transport}</div>
+      <div className="space-y-0.5 text-[11px] leading-relaxed text-muted-foreground">
+        <div>{`${messages.sessionOverview.labels.transport}: ${runtimeTransportLabel}`}</div>
+        <div>{`${messages.sessionOverview.labels.runtimeSocket}: ${runtimeSocketLabel}`}</div>
+        {runtimeReconnectAttempts > 0 ? (
+          <div>{`${messages.sessionOverview.labels.runtimeReconnectAttempts}: ${runtimeReconnectAttempts}`}</div>
+        ) : null}
+        {runtimeFallbackReason ? (
+          <div className="break-words">{`${messages.sessionOverview.labels.runtimeFallbackReason}: ${runtimeFallbackReason}`}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ThemeToggle({ onChange, resolvedTheme, value }) {
   const { messages } = useI18n();
   const options = [
@@ -1659,6 +1683,10 @@ export function SessionOverview({
   openAgentIds = [],
   openSessionUsers = [],
   resolvedTheme,
+  runtimeFallbackReason = "",
+  runtimeReconnectAttempts = 0,
+  runtimeSocketStatus = "disconnected",
+  runtimeTransport = "polling",
   session,
   theme,
 }) {
@@ -1673,6 +1701,12 @@ export function SessionOverview({
   const openClawConnected = session.mode === "openclaw" && !isOfflineStatus(session.status);
   const selectedModel = model || session.selectedModel || session.model || "";
   const displayedModel = formatModelLabel(selectedModel) || messages.common.unknown;
+  const runtimeTransportLabel =
+    messages.sessionOverview.runtimeTransport?.[runtimeTransport]
+    || runtimeTransport;
+  const runtimeSocketLabel =
+    messages.sessionOverview.runtimeSocket?.[runtimeSocketStatus]
+    || runtimeSocketStatus;
   const normalizedOpenAgentIds = new Set(
     (openAgentIds || [])
       .map((agentId) => String(agentId || "").trim())
@@ -1834,6 +1868,23 @@ export function SessionOverview({
             </div>
           )}
         />
+
+        {session.mode === "openclaw" ? (
+          <StatusPill
+            label={messages.sessionOverview.labels.transport}
+            value={`${runtimeTransportLabel} / ${runtimeSocketLabel}`}
+            resolvedTheme={resolvedTheme}
+            tooltipContent={(
+              <TransportTooltipContent
+                messages={messages}
+                runtimeFallbackReason={runtimeFallbackReason}
+                runtimeReconnectAttempts={runtimeReconnectAttempts}
+                runtimeSocketLabel={runtimeSocketLabel}
+                runtimeTransportLabel={runtimeTransportLabel}
+              />
+            )}
+          />
+        ) : null}
 
       </div>
     </div>

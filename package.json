@@ -1,6 +1,6 @@
 {
   "name": "lalaclaw",
-  "version": "2026.3.17-9",
+  "version": "2026.3.19-1",
   "description": "Agent command center prototype for an OpenClaw-style operator cockpit.",
   "main": "server.js",
   "engines": {

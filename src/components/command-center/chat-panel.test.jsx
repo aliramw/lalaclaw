@@ -4,6 +4,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
+import { shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
@@ -203,6 +204,41 @@ describe("ChatPanel", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
+  it("suppresses suffix-style IME replay text right after send", () => {
+    expect(
+      shouldSuppressComposerReplay({
+        armed: true,
+        armedAt: 1000,
+        eventType: "change",
+        nextPrompt: "test.md",
+        replaySource: "创建 test.md",
+        now: 1080,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldSuppressComposerReplay({
+        armed: true,
+        armedAt: 1000,
+        eventType: "change",
+        nextPrompt: "新的内容",
+        replaySource: "创建 test.md",
+        now: 1080,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldSuppressComposerReplay({
+        armed: true,
+        armedAt: 1000,
+        eventType: "compositionend",
+        nextPrompt: "test.md",
+        replaySource: "创建 test.md",
+        now: 1400,
+      }),
+    ).toBe(true);
+  });
+
   it("renders the composer placeholder with the agent name emphasized but not darker than the rest", () => {
     render(
       <TooltipProvider>
@@ -227,6 +263,7 @@ describe("ChatPanel", () => {
     expect(screen.getByPlaceholderText("💡 想要和 writer 一起做点什么？")).toBeInTheDocument();
     const overlay = screen.getByTestId("composer-placeholder-overlay");
     expect(overlay).toHaveTextContent("想要和 writer 一起做点什么？💡");
+    expect(overlay).toHaveTextContent("PS: 不用点击输入框，任何时候直接打字");
     expect(screen.getByText("writer", { selector: "span" })).toHaveClass("font-medium", "text-muted-foreground/75");
   });
 
@@ -937,6 +974,37 @@ describe("ChatPanel", () => {
     expect(idleTabDot).not.toHaveClass("cc-chat-tab-busy-dot");
   });
 
+  it("shows a numeric unread badge on inactive tabs without covering the title", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          activeChatTabId="agent:main"
+          busy={false}
+          chatTabs={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main", unreadCount: 0 },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert", unreadCount: 12 },
+          ]}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onActivateChatTab={() => {}}
+          onChatFontSizeChange={() => {}}
+          onCloseChatTab={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "expert" }).querySelector(".cc-chat-tab-unread-badge")).toHaveTextContent("12");
+    expect(screen.getByRole("button", { name: "main" }).querySelector(".cc-chat-tab-unread-badge")).toBeFalsy();
+  });
+
   it("activates an inactive tab when clicking its shortcut keycap", async () => {
     const onActivateChatTab = vi.fn();
 
@@ -994,7 +1062,7 @@ describe("ChatPanel", () => {
     expect(onActivate).toHaveBeenCalledWith("agent:expert");
   });
 
-  it("drags the tab itself with pointer reordering instead of a ghost preview", () => {
+  it("keeps the dragged tab in place and renders a detached drag overlay", () => {
     const onReorder = vi.fn();
 
     const { container } = render(
@@ -1057,11 +1125,10 @@ describe("ChatPanel", () => {
 
     expect(sourceWrapper).not.toHaveClass("opacity-75");
     expect(onReorder).toHaveBeenCalledWith("agent:main", "agent:expert", "after");
-    expect(sourceWrapper.lastElementChild).toHaveStyle({
-      position: "fixed",
-      pointerEvents: "none",
-      top: "33px",
-    });
+    expect(sourceWrapper).toHaveStyle({ opacity: "0" });
+    const dragOverlay = document.querySelector("[data-dragging-tab-overlay='true']");
+    expect(dragOverlay).toBeTruthy();
+    expect(dragOverlay.getAttribute("style")).toContain("top: 20px");
   });
 
   it("hides the close button on the tab currently being dragged", () => {
@@ -1188,11 +1255,15 @@ describe("ChatPanel", () => {
     fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 120, clientY: 46, pointerId: 1 });
     fireEvent.pointerMove(window, { clientX: -40, clientY: 46, pointerId: 1 });
 
-    expect(sourceWrapper.lastElementChild).toHaveStyle({ left: "50px" });
+    let dragOverlay = document.querySelector("[data-dragging-tab-overlay='true']");
+    expect(dragOverlay).toBeTruthy();
+    expect(dragOverlay.getAttribute("style")).toContain("left: 50px");
 
     fireEvent.pointerMove(window, { clientX: 400, clientY: 46, pointerId: 1 });
 
-    expect(sourceWrapper.lastElementChild).toHaveStyle({ left: "140px" });
+    dragOverlay = document.querySelector("[data-dragging-tab-overlay='true']");
+    expect(dragOverlay).toBeTruthy();
+    expect(dragOverlay.getAttribute("style")).toContain("left: 140px");
   });
 
   it("waits until the pointer clearly crosses the target midpoint before reordering", () => {
@@ -1556,7 +1627,7 @@ describe("ChatPanel", () => {
 
     const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
     expect(textarea).toHaveAttribute("rows", "2");
-    expect(textarea).toHaveClass("min-h-[3.35rem]");
+    expect(textarea).toHaveClass("min-h-[4.6rem]");
   });
 
   it("shows the enter-send hint and toggle button by default", async () => {

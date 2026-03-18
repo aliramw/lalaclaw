@@ -128,10 +128,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.17-9`:
+If you want a specific published version instead, such as `2026.3.19-1`:
 
 ```bash
-npm install -g lalaclaw@2026.3.17-9
+npm install -g lalaclaw@2026.3.19-1
 lalaclaw init
 ```
 
@@ -145,12 +145,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.17-9`:
+If you want a specific released version instead, such as `2026.3.19-1`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.17-9
+git checkout 2026.3.19-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -207,7 +207,7 @@ The full contribution checklist lives in [CONTRIBUTING.md](./CONTRIBUTING.md).
 LalaClaw uses npm-compatible calendar versioning for releases.
 
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes
-- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-9`, not `YYYY.M.D.N`
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.19-1`, not `YYYY.M.D.N`
 - Call out breaking changes explicitly in release notes and migration-facing docs
 - For development, the repository targets Node.js `22` via [`.nvmrc`](./.nvmrc). The published package supports `^20.19.0 || ^22.12.0 || >=24.0.0`
 

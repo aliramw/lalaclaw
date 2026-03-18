@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, Pencil, RotateCcw, ScrollText, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, Pencil, RotateCcw, ScrollText, SquareArrowOutUpRight, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
 import { apiFetch } from "@/lib/api-client";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
-import { cn, stripMarkdownForDisplay } from "@/lib/utils";
+import { cn, isApplePlatform, stripMarkdownForDisplay } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
 const LazyFilePreviewOverlay = lazy(() =>
@@ -51,7 +51,26 @@ const editableExtensions = new Set([
 ]);
 
 function getItemKey(item, index) {
-  return item.id || item.path || item.title || `${item.label || "item"}-${index}`;
+  if (item?.id) {
+    return String(item.id);
+  }
+
+  if (item?.path) {
+    return String(item.path);
+  }
+
+  const keyParts = [
+    item?.type,
+    item?.title,
+    item?.label,
+    item?.messageTimestamp,
+    item?.timestamp,
+    item?.detail,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return keyParts.length ? keyParts.join("::") : `${item?.label || "item"}-${index}`;
 }
 
 function compactHomePath(filePath = "") {
@@ -122,6 +141,19 @@ function canEditFileItem(item) {
 
   const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
   return Boolean(extension) && editableExtensions.has(extension);
+}
+
+function getVsCodeHref(filePath = "") {
+  if (!filePath) {
+    return "";
+  }
+  return `vscode://file/${encodeURIComponent(filePath)}`;
+}
+
+function resolveFileManagerLocaleLabel(messages) {
+  return isApplePlatform()
+    ? messages.inspector.previewActions.fileManagers.finder
+    : messages.inspector.previewActions.fileManagers.explorer;
 }
 
 function countWorkspaceFiles(nodes = []) {
@@ -713,6 +745,35 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
   const canPreview = canPreviewFileItem(menu.item);
   const canEdit = canEditFileItem(menu.item);
   const canRefreshDirectory = menu.item?.kind === "目录" && typeof onRefreshDirectory === "function";
+  const targetPath = resolveItemPath(menu.item);
+  const vscodeHref = getVsCodeHref(targetPath);
+  const fileManagerLabel = resolveFileManagerLocaleLabel(messages);
+
+  const handleRevealInFileManager = async () => {
+    try {
+      const response = await apiFetch("/api/file-manager/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: targetPath }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Reveal in file manager failed");
+      }
+    } finally {
+      onClose();
+    }
+  };
+
+  const handleOpenInVsCode = () => {
+    try {
+      if (vscodeHref) {
+        window.open(vscodeHref, "_blank", "noopener,noreferrer");
+      }
+    } finally {
+      onClose();
+    }
+  };
 
   return (
     <div
@@ -769,6 +830,32 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
           ) : null}
         </>
       )}
+      {!canRefreshDirectory ? (
+        <>
+          <div role="separator" className="my-1 h-px bg-border/70" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              handleRevealInFileManager().catch(() => {});
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+          >
+            <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{messages.inspector.previewActions.revealInFileManager(fileManagerLabel)}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleOpenInVsCode}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+          >
+            <SquareArrowOutUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{messages.inspector.previewActions.openInCodeEditor}</span>
+          </button>
+          <div role="separator" className="my-1 h-px bg-border/70" />
+        </>
+      ) : null}
       <button
         type="button"
         role="menuitem"
@@ -1715,16 +1802,16 @@ function TimelineTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview
   );
 }
 
-function EnvironmentTab({ section, messages }) {
-  if (!section?.items?.length) {
+function EnvironmentTab({ items = [], messages, summary = "" }) {
+  if (!items.length) {
     return <PanelEmpty text={messages.inspector.empty.noEnvironment} />;
   }
 
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="min-w-0">
       <div className="min-w-0 max-w-full space-y-2 overflow-hidden py-1 pr-4">
-        <InspectorHint text={messages.inspector.empty.environment} />
-        {section.items.map((item, index) => (
+        <InspectorHint text={summary || messages.inspector.empty.environment} />
+        {items.map((item, index) => (
           <div
             key={`${item.label}-${index}`}
             className="w-full min-w-0 max-w-full border-b border-border/55 pb-3 last:border-b-0 last:pb-0"
@@ -1755,6 +1842,10 @@ export function InspectorPanel({
   onSelectArtifact,
   peeks,
   resolvedTheme = "light",
+  runtimeFallbackReason = "",
+  runtimeReconnectAttempts = 0,
+  runtimeSocketStatus = "disconnected",
+  runtimeTransport = "polling",
   setActiveTab,
   taskTimeline,
 }) {
@@ -1775,6 +1866,32 @@ export function InspectorPanel({
     }
     return collection.findIndex((candidate) => (candidate?.fullPath || candidate?.path) === itemKey) === index;
   });
+  const runtimeEnvironmentItems = [
+    {
+      label: messages.inspector.environment.runtimeTransport,
+      value: messages.sessionOverview.runtimeTransport?.[runtimeTransport] || runtimeTransport,
+    },
+    {
+      label: messages.inspector.environment.runtimeSocket,
+      value: messages.sessionOverview.runtimeSocket?.[runtimeSocketStatus] || runtimeSocketStatus,
+    },
+    ...(runtimeReconnectAttempts > 0
+      ? [{
+          label: messages.inspector.environment.runtimeReconnectAttempts,
+          value: String(runtimeReconnectAttempts),
+        }]
+      : []),
+    ...(runtimeFallbackReason
+      ? [{
+          label: messages.inspector.environment.runtimeFallbackReason,
+          value: runtimeFallbackReason,
+        }]
+      : []),
+  ];
+  const environmentSection = {
+    summary: peeks?.environment?.summary || messages.inspector.empty.environment,
+    items: [...runtimeEnvironmentItems, ...(peeks?.environment?.items || [])],
+  };
   const tabDefinitions = [
     { key: "files", icon: FolderOpen, label: messages.inspector.tabs.files, count: files.length },
     { key: "artifacts", icon: FileText, label: messages.inspector.tabs.artifacts },
@@ -1892,7 +2009,13 @@ export function InspectorPanel({
   const timelineTabContent = (
     <TimelineTab items={taskTimeline} messages={messages} onOpenPreview={handleOpenPreview} resolvedTheme={resolvedTheme} currentWorkspaceRoot={currentWorkspaceRoot} />
   );
-  const environmentTabContent = <EnvironmentTab section={peeks?.environment} messages={messages} />;
+  const environmentTabContent = (
+    <EnvironmentTab
+      items={environmentSection.items}
+      messages={messages}
+      summary={environmentSection.summary}
+    />
+  );
   const tabContentByKey = {
     files: filesTabContent,
     artifacts: artifactsTabContent,

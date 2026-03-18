@@ -730,6 +730,26 @@ function createOpenClawClient({
     };
   }
 
+  function buildGatewayChatSendParams(sessionUser = 'command-center', message = '', timeoutMs = 30000, options = {}) {
+    const agentId = resolveSessionAgentId(sessionUser);
+    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
+
+    return {
+      sessionKey,
+      message,
+      thinking: options.thinkMode,
+      timeoutMs,
+      idempotencyKey: options.idempotencyKey,
+      ...(deliveryRoute ? {
+        deliver: true,
+        channel: deliveryRoute.channel,
+        ...(deliveryRoute.to ? { to: deliveryRoute.to } : {}),
+        ...(deliveryRoute.accountId ? { accountId: deliveryRoute.accountId } : {}),
+      } : {}),
+    };
+  }
+
   function normalizeMessageTimestamp(value) {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;
@@ -1045,10 +1065,6 @@ function createOpenClawClient({
   }
 
   async function callOpenClawSessionStream(messages, sessionUser = 'command-center', timeoutMs = 30000, options = {}) {
-    if (resolveSessionDeliveryRoute(sessionUser)) {
-      return await callOpenClawSessionStreamPolling(messages, sessionUser, timeoutMs, options);
-    }
-
     try {
       return await callOpenClawSessionEventStream(messages, sessionUser, timeoutMs, options);
     } catch (error) {
@@ -1272,13 +1288,10 @@ function createOpenClawClient({
 
       const requestResult = await client.request(
         'chat.send',
-        {
-          sessionKey,
-          message,
-          thinking: options.thinkMode,
-          timeoutMs,
+        buildGatewayChatSendParams(sessionUser, message, timeoutMs, {
+          thinkMode: options.thinkMode,
           idempotencyKey: runId,
-        },
+        }),
         { timeoutMs: 10000 },
       );
       activeRunState = {

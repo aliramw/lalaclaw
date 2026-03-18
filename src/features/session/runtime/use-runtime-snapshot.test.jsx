@@ -1,8 +1,43 @@
 import { StrictMode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
 import { getRuntimePollInterval, mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
+import { RUNTIME_SOCKET_STATES } from "./use-runtime-socket";
+
+class MockWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+  static instances = [];
+
+  constructor(url) {
+    this.url = url;
+    this.readyState = MockWebSocket.CONNECTING;
+    this.onopen = null;
+    this.onclose = null;
+    this.onmessage = null;
+    this.onerror = null;
+    MockWebSocket.instances.push(this);
+  }
+
+  send() {}
+
+  simulateOpen() {
+    this.readyState = MockWebSocket.OPEN;
+    if (this.onopen) {
+      this.onopen();
+    }
+  }
+
+  close() {
+    this.readyState = MockWebSocket.CLOSED;
+    if (this.onclose) {
+      this.onclose();
+    }
+  }
+}
 
 function mockJsonResponse(payload, ok = true, status = ok ? 200 : 500) {
   return Promise.resolve({
@@ -52,9 +87,18 @@ function createDeferred() {
 }
 
 describe("useRuntimeSnapshot", () => {
+  let originalWebSocket;
+
+  beforeEach(() => {
+    originalWebSocket = globalThis.WebSocket;
+    globalThis.WebSocket = MockWebSocket;
+    MockWebSocket.instances = [];
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    globalThis.WebSocket = originalWebSocket;
   });
 
   it("hydrates runtime data, pending turns, and prompt history from the snapshot", async () => {
@@ -261,6 +305,10 @@ describe("useRuntimeSnapshot", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=wecom%3Adirect%3Adefault&agentId=main", { credentials: "same-origin" });
     });
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0].url).toContain("/api/runtime/ws");
+    expect(MockWebSocket.instances[0].url).toContain("sessionUser=wecom%3Adirect%3Adefault");
+    expect(MockWebSocket.instances[0].url).toContain("agentId=main");
   });
 
   it("keeps a restored pending turn even when the runtime snapshot still reports completed", async () => {
@@ -383,6 +431,124 @@ describe("useRuntimeSnapshot", () => {
       expect(setSession).toHaveBeenCalledWith(expect.objectContaining({
         sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
       }));
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0].url).toContain("sessionUser=feishu%3Adirect%3Adefault");
+  });
+
+  it("opens runtime WebSocket subscriptions for native IM sessions", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "agent:main:wecom:direct:marila",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "空闲",
+        },
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession({
+          mode: "openclaw",
+          sessionUser: "agent:main:wecom:direct:marila",
+        }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=agent%3Amain%3Awecom%3Adirect%3Amarila&agentId=main", { credentials: "same-origin" });
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0].url).toContain("sessionUser=agent%3Amain%3Awecom%3Adirect%3Amarila");
+    expect(MockWebSocket.instances[0].url).toContain("agentId=main");
+  });
+
+  it("exposes runtime socket state and transport mode", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "就绪",
+        },
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession({
+          mode: "openclaw",
+        }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    expect(result.current.runtimeSocketStatus).toBe(RUNTIME_SOCKET_STATES.CONNECTING);
+    expect(result.current.runtimeTransport).toBe("polling");
+
+    MockWebSocket.instances[0].simulateOpen();
+
+    await waitFor(() => {
+      expect(result.current.runtimeSocketStatus).toBe(RUNTIME_SOCKET_STATES.CONNECTED);
+      expect(result.current.runtimeTransport).toBe("ws");
     });
   });
 

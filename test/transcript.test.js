@@ -523,6 +523,116 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("collects tool-call file paths that use home-relative tilde notation", () => {
+    const homeRoot = fs.mkdtempSync(path.join(os.homedir(), "lalaclaw-transcript-home-"));
+    try {
+      const projectRoot = path.join(homeRoot, "projects", "lalaclaw2");
+      const agentsFile = path.join(projectRoot, "AGENTS.md");
+      const tildePath = `~/${path.relative(os.homedir(), agentsFile).replace(/\\/g, "/")}`;
+      fs.mkdirSync(projectRoot, { recursive: true });
+      fs.writeFileSync(agentsFile, "# agents\n");
+
+      const projector = createProjector({
+        PROJECT_ROOT: projectRoot,
+      });
+
+      expect(
+        projector.collectFiles(
+          [
+            {
+              type: "message",
+              timestamp: 1,
+              message: {
+                role: "assistant",
+                timestamp: 1,
+                content: [
+                  {
+                    type: "toolCall",
+                    id: "tool-1",
+                    name: "read",
+                    arguments: JSON.stringify({ path: tildePath }),
+                  },
+                ],
+              },
+            },
+          ],
+          [projectRoot],
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          path: "AGENTS.md",
+          fullPath: agentsFile,
+          primaryAction: "viewed",
+        }),
+      ]);
+    } finally {
+      fs.rmSync(homeRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not backfill injected workspace files from tool-result file contents that only mention a basename", () => {
+    const homeRoot = fs.mkdtempSync(path.join(os.homedir(), "lalaclaw-transcript-home-"));
+    try {
+      const projectRoot = path.join(homeRoot, "projects", "lalaclaw2");
+      const workspaceRoot = path.join(homeRoot, ".openclaw", "workspace");
+      const projectAgentsFile = path.join(projectRoot, "AGENTS.md");
+      const injectedAgentsFile = path.join(workspaceRoot, "AGENTS.md");
+      const tildePath = `~/${path.relative(os.homedir(), projectAgentsFile).replace(/\\/g, "/")}`;
+      fs.mkdirSync(projectRoot, { recursive: true });
+      fs.mkdirSync(workspaceRoot, { recursive: true });
+      fs.writeFileSync(projectAgentsFile, "# project agents\n");
+      fs.writeFileSync(injectedAgentsFile, "# workspace agents\n");
+
+      const projector = createProjector({
+        PROJECT_ROOT: projectRoot,
+      });
+
+      expect(
+        projector.collectFiles(
+          [
+            {
+              type: "message",
+              timestamp: 1,
+              message: {
+                role: "assistant",
+                timestamp: 1,
+                content: [
+                  {
+                    type: "toolCall",
+                    id: "tool-1",
+                    name: "read",
+                    arguments: JSON.stringify({ path: tildePath }),
+                  },
+                ],
+              },
+            },
+            {
+              type: "message",
+              timestamp: 2,
+              message: {
+                role: "toolResult",
+                timestamp: 2,
+                toolCallId: "tool-1",
+                toolName: "read",
+                content: [{ type: "text", text: "# AGENTS.md\n\nproject-only content" }],
+              },
+            },
+          ],
+          [projectRoot, workspaceRoot],
+          { injectedFiles: [{ path: injectedAgentsFile }] },
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          path: "AGENTS.md",
+          fullPath: projectAgentsFile,
+          primaryAction: "viewed",
+        }),
+      ]);
+    } finally {
+      fs.rmSync(homeRoot, { recursive: true, force: true });
+    }
+  });
+
   it("collects files from message attachments with local paths", () => {
     const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
     const imageFile = path.join(tmpRoot, "assets", "poster.png");

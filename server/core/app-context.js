@@ -230,6 +230,8 @@ function createAppContext() {
     tailLines,
   });
 
+  let runtimeHub = null;
+
   const { buildDashboardSnapshot } = createDashboardService({
     HOST,
     PORT,
@@ -259,6 +261,7 @@ function createAppContext() {
     getLocalSessionConversation,
     getTranscriptEntriesForSession,
     getTranscriptPath,
+    getRuntimeHubDebugInfo: ({ sessionUser, agentId } = {}) => runtimeHub?.getDebugInfo({ sessionUser, agentId }) || null,
     invokeOpenClawTool,
     listImSessionsForAgent,
     listDirectoryPreview,
@@ -329,7 +332,7 @@ function createAppContext() {
     sendJson,
   });
 
-  const runtimeHub = createRuntimeHub({
+  runtimeHub = createRuntimeHub({
     buildDashboardSnapshot,
     config,
     subscribeGatewayEvents,

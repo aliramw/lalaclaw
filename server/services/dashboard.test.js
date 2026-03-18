@@ -790,4 +790,83 @@ describe("createDashboardService", () => {
 
     expect(snapshot.session.sessionUser).toBe(nativeGroupSessionUser);
   });
+
+  it("includes runtime hub debug info in the environment peek", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-hub-"));
+    tempDirs.push(rootDir);
+
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: () => [],
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: { mode: "mock", workspaceRoot: rootDir, model: "openai-codex/gpt-5.4", localConfig: {} },
+      extractTextSegments: () => [],
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: () => [],
+      getTranscriptPath: () => "",
+      getRuntimeHubDebugInfo: ({ sessionUser, agentId }) => ({
+        gatewayConnected: true,
+        channelCount: 2,
+        subscriberCount: 3,
+        channel: {
+          key: `${agentId}::${sessionUser}`,
+          agentId,
+          sessionUser,
+          subscriberCount: 1,
+          pollIntervalMs: 8000,
+          hasSnapshot: true,
+          lastRefreshReason: "gateway_refresh:chat:final",
+          lastGatewayEvent: "chat:final",
+        },
+      }),
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: () => [],
+      readTextIfExists: () => "",
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: () => null,
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot("command-center", { agentId: "main" });
+    const environmentItems = snapshot.peeks.environment.items;
+
+    expect(environmentItems).toEqual(expect.arrayContaining([
+      { label: "runtimeHub.gatewayConnected", value: "true" },
+      { label: "runtimeHub.channelCount", value: "2" },
+      { label: "runtimeHub.subscriberCount", value: "3" },
+      { label: "runtimeHub.channel.key", value: "main::command-center" },
+      { label: "runtimeHub.channel.lastRefreshReason", value: "gateway_refresh:chat:final" },
+      { label: "runtimeHub.channel.lastGatewayEvent", value: "chat:final" },
+    ]));
+  });
 });

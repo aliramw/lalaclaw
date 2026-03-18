@@ -310,6 +310,44 @@ describe("SessionOverview", () => {
     expect(screen.getAllByText(/当上下文越来越长，考虑成本和模型效果/).length).toBeGreaterThan(0);
   });
 
+  it("shows runtime transport and socket state for live OpenClaw sessions", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="status"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            runtimeFallbackReason="Ping timeout"
+            runtimeReconnectAttempts={2}
+            runtimeSocketStatus="reconnecting"
+            runtimeTransport="ws"
+            session={createSession({ mode: "openclaw", status: "空闲" })}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("WebSocket / 重连中")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByText("WebSocket / 重连中"));
+
+    expect((await screen.findAllByText("传输: WebSocket")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("连接: 重连中").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("重连: 2").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("回退: Ping timeout").length).toBeGreaterThan(0);
+  });
+
   it("prefers the selected model over the stale runtime model in the header", () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 

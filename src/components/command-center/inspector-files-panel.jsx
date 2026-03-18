@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, Copy, Eye, FolderOpen, Pencil, RotateCcw, X } from "lucide-react";
+import { ChevronDown, Copy, Eye, FolderOpen, Pencil, RotateCcw, SquareArrowOutUpRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiFetch } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { cn, isApplePlatform } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
 const WORKSPACE_FILTER_DEBOUNCE_MS = 150;
@@ -96,6 +96,19 @@ function canEditFileItem(item) {
 
   const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
   return Boolean(extension) && editableExtensions.has(extension);
+}
+
+function getVsCodeHref(filePath = "") {
+  if (!filePath) {
+    return "";
+  }
+  return `vscode://file/${encodeURIComponent(filePath)}`;
+}
+
+function resolveFileManagerLocaleLabel(messages) {
+  return isApplePlatform()
+    ? messages.inspector.previewActions.fileManagers.finder
+    : messages.inspector.previewActions.fileManagers.explorer;
 }
 
 function countWorkspaceFiles(nodes = []) {
@@ -716,6 +729,35 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
   const canPreview = canPreviewFileItem(menu.item);
   const canEdit = canEditFileItem(menu.item);
   const canRefreshDirectory = menu.item?.kind === "目录" && typeof onRefreshDirectory === "function";
+  const targetPath = resolveItemPath(menu.item);
+  const vscodeHref = getVsCodeHref(targetPath);
+  const fileManagerLabel = resolveFileManagerLocaleLabel(messages);
+
+  const handleRevealInFileManager = async () => {
+    try {
+      const response = await apiFetch("/api/file-manager/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: targetPath }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Reveal in file manager failed");
+      }
+    } finally {
+      onClose();
+    }
+  };
+
+  const handleOpenInVsCode = () => {
+    try {
+      if (vscodeHref) {
+        window.open(vscodeHref, "_blank", "noopener,noreferrer");
+      }
+    } finally {
+      onClose();
+    }
+  };
 
   return (
     <div
@@ -772,6 +814,32 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
           ) : null}
         </>
       )}
+      {!canRefreshDirectory ? (
+        <>
+          <div role="separator" className="my-1 h-px bg-border/70" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              handleRevealInFileManager().catch(() => {});
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+          >
+            <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{messages.inspector.previewActions.revealInFileManager(fileManagerLabel)}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleOpenInVsCode}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+          >
+            <SquareArrowOutUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{messages.inspector.previewActions.openInCodeEditor}</span>
+          </button>
+          <div role="separator" className="my-1 h-px bg-border/70" />
+        </>
+      ) : null}
       <button
         type="button"
         role="menuitem"

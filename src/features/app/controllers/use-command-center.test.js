@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChatTabTitle,
+  deriveUnreadTabState,
+  getLatestSettledMessageKey,
+  getSettledMessageKeys,
   getLatestUserMessageKey,
   hasActiveAssistantReply,
   isChatTabBusy,
@@ -81,6 +84,68 @@ describe("getLatestUserMessageKey", () => {
         { id: "msg-assistant-pending-2", role: "assistant", content: "正在思考…", timestamp: 220, pending: true },
       ]),
     ).toBe("msg-user-2");
+  });
+});
+
+describe("getLatestSettledMessageKey", () => {
+  it("ignores pending assistant placeholders and uses the latest settled message", () => {
+    expect(
+      getLatestSettledMessageKey([
+        { id: "msg-user-1", role: "user", content: "hello", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "thinking", timestamp: 110, pending: true },
+      ]),
+    ).toBe("msg-user-1");
+  });
+});
+
+describe("getSettledMessageKeys", () => {
+  it("collects only settled message identities in order", () => {
+    expect(
+      getSettledMessageKeys([
+        { id: "msg-user-1", role: "user", content: "hello", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "thinking", timestamp: 110, pending: true },
+        { id: "msg-assistant-2", role: "assistant", content: "done", timestamp: 120 },
+      ]),
+    ).toEqual(["msg-user-1", "msg-assistant-2"]);
+  });
+});
+
+describe("deriveUnreadTabState", () => {
+  it("accumulates unread counts for inactive tabs and clears them once activated", () => {
+    const chatTabs = [
+      { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+      { id: "agent:writer", agentId: "writer", sessionUser: "command-center-writer-1" },
+    ];
+    const settledMessageKeysByTabId = {
+      "agent:main": ["msg-user-1"],
+      "agent:writer": ["msg-assistant-1", "msg-assistant-2", "msg-assistant-3"],
+    };
+
+    expect(
+      deriveUnreadTabState({
+        activeChatTabId: "agent:main",
+        chatTabs,
+        settledMessageKeysByTabId,
+        previousSettledMessageKeysByTabId: {
+          "agent:main": ["msg-user-1"],
+          "agent:writer": ["msg-assistant-1"],
+        },
+        previousUnreadCountByTabId: { "agent:writer": 1 },
+      }),
+    ).toEqual({ "agent:writer": 3 });
+
+    expect(
+      deriveUnreadTabState({
+        activeChatTabId: "agent:writer",
+        chatTabs,
+        settledMessageKeysByTabId,
+        previousSettledMessageKeysByTabId: {
+          "agent:main": ["msg-user-1"],
+          "agent:writer": ["msg-assistant-1", "msg-assistant-2", "msg-assistant-3"],
+        },
+        previousUnreadCountByTabId: { "agent:writer": 3 },
+      }),
+    ).toEqual({});
   });
 });
 

@@ -580,4 +580,114 @@ describe("collectConversationMessages", () => {
       fs.rmSync(rootDir, { force: true, recursive: true });
     }
   });
+
+  it("strips queued busy wrappers from inbound Feishu follow-up prompts", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
+    try {
+      const projector = createTestProjector(rootDir);
+
+      const conversation = projector.collectConversationMessages([
+        {
+          type: "message",
+          timestamp: "2026-03-19T05:36:50.000Z",
+          message: {
+            role: "user",
+            timestamp: 1773879410000,
+            content: [{
+              type: "text",
+              text: [
+                "[Queued messages while agent was busy]",
+                "",
+                "---",
+                "Queued #1",
+                "Conversation info (untrusted metadata):",
+                "```json",
+                "{",
+                '  "message_id": "om_x100b5485e2007ca0b366563c7c2cd35",',
+                '  "sender_id": "ou_d249239ddfd11c4c3c4f5f1581c97a58"',
+                "}",
+                "```",
+                "",
+                "Sender (untrusted metadata):",
+                "```json",
+                "{",
+                '  "label": "ou_d249239ddfd11c4c3c4f5f1581c97a58"',
+                "}",
+                "```",
+                "",
+                "[message_id: om_x100b5485e2007ca0b366563c7c2cd35]",
+                "ou_d249239ddfd11c4c3c4f5f1581c97a58: 今天吧",
+              ].join("\n"),
+            }],
+          },
+        },
+      ]);
+
+      expect(conversation).toEqual([
+        {
+          role: "user",
+          content: "今天吧",
+          timestamp: 1773879410000,
+        },
+      ]);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps queued busy batches readable by flattening each queued inbound item", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
+    try {
+      const projector = createTestProjector(rootDir);
+
+      const conversation = projector.collectConversationMessages([
+        {
+          type: "message",
+          timestamp: "2026-03-19T05:37:20.000Z",
+          message: {
+            role: "user",
+            timestamp: 1773879440000,
+            content: [{
+              type: "text",
+              text: [
+                "[Queued messages while agent was busy]",
+                "",
+                "2 messages queued while the current run was still working.",
+                "",
+                "---",
+                "Queued #1",
+                "Conversation info (untrusted metadata):",
+                "```json",
+                '{"message_id":"om_x101"}',
+                "```",
+                "",
+                "[message_id: om_x101]",
+                "ou_d249239ddfd11c4c3c4f5f1581c97a58: 第一条",
+                "",
+                "---",
+                "Queued #2",
+                "Conversation info (untrusted metadata):",
+                "```json",
+                '{"message_id":"om_x102"}',
+                "```",
+                "",
+                "[message_id: om_x102]",
+                "ou_d249239ddfd11c4c3c4f5f1581c97a58: 第二条",
+              ].join("\n"),
+            }],
+          },
+        },
+      ]);
+
+      expect(conversation).toEqual([
+        {
+          role: "user",
+          content: "第一条\n\n第二条",
+          timestamp: 1773879440000,
+        },
+      ]);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
 });

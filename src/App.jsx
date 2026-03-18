@@ -469,6 +469,10 @@ function AppContent() {
     restoredChatScrollKey,
     restoredChatScrollRevision,
     restoredChatScrollState,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     session,
     setActiveTab,
     setTheme,
@@ -676,6 +680,10 @@ function AppContent() {
       onThinkModeChange={handleThinkModeChange}
       onThemeChange={setTheme}
       resolvedTheme={resolvedTheme}
+      runtimeFallbackReason={runtimeFallbackReason}
+      runtimeReconnectAttempts={runtimeReconnectAttempts}
+      runtimeSocketStatus={runtimeSocketStatus}
+      runtimeTransport={runtimeTransport}
       session={session}
       theme={theme}
     />
@@ -696,6 +704,10 @@ function AppContent() {
     handleThinkModeChange,
     model,
     resolvedTheme,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     session,
     setTheme,
     theme,
@@ -723,6 +735,10 @@ function AppContent() {
       openAgentIds={openAgentIds}
       openSessionUsers={openSessionUsers}
       resolvedTheme={resolvedTheme}
+      runtimeFallbackReason={runtimeFallbackReason}
+      runtimeReconnectAttempts={runtimeReconnectAttempts}
+      runtimeSocketStatus={runtimeSocketStatus}
+      runtimeTransport={runtimeTransport}
       session={session}
       theme={theme}
     />
@@ -746,6 +762,10 @@ function AppContent() {
     openAgentIds,
     openSessionUsers,
     resolvedTheme,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     session,
     setTheme,
     theme,
@@ -770,6 +790,10 @@ function AppContent() {
       onThinkModeChange={handleThinkModeChange}
       onThemeChange={setTheme}
       resolvedTheme={resolvedTheme}
+      runtimeFallbackReason={runtimeFallbackReason}
+      runtimeReconnectAttempts={runtimeReconnectAttempts}
+      runtimeSocketStatus={runtimeSocketStatus}
+      runtimeTransport={runtimeTransport}
       session={session}
       theme={theme}
     />
@@ -790,6 +814,10 @@ function AppContent() {
     handleThinkModeChange,
     model,
     resolvedTheme,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     session,
     setTheme,
     theme,
@@ -814,6 +842,10 @@ function AppContent() {
       onThinkModeChange={handleThinkModeChange}
       onThemeChange={setTheme}
       resolvedTheme={resolvedTheme}
+      runtimeFallbackReason={runtimeFallbackReason}
+      runtimeReconnectAttempts={runtimeReconnectAttempts}
+      runtimeSocketStatus={runtimeSocketStatus}
+      runtimeTransport={runtimeTransport}
       session={session}
       theme={theme}
     />
@@ -834,6 +866,10 @@ function AppContent() {
     handleThinkModeChange,
     model,
     resolvedTheme,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     session,
     setTheme,
     theme,
@@ -860,6 +896,10 @@ function AppContent() {
       peeks={peeks}
       renderPeek={renderPeek}
       resolvedTheme={resolvedTheme}
+      runtimeFallbackReason={runtimeFallbackReason}
+      runtimeReconnectAttempts={runtimeReconnectAttempts}
+      runtimeSocketStatus={runtimeSocketStatus}
+      runtimeTransport={runtimeTransport}
       setActiveTab={setActiveTab}
       snapshots={snapshots}
       taskTimeline={taskTimeline}
@@ -874,6 +914,10 @@ function AppContent() {
     peeks,
     renderPeek,
     resolvedTheme,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     session.agentId,
     session.sessionUser,
     session.workspaceRoot,

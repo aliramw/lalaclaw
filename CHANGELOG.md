@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2026.3.19-1]
 
 ### Added
 
@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Documented direct URL deployments alongside the existing SSH port-forward workflow, and added access-token environment examples to `.env.local.example`
 - Colored CLI doctor status labels so `OK`, `WARN`, `INFO`, and `ERROR` are easier to scan in terminal output
 - Added an explicit doctor summary line so CLI health checks show whether the current setup is fully healthy, warning-only, or blocked by errors
+- IM session tabs now preserve local pending turns while background runtime snapshots refresh, preventing optimistic user messages and thinking placeholders from disappearing after tab switches
 
 ### Fixed
 
@@ -22,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added cross-platform runtime overrides for `lalaclaw dev/frontend/backend` so Windows can start services with `--host/--port` flags instead of POSIX-only `HOST=... PORT=...` prefix syntax
 - Added CLI aliases `-h`/`--help` for help output and `-v`/`--version` for version output
 - `lalaclaw start` now runs a doctor preflight with the same runtime overrides and refuses to launch when doctor reports blocking errors
+- IM session auto-redirect now matches channels from the real session identity instead of substring-matching the whole session key, avoiding false redirects for ordinary sessions
+- Localized the new composer click hint and unread badge accessibility labels across all supported locales
 
 ## [2026.3.17-9]
 

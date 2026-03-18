@@ -12,3 +12,33 @@ export function shouldShowBubbleTopJumpButton({ viewportRect, bubbleRect, viewpo
 
   return bubbleTallEnough && bubbleTopHidden && bubbleNotFullyVisible && bubbleStillVisible;
 }
+
+export function shouldSuppressComposerReplay({
+  armed = false,
+  armedAt = 0,
+  eventType = "",
+  inputType = "",
+  isNativeComposing = false,
+  nextPrompt = "",
+  replaySource = "",
+  now = Date.now(),
+} = {}) {
+  const normalizedNextPrompt = String(nextPrompt || "").trim();
+  if (!armed || !normalizedNextPrompt) {
+    return false;
+  }
+
+  const normalizedReplaySource = String(replaySource || "").trim();
+  const resemblesSentSuffix = Boolean(normalizedReplaySource) && normalizedReplaySource.includes(normalizedNextPrompt);
+  if (!resemblesSentSuffix) {
+    return false;
+  }
+
+  if (eventType === "compositionend") {
+    return true;
+  }
+
+  const normalizedInputType = String(inputType || "").toLowerCase();
+  const withinImmediateReplayWindow = armedAt > 0 && now - armedAt <= 180;
+  return Boolean(isNativeComposing) || normalizedInputType.includes("composition") || withinImmediateReplayWindow;
+}

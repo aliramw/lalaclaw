@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
@@ -68,6 +68,10 @@ function TestHarness() {
       renderPeek={(section, fallback) =>
         section ? [section.summary, ...(section.items || []).map((item) => `${item.label}：${item.value}`)].join("\n") : fallback
       }
+      runtimeFallbackReason="Ping timeout"
+      runtimeReconnectAttempts={2}
+      runtimeSocketStatus="reconnecting"
+      runtimeTransport="polling"
       setActiveTab={setActiveTab}
       taskTimeline={[
         {
@@ -97,6 +101,13 @@ function getToolCard(name, toggleLabel = "收起详情") {
 }
 
 describe("InspectorPanel", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, items: [] }),
+    })));
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -147,7 +158,15 @@ describe("InspectorPanel", () => {
     expect(screen.queryByRole("tab", { name: "快照" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "环境" }));
-    expect(screen.getByText("这里会列出 Gateway 与当前会话的环境信息，便于排查与检阅。")).toBeInTheDocument();
+    expect(screen.getByText("这里列出 Gateway 与会话环境信息。")).toBeInTheDocument();
+    expect(screen.getByText("runtime.transport")).toBeInTheDocument();
+    expect(screen.getByText("轮询")).toBeInTheDocument();
+    expect(screen.getByText("runtime.socket")).toBeInTheDocument();
+    expect(screen.getByText("重连中")).toBeInTheDocument();
+    expect(screen.getByText("runtime.reconnectAttempts")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("runtime.fallbackReason")).toBeInTheDocument();
+    expect(screen.getByText("Ping timeout")).toBeInTheDocument();
     expect(screen.getByText("gateway.baseUrl")).toBeInTheDocument();
     expect(screen.getByText("http://127.0.0.1:18789")).toBeInTheDocument();
     expect(screen.getByText("gateway.baseUrl").closest('[role="tabpanel"]')).toHaveClass("min-w-0");
@@ -203,6 +222,33 @@ describe("InspectorPanel", () => {
     await user.click(screen.getByRole("button", { name: "定位到 交付结果" }));
 
     expect(onSelectArtifact).toHaveBeenCalledWith(expect.objectContaining({ title: "交付结果", messageTimestamp: 123 }));
+  });
+
+  it("renders duplicate reply titles without duplicate key warnings", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const [activeTab, setActiveTab] = ["artifacts", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        artifacts={[
+          { title: "回复 03/19 04:29", type: "assistant_output", detail: "第一条回复", messageTimestamp: 100, timestamp: 100 },
+          { title: "回复 03/19 04:29", type: "assistant_output", detail: "第二条回复", messageTimestamp: 200, timestamp: 200 },
+        ]}
+        files={[]}
+        onSelectArtifact={() => {}}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getAllByText("回复 03/19 04:29")).toHaveLength(2);
+    expect(
+      consoleError.mock.calls.some((call) =>
+        call.some((value) => String(value).includes("Encountered two children with the same key")),
+      ),
+    ).toBe(false);
   });
 
   it("renders artifact details without markdown markers", () => {
@@ -1491,37 +1537,146 @@ describe("InspectorPanel", () => {
   });
 
   it("shows edit after preview in the context menu for editable files", async () => {
+    const originalPlatform = window.navigator.platform;
+    Object.defineProperty(window.navigator, "platform", { configurable: true, value: "MacIntel" });
+
     const [activeTab, setActiveTab] = ["files", () => {}];
 
-    renderWithTooltip(
-      <InspectorPanel
-        activeTab={activeTab}
-        agents={[]}
-        artifacts={[]}
-        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
-        files={[
-          { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
-        ]}
-        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
-        renderPeek={(_, fallback) => fallback}
-        setActiveTab={setActiveTab}
-        taskTimeline={[]}
-      />,
+    try {
+      renderWithTooltip(
+        <InspectorPanel
+          activeTab={activeTab}
+          agents={[]}
+          artifacts={[]}
+          currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+          files={[
+            { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+          ]}
+          peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+          renderPeek={(_, fallback) => fallback}
+          setActiveTab={setActiveTab}
+          taskTimeline={[]}
+        />,
+      );
+
+      const user = userEvent.setup();
+      await user.pointer([
+        {
+          target: screen.getByRole("button", { name: "AGENTS.md" }),
+          keys: "[MouseRight]",
+        },
+      ]);
+
+      expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "预览" })).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "编辑" })).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "在 访达 中显示" })).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "在 VS Code 中打开" })).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
+      expect(screen.getAllByRole("separator")).toHaveLength(2);
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["预览", "编辑", "在 访达 中显示", "在 VS Code 中打开", "复制路径"]);
+    } finally {
+      Object.defineProperty(window.navigator, "platform", { configurable: true, value: originalPlatform });
+    }
+  });
+
+  it("reveals files in Finder from the context menu", async () => {
+    const originalPlatform = window.navigator.platform;
+    Object.defineProperty(window.navigator, "platform", { configurable: true, value: "MacIntel" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          label: "Finder",
+          path: "/Users/marila/projects/lalaclaw/AGENTS.md",
+        }),
+      })),
     );
 
-    const user = userEvent.setup();
-    await user.pointer([
-      {
-        target: screen.getByRole("button", { name: "AGENTS.md" }),
-        keys: "[MouseRight]",
-      },
-    ]);
+    const [activeTab, setActiveTab] = ["files", () => {}];
 
-    expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "预览" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "编辑" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["预览", "编辑", "复制路径"]);
+    try {
+      renderWithTooltip(
+        <InspectorPanel
+          activeTab={activeTab}
+          agents={[]}
+          artifacts={[]}
+          currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+          files={[
+            { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+          ]}
+          peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+          renderPeek={(_, fallback) => fallback}
+          setActiveTab={setActiveTab}
+          taskTimeline={[]}
+        />,
+      );
+
+      const user = userEvent.setup();
+      await user.pointer([
+        {
+          target: screen.getByRole("button", { name: "AGENTS.md" }),
+          keys: "[MouseRight]",
+        },
+      ]);
+      await user.click(await screen.findByRole("menuitem", { name: "在 访达 中显示" }));
+
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/file-manager/reveal",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ path: "/Users/marila/projects/lalaclaw/AGENTS.md" }),
+        }),
+      );
+    } finally {
+      Object.defineProperty(window.navigator, "platform", { configurable: true, value: originalPlatform });
+    }
+  });
+
+  it("opens files in VS Code from the context menu", async () => {
+    const originalPlatform = window.navigator.platform;
+    Object.defineProperty(window.navigator, "platform", { configurable: true, value: "MacIntel" });
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    try {
+      renderWithTooltip(
+        <InspectorPanel
+          activeTab={activeTab}
+          agents={[]}
+          artifacts={[]}
+          currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+          files={[
+            { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+          ]}
+          peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+          renderPeek={(_, fallback) => fallback}
+          setActiveTab={setActiveTab}
+          taskTimeline={[]}
+        />,
+      );
+
+      const user = userEvent.setup();
+      await user.pointer([
+        {
+          target: screen.getByRole("button", { name: "AGENTS.md" }),
+          keys: "[MouseRight]",
+        },
+      ]);
+      await user.click(await screen.findByRole("menuitem", { name: "在 VS Code 中打开" }));
+
+      expect(openSpy).toHaveBeenCalledWith(
+        "vscode://file/%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2FAGENTS.md",
+        "_blank",
+        "noopener,noreferrer",
+      );
+    } finally {
+      Object.defineProperty(window.navigator, "platform", { configurable: true, value: originalPlatform });
+    }
   });
 
   it("opens the preview directly in edit mode from the context menu", async () => {

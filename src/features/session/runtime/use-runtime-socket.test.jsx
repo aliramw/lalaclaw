@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useRuntimeSocket } from "./use-runtime-socket";
+import { RUNTIME_SOCKET_STATES, useRuntimeSocket } from "./use-runtime-socket";
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -40,9 +40,9 @@ class MockWebSocket {
     }
   }
 
-  simulateClose() {
+  simulateClose(event = {}) {
     this.readyState = MockWebSocket.CLOSED;
-    if (this.onclose) this.onclose();
+    if (this.onclose) this.onclose(event);
   }
 
   simulateError() {
@@ -52,6 +52,12 @@ class MockWebSocket {
 
 describe("useRuntimeSocket", () => {
   let originalWebSocket;
+
+  function flushInitialConnect() {
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+  }
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -67,24 +73,28 @@ describe("useRuntimeSocket", () => {
   });
 
   it("connects when enabled", () => {
-    renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }));
+    const { result } = renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }));
+    flushInitialConnect();
 
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.instances[0].url).toContain("/api/runtime/ws");
     expect(MockWebSocket.instances[0].url).toContain("sessionUser=command-center");
     expect(MockWebSocket.instances[0].url).toContain("agentId=main");
+    expect(result.current.status).toBe(RUNTIME_SOCKET_STATES.CONNECTING);
   });
 
   it("does not connect when disabled", () => {
-    renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: false }));
+    const { result } = renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: false }));
 
     expect(MockWebSocket.instances).toHaveLength(0);
+    expect(result.current.status).toBe(RUNTIME_SOCKET_STATES.DISCONNECTED);
   });
 
   it("sets connected to true on open", () => {
     const { result } = renderHook(() =>
       useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }),
     );
+    flushInitialConnect();
 
     expect(result.current.connected).toBe(false);
 
@@ -93,12 +103,14 @@ describe("useRuntimeSocket", () => {
     });
 
     expect(result.current.connected).toBe(true);
+    expect(result.current.status).toBe(RUNTIME_SOCKET_STATES.CONNECTED);
   });
 
   it("sets connected to false on close", () => {
     const { result } = renderHook(() =>
       useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }),
     );
+    flushInitialConnect();
 
     act(() => {
       MockWebSocket.instances[0].simulateOpen();
@@ -106,9 +118,12 @@ describe("useRuntimeSocket", () => {
     expect(result.current.connected).toBe(true);
 
     act(() => {
-      MockWebSocket.instances[0].simulateClose();
+      MockWebSocket.instances[0].simulateClose({ reason: "network lost" });
     });
     expect(result.current.connected).toBe(false);
+    expect(result.current.status).toBe(RUNTIME_SOCKET_STATES.RECONNECTING);
+    expect(result.current.lastDisconnectReason).toBe("network lost");
+    expect(result.current.reconnectAttempts).toBe(1);
   });
 
   it("calls onMessage handler for incoming data", () => {
@@ -116,6 +131,7 @@ describe("useRuntimeSocket", () => {
     const { result } = renderHook(() =>
       useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }),
     );
+    flushInitialConnect();
 
     act(() => {
       result.current.setOnMessage(handler);
@@ -131,6 +147,7 @@ describe("useRuntimeSocket", () => {
 
   it("responds to ping with pong", () => {
     renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }));
+    flushInitialConnect();
 
     act(() => {
       MockWebSocket.instances[0].simulateOpen();
@@ -152,6 +169,7 @@ describe("useRuntimeSocket", () => {
     const { result } = renderHook(() =>
       useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }),
     );
+    flushInitialConnect();
 
     act(() => {
       result.current.setOnMessage(handler);
@@ -166,13 +184,15 @@ describe("useRuntimeSocket", () => {
   });
 
   it("reconnects after close with exponential backoff", () => {
-    renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }));
+    const { result } = renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }));
+    flushInitialConnect();
 
     expect(MockWebSocket.instances).toHaveLength(1);
 
     act(() => {
       MockWebSocket.instances[0].simulateClose();
     });
+    expect(result.current.status).toBe(RUNTIME_SOCKET_STATES.RECONNECTING);
 
     // 第一次重连延迟 1000ms
     act(() => {
@@ -188,6 +208,7 @@ describe("useRuntimeSocket", () => {
 
   it("resets reconnect counter on successful open", () => {
     renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }));
+    flushInitialConnect();
 
     // 第一次连接打开后关闭
     act(() => {
@@ -219,10 +240,11 @@ describe("useRuntimeSocket", () => {
   });
 
   it("disconnects cleanly when disabled", () => {
-    const { rerender } = renderHook(
+    const { rerender, result } = renderHook(
       ({ enabled }) => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled }),
       { initialProps: { enabled: true } },
     );
+    flushInitialConnect();
 
     act(() => {
       MockWebSocket.instances[0].simulateOpen();
@@ -235,12 +257,14 @@ describe("useRuntimeSocket", () => {
       vi.advanceTimersByTime(10000);
     });
     expect(MockWebSocket.instances).toHaveLength(1);
+    expect(result.current.status).toBe(RUNTIME_SOCKET_STATES.DISCONNECTED);
   });
 
   it("disconnects on unmount", () => {
     const { unmount } = renderHook(() =>
       useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }),
     );
+    flushInitialConnect();
 
     act(() => {
       MockWebSocket.instances[0].simulateOpen();
@@ -253,5 +277,21 @@ describe("useRuntimeSocket", () => {
       vi.advanceTimersByTime(10000);
     });
     expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("cancels a pending initial connect when unmounted before the timer fires", () => {
+    const { unmount } = renderHook(() =>
+      useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }),
+    );
+
+    expect(MockWebSocket.instances).toHaveLength(0);
+
+    unmount();
+
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 });

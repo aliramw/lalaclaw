@@ -285,6 +285,31 @@ function mockNarrowLayout() {
   );
 }
 
+class MockWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+  static instances = [];
+
+  constructor(url) {
+    this.url = url;
+    this.readyState = MockWebSocket.CONNECTING;
+    this.onopen = null;
+    this.onclose = null;
+    this.onmessage = null;
+    this.onerror = null;
+    MockWebSocket.instances.push(this);
+  }
+
+  send() {}
+
+  close() {
+    this.readyState = MockWebSocket.CLOSED;
+    if (this.onclose) this.onclose();
+  }
+}
+
 function hasMessageText(text, role = "") {
   const selector = role ? `[data-message-role="${role}"]` : "[data-message-role]";
   const expectedText = String(text || "").trim();
@@ -294,15 +319,21 @@ function hasMessageText(text, role = "") {
 }
 
 describe("App", () => {
+  let originalWebSocket;
+
   beforeEach(() => {
     window.localStorage.clear();
     window.localStorage.setItem(localeStorageKey, "zh");
     vi.stubGlobal("confirm", vi.fn(() => true));
+    originalWebSocket = globalThis.WebSocket;
+    globalThis.WebSocket = MockWebSocket;
+    MockWebSocket.instances = [];
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    globalThis.WebSocket = originalWebSocket;
   });
 
   it("loads runtime data and sends a chat message", async () => {
@@ -349,6 +380,23 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
     });
   }, 10_000);
+
+  it("shows the runtime transport status in the session overview", async () => {
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("轮询 / 连接中")).toBeInTheDocument();
+  });
 
   it("keeps the full app interactive after switching to a non-Chinese locale", async () => {
     const fetchMock = vi.fn((input) => {
@@ -1084,6 +1132,73 @@ describe("App", () => {
     });
   });
 
+  it("shows a red unread dot when an inactive tab receives a background runtime message", async () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        chatTabs: [
+          { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+          { id: "agent:main::feishu", agentId: "main", sessionUser: "agent:main:feishu:direct:ou_test" },
+        ],
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+          "agent:main::feishu": {
+            agentId: "main",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "agent:main:feishu:direct:ou_test",
+            thinkMode: "off",
+          },
+        },
+        messagesByTabId: {
+          "agent:main": [{ role: "assistant", content: "主会话消息", timestamp: 1 }],
+          "agent:main::feishu": [{ role: "assistant", content: "飞书旧消息", timestamp: 2 }],
+        },
+      }),
+    );
+
+    stubFetchWithAccessState((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center";
+        const agentId = params.get("agentId") || "main";
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId,
+              selectedAgentId: agentId,
+              sessionUser,
+              sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+            },
+            conversation: sessionUser === "agent:main:feishu:direct:ou_test"
+              ? [{ role: "assistant", content: "飞书新消息", timestamp: 3 }]
+              : [{ role: "assistant", content: "主会话消息", timestamp: 1 }],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    render(<App />);
+
+    await screen.findByText("主会话消息");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /飞书/ }).querySelector(".cc-chat-tab-unread-badge")).toHaveTextContent("1");
+    });
+  });
+
   it("marks the UI offline when runtime loading fails", async () => {
     vi.stubGlobal(
       "fetch",
@@ -1710,10 +1825,12 @@ describe("App", () => {
     const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
     expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
+    expect(screen.getByTestId("composer-placeholder-overlay")).toHaveTextContent("PS: 不用点击输入框，任何时候直接打字");
 
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     expect(screen.getByText("快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
+    expect(screen.getByTestId("composer-placeholder-overlay")).toHaveTextContent("PS: 不用点击输入框，任何时候直接打字");
     expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
 
     const dateNowSpy = vi.spyOn(Date, "now");

@@ -367,6 +367,7 @@ function createDashboardService({
   getLocalSessionConversation,
   getTranscriptEntriesForSession,
   getTranscriptPath,
+  getRuntimeHubDebugInfo,
   invokeOpenClawTool,
   countWorkspaceFiles = defaultCountWorkspaceFiles,
   listDirectoryPreview,
@@ -498,6 +499,7 @@ function createDashboardService({
     liveConfig,
     parsedStatus,
     selectedModel,
+    sessionUser,
     sessionKey,
     sessionVersion,
     thinkMode,
@@ -540,6 +542,13 @@ function createDashboardService({
     });
 
     flattenEnvironmentObject(liveConfig?.gateway || {}, 'gateway.config', items);
+    flattenEnvironmentObject(
+      typeof getRuntimeHubDebugInfo === 'function'
+        ? getRuntimeHubDebugInfo({ sessionUser, agentId })
+        : null,
+      'runtimeHub',
+      items,
+    );
 
     return {
       summary: '这里汇总当前会话与 Gateway 提供的环境信息。',
@@ -659,6 +668,7 @@ function createDashboardService({
             versionDisplay: 'mock',
           },
           selectedModel: model,
+          sessionUser,
           sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
           sessionVersion: 'mock',
           thinkMode,
@@ -830,6 +840,7 @@ function createDashboardService({
           liveConfig,
           parsedStatus,
           selectedModel,
+          sessionUser: effectiveSessionUser,
           sessionKey,
           sessionVersion: resolvedVersion,
           thinkMode: parsedStatus?.thinkMode || preferredThinkMode,

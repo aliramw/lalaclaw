@@ -6,6 +6,8 @@
  * pushes only the sections that changed to all subscribers on that channel.
  */
 
+const { parseAgentSessionKey } = require('../core/session-key');
+
 const ACTIVE_POLL_MS = 2000;
 const IDLE_POLL_MS = 8000;
 // When gateway events are available, polling is just a safety net.
@@ -13,6 +15,7 @@ const ACTIVE_POLL_WITH_EVENTS_MS = 8000;
 const IDLE_POLL_WITH_EVENTS_MS = 30000;
 const CHANNEL_TTL_MS = 10 * 60 * 1000;
 const CHANNEL_TTL_CHECK_MS = 60 * 1000;
+const MAX_CONVERSATION_MESSAGES = 80;
 
 const DIFF_SECTIONS = [
   'session',
@@ -25,6 +28,22 @@ const DIFF_SECTIONS = [
   'agents',
   'peeks',
 ];
+
+const SYNC_SECTION_ALIASES = {
+  session: 'session',
+  conversation: 'conversation',
+  taskrelationships: 'taskRelationships',
+  task_relationships: 'taskRelationships',
+  'task-relationships': 'taskRelationships',
+  tasktimeline: 'taskTimeline',
+  task_timeline: 'taskTimeline',
+  'task-timeline': 'taskTimeline',
+  files: 'files',
+  artifacts: 'artifacts',
+  snapshots: 'snapshots',
+  agents: 'agents',
+  peeks: 'peeks',
+};
 
 /**
  * Session 按字段逐个比较。只要有任何字段不同就算变了。
@@ -145,6 +164,224 @@ function channelKey(sessionUser, agentId) {
   return `${String(agentId || 'main').trim()}::${String(sessionUser || 'command-center').trim()}`;
 }
 
+function resolveGatewayEventSessionKey(evt) {
+  return String(evt?.payload?.sessionKey || evt?.sessionKey || '').trim();
+}
+
+function resolveGatewayEventData(evt) {
+  const payloadData = evt?.payload?.data;
+  if (payloadData && typeof payloadData === 'object' && !Array.isArray(payloadData)) {
+    return payloadData;
+  }
+
+  const eventData = evt?.data;
+  if (eventData && typeof eventData === 'object' && !Array.isArray(eventData)) {
+    return eventData;
+  }
+
+  return {};
+}
+
+function resolveSyncSectionName(value = '') {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/\.sync$/i, '')
+    .replace(/[.\s]+/g, '')
+    .toLowerCase();
+  return SYNC_SECTION_ALIASES[normalized] || '';
+}
+
+function extractPatchValueFromEvent(evt, sectionName) {
+  const payload = evt?.payload;
+  const eventData = resolveGatewayEventData(evt);
+
+  if (payload && Object.prototype.hasOwnProperty.call(payload, sectionName)) {
+    return payload[sectionName];
+  }
+
+  if (eventData && Object.prototype.hasOwnProperty.call(eventData, sectionName)) {
+    return eventData[sectionName];
+  }
+
+  if (evt && Object.prototype.hasOwnProperty.call(evt, sectionName)) {
+    return evt[sectionName];
+  }
+
+  return undefined;
+}
+
+function extractDirectPatchesFromGatewayEvent(evt) {
+  const patches = [];
+  const seenPatchTypes = new Set();
+  const addPatch = (sectionName, value) => {
+    if (!sectionName || typeof value === 'undefined') {
+      return;
+    }
+
+    const patchType = `${sectionName}.sync`;
+    if (seenPatchTypes.has(patchType)) {
+      return;
+    }
+
+    seenPatchTypes.add(patchType);
+    patches.push({ type: patchType, [sectionName]: value });
+  };
+
+  const payload = evt?.payload;
+  const eventName = String(evt?.event || '').trim();
+  const payloadType = String(payload?.type || '').trim();
+  const patchSectionName = resolveSyncSectionName(payloadType || eventName);
+  if (patchSectionName) {
+    addPatch(patchSectionName, extractPatchValueFromEvent(evt, patchSectionName));
+  }
+
+  const eventData = resolveGatewayEventData(evt);
+  for (const sectionName of DIFF_SECTIONS) {
+    if (eventData && Object.prototype.hasOwnProperty.call(eventData, sectionName)) {
+      addPatch(sectionName, eventData[sectionName]);
+    }
+  }
+
+  return patches;
+}
+
+function extractGatewayMessageText(message) {
+  if (!message) {
+    return '';
+  }
+
+  if (typeof message === 'string') {
+    return message.trim();
+  }
+
+  const content = Array.isArray(message?.content) ? message.content : [];
+  const text = content
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return '';
+      }
+
+      if (entry.type === 'text' || entry.type === 'input_text') {
+        return String(entry.text || '').trim();
+      }
+
+      if (typeof entry.text === 'string') {
+        return entry.text.trim();
+      }
+
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
+  if (text) {
+    return text;
+  }
+
+  return String(message?.text || '').trim();
+}
+
+function describeGatewayEvent(evt) {
+  const payload = evt?.payload;
+  const base =
+    String(payload?.type || evt?.event || '').trim()
+    || String(payload?.stream || evt?.stream || '').trim()
+    || 'gateway';
+  const detail =
+    String(payload?.state || '').trim()
+    || String(resolveGatewayEventData(evt)?.phase || '').trim();
+  return detail ? `${base}:${detail}` : base;
+}
+
+function upsertAssistantConversationEntry(conversation = [], content = '', timestamp = Date.now()) {
+  const nextConversation = Array.isArray(conversation) ? [...conversation] : [];
+  const safeContent = String(content || '').trim();
+  if (!safeContent) {
+    return nextConversation;
+  }
+
+  const normalizedTimestamp = Number(timestamp) > 0 ? Number(timestamp) : Date.now();
+  const existingIndex = nextConversation.findLastIndex(
+    (entry) => entry?.role === 'assistant' && Number(entry?.timestamp || 0) === normalizedTimestamp,
+  );
+  const nextEntry = {
+    role: 'assistant',
+    content: safeContent,
+    timestamp: normalizedTimestamp,
+  };
+
+  if (existingIndex >= 0) {
+    nextConversation[existingIndex] = {
+      ...nextConversation[existingIndex],
+      ...nextEntry,
+    };
+  } else {
+    nextConversation.push(nextEntry);
+  }
+
+  return nextConversation.slice(-MAX_CONVERSATION_MESSAGES);
+}
+
+function applyRuntimePatchToSnapshot(snapshot, patch) {
+  if (!snapshot || !patch?.type) {
+    return null;
+  }
+
+  switch (patch.type) {
+    case 'session.sync':
+      return {
+        ...snapshot,
+        session: {
+          ...(snapshot.session || {}),
+          ...(patch.session || {}),
+        },
+      };
+    case 'conversation.sync':
+      return {
+        ...snapshot,
+        conversation: Array.isArray(patch.conversation) ? patch.conversation : [],
+      };
+    case 'taskRelationships.sync':
+      return {
+        ...snapshot,
+        taskRelationships: Array.isArray(patch.taskRelationships) ? patch.taskRelationships : [],
+      };
+    case 'taskTimeline.sync':
+      return {
+        ...snapshot,
+        taskTimeline: Array.isArray(patch.taskTimeline) ? patch.taskTimeline : [],
+      };
+    case 'files.sync':
+      return {
+        ...snapshot,
+        files: Array.isArray(patch.files) ? patch.files : [],
+      };
+    case 'artifacts.sync':
+      return {
+        ...snapshot,
+        artifacts: Array.isArray(patch.artifacts) ? patch.artifacts : [],
+      };
+    case 'snapshots.sync':
+      return {
+        ...snapshot,
+        snapshots: Array.isArray(patch.snapshots) ? patch.snapshots : [],
+      };
+    case 'agents.sync':
+      return {
+        ...snapshot,
+        agents: Array.isArray(patch.agents) ? patch.agents : [],
+      };
+    case 'peeks.sync':
+      return {
+        ...snapshot,
+        peeks: patch.peeks || { workspace: null, terminal: null, browser: null, environment: null },
+      };
+    default:
+      return null;
+  }
+}
+
 function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEvents }) {
   const channels = new Map();
   let gatewaySubscription = null;
@@ -165,6 +402,16 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     }
   }
 
+  function broadcastPatches(channel, patches = []) {
+    if (!Array.isArray(patches) || patches.length === 0) {
+      return;
+    }
+
+    for (const patch of patches) {
+      broadcast(channel, patch);
+    }
+  }
+
   function inferPollInterval(snapshot) {
     const hasEvents = Boolean(gatewaySubscription);
     const status = String(snapshot?.session?.status || '');
@@ -174,7 +421,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     return hasEvents ? IDLE_POLL_WITH_EVENTS_MS : IDLE_POLL_MS;
   }
 
-  async function refreshChannel(key, channel) {
+  async function refreshChannel(key, channel, reason = 'poll_timer') {
     if (channel.inFlight || channel.subscribers.size === 0) {
       return;
     }
@@ -189,17 +436,19 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
 
       if (!channel.latestSnapshot) {
         channel.latestSnapshot = next;
+        channel.lastRefreshAt = Date.now();
+        channel.lastRefreshReason = reason;
         return;
       }
 
       const patches = diffSnapshot(channel.latestSnapshot, next);
       channel.latestSnapshot = next;
       channel.lastActivityAt = Date.now();
+      channel.lastRefreshAt = channel.lastActivityAt;
+      channel.lastRefreshReason = reason;
 
       if (patches && patches.length > 0) {
-        for (const patch of patches) {
-          broadcast(channel, patch);
-        }
+        broadcastPatches(channel, patches);
       }
 
       const nextInterval = inferPollInterval(next);
@@ -218,7 +467,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
   function startChannelLoop(key, channel) {
     if (channel.timer) return;
     channel.currentInterval = ACTIVE_POLL_MS;
-    channel.timer = setInterval(() => refreshChannel(key, channel), channel.currentInterval);
+    channel.timer = setInterval(() => refreshChannel(key, channel, 'poll_timer'), channel.currentInterval);
   }
 
   function stopChannelLoop(channel) {
@@ -226,6 +475,241 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
       clearInterval(channel.timer);
       channel.timer = null;
     }
+  }
+
+  async function notifyChannelActivity(sessionUser, agentId) {
+    if (sessionUser || agentId) {
+      const key = channelKey(sessionUser, agentId);
+      const channel = channels.get(key);
+      if (channel) {
+        await refreshChannel(key, channel, 'notify_activity');
+      }
+      return;
+    }
+    await Promise.all(
+      [...channels.entries()].map(([key, channel]) => refreshChannel(key, channel, 'notify_activity')),
+    );
+  }
+
+  function tryApplyDirectPatchEvent(channel, evt) {
+    if (!channel?.latestSnapshot) {
+      return false;
+    }
+
+    const patches = extractDirectPatchesFromGatewayEvent(evt);
+    if (!patches.length) {
+      return false;
+    }
+
+    let nextSnapshot = channel.latestSnapshot;
+    const appliedPatches = [];
+    for (const patch of patches) {
+      nextSnapshot = applyRuntimePatchToSnapshot(nextSnapshot, patch);
+      if (!nextSnapshot) {
+        continue;
+      }
+      appliedPatches.push(patch);
+    }
+
+    if (!appliedPatches.length) {
+      return false;
+    }
+
+    channel.latestSnapshot = nextSnapshot;
+    channel.lastActivityAt = Date.now();
+    broadcastPatches(channel, appliedPatches);
+    return true;
+  }
+
+  function tryApplyGatewayChatEvent(key, channel, evt) {
+    if (evt?.event !== 'chat' || !channel?.latestSnapshot) {
+      return false;
+    }
+
+    const payload = evt?.payload;
+    const state = String(payload?.state || '').trim().toLowerCase();
+    if (!payload || (state !== 'delta' && state !== 'final')) {
+      return false;
+    }
+
+    const nextText = extractGatewayMessageText(payload.message);
+    if (!nextText) {
+      return false;
+    }
+
+    const runId = String(payload?.runId || '').trim();
+    const existingRunState = runId ? channel.liveRuns.get(runId) : null;
+    const assistantTimestamp =
+      existingRunState?.assistantTimestamp
+      || Number(payload?.message?.timestamp || payload?.timestamp || Date.now())
+      || Date.now();
+    if (runId && !existingRunState) {
+      channel.liveRuns.set(runId, { assistantTimestamp });
+    }
+
+    const nextSnapshot = {
+      ...channel.latestSnapshot,
+      session: {
+        ...(channel.latestSnapshot.session || {}),
+        status: state === 'final' ? '就绪' : '运行中',
+      },
+      conversation: upsertAssistantConversationEntry(
+        channel.latestSnapshot.conversation,
+        nextText,
+        assistantTimestamp,
+      ),
+    };
+    const patches = diffSnapshot(channel.latestSnapshot, nextSnapshot) || [];
+    channel.latestSnapshot = nextSnapshot;
+    channel.lastActivityAt = Date.now();
+    broadcastPatches(channel, patches);
+
+    if (state === 'final' && runId) {
+      channel.liveRuns.delete(runId);
+    }
+
+    if (state === 'final') {
+      return 'refresh';
+    }
+
+    return true;
+  }
+
+  function tryApplyGatewayAssistantStreamEvent(channel, evt) {
+    if (!channel?.latestSnapshot) {
+      return false;
+    }
+
+    const payload = evt?.payload;
+    const eventName = String(evt?.event || '').trim();
+    const streamName = String(payload?.stream || evt?.stream || '').trim();
+    const isAssistantStream = streamName === 'assistant' || eventName === 'assistant_text_stream' || eventName === 'assistant_message_end';
+    if (!isAssistantStream) {
+      return false;
+    }
+
+    const data = resolveGatewayEventData(evt);
+    const nextText = String(data.text || data.content || '').trim();
+    if (!nextText) {
+      return false;
+    }
+
+    const runId = String(payload?.runId || evt?.runId || '').trim();
+    const existingRunState = runId ? channel.liveRuns.get(runId) : null;
+    const assistantTimestamp =
+      existingRunState?.assistantTimestamp
+      || Number(payload?.ts || evt?.ts || Date.now())
+      || Date.now();
+    if (runId && !existingRunState) {
+      channel.liveRuns.set(runId, { assistantTimestamp });
+    }
+
+    const nextSnapshot = {
+      ...channel.latestSnapshot,
+      session: {
+        ...(channel.latestSnapshot.session || {}),
+        status: '运行中',
+      },
+      conversation: upsertAssistantConversationEntry(
+        channel.latestSnapshot.conversation,
+        nextText,
+        assistantTimestamp,
+      ),
+    };
+
+    const patches = diffSnapshot(channel.latestSnapshot, nextSnapshot) || [];
+    channel.latestSnapshot = nextSnapshot;
+    channel.lastActivityAt = Date.now();
+    broadcastPatches(channel, patches);
+
+    if (eventName === 'assistant_message_end') {
+      return 'refresh';
+    }
+
+    return true;
+  }
+
+  function tryHandleGatewayLifecycleEvent(channel, evt) {
+    const payload = evt?.payload;
+    const streamName = String(payload?.stream || evt?.stream || '').trim();
+    if (streamName !== 'lifecycle') {
+      return false;
+    }
+
+    const data = resolveGatewayEventData(evt);
+    const phase = String(data.phase || '').trim().toLowerCase();
+    if (phase === 'start') {
+      if (!channel?.latestSnapshot) {
+        return true;
+      }
+      const patch = {
+        type: 'session.sync',
+        session: {
+          ...(channel.latestSnapshot.session || {}),
+          status: '运行中',
+        },
+      };
+      channel.latestSnapshot = applyRuntimePatchToSnapshot(channel.latestSnapshot, patch);
+      channel.lastActivityAt = Date.now();
+      broadcast(channel, patch);
+      return true;
+    }
+
+    if (phase === 'end' || phase === 'error') {
+      return 'refresh';
+    }
+
+    return false;
+  }
+
+  async function handleGatewayEvent(evt) {
+    const parsedSession = parseAgentSessionKey(resolveGatewayEventSessionKey(evt));
+    if (!parsedSession) {
+      await notifyChannelActivity();
+      return;
+    }
+
+    const key = channelKey(parsedSession.sessionUser, parsedSession.agentId);
+    const channel = channels.get(key);
+    if (!channel) {
+      return;
+    }
+    const gatewayEventLabel = describeGatewayEvent(evt);
+    channel.lastGatewayEvent = gatewayEventLabel;
+    channel.lastGatewayEventAt = Date.now();
+
+    if (tryApplyDirectPatchEvent(channel, evt)) {
+      return;
+    }
+
+    const directResult = tryApplyGatewayChatEvent(key, channel, evt);
+    if (directResult === true) {
+      return;
+    }
+    if (directResult === 'refresh') {
+      await refreshChannel(key, channel, `gateway_refresh:${gatewayEventLabel}`);
+      return;
+    }
+
+    const assistantResult = tryApplyGatewayAssistantStreamEvent(channel, evt);
+    if (assistantResult === true) {
+      return;
+    }
+    if (assistantResult === 'refresh') {
+      await refreshChannel(key, channel, `gateway_refresh:${gatewayEventLabel}`);
+      return;
+    }
+
+    const lifecycleResult = tryHandleGatewayLifecycleEvent(channel, evt);
+    if (lifecycleResult === true) {
+      return;
+    }
+    if (lifecycleResult === 'refresh') {
+      await refreshChannel(key, channel, `gateway_refresh:${gatewayEventLabel}`);
+      return;
+    }
+
+    await refreshChannel(key, channel, `gateway_refresh:${gatewayEventLabel}`);
   }
 
   async function subscribe(ws, { sessionUser, agentId, overrides = {} }) {
@@ -243,6 +727,11 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
         timer: null,
         currentInterval: ACTIVE_POLL_MS,
         inFlight: false,
+        liveRuns: new Map(),
+        lastRefreshAt: 0,
+        lastRefreshReason: '',
+        lastGatewayEvent: '',
+        lastGatewayEventAt: 0,
       };
       channels.set(key, channel);
     }
@@ -264,6 +753,12 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
         channel.overrides,
       );
       channel.latestSnapshot = snapshot;
+      if (!channel.lastRefreshAt) {
+        channel.lastRefreshAt = Date.now();
+      }
+      if (!channel.lastRefreshReason) {
+        channel.lastRefreshReason = 'initial_snapshot';
+      }
 
       safeSend(ws, JSON.stringify({
         type: 'runtime.snapshot',
@@ -296,23 +791,40 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     return total;
   }
 
-  /**
-   * Immediately trigger a refresh for a specific channel or all channels.
-   * Called when an external event (gateway activity, chat send, etc.)
-   * indicates the snapshot is likely stale.
-   */
-  function notifyChannelActivity(sessionUser, agentId) {
-    if (sessionUser || agentId) {
-      const key = channelKey(sessionUser, agentId);
-      const channel = channels.get(key);
-      if (channel) {
-        refreshChannel(key, channel);
-      }
-      return;
+  function getDebugInfo({ sessionUser, agentId } = {}) {
+    const info = {
+      gatewayConnected: Boolean(gatewaySubscription),
+      channelCount: getChannelCount(),
+      subscriberCount: getSubscriberCount(),
+      channel: null,
+    };
+
+    const hasChannelTarget = String(sessionUser || '').trim() || String(agentId || '').trim();
+    if (!hasChannelTarget) {
+      return info;
     }
-    for (const [key, channel] of channels) {
-      refreshChannel(key, channel);
+
+    const key = channelKey(sessionUser, agentId);
+    const channel = channels.get(key);
+    if (!channel) {
+      return info;
     }
+
+    info.channel = {
+      key,
+      agentId: channel.agentId,
+      sessionUser: channel.sessionUser,
+      subscriberCount: channel.subscribers.size,
+      pollIntervalMs: channel.currentInterval,
+      hasSnapshot: Boolean(channel.latestSnapshot),
+      lastActivityAt: channel.lastActivityAt || 0,
+      lastRefreshAt: channel.lastRefreshAt || 0,
+      lastRefreshReason: channel.lastRefreshReason || '',
+      lastGatewayEvent: channel.lastGatewayEvent || '',
+      lastGatewayEventAt: channel.lastGatewayEventAt || 0,
+    };
+
+    return info;
   }
 
   function startGatewaySubscription() {
@@ -321,20 +833,8 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     }
 
     gatewaySubscription = subscribeGatewayEvents({
-      onEvent: (evt) => {
-        if (!evt?.payload?.sessionKey) {
-          notifyChannelActivity();
-          return;
-        }
-        // sessionKey 格式: agent:<agentId>:openai-user:<sessionUser>
-        const parts = String(evt.payload.sessionKey).split(':');
-        const evtAgentId = parts[1] || '';
-        const evtSessionUser = parts[3] || '';
-        if (evtAgentId || evtSessionUser) {
-          notifyChannelActivity(evtSessionUser, evtAgentId);
-        } else {
-          notifyChannelActivity();
-        }
+      onEvent: async (evt) => {
+        await handleGatewayEvent(evt);
       },
       onError: () => {},
       onClose: () => {
@@ -390,12 +890,19 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     shutdown,
     notifyChannelActivity,
     getChannelCount,
+    getDebugInfo,
     getSubscriberCount,
     __test: {
       channels,
       channelKey,
       diffSnapshot,
       refreshChannel,
+      applyRuntimePatchToSnapshot,
+      handleGatewayEvent,
+      tryApplyDirectPatchEvent,
+      tryApplyGatewayChatEvent,
+      tryApplyGatewayAssistantStreamEvent,
+      tryHandleGatewayLifecycleEvent,
       startGatewaySubscription,
     },
   };
@@ -403,6 +910,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
 
 module.exports = {
   createRuntimeHub,
+  applyRuntimePatchToSnapshot,
   channelKey,
   diffSnapshot,
 };

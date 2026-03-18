@@ -313,6 +313,115 @@ describe("createOpenClawClient", () => {
     });
   });
 
+  it("streams delivery-routed DingTalk sessions through gateway chat events", async () => {
+    const deltas = [];
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+        expect(params).toMatchObject({
+          sessionKey: `agent:main:openai-user:${rawSessionUser}`,
+          message: "继续",
+          deliver: true,
+          channel: "dingtalk-connector",
+          to: "user:398058",
+          accountId: "__default__",
+        });
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "钉钉流式输出" }],
+              },
+            },
+          });
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "钉钉流式输出" }],
+              },
+            },
+          });
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn(async (_cmd, args) => {
+      if (args.includes("chat.history")) {
+        return {
+          stdout: JSON.stringify({
+            messages: [
+              {
+                role: "assistant",
+                timestamp: 125,
+                content: [{ type: "text", text: "钉钉流式输出" }],
+                usage: { output_tokens: 6 },
+              },
+            ],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected gateway call: ${args.join(" ")}`);
+    });
+
+    const client = createClient({
+      execFileAsync,
+      getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const result = await client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      rawSessionUser,
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    expect(deltas).toEqual(["钉钉流式输出"]);
+    expect(result).toEqual({
+      outputText: "钉钉流式输出",
+      usage: { output_tokens: 6 },
+    });
+    expect(execFileAsync).toHaveBeenCalledTimes(1);
+    expect(execFileAsync.mock.calls[0][1]).toContain("chat.history");
+  });
+
   it("falls back to polling the same run instead of starting a duplicate run", async () => {
     const deltas = [];
     class FakeGatewayClient {
@@ -391,6 +500,102 @@ describe("createOpenClawClient", () => {
     expect(deltas).toEqual(["流式", "输出"]);
     expect(result).toEqual({
       outputText: "流式输出",
+      usage: { output_tokens: 7 },
+    });
+    expect(execFileAsync).toHaveBeenCalledTimes(2);
+    expect(execFileAsync.mock.calls[0][1]).toContain("agent.wait");
+    expect(execFileAsync.mock.calls[1][1]).toContain("chat.history");
+    expect(execFileAsync.mock.calls.flatMap((call) => call[1])).not.toContain("agent");
+  });
+
+  it("falls back to polling the same delivery-routed run instead of starting a duplicate agent delivery", async () => {
+    const deltas = [];
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+        expect(params).toMatchObject({
+          sessionKey: `agent:main:openai-user:${rawSessionUser}`,
+          deliver: true,
+          channel: "dingtalk-connector",
+          to: "user:398058",
+          accountId: "__default__",
+        });
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "钉钉" }],
+              },
+            },
+          });
+          this.opts.onClose?.(1011, "stream interrupted");
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ status: "completed" }) })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          messages: [
+            {
+              role: "assistant",
+              timestamp: 125,
+              content: [{ type: "text", text: "钉钉恢复输出" }],
+              usage: { output_tokens: 7 },
+            },
+          ],
+        }),
+      });
+
+    const client = createClient({
+      execFileAsync,
+      getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const result = await client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      rawSessionUser,
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    expect(deltas).toEqual(["钉钉", "恢复输出"]);
+    expect(result).toEqual({
+      outputText: "钉钉恢复输出",
       usage: { output_tokens: 7 },
     });
     expect(execFileAsync).toHaveBeenCalledTimes(2);

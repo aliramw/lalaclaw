@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  derivePendingEntryFromLocalMessages,
   appendPromptHistory,
   createAgentSessionUser,
   createAgentTabId,
@@ -16,7 +17,10 @@ import {
   loadStoredPromptDrafts,
   loadStoredPromptHistory,
   loadStoredState,
+  mergeConversationAttachments,
+  mergeConversationIdentity,
   mergePendingConversation,
+  mergeStaleLocalConversationTail,
   pruneCompletedPendingChatTurns,
   persistUiStateSnapshot,
   persistChatScrollTops,
@@ -348,6 +352,77 @@ export function getLatestUserMessageKey(messages = []) {
   return "";
 }
 
+export function getLatestSettledMessageKey(messages = []) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.pending || message.streaming) {
+      continue;
+    }
+
+    const role = String(message.role || "").trim();
+    if (!role) {
+      continue;
+    }
+
+    return String(message.id || `${role}-${message.timestamp || "message"}-${index}`);
+  }
+
+  return "";
+}
+
+export function getSettledMessageKeys(messages = []) {
+  return (messages || []).reduce((keys, message, index) => {
+    if (!message || message.pending || message.streaming) {
+      return keys;
+    }
+
+    const role = String(message.role || "").trim();
+    if (!role) {
+      return keys;
+    }
+
+    keys.push(String(message.id || `${role}-${message.timestamp || "message"}-${index}`));
+    return keys;
+  }, []);
+}
+
+export function deriveUnreadTabState({
+  activeChatTabId = "",
+  chatTabs = [],
+  settledMessageKeysByTabId = {},
+  previousSettledMessageKeysByTabId = {},
+  previousUnreadCountByTabId = {},
+} = {}) {
+  const trackedTabIds = new Set(
+    (Array.isArray(chatTabs) ? chatTabs : [])
+      .map((tab) => String(tab?.id || "").trim())
+      .filter(Boolean),
+  );
+  const nextUnreadCountByTabId = {};
+
+  for (const tabId of trackedTabIds) {
+    if (tabId === activeChatTabId) {
+      continue;
+    }
+
+    const settledMessageKeys = Array.isArray(settledMessageKeysByTabId?.[tabId]) ? settledMessageKeysByTabId[tabId] : [];
+    const previousSettledMessageKeys = Array.isArray(previousSettledMessageKeysByTabId?.[tabId]) ? previousSettledMessageKeysByTabId[tabId] : [];
+    const previousSettledMessageKeySet = new Set(previousSettledMessageKeys);
+    const previousUnreadCount = Number(previousUnreadCountByTabId?.[tabId] || 0);
+    const nextUnreadDelta = settledMessageKeys.reduce(
+      (count, key) => (previousSettledMessageKeySet.has(key) ? count : count + 1),
+      0,
+    );
+    const nextUnreadCount = previousUnreadCount + nextUnreadDelta;
+
+    if (nextUnreadCount > 0) {
+      nextUnreadCountByTabId[tabId] = nextUnreadCount;
+    }
+  }
+
+  return nextUnreadCountByTabId;
+}
+
 export function useCommandCenter({ userLabel = "marila" } = {}) {
   const { intlLocale, messages: i18n } = useI18n();
   const stored = useMemo(() => loadStoredState(), []);
@@ -419,6 +494,16 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       ),
     [initialChatTabs, initialHydratedMessagesByTabId, initialTabMetaById, storedPendingChatTurns],
   );
+  const initialSettledMessageKeysByTabId = useMemo(
+    () =>
+      Object.fromEntries(
+        initialChatTabs.map((tab) => [
+          tab.id,
+          getSettledMessageKeys(initialHydratedMessagesByTabId[tab.id] || []),
+        ]),
+      ),
+    [initialChatTabs, initialHydratedMessagesByTabId],
+  );
 
   const [chatTabs, setChatTabs] = useState(initialChatTabs);
   const [activeChatTabId, setActiveChatTabId] = useState(initialActiveChatTabId);
@@ -426,6 +511,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const [messagesByTabId, setMessagesByTabId] = useState(initialHydratedMessagesByTabId);
   const [sessionByTabId, setSessionByTabId] = useState(initialSessionByTabId);
   const [busyByTabId, setBusyByTabId] = useState(initialBusyByTabId);
+  const [unreadCountByTabId, setUnreadCountByTabId] = useState({});
   const [runtimeCacheByTabId, setRuntimeCacheByTabId] = useState({});
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
   const [promptDraftsByConversation, setPromptDraftsByConversation] = useState(storedPromptDrafts);
@@ -458,11 +544,13 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const activeChatTabIdRef = useRef(activeChatTabId);
   const hydratingActiveTabRef = useRef(false);
   const latestUserMessageKeyRef = useRef(getLatestUserMessageKey(initialHydratedMessagesByTabId[initialActiveChatTabId] || []));
+  const settledMessageKeysByTabIdRef = useRef(initialSettledMessageKeysByTabId);
   const chatTabsRef = useRef(chatTabs);
   const tabMetaByIdRef = useRef(tabMetaById);
   const messagesByTabIdRef = useRef(messagesByTabId);
   const sessionByTabIdRef = useRef(sessionByTabId);
   const busyByTabIdRef = useRef(busyByTabId);
+  const unreadCountByTabIdRef = useRef(unreadCountByTabId);
   const runtimeCacheByTabIdRef = useRef(runtimeCacheByTabId);
   const pendingChatTurnsRef = useRef(pendingChatTurns);
   const promptDraftsByConversationRef = useRef(promptDraftsByConversation);
@@ -608,7 +696,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     activePendingChat && restoredPendingConversationKeysRef.current.has(activeConversationKey),
   );
   const activeChatFontSize = chatFontSize;
-  const dismissedTaskRelationshipIds = dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [];
+  const dismissedTaskRelationshipIds = useMemo(
+    () => dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [],
+    [activeConversationKey, dismissedTaskRelationshipIdsByConversation],
+  );
   const setActiveTarget = useCallback((value) => {
     activeTargetRef.current = value;
   }, []);
@@ -778,6 +869,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     hydrateRuntimeState,
     loadRuntime,
     peeks,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
     snapshots,
     taskRelationships,
     taskTimeline,
@@ -1044,6 +1139,32 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   useEffect(() => {
     busyByTabIdRef.current = busyByTabId;
   }, [busyByTabId]);
+
+  useEffect(() => {
+    unreadCountByTabIdRef.current = unreadCountByTabId;
+  }, [unreadCountByTabId]);
+
+  useEffect(() => {
+    const nextSettledMessageKeysByTabId = Object.fromEntries(
+      chatTabs.map((tab) => [
+        tab.id,
+        getSettledMessageKeys(messagesByTabId[tab.id] || []),
+      ]),
+    );
+    const nextUnreadCountByTabId = deriveUnreadTabState({
+      activeChatTabId,
+      chatTabs,
+      settledMessageKeysByTabId: nextSettledMessageKeysByTabId,
+      previousSettledMessageKeysByTabId: settledMessageKeysByTabIdRef.current,
+      previousUnreadCountByTabId: unreadCountByTabIdRef.current,
+    });
+
+    settledMessageKeysByTabIdRef.current = nextSettledMessageKeysByTabId;
+    if (!areJsonEqual(unreadCountByTabIdRef.current, nextUnreadCountByTabId)) {
+      unreadCountByTabIdRef.current = nextUnreadCountByTabId;
+      setUnreadCountByTabId(nextUnreadCountByTabId);
+    }
+  }, [activeChatTabId, chatTabs, messagesByTabId]);
 
   useEffect(() => {
     pendingChatTurnsRef.current = pendingChatTurns;
@@ -1390,6 +1511,38 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           };
         });
 
+        if (Array.isArray(payload.conversation)) {
+          const currentMessages = messagesByTabIdRef.current[tabId] || [];
+          const nextConversationKey = createConversationKey(
+            resolvedSessionUser || sessionUser,
+            snapshotSession.agentId || agentId,
+          );
+          const pendingEntry =
+            pendingChatTurnsRef.current[nextConversationKey]
+            || derivePendingEntryFromLocalMessages(currentMessages)
+            || null;
+          const mergedConversation = mergeConversationIdentity(
+            mergeConversationAttachments(payload.conversation, currentMessages),
+            currentMessages,
+          );
+          const snapshotHasAssistantReply = pendingEntry
+            ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
+            : false;
+          const mergedBackgroundConversation = pendingEntry && !snapshotHasAssistantReply
+            ? mergePendingConversation(
+                mergedConversation,
+                pendingEntry,
+                i18n.chat.thinkingPlaceholder,
+                currentMessages,
+              )
+            : mergeStaleLocalConversationTail(
+                mergedConversation,
+                currentMessages.filter((message) => !message?.pending),
+              );
+
+          setMessagesForTab(tabId, mergedBackgroundConversation);
+        }
+
         updateTabMeta(tabId, (current) => ({
           ...current,
           agentId: snapshotSession.agentId || current.agentId || agentId,
@@ -1438,8 +1591,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   }, [
     activeChatTabId,
     chatTabs,
+    i18n.chat.thinkingPlaceholder,
     i18n.sessionOverview.fastMode.on,
     setBusyForTab,
+    setMessagesForTab,
     updateTabIdentity,
     updateTabMeta,
     updateTabSession,
@@ -2279,6 +2434,12 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       return;
     }
     flushVisibleConversationScrollTop();
+    if (unreadCountByTabIdRef.current[tabId]) {
+      const nextUnreadCountByTabId = { ...unreadCountByTabIdRef.current };
+      delete nextUnreadCountByTabId[tabId];
+      unreadCountByTabIdRef.current = nextUnreadCountByTabId;
+      setUnreadCountByTabId(nextUnreadCountByTabId);
+    }
     activeChatTabIdRef.current = tabId;
     setActiveChatTabId(tabId);
   }, [flushVisibleConversationScrollTop, setActiveChatTabId]);
@@ -2317,6 +2478,17 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   }, [handleActivateChatTab]);
 
   const handleCloseChatTab = (tabId) => {
+    if (unreadCountByTabIdRef.current[tabId]) {
+      const nextUnreadCountByTabId = { ...unreadCountByTabIdRef.current };
+      delete nextUnreadCountByTabId[tabId];
+      unreadCountByTabIdRef.current = nextUnreadCountByTabId;
+      setUnreadCountByTabId(nextUnreadCountByTabId);
+    }
+    if (settledMessageKeysByTabIdRef.current[tabId]) {
+      const nextSettledMessageKeysByTabId = { ...settledMessageKeysByTabIdRef.current };
+      delete nextSettledMessageKeysByTabId[tabId];
+      settledMessageKeysByTabIdRef.current = nextSettledMessageKeysByTabId;
+    }
     setChatTabs((current) => {
       if (current.length <= 1) {
         return current;
@@ -2446,8 +2618,9 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           busyByTabId,
           messagesByTabId,
         }),
+        unreadCount: Number(unreadCountByTabId[tab.id] || 0),
       })),
-    [activeChatTabId, busyByTabId, chatTabs, intlLocale, messagesByTabId, session.status],
+    [activeChatTabId, busyByTabId, chatTabs, intlLocale, messagesByTabId, session.status, unreadCountByTabId],
   );
   return {
     activeChatTabId,
@@ -2504,9 +2677,13 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     restoredChatScrollKey: activeConversationKey,
     restoredChatScrollRevision,
     restoredChatScrollState: chatScrollTopByConversationRef.current[activeConversationKey] || null,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
     session,
     setActiveTab,
     dismissTaskRelationship,
+    runtimeSocketStatus,
+    runtimeTransport,
     setTheme,
     snapshots,
     switchingAgentOverlay,
