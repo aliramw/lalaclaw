@@ -146,8 +146,38 @@ function createSessionHandlers({
     }
   }
 
+  async function handleSessionContext(req, res) {
+    if (config.mode !== 'openclaw') {
+      sendJson(res, 200, { ok: true, messages: [] });
+      return;
+    }
+
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const sessionUser = parseRequestedSessionUser(url.searchParams.get('sessionUser'));
+      const agentId = resolveSessionAgentId(sessionUser);
+      const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+      const limitParam = Number(url.searchParams.get('limit') || 200);
+      const limit = Math.max(1, Math.min(1000, limitParam));
+
+      const result = await callOpenClawGateway('chat.history', { sessionKey, limit }, 15000);
+
+      sendJson(res, 200, {
+        ok: true,
+        sessionKey: result.sessionKey || sessionKey,
+        messages: result.messages || [],
+        thinkingLevel: result.thinkingLevel,
+        fastMode: result.fastMode,
+        verboseLevel: result.verboseLevel,
+      });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error.message || 'Failed to fetch session context' });
+    }
+  }
+
   return {
     handleSession,
+    handleSessionContext,
     handleSessionSearch,
     handleSessionUpdate,
   };

@@ -56,6 +56,7 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleFilePreviewSave,
     handleRuntime,
     handleSession,
+    handleSessionContext,
     handleSessionSearch,
     handleSessionUpdate,
     handleWorkspaceTree,
@@ -104,6 +105,11 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if (req.method === 'GET' && url.pathname === '/api/session') {
       runRouteHandler(handleSession, req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/session/context') {
+      runRouteHandler(handleSessionContext, req, res);
       return;
     }
 

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, Pencil, RotateCcw, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, Pencil, RotateCcw, ScrollText, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ const LazyFilePreviewOverlay = lazy(() =>
 );
 const LazyImagePreviewOverlay = lazy(() =>
   import("@/components/command-center/file-preview-overlay").then((module) => ({ default: module.ImagePreviewOverlay })),
+);
+const LazyContextPreviewDialog = lazy(() =>
+  import("@/components/command-center/context-preview-dialog").then((module) => ({ default: module.ContextPreviewDialog })),
 );
 
 const homePrefix = "/Users/marila";
@@ -1320,11 +1323,18 @@ function TabCountBadge({ count, active = false }) {
   );
 }
 
-function DataList({ empty, getItemActionLabel, hint, items, onSelect, render }) {
+function DataList({ empty, getItemActionLabel, headerAction, hint, items, onSelect, render }) {
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="space-y-2 py-1 pr-4">
-        <InspectorHint text={hint} />
+        {headerAction ? (
+          <div className="flex items-start justify-between gap-2">
+            <InspectorHint text={hint} />
+            {headerAction}
+          </div>
+        ) : (
+          <InspectorHint text={hint} />
+        )}
         {items.length ? (
           <div className="grid gap-3">
             {items.map((item, index) => (
@@ -1754,6 +1764,7 @@ export function InspectorPanel({
   const [showTabLabels, setShowTabLabels] = useState(true);
   const [tooltipTabKey, setTooltipTabKey] = useState("");
   const [compactSheetOpen, setCompactSheetOpen] = useState(false);
+  const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
   const workspaceFiles = peeks?.workspace?.entries || [];
   const workspaceCount = Number(peeks?.workspace?.totalCount);
   const workspaceLoaded = Array.isArray(peeks?.workspace?.entries);
@@ -1859,6 +1870,17 @@ export function InspectorPanel({
       empty={messages.inspector.empty.artifacts}
       getItemActionLabel={(item) => `${messages.inspector.artifactJumpTo} ${localizeArtifactTitle(item.title || messages.inspector.tabs.artifacts, messages)}`}
       onSelect={onSelectArtifact}
+      headerAction={
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={() => setContextPreviewOpen(true)}
+        >
+          <ScrollText className="h-3.5 w-3.5" />
+          {messages.inspector.contextPreview.button}
+        </Button>
+      }
       render={(item) => (
         <>
           <div className="text-sm font-medium">{localizeArtifactTitle(item.title, messages)}</div>
@@ -1986,6 +2008,11 @@ export function InspectorPanel({
             <LazyImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
           </Suspense>
         ) : null}
+        {contextPreviewOpen ? (
+          <Suspense fallback={null}>
+            <LazyContextPreviewDialog open={contextPreviewOpen} onClose={() => setContextPreviewOpen(false)} sessionUser={currentSessionUser} />
+          </Suspense>
+        ) : null}
       </>
     );
   }
@@ -2105,6 +2132,11 @@ export function InspectorPanel({
       {imagePreview ? (
         <Suspense fallback={null}>
           <LazyImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
+        </Suspense>
+      ) : null}
+      {contextPreviewOpen ? (
+        <Suspense fallback={null}>
+          <LazyContextPreviewDialog open={contextPreviewOpen} onClose={() => setContextPreviewOpen(false)} sessionUser={currentSessionUser} />
         </Suspense>
       ) : null}
     </>
