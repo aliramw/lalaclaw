@@ -4209,6 +4209,7 @@ describe("ChatPanel", () => {
   it("re-aligns restored scroll after an image finishes loading", async () => {
     const viewportRef = { current: null };
     let documentTop = 220;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
     const baseProps = {
       busy: false,
@@ -4271,30 +4272,40 @@ describe("ChatPanel", () => {
 
     const restoredAnchorNode = document.querySelector('[data-scroll-anchor-id="message-2-0-block-0"]');
     expect(restoredAnchorNode).toBeTruthy();
-    restoredAnchorNode.getBoundingClientRect = () => ({
-      top: documentTop - viewport.scrollTop,
-      left: 0,
-      right: 560,
-      bottom: documentTop - viewport.scrollTop + 260,
-      width: 560,
-      height: 260,
-      x: 0,
-      y: documentTop - viewport.scrollTop,
-      toJSON: () => ({}),
+    const anchorRectSpy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function mockedRect() {
+      if (this.getAttribute?.("data-scroll-anchor-id") === "message-2-0-block-0") {
+        return {
+          top: documentTop - viewport.scrollTop,
+          left: 0,
+          right: 560,
+          bottom: documentTop - viewport.scrollTop + 260,
+          width: 560,
+          height: 260,
+          x: 0,
+          y: documentTop - viewport.scrollTop,
+          toJSON: () => ({}),
+        };
+      }
+
+      return originalGetBoundingClientRect.call(this);
     });
 
-    await waitFor(() => {
-      expect(viewport.scrollTop).toBe(200);
-    });
+    try {
+      await waitFor(() => {
+        expect(viewport.scrollTop).toBe(200);
+      });
 
-    const image = screen.getByAltText("图");
-    Object.defineProperty(image, "complete", { configurable: true, value: false });
-    documentTop = 310;
-    fireEvent.load(image);
+      const image = screen.getByAltText("图");
+      Object.defineProperty(image, "complete", { configurable: true, value: false });
+      documentTop = 310;
+      fireEvent.load(image);
 
-    await waitFor(() => {
-      expect(viewport.scrollTop).toBe(290);
-    });
+      await waitFor(() => {
+        expect(viewport.scrollTop).toBe(290);
+      });
+    } finally {
+      anchorRectSpy.mockRestore();
+    }
   });
 
   it("re-applies restored scroll for the same conversation when the restore revision changes", async () => {
