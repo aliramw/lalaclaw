@@ -44,8 +44,14 @@ function createClient(overrides = {}) {
   });
 }
 
+async function flushGatewayTurnSetup() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe("createOpenClawClient", () => {
   afterEach(() => {
+    vi.clearAllTimers();
     vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -204,6 +210,7 @@ describe("createOpenClawClient", () => {
       "command-center",
     );
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(250);
 
     await expect(resultPromise).resolves.toEqual({
@@ -480,6 +487,7 @@ describe("createOpenClawClient", () => {
       },
     );
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(1600);
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(6000);
@@ -586,6 +594,7 @@ describe("createOpenClawClient", () => {
       },
     );
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(1600);
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(6000);
@@ -698,6 +707,7 @@ describe("createOpenClawClient", () => {
       },
     );
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(1600);
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(6000);
@@ -800,6 +810,7 @@ describe("createOpenClawClient", () => {
       },
     );
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(1600);
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(6000);
@@ -902,6 +913,7 @@ describe("createOpenClawClient", () => {
       },
     );
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(1600);
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(6000);
@@ -974,6 +986,7 @@ describe("createOpenClawClient", () => {
     );
     const rejection = expect(promise).rejects.toThrow("Request was aborted");
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(1600);
 
     await rejection;
@@ -1067,6 +1080,7 @@ describe("createOpenClawClient", () => {
       },
     );
 
+    await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(20);
 
     const result = await promise;

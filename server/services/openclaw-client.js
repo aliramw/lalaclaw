@@ -51,6 +51,20 @@ function createOpenClawClient({
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function createDeferred() {
+    if (typeof Promise.withResolvers === 'function') {
+      return Promise.withResolvers();
+    }
+
+    let resolve;
+    let reject;
+    const promise = new Promise((nextResolve, nextReject) => {
+      resolve = nextResolve;
+      reject = nextReject;
+    });
+    return { promise, resolve, reject };
+  }
+
   function collectGatewayErrorSignals(error, signals = new Set()) {
     if (!error || typeof error !== 'object' || signals.has(error)) {
       return signals;
@@ -1070,8 +1084,8 @@ function createOpenClawClient({
       throw new Error('Gateway WebSocket URL is not configured');
     }
 
-    const { promise: readyPromise, resolve: resolveReady, reject: rejectReady } = Promise.withResolvers();
-    const { promise: finalPromise, resolve: resolveFinal, reject: rejectFinal } = Promise.withResolvers();
+    const { promise: readyPromise, resolve: resolveReady, reject: rejectReady } = createDeferred();
+    const { promise: finalPromise, resolve: resolveFinal, reject: rejectFinal } = createDeferred();
     let settled = false;
     let latestText = '';
     let activeRunState = null;
