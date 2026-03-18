@@ -27,7 +27,10 @@ const MACOS_LAUNCHD_LABEL = 'ai.lalaclaw.app';
 const MACOS_LIBREOFFICE_INSTALL_SCRIPT = path.join(PROJECT_ROOT, 'deploy', 'macos', 'install-libreoffice.sh');
 const WINDOWS_BACKGROUND_SERVICE_MARKER = '--lalaclaw-background-service';
 const WINDOWS_BACKGROUND_SERVICE_STATE_FILE = 'lalaclaw-background-service.json';
+const ANSI_GREEN = '\u001B[32m';
+const ANSI_YELLOW = '\u001B[33m';
 const ANSI_RED = '\u001B[31m';
+const ANSI_CYAN = '\u001B[36m';
 const ANSI_RESET = '\u001B[0m';
 const OPTION_ALIASES = {
   '--config-file': 'configFile',
@@ -553,7 +556,7 @@ function validateConfig(config, localOpenClaw, openclawBinary = '') {
 
 function printIssueList(level, items) {
   items.forEach((message) => {
-    console.log(`${formatCliLevel(level)} ${message}`);
+    console.log(formatCliMessage(level, message));
   });
 }
 
@@ -562,10 +565,27 @@ function supportsColor(stream = process.stdout) {
 }
 
 function formatCliLevel(level, stream = process.stdout) {
-  if (String(level).trim() !== 'ERROR' || !supportsColor(stream)) {
+  if (!supportsColor(stream)) {
     return level;
   }
-  return `${ANSI_RED}${level}${ANSI_RESET}`;
+
+  const colorByLevel = {
+    OK: ANSI_GREEN,
+    WARN: ANSI_YELLOW,
+    ERROR: ANSI_RED,
+    INFO: ANSI_CYAN,
+  };
+  const color = colorByLevel[String(level).trim()];
+
+  if (!color) {
+    return level;
+  }
+
+  return `${color}${level}${ANSI_RESET}`;
+}
+
+function formatCliMessage(level, message, stream = process.stdout) {
+  return `${formatCliLevel(level, stream)} ${message}`;
 }
 
 function getRuntimeUrls(config) {
@@ -581,15 +601,15 @@ function getRuntimeUrls(config) {
 
 function printConfigSummary(config) {
   const urls = getRuntimeUrls(config);
-  console.log(`INFO  Runtime profile: ${config.profile}`);
-  console.log(`INFO  Browser access: ${config.accessMode}`);
-  console.log(`INFO  Server URL (App + API): ${urls.appUrl}`);
-  console.log(`INFO  API URL:           ${urls.apiUrl}`);
-  console.log(`INFO  Dev Server URL (Vite): ${urls.devFrontendUrl}`);
+  console.log(formatCliMessage('INFO ', `Runtime profile: ${config.profile}`));
+  console.log(formatCliMessage('INFO ', `Browser access: ${config.accessMode}`));
+  console.log(formatCliMessage('INFO ', `Server URL (App + API): ${urls.appUrl}`));
+  console.log(formatCliMessage('INFO ', `API URL:           ${urls.apiUrl}`));
+  console.log(formatCliMessage('INFO ', `Dev Server URL (Vite): ${urls.devFrontendUrl}`));
   if (config.profile === 'remote-gateway') {
-    console.log(`INFO  Gateway URL:  ${config.openclawBaseUrl}`);
-    console.log(`INFO  API style:    ${config.openclawApiStyle}`);
-    console.log(`INFO  API path:     ${config.openclawApiPath}`);
+    console.log(formatCliMessage('INFO ', `Gateway URL:  ${config.openclawBaseUrl}`));
+    console.log(formatCliMessage('INFO ', `API style:    ${config.openclawApiStyle}`));
+    console.log(formatCliMessage('INFO ', `API path:     ${config.openclawApiPath}`));
   }
 }
 
@@ -1429,10 +1449,10 @@ function resolveLibreOfficeInstallCommand({
   return '';
 }
 
-async function collectDoctorData(envFilePath) {
+async function collectDoctorData(envFilePath, overrides = {}) {
   const envValues = readEnvFile(envFilePath);
   const localOpenClaw = detectLocalOpenClaw();
-  const config = resolveConfig(envValues, localOpenClaw);
+  const config = applyConfigOverrides(resolveConfig(envValues, localOpenClaw), overrides);
   const nodeVersion = process.versions.node;
   const nodeMajor = Number(String(nodeVersion || '').split('.')[0] || 0);
   const nodeMatches = nodeMajor === REQUIRED_NODE_MAJOR;
@@ -1474,51 +1494,92 @@ async function collectDoctorData(envFilePath) {
 }
 
 function printDoctorReport(report) {
-  console.log(`INFO  Project root: ${report.projectRoot}`);
-  console.log(`INFO  Env file: ${report.envFileExists ? report.envFilePath : `${report.envFilePath} (not found, using defaults)`}`);
-  console.log(`${report.node.matches ? 'OK   ' : 'WARN '} Node.js ${report.node.version} ${report.node.matches ? `matches required major ${report.node.requiredMajor}` : `does not match required major ${report.node.requiredMajor}`}`);
+  console.log(formatCliMessage('INFO ', `Project root: ${report.projectRoot}`));
+  console.log(formatCliMessage('INFO ', `Env file: ${report.envFileExists ? report.envFilePath : `${report.envFilePath} (not found, using defaults)`}`));
+  console.log(formatCliMessage(
+    report.node.matches ? 'OK   ' : 'WARN ',
+    `Node.js ${report.node.version} ${report.node.matches ? `matches required major ${report.node.requiredMajor}` : `does not match required major ${report.node.requiredMajor}`}`,
+  ));
 
   if (!report.localOpenClaw.exists) {
-    console.log(`WARN  Local OpenClaw config not found at ${report.localOpenClaw.path}`);
+    console.log(formatCliMessage('WARN ', `Local OpenClaw config not found at ${report.localOpenClaw.path}`));
   } else if (report.localOpenClaw.parseError) {
-    console.log(`WARN  Local OpenClaw config exists but could not be parsed: ${report.localOpenClaw.parseError}`);
+    console.log(formatCliMessage('WARN ', `Local OpenClaw config exists but could not be parsed: ${report.localOpenClaw.parseError}`));
   } else {
-    console.log(`OK    Local OpenClaw config found at ${report.localOpenClaw.path}`);
-    console.log(`${report.localOpenClaw.tokenDetected ? 'OK   ' : 'WARN '} Gateway token ${report.localOpenClaw.tokenDetected ? 'detected' : 'missing'} in local OpenClaw config`);
-    console.log(`INFO  Workspace root: ${report.localOpenClaw.workspaceRoot}`);
+    console.log(formatCliMessage('OK   ', `Local OpenClaw config found at ${report.localOpenClaw.path}`));
+    console.log(formatCliMessage(
+      report.localOpenClaw.tokenDetected ? 'OK   ' : 'WARN ',
+      `Gateway token ${report.localOpenClaw.tokenDetected ? 'detected' : 'missing'} in local OpenClaw config`,
+    ));
+    console.log(formatCliMessage('INFO ', `Workspace root: ${report.localOpenClaw.workspaceRoot}`));
   }
 
-  console.log(
-    `${report.openclawBinary.found ? 'OK   ' : 'WARN '} OpenClaw CLI ${
+  console.log(formatCliMessage(
+    report.openclawBinary.found ? 'OK   ' : 'WARN ',
+    `OpenClaw CLI ${
       report.openclawBinary.found
         ? `found at ${report.openclawBinary.path}`
         : report.openclawBinary.requested
           ? `not found at ${report.openclawBinary.requested}`
           : 'not found on PATH'
     }`,
-  );
-  console.log(
-    `${report.presentationPreview.available ? 'OK   ' : 'WARN '} LibreOffice-backed preview ${report.presentationPreview.available ? `enabled via ${report.presentationPreview.binaryPath}` : 'disabled because soffice was not found'}`,
-  );
+  ));
+  console.log(formatCliMessage(
+    report.presentationPreview.available ? 'OK   ' : 'WARN ',
+    `LibreOffice-backed preview ${report.presentationPreview.available ? `enabled via ${report.presentationPreview.binaryPath}` : 'disabled because soffice was not found'}`,
+  ));
   if (!report.presentationPreview.available && report.presentationPreview.installCommand) {
-    console.log(`INFO  Install LibreOffice with: ${report.presentationPreview.installCommand}`);
+    console.log(formatCliMessage('INFO ', `Install LibreOffice with: ${report.presentationPreview.installCommand}`));
   }
   if (!report.presentationPreview.available && report.presentationPreview.fixSupported) {
-    console.log('INFO  Run lalaclaw doctor --fix to install LibreOffice automatically.');
+    console.log(formatCliMessage('INFO ', 'Run lalaclaw doctor --fix to install LibreOffice automatically.'));
   }
-  console.log(`${report.ports.frontend.available ? 'OK   ' : 'WARN '} Dev frontend ${report.ports.frontend.host}:${report.ports.frontend.port} ${report.ports.frontend.available ? 'is available' : 'is already in use'}`);
-  console.log(`${report.ports.backend.available ? 'OK   ' : 'WARN '} App ${report.ports.backend.host}:${report.ports.backend.port} ${report.ports.backend.available ? 'is available' : 'is already in use'}`);
+  console.log(formatCliMessage(
+    report.ports.frontend.available ? 'OK   ' : 'WARN ',
+    `Dev frontend ${report.ports.frontend.host}:${report.ports.frontend.port} ${report.ports.frontend.available ? 'is available' : 'is already in use'}`,
+  ));
+  console.log(formatCliMessage(
+    report.ports.backend.available ? 'OK   ' : 'WARN ',
+    `App ${report.ports.backend.host}:${report.ports.backend.port} ${report.ports.backend.available ? 'is available' : 'is already in use'}`,
+  ));
   printConfigSummary(report.runtime);
   printIssueList('WARN ', report.validation.warnings);
   printIssueList('INFO ', report.validation.notes);
 
   if (report.probes.gateway) {
-    console.log(`${report.probes.gateway.ok ? 'OK   ' : 'WARN '} ${report.probes.gateway.message}`);
+    console.log(formatCliMessage(report.probes.gateway.ok ? 'OK   ' : 'WARN ', report.probes.gateway.message));
   }
 
   if (report.probes.runtime) {
-    console.log(`${formatCliLevel(report.probes.runtime.ok ? 'OK   ' : 'ERROR')} ${report.probes.runtime.message}`);
+    console.log(formatCliMessage(report.probes.runtime.ok ? 'OK   ' : 'ERROR', report.probes.runtime.message));
   }
+
+  const summaryLevel = report.summary.status === 'error'
+    ? 'ERROR'
+    : report.summary.status === 'warn'
+      ? 'WARN '
+      : 'OK   ';
+  console.log(formatCliMessage(summaryLevel, `Doctor summary: ${report.summary.errorCount} error(s), ${report.summary.warningCount} warning(s).`));
+}
+
+async function runStartDoctorCheck(
+  envFilePath,
+  options = {},
+  {
+    collectDoctorDataImpl = collectDoctorData,
+    printDoctorReportImpl = printDoctorReport,
+    log = console.log,
+  } = {},
+) {
+  log(formatCliMessage('INFO ', 'Running doctor preflight before startup...'));
+  const report = await collectDoctorDataImpl(envFilePath, options);
+  printDoctorReportImpl(report);
+
+  if (report.summary.exitCode > 0) {
+    throw new Error('Startup blocked by doctor errors. Run `lalaclaw doctor` to review and fix the failing checks.');
+  }
+
+  return report;
 }
 
 async function runInit(envFilePath, options = {}) {
@@ -2084,18 +2145,27 @@ async function runDev(envFilePath, options = {}) {
   backend.on('exit', (code) => shutdown(typeof code === 'number' ? code : 0));
 }
 
-async function runStart(envFilePath, options = {}) {
-  const { childEnv, config } = buildChildEnv(envFilePath, options);
+async function runStart(envFilePath, options = {}, dependencies = {}) {
+  const buildChildEnvImpl = dependencies.buildChildEnv || buildChildEnv;
+  const existsSyncImpl = dependencies.existsSync || fs.existsSync;
+  const runStartDoctorCheckImpl = dependencies.runStartDoctorCheck || runStartDoctorCheck;
+  const ensurePortAvailableImpl = dependencies.ensurePortAvailable || ensurePortAvailable;
+  const runChildImpl = dependencies.runChild || runChild;
+  const distDir = dependencies.distDir || DIST_DIR;
+  const serverEntry = dependencies.serverEntry || 'server.js';
+  const { childEnv, config } = buildChildEnvImpl(envFilePath, options);
 
-  if (!fs.existsSync(DIST_DIR)) {
+  await runStartDoctorCheckImpl(envFilePath, options);
+
+  if (!existsSyncImpl(distDir)) {
     throw new Error(
-      `Build output is missing at ${DIST_DIR}. Reinstall the published package or run \`npm run build\` from a source checkout before starting LalaClaw.`,
+      `Build output is missing at ${distDir}. Reinstall the published package or run \`npm run build\` from a source checkout before starting LalaClaw.`,
     );
   }
 
-  await ensurePortAvailable('Backend port', config.host, config.backendPort);
+  await ensurePortAvailableImpl('Backend port', config.host, config.backendPort);
   console.log(`INFO  Starting built app at http://${config.host}:${config.backendPort} in ${config.profile} mode`);
-  const child = runChild(process.execPath, ['server.js'], childEnv);
+  const child = runChildImpl(process.execPath, [serverEntry], childEnv);
 
   child.on('exit', (code) => {
     process.exit(typeof code === 'number' ? code : 0);
@@ -2314,9 +2384,12 @@ module.exports = {
   stopWindowsBackgroundService,
   supportsColor,
   formatCliLevel,
+  formatCliMessage,
   canPromptInteractively,
   buildDoctorReport,
   collectDoctorData,
+  printDoctorReport,
+  runStartDoctorCheck,
   resolveLibreOfficeInstallCommand,
   runDoctorFix,
   buildChildEnv,
@@ -2326,6 +2399,7 @@ module.exports = {
   registerWindowsBackgroundService,
   waitForPortInUse,
   startInitBackgroundServices,
+  runStart,
   findExecutable,
   openExternalUrl,
   promptToOpenApp,

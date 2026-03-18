@@ -734,13 +734,17 @@ describe("LalaClaw CLI helpers", () => {
     }
   });
 
-  it("colors the ERROR label red only when terminal colors are supported", () => {
+  it("colors CLI status labels when terminal colors are supported", () => {
     const previousNoColor = process.env.NO_COLOR;
     delete process.env.NO_COLOR;
 
     try {
+      expect(cli.formatCliLevel("OK   ", { isTTY: true })).toContain("\u001B[32mOK   \u001B[0m");
+      expect(cli.formatCliLevel("WARN ", { isTTY: true })).toContain("\u001B[33mWARN \u001B[0m");
+      expect(cli.formatCliLevel("INFO ", { isTTY: true })).toContain("\u001B[36mINFO \u001B[0m");
       expect(cli.formatCliLevel("ERROR", { isTTY: true })).toContain("\u001B[31mERROR\u001B[0m");
       expect(cli.formatCliLevel("ERROR", { isTTY: false })).toBe("ERROR");
+      process.env.NO_COLOR = "1";
       expect(cli.formatCliLevel("WARN ", { isTTY: true })).toBe("WARN ");
     } finally {
       if (previousNoColor === undefined) {
@@ -809,6 +813,107 @@ describe("LalaClaw CLI helpers", () => {
     await expect(
       cli.waitForPortInUse("Server port", "127.0.0.1", "65530", child, 1000),
     ).rejects.toThrow("Server port process failed before 127.0.0.1:65530 became ready: spawn failed");
+  });
+
+  it("runs doctor preflight before starting the built app", async () => {
+    const doctorCalls = [];
+    const portCalls = [];
+    const runChildCalls = [];
+    const child = new EventEmitter();
+    child.on = child.addListener.bind(child);
+
+    await cli.runStart("/tmp/.env.local", { profile: "mock", backendPort: "3900" }, {
+      buildChildEnv: () => ({
+        childEnv: { PORT: "3900" },
+        config: {
+          host: "127.0.0.1",
+          backendPort: "3900",
+          profile: "mock",
+        },
+      }),
+      existsSync: () => true,
+      runStartDoctorCheck: async (envFilePath, options) => {
+        doctorCalls.push({ envFilePath, options });
+      },
+      ensurePortAvailable: async (label, host, port) => {
+        portCalls.push({ label, host, port });
+      },
+      runChild: (command, args, env) => {
+        runChildCalls.push({ command, args, env });
+        return child;
+      },
+    });
+
+    expect(doctorCalls).toEqual([
+      {
+        envFilePath: "/tmp/.env.local",
+        options: { profile: "mock", backendPort: "3900" },
+      },
+    ]);
+    expect(portCalls).toEqual([
+      {
+        label: "Backend port",
+        host: "127.0.0.1",
+        port: "3900",
+      },
+    ]);
+    expect(runChildCalls).toEqual([
+      {
+        command: process.execPath,
+        args: ["server.js"],
+        env: { PORT: "3900" },
+      },
+    ]);
+  });
+
+  it("blocks start when the doctor preflight reports errors", async () => {
+    await expect(
+      cli.runStart("/tmp/.env.local", {}, {
+        buildChildEnv: () => ({
+          childEnv: {},
+          config: {
+            host: "127.0.0.1",
+            backendPort: "5678",
+            profile: "local-openclaw",
+          },
+        }),
+        runStartDoctorCheck: async () => {
+          throw new Error("Startup blocked by doctor errors. Run `lalaclaw doctor` to review and fix the failing checks.");
+        },
+        existsSync: () => true,
+        ensurePortAvailable: async () => {
+          throw new Error("should not reach port check");
+        },
+        runChild: () => {
+          throw new Error("should not spawn server");
+        },
+      }),
+    ).rejects.toThrow("Startup blocked by doctor errors. Run `lalaclaw doctor` to review and fix the failing checks.");
+  });
+
+  it("prints doctor output and rejects startup when preflight finds errors", async () => {
+    const logs = [];
+    const printedReports = [];
+    const report = {
+      summary: {
+        exitCode: 1,
+      },
+    };
+
+    await expect(
+      cli.runStartDoctorCheck("/tmp/.env.local", { profile: "local-openclaw" }, {
+        log: (message) => logs.push(message),
+        collectDoctorDataImpl: async (envFilePath, options) => {
+          expect(envFilePath).toBe("/tmp/.env.local");
+          expect(options).toEqual({ profile: "local-openclaw" });
+          return report;
+        },
+        printDoctorReportImpl: (nextReport) => printedReports.push(nextReport),
+      }),
+    ).rejects.toThrow("Startup blocked by doctor errors. Run `lalaclaw doctor` to review and fix the failing checks.");
+
+    expect(logs).toEqual(["INFO  Running doctor preflight before startup..."]);
+    expect(printedReports).toEqual([report]);
   });
 
   it("requires full dev markers before treating a folder as a source checkout", () => {

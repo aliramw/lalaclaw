@@ -13,12 +13,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Documented direct URL deployments alongside the existing SSH port-forward workflow, and added access-token environment examples to `.env.local.example`
+- Colored CLI doctor status labels so `OK`, `WARN`, `INFO`, and `ERROR` are easier to scan in terminal output
+- Added an explicit doctor summary line so CLI health checks show whether the current setup is fully healthy, warning-only, or blocked by errors
 
 ### Fixed
 
 - Windows-style `file:///C:/...` markdown image links now resolve through local file preview URLs correctly in chat rendering
 - Added cross-platform runtime overrides for `lalaclaw dev/frontend/backend` so Windows can start services with `--host/--port` flags instead of POSIX-only `HOST=... PORT=...` prefix syntax
 - Added CLI aliases `-h`/`--help` for help output and `-v`/`--version` for version output
+- `lalaclaw start` now runs a doctor preflight with the same runtime overrides and refuses to launch when doctor reports blocking errors
 
 ## [2026.3.17-9]
 

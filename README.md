@@ -93,6 +93,7 @@ Notes:
 - On Linux npm installs, `lalaclaw init` starts the Server in the background, then prompts to open the Server URL
 - Use `lalaclaw init --no-background` if you only want to write config without auto-starting services
 - After `--no-background`, run `lalaclaw doctor`, then use `lalaclaw dev` for source checkouts or `lalaclaw start` for packaged installs
+- `lalaclaw doctor` now prints colored status labels plus an explicit summary line, and `lalaclaw start` runs the same doctor preflight before launching
 - `lalaclaw status`, `lalaclaw restart`, and `lalaclaw stop` control the macOS `launchd` Server service only
 - Previewing `doc`, `ppt`, and `pptx` files requires LibreOffice. On macOS, run `lalaclaw doctor --fix` or `brew install --cask libreoffice`
 
@@ -164,13 +165,14 @@ npm run lalaclaw:start
 - Runtime commands accept overrides like `--host`, `--port`, `--frontend-host`, `--frontend-port`, and `--profile` (for example: `npm run dev:backend -- --host 127.0.0.1 --port 3000`)
 - `npm run doctor` checks Node.js, OpenClaw discovery, ports, and local config
   For `remote-gateway`, it also probes the configured gateway URL and sends a minimal API request to validate the configured model and agent.
+- `npm run doctor` prints colored `OK`/`WARN`/`INFO`/`ERROR` labels plus a final summary line
 - `npm run doctor -- --fix` installs LibreOffice automatically on macOS when LibreOffice-backed preview support is missing
 - `npm run doctor -- --json` prints the same diagnosis as machine-readable JSON with `summary.status` and `summary.exitCode`
 - `lalaclaw access token` prints the current browser access token from local config, and `lalaclaw access token --rotate` generates a new one
 - `npm run lalaclaw:init` writes a local `.env.local` bootstrap file
 - `lalaclaw -h` / `lalaclaw --help` prints CLI help, and `lalaclaw -v` / `lalaclaw --version` prints the current CLI version
 - `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
-- `npm run lalaclaw:start` starts the built app after checking `dist/`
+- `npm run lalaclaw:start` starts the built app after running doctor preflight checks and verifying `dist/`
 - `npm run build` creates the production bundle
 - `npm test` runs the Vitest suite once
 - `npm run lint` runs ESLint across the workspace
