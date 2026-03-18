@@ -4,7 +4,7 @@
   "description": "Agent command center prototype for an OpenClaw-style operator cockpit.",
   "main": "server.js",
   "engines": {
-    "node": "22.x"
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
   },
   "bin": {
     "lalaclaw": "bin/lalaclaw.js"

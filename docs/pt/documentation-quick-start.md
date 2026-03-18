@@ -6,7 +6,7 @@
 
 ## Requisitos
 
-- Use a versao do Node.js definida em [`.nvmrc`](../../.nvmrc), atualmente `22`
+- Para desenvolvimento, use a versao do Node.js definida em [`.nvmrc`](../../.nvmrc), atualmente `22`. O pacote npm publicado suporta `^20.19.0 || ^22.12.0 || >=24.0.0`
 - A instalacao por npm e a opcao recomendada para o uso local normal
 - Use um checkout do GitHub apenas se quiser modo de desenvolvimento ou alteracoes locais no codigo
 

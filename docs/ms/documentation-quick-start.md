@@ -6,7 +6,7 @@
 
 ## Keperluan
 
-- Gunakan versi Node.js dalam [`.nvmrc`](../../.nvmrc), kini `22`
+- Untuk pembangunan, gunakan versi Node.js dalam [`.nvmrc`](../../.nvmrc), kini `22`. Pakej npm yang diterbitkan menyokong `^20.19.0 || ^22.12.0 || >=24.0.0`
 - Pemasangan melalui npm disyorkan untuk penggunaan tempatan biasa
 - Gunakan source checkout GitHub hanya jika anda mahu mod pembangunan atau perubahan kod setempat
 

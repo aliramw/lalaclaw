@@ -195,7 +195,7 @@ LalaClaw 使用 npm 相容的日曆版本格式。
 - 每次專案版本變化時更新 [CHANGELOG.md](../CHANGELOG.md)
 - 同一天的多次發佈使用 `YYYY.M.D-N`，例如 `2026.3.17-9`，不要使用 `YYYY.M.D.N`
 - 破壞性變更應在 release notes 與遷移文件中明確標註
-- 目前倉庫目標 Node.js 版本見 [`.nvmrc`](../.nvmrc)
+- 開發時建議使用 [`.nvmrc`](../.nvmrc) 中的 Node.js `22`；已發佈的 npm 套件支援 `^20.19.0 || ^22.12.0 || >=24.0.0`
 
 ## OpenClaw 接入
 
