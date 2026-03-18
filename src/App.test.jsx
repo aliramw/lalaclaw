@@ -6,8 +6,10 @@ import { I18nProvider } from "@/lib/i18n";
 import { localeStorageKey } from "@/lib/i18n";
 
 const storageKey = "command-center-ui-state-v2";
+const currentStorageKey = "command-center-ui-state-v3";
 const pendingChatStorageKey = "command-center-pending-chat-v1";
 const chatScrollStorageKey = "command-center-chat-scroll-v1";
+const promptDraftStorageKey = "command-center-prompt-drafts-v1";
 const defaultPromptPlaceholder = "💡 想要和 main 一起做点什么？";
 
 function createSnapshot(overrides = {}) {
@@ -1552,13 +1554,14 @@ describe("App", () => {
 
     firstRender.unmount();
 
-    window.localStorage.removeItem("command-center-prompt-drafts-v1");
+    window.localStorage.removeItem(promptDraftStorageKey);
+    window.localStorage.removeItem(currentStorageKey);
+    window.localStorage.removeItem(storageKey);
 
     render(<App />);
 
-    const secondTextarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
     await waitFor(() => {
-      expect(secondTextarea).toHaveValue("");
+      expect(screen.getByPlaceholderText(defaultPromptPlaceholder)).toHaveValue("");
     });
   });
 
