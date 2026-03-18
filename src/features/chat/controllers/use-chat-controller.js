@@ -458,10 +458,22 @@ export function useChatController({
       setBusyForTab(tabId, false);
       invalidateRuntimeRequestForTab(tabId);
       setSession?.((current) => ({ ...current, status: i18n.common.idle }));
+      setPendingChatTurns((current) => {
+        if (!activeConversationKey || !current[activeConversationKey]) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[activeConversationKey];
+        return next;
+      });
+      persistOptimisticChatState({
+        clearPendingKey: activeConversationKey,
+        tabId,
+      });
     }
 
     return true;
-  }, [resolvedActiveTabId, getActiveIdentity, activateStopOverride, setBusyForTab, invalidateRuntimeRequestForTab, setSession, i18n?.common?.idle]);
+  }, [resolvedActiveTabId, getActiveIdentity, activateStopOverride, activeConversationKey, setBusyForTab, invalidateRuntimeRequestForTab, persistOptimisticChatState, setSession, setPendingChatTurns, i18n?.common?.idle]);
 
   const activeQueuedMessages = useMemo(
     () =>
