@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows-style `file:///C:/...` markdown image links now resolve through local file preview URLs correctly in chat rendering
+- Added cross-platform runtime overrides for `lalaclaw dev/frontend/backend` so Windows can start services with `--host/--port` flags instead of POSIX-only `HOST=... PORT=...` prefix syntax
+- Added CLI aliases `-h`/`--help` for help output and `-v`/`--version` for version output
+
 ## [2026.3.17-9]
 
 ### Added

@@ -143,7 +143,7 @@ For normal repository development, use the fixed dev ports defined by the repo:
 
 ```bash
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
-PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --host 127.0.0.1 --port 3000
 ```
 
 You can also start both processes with:
@@ -223,7 +223,7 @@ On startup, the backend first tries to read local OpenClaw config from `~/.openc
 Force `mock` mode:
 
 ```bash
-COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
+npm run dev:backend -- --profile mock --host 127.0.0.1 --port 3000
 ```
 
 If you use the CLI to initialize config:
