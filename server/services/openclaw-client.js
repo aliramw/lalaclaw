@@ -1392,6 +1392,65 @@ function createOpenClawClient({
     };
   }
 
+  /**
+   * Subscribe to gateway real-time events via a persistent WebSocket.
+   *
+   * Returns { stop } to tear down the connection. The onEvent callback
+   * receives raw gateway event payloads (e.g. chat deltas, session changes).
+   * If the gateway SDK is unavailable or the connection fails, the subscriber
+   * silently stops — callers should treat it as a best-effort enhancement.
+   */
+  function subscribeGatewayEvents({ onEvent, onError, onClose } = {}) {
+    let client = null;
+    let stopped = false;
+
+    (async () => {
+      try {
+        const sdk = await loadOpenClawGatewaySdk();
+        if (!sdk?.GatewayClient || typeof sdk.GatewayClient !== 'function' || stopped) {
+          return;
+        }
+
+        const gatewayUrl = getGatewayWebSocketUrl();
+        if (!gatewayUrl || stopped) {
+          return;
+        }
+
+        client = new sdk.GatewayClient({
+          url: gatewayUrl,
+          token: config.apiKey || undefined,
+          clientName: sdk.GATEWAY_CLIENT_NAMES?.GATEWAY_CLIENT || 'gateway-client',
+          clientDisplayName: 'LalaClaw-RuntimeHub',
+          clientVersion: sdk.VERSION || 'unknown',
+          platform: process.platform,
+          mode: sdk.GATEWAY_CLIENT_MODES?.BACKEND || 'backend',
+          onHelloOk: () => {},
+          onConnectError: (error) => {
+            if (typeof onError === 'function') onError(error);
+          },
+          onClose: (_code, reason) => {
+            if (typeof onClose === 'function') onClose(reason);
+          },
+          onEvent: (evt) => {
+            if (typeof onEvent === 'function') onEvent(evt);
+          },
+        });
+
+        client.start();
+      } catch (error) {
+        if (typeof onError === 'function') onError(error);
+      }
+    })();
+
+    return {
+      stop() {
+        stopped = true;
+        try { client?.stop(); } catch {}
+        client = null;
+      },
+    };
+  }
+
   return {
     callOpenClawGateway,
     dispatchOpenClaw,
@@ -1400,6 +1459,7 @@ function createOpenClawClient({
     invokeOpenClawTool,
     mirrorOpenClawUserMessage,
     parseOpenClawResponse,
+    subscribeGatewayEvents,
   };
 }
 

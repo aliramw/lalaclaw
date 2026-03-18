@@ -359,6 +359,7 @@ const zhHk = {
       previewFontSizeOptionTooltip: (label) => `預覽字體大小：${label}`,
       renderingDocx: "正在渲染 DOCX 預覽...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "編輯時無法選擇此類檔案",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorer",

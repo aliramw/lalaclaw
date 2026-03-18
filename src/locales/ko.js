@@ -350,6 +350,7 @@ const ko = {
       previewFontSizeOptionTooltip: (label) => `미리보기 글꼴 크기: ${label}`,
       renderingDocx: "DOCX 미리보기를 렌더링하는 중...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "편집 중에는 이 파일 형식을 선택할 수 없습니다.",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorer",

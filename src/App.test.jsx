@@ -1285,7 +1285,7 @@ describe("App", () => {
     expect(textarea).toHaveValue("");
   }, 10000);
 
-  it("does not restore the current prompt draft after remount", async () => {
+  it("clears the prompt draft after remount when storage is wiped", async () => {
     const fetchMock = vi.fn(async (input) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
@@ -1305,6 +1305,8 @@ describe("App", () => {
     expect(firstTextarea).toHaveValue("刷新后也要保留");
 
     firstRender.unmount();
+
+    window.localStorage.removeItem("command-center-prompt-drafts-v1");
 
     render(<App />);
 

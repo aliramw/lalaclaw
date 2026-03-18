@@ -27,6 +27,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      "/api/runtime/ws": {
+        target: "http://127.0.0.1:3000",
+        changeOrigin: true,
+        ws: true,
+      },
       "/api": {
         target: "http://127.0.0.1:3000",
         changeOrigin: true,
@@ -66,6 +71,22 @@ export default defineConfig({
 
           if (["clsx", "class-variance-authority", "tailwind-merge"].includes(packageName)) {
             return "ui-utils-vendor";
+          }
+
+          if (packageName === "mermaid" || packageName.startsWith("mermaid/")) {
+            return "mermaid-vendor";
+          }
+
+          if (packageName === "katex" || packageName.startsWith("katex/")) {
+            return "katex-vendor";
+          }
+
+          if (packageName === "xlsx") {
+            return "xlsx-vendor";
+          }
+
+          if (packageName === "docx-preview") {
+            return "docx-vendor";
           }
 
           return "vendor";

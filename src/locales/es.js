@@ -366,6 +366,7 @@ const es = {
       previewFontSizeOptionTooltip: (label) => `Tamaño de fuente de vista previa: ${label}`,
       renderingDocx: "Renderizando vista previa de DOCX...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "Este tipo de archivo no se puede seleccionar durante la edición.",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorador",
