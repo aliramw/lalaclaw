@@ -452,8 +452,13 @@ export function useChatController({
       });
     } catch {}
 
+    if (!activeTurn) {
+      setBusyForTab(tabId, false);
+      invalidateRuntimeRequestForTab(tabId);
+    }
+
     return true;
-  }, [resolvedActiveTabId, getActiveIdentity]);
+  }, [resolvedActiveTabId, getActiveIdentity, setBusyForTab, invalidateRuntimeRequestForTab]);
 
   const activeQueuedMessages = useMemo(
     () =>
