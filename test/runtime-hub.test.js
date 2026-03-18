@@ -367,4 +367,130 @@ describe("createRuntimeHub", () => {
 
     expect(ws.send).not.toHaveBeenCalled();
   });
+
+  it("notifyChannelActivity triggers immediate refresh for specific channel", async () => {
+    let callCount = 0;
+    const buildDashboardSnapshot = vi.fn(async () => {
+      callCount++;
+      return {
+        session: { status: callCount <= 1 ? "就绪" : "运行中", agentId: "main", model: "gpt-5" },
+        conversation: [],
+        taskRelationships: [],
+        taskTimeline: [],
+        files: [],
+        artifacts: [],
+        snapshots: [],
+        agents: [],
+        peeks: {},
+      };
+    });
+    const hub = createRuntimeHub({ buildDashboardSnapshot, config: { mode: "mock", model: "gpt-5" } });
+    const ws = createMockWs();
+
+    await hub.subscribe(ws, { sessionUser: "command-center", agentId: "main", overrides: {} });
+    const initialSentCount = ws.sent.length;
+
+    await hub.notifyChannelActivity("command-center", "main");
+
+    expect(buildDashboardSnapshot).toHaveBeenCalledTimes(2);
+    expect(ws.sent.length).toBeGreaterThan(initialSentCount);
+  });
+
+  it("notifyChannelActivity refreshes all channels when no args given", async () => {
+    const buildDashboardSnapshot = vi.fn(async () => ({
+      session: { status: "就绪" },
+      conversation: [],
+      taskRelationships: [],
+      taskTimeline: [],
+      files: [],
+      artifacts: [],
+      snapshots: [],
+      agents: [],
+      peeks: {},
+    }));
+    const hub = createRuntimeHub({ buildDashboardSnapshot, config: { mode: "mock", model: "gpt-5" } });
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+
+    await hub.subscribe(ws1, { sessionUser: "command-center", agentId: "main", overrides: {} });
+    await hub.subscribe(ws2, { sessionUser: "command-center", agentId: "worker", overrides: {} });
+
+    const callsBefore = buildDashboardSnapshot.mock.calls.length;
+    await hub.notifyChannelActivity();
+
+    // 两个 channel 各触发一次刷新
+    expect(buildDashboardSnapshot.mock.calls.length).toBeGreaterThanOrEqual(callsBefore + 2);
+  });
+
+  it("does not start gateway subscription in mock mode", async () => {
+    const subscribeGatewayEvents = vi.fn(() => ({ stop: vi.fn() }));
+    const hub = createRuntimeHub({
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {}, conversation: [], taskRelationships: [], taskTimeline: [],
+        files: [], artifacts: [], snapshots: [], agents: [], peeks: {},
+      })),
+      config: { mode: "mock", model: "gpt-5" },
+      subscribeGatewayEvents,
+    });
+    const ws = createMockWs();
+
+    await hub.subscribe(ws, { sessionUser: "command-center", agentId: "main", overrides: {} });
+
+    expect(subscribeGatewayEvents).not.toHaveBeenCalled();
+  });
+
+  it("starts gateway subscription in openclaw mode on first subscribe", async () => {
+    const subscribeGatewayEvents = vi.fn(() => ({ stop: vi.fn() }));
+    const hub = createRuntimeHub({
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {}, conversation: [], taskRelationships: [], taskTimeline: [],
+        files: [], artifacts: [], snapshots: [], agents: [], peeks: {},
+      })),
+      config: { mode: "openclaw", model: "gpt-5" },
+      subscribeGatewayEvents,
+    });
+    const ws = createMockWs();
+
+    await hub.subscribe(ws, { sessionUser: "command-center", agentId: "main", overrides: {} });
+
+    expect(subscribeGatewayEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start gateway subscription twice", async () => {
+    const subscribeGatewayEvents = vi.fn(() => ({ stop: vi.fn() }));
+    const hub = createRuntimeHub({
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {}, conversation: [], taskRelationships: [], taskTimeline: [],
+        files: [], artifacts: [], snapshots: [], agents: [], peeks: {},
+      })),
+      config: { mode: "openclaw", model: "gpt-5" },
+      subscribeGatewayEvents,
+    });
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+
+    await hub.subscribe(ws1, { sessionUser: "command-center", agentId: "main", overrides: {} });
+    await hub.subscribe(ws2, { sessionUser: "command-center", agentId: "worker", overrides: {} });
+
+    expect(subscribeGatewayEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("shutdown stops gateway subscription", async () => {
+    const stopFn = vi.fn();
+    const subscribeGatewayEvents = vi.fn(() => ({ stop: stopFn }));
+    const hub = createRuntimeHub({
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {}, conversation: [], taskRelationships: [], taskTimeline: [],
+        files: [], artifacts: [], snapshots: [], agents: [], peeks: {},
+      })),
+      config: { mode: "openclaw", model: "gpt-5" },
+      subscribeGatewayEvents,
+    });
+    const ws = createMockWs();
+
+    await hub.subscribe(ws, { sessionUser: "command-center", agentId: "main", overrides: {} });
+    hub.shutdown();
+
+    expect(stopFn).toHaveBeenCalled();
+  });
 });

@@ -8,6 +8,9 @@
 
 const ACTIVE_POLL_MS = 2000;
 const IDLE_POLL_MS = 8000;
+// When gateway events are available, polling is just a safety net.
+const ACTIVE_POLL_WITH_EVENTS_MS = 8000;
+const IDLE_POLL_WITH_EVENTS_MS = 30000;
 
 const DIFF_SECTIONS = [
   'session',
@@ -160,11 +163,12 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
   }
 
   function inferPollInterval(snapshot) {
+    const hasEvents = Boolean(gatewaySubscription);
     const status = String(snapshot?.session?.status || '');
     if (/运行中|running|thinking|busy/i.test(status)) {
-      return ACTIVE_POLL_MS;
+      return hasEvents ? ACTIVE_POLL_WITH_EVENTS_MS : ACTIVE_POLL_MS;
     }
-    return IDLE_POLL_MS;
+    return hasEvents ? IDLE_POLL_WITH_EVENTS_MS : IDLE_POLL_MS;
   }
 
   async function refreshChannel(key, channel) {

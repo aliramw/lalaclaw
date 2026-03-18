@@ -68,6 +68,30 @@ Responsibility-layered, no Express — native Node.js `http` module:
 
 **Entry flow:** `server.js` → `core/app-context.js` → routes → services → formatters
 
+### Runtime WebSocket Channel
+
+The `/api/runtime` polling model has been augmented with a WebSocket transport:
+
+- **`server/services/runtime-hub.js`** — per-channel (sessionUser + agentId) subscription manager
+  - Shared refresh loop: one poll per channel, not per subscriber
+  - Diff-based broadcast: only pushes sections that changed (session.sync, conversation.sync, etc.)
+  - Per-section comparators: session field-level, conversation tail-3, arrays head/tail+id, peeks summary+items
+- **`server/routes/runtime-ws.js`** — WebSocket upgrade handler at `/api/runtime/ws`
+- **`src/features/session/runtime/use-runtime-socket.js`** — frontend WebSocket client with auto-reconnect
+- **`src/features/session/runtime/use-runtime-snapshot.js`** — dual transport: ws-first, polling fallback
+
+**Protocol:**
+- First message: `runtime.snapshot` (full state)
+- Subsequent: incremental events (`session.sync`, `conversation.sync`, `taskRelationships.sync`, `artifacts.sync`, `files.sync`, `snapshots.sync`, `agents.sync`, `peeks.sync`)
+- Keepalive: `ping`/`pong` every 30s
+
+**Design rules:**
+- `/api/chat` owns message streaming; runtime ws owns background state sync
+- `conversation.sync` uses dedicated merge path (`applyIncrementalConversation`), not full `applySnapshot`
+- IM background tabs stay on HTTP polling; only active tab uses WebSocket
+- HTTP `/api/runtime` remains for first-load, reconnect fallback, and non-ws clients
+- In openclaw mode, gateway events trigger immediate channel refresh; polling interval drops to 8s/30s as safety net
+
 ### Shared
 
 - `shared/strip-markdown-for-display.cjs` — CommonJS utility used by both sides
@@ -81,7 +105,7 @@ docs/           Multi-language documentation
 server/         Backend (core/, services/, routes/, formatters/, http/)
 shared/         Shared utilities
 src/            Frontend (features/, components/, lib/, locales/)
-test/           All test files (17 suites)
+test/           All test files
 ```
 
 ## Development Workflow
