@@ -339,11 +339,13 @@ async function consumeChatStream(response, { entry, pendingTimestamp, setMessage
 }
 
 export function useChatController({
+  activateStopOverride,
   activeConversationKey,
   activeChatTabId = "",
   applySnapshot,
   busy = false,
   busyByTabId = {},
+  getActiveIdentity,
   getMessagesForTab: getMessagesForTabProp,
   invalidateRuntimeRequestForTab = () => {},
   i18n,
@@ -424,7 +426,12 @@ export function useChatController({
 
   const handleStop = useCallback(async (tabId = resolvedActiveTabId) => {
     const activeTurn = inFlightTurnsRef.current[tabId];
-    if (!activeTurn) {
+
+    const identity = activeTurn
+      ? { agentId: activeTurn.agentId, sessionUser: activeTurn.sessionUser }
+      : typeof getActiveIdentity === "function" ? getActiveIdentity() : null;
+
+    if (!identity?.agentId) {
       return false;
     }
 
@@ -433,21 +440,40 @@ export function useChatController({
       [tabId]: true,
     };
 
-    activeTurn.abortController?.abort?.();
+    activeTurn?.abortController?.abort?.();
 
     try {
       await apiFetch("/api/chat/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          agentId: activeTurn.agentId,
-          sessionUser: activeTurn.sessionUser,
+          agentId: identity.agentId,
+          sessionUser: identity.sessionUser,
         }),
       });
     } catch {}
 
+    if (!activeTurn) {
+      activateStopOverride?.();
+      setBusyForTab(tabId, false);
+      invalidateRuntimeRequestForTab(tabId);
+      setSession?.((current) => ({ ...current, status: i18n.common.idle }));
+      setPendingChatTurns((current) => {
+        if (!activeConversationKey || !current[activeConversationKey]) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[activeConversationKey];
+        return next;
+      });
+      persistOptimisticChatState({
+        clearPendingKey: activeConversationKey,
+        tabId,
+      });
+    }
+
     return true;
-  }, [resolvedActiveTabId]);
+  }, [resolvedActiveTabId, getActiveIdentity, activateStopOverride, activeConversationKey, setBusyForTab, invalidateRuntimeRequestForTab, persistOptimisticChatState, setSession, setPendingChatTurns, i18n?.common?.idle]);
 
   const activeQueuedMessages = useMemo(
     () =>

@@ -230,6 +230,7 @@ export function useRuntimeSnapshot({
   enableWebSocket = true,
 }) {
   const INITIAL_RUNTIME_RETRY_DELAY_MS = 1200;
+  const STOP_OVERRIDE_DURATION_MS = 10_000;
   const [availableModels, setAvailableModels] = useState([]);
   const [availableAgents, setAvailableAgents] = useState([]);
   const [taskTimeline, setTaskTimeline] = useState([]);
@@ -239,6 +240,9 @@ export function useRuntimeSnapshot({
   const [snapshots, setSnapshots] = useState([]);
   const [agents, setAgents] = useState([]);
   const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null, environment: null });
+  const stopOverrideUntilRef = useRef(
+    (() => { try { const v = Number(sessionStorage.getItem("cc-stop-override-until") || 0); return v > Date.now() ? v : 0; } catch { return 0; } })()
+  );
   const runtimeRequestRef = useRef(0);
   const inflightRuntimeRequestRef = useRef(null);
   const pendingChatTurnsRef = useRef(pendingChatTurns);
@@ -313,7 +317,9 @@ export function useRuntimeSnapshot({
             mergedConversation,
             shouldClearPending ? localMessagesWithoutPending : localMessages,
           );
-      const hydratedConversation = shouldClearPending
+      const stopOverrideActive = Date.now() < stopOverrideUntilRef.current;
+      const effectiveClearPending = shouldClearPending || stopOverrideActive;
+      const hydratedConversation = effectiveClearPending
         ? mergedConversationWithLocalTail
         : mergePendingConversation(
             mergedConversationWithLocalTail,
@@ -321,8 +327,8 @@ export function useRuntimeSnapshot({
             i18n.chat.thinkingPlaceholder,
             effectiveLocalMessages,
           );
-      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !shouldClearPending;
-      const nextSessionState = { ...nextSession, status: hasActivePendingTurn ? i18n.common.running : nextSession.status };
+      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !effectiveClearPending;
+      const nextSessionState = { ...nextSession, status: hasActivePendingTurn ? i18n.common.running : (stopOverrideActive ? i18n.common.idle : nextSession.status) };
       if (!areSessionSnapshotsEqual(currentSession, nextSessionState)) {
         setSession(nextSessionState);
       }
@@ -340,11 +346,13 @@ export function useRuntimeSnapshot({
         });
       }
     } else {
-      const nextSessionState = { ...nextSession, status: shouldDeferConversationSync ? i18n.common.running : nextSession.status };
+      const stopOverrideActive2 = Date.now() < stopOverrideUntilRef.current;
+      const effectiveDeferBusy = shouldDeferConversationSync && !stopOverrideActive2;
+      const nextSessionState = { ...nextSession, status: effectiveDeferBusy ? i18n.common.running : (stopOverrideActive2 ? i18n.common.idle : nextSession.status) };
       if (!areSessionSnapshotsEqual(currentSession, nextSessionState)) {
         setSession(nextSessionState);
       }
-      setBusy(Boolean(shouldDeferConversationSync));
+      setBusy(effectiveDeferBusy);
     }
 
     setIfChanged(setAvailableModels, snapshot.session?.availableModels || snapshot.availableModels || []);
@@ -481,7 +489,11 @@ export function useRuntimeSnapshot({
 
     if (payload.type === 'session.sync' && payload.session) {
       const currentSession = sessionRef.current;
+      const wsStopOverrideActive = Date.now() < stopOverrideUntilRef.current;
       const nextSession = { ...currentSession, ...payload.session };
+      if (wsStopOverrideActive) {
+        nextSession.status = i18n.common.idle;
+      }
       if (!areSessionSnapshotsEqual(currentSession, nextSession)) {
         setSession(nextSession);
       }
@@ -500,7 +512,7 @@ export function useRuntimeSnapshot({
         payload.session.fastMode === true;
       setFastMode(nextFastMode);
       const statusKey = normalizeStatusKey(payload.session.status);
-      if (statusKey === 'idle' || statusKey === 'completed') {
+      if (wsStopOverrideActive || statusKey === 'idle' || statusKey === 'completed') {
         setBusy(false);
       } else if (statusKey === 'running' || statusKey === 'busy') {
         setBusy(true);
@@ -687,7 +699,14 @@ export function useRuntimeSnapshot({
     setPeeks({ workspace: null, terminal: null, browser: null, environment: null });
   };
 
+  const activateStopOverride = useCallback(() => {
+    const until = Date.now() + STOP_OVERRIDE_DURATION_MS;
+    stopOverrideUntilRef.current = until;
+    try { sessionStorage.setItem("cc-stop-override-until", String(until)); } catch {}
+  }, []);
+
   return {
+    activateStopOverride,
     agents,
     applySnapshot,
     artifacts,
