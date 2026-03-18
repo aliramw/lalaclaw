@@ -3,6 +3,7 @@ const path = require('node:path');
 const { URL } = require('node:url');
 const { sendFile, sendJson } = require('./server/http');
 const { HOST, PORT, createAppContext } = require('./server/core');
+const { attachRuntimeWebSocket } = require('./server/routes/runtime-ws');
 
 const defaultAppContext = createAppContext();
 const {
@@ -143,7 +144,13 @@ function createRequestHandler(appContext = defaultAppContext) {
 }
 
 function createAppServer(appContext = defaultAppContext) {
-  return http.createServer(createRequestHandler(appContext));
+  const server = http.createServer(createRequestHandler(appContext));
+
+  if (appContext.runtimeHub) {
+    attachRuntimeWebSocket(server, { runtimeHub: appContext.runtimeHub });
+  }
+
+  return server;
 }
 
 function startServer() {

@@ -11,6 +11,7 @@ import {
 } from "@/features/app/storage";
 import { isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
+import { useRuntimeSocket } from "./use-runtime-socket";
 
 export function getRuntimePollInterval({
   recoveringPendingReply = false,
@@ -195,6 +196,7 @@ export function useRuntimeSnapshot({
   setPendingChatTurns,
   setPromptHistoryByConversation,
   setSession,
+  enableWebSocket = true,
 }) {
   const INITIAL_RUNTIME_RETRY_DELAY_MS = 1200;
   const [availableModels, setAvailableModels] = useState([]);
@@ -358,6 +360,85 @@ export function useRuntimeSnapshot({
     setTaskTimeline,
   ]);
 
+  const wsEnabled = enableWebSocket && !isImSessionUser(session.sessionUser);
+  const { connected: wsConnected, setOnMessage } = useRuntimeSocket({
+    sessionUser: session.sessionUser,
+    agentId: session.agentId,
+    enabled: wsEnabled,
+  });
+
+  const handleWsMessage = useCallback((payload) => {
+    if (!payload || !payload.type) return;
+
+    if (payload.type === 'runtime.snapshot') {
+      applySnapshot(payload);
+      return;
+    }
+
+    if (payload.type === 'session.sync' && payload.session) {
+      setSession((current) => ({ ...current, ...payload.session }));
+      if (payload.session.availableModels) {
+        setAvailableModels(payload.session.availableModels);
+      }
+      if (payload.session.availableAgents) {
+        setAvailableAgents(payload.session.availableAgents);
+      }
+      if (payload.session.selectedModel) {
+        setModel(payload.session.selectedModel);
+      }
+      const nextFastMode =
+        payload.session.fastMode === i18n.sessionOverview.fastMode.on ||
+        payload.session.fastMode === '开启' ||
+        payload.session.fastMode === true;
+      setFastMode(nextFastMode);
+      return;
+    }
+
+    if (payload.type === 'taskRelationships.sync') {
+      setTaskRelationships((current) => mergeTaskRelationships(current, payload.taskRelationships || []));
+      return;
+    }
+
+    if (payload.type === 'taskTimeline.sync') {
+      setTaskTimeline(payload.taskTimeline || []);
+      return;
+    }
+
+    if (payload.type === 'artifacts.sync') {
+      setArtifacts(payload.artifacts || []);
+      return;
+    }
+
+    if (payload.type === 'files.sync') {
+      setFiles(payload.files || []);
+      return;
+    }
+
+    if (payload.type === 'snapshots.sync') {
+      setSnapshots(payload.snapshots || []);
+      return;
+    }
+
+    if (payload.type === 'agents.sync') {
+      setAgents(payload.agents || []);
+      return;
+    }
+
+    if (payload.type === 'peeks.sync') {
+      setPeeks(payload.peeks || { workspace: null, terminal: null, browser: null, environment: null });
+      return;
+    }
+
+    if (payload.type === 'conversation.sync' && Array.isArray(payload.conversation)) {
+      applySnapshot({ conversation: payload.conversation, session: sessionRef.current });
+      return;
+    }
+  }, [applySnapshot, i18n.sessionOverview.fastMode.on, setAvailableAgents, setAvailableModels, setFastMode, setModel, setSession]);
+
+  useEffect(() => {
+    setOnMessage(handleWsMessage);
+  }, [setOnMessage, handleWsMessage]);
+
   const loadRuntime = useCallback(async (sessionUser = sessionRef.current.sessionUser, overrides = {}) => {
     const currentSession = sessionRef.current;
     const requestedSessionUser = String(sessionUser || currentSession.sessionUser || "").trim();
@@ -417,6 +498,10 @@ export function useRuntimeSnapshot({
   }, [applySnapshot]);
 
   useEffect(() => {
+    if (wsConnected) {
+      return;
+    }
+
     const runtimeOverrides = {
       agentId: session.agentId,
     };
@@ -453,7 +538,7 @@ export function useRuntimeSnapshot({
       window.clearInterval(id);
       window.clearTimeout(retryTimerId);
     };
-  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, recoveringPendingReply, session.agentId, session.sessionUser, setSession]);
+  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, recoveringPendingReply, session.agentId, session.sessionUser, setSession, wsConnected]);
 
   const updateSessionSettings = async (payload) => {
     const targetSessionUser = String(payload?.sessionUser || session.sessionUser || "").trim();

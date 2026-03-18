@@ -40,6 +40,7 @@ const { createChatHandler, createChatStopHandler } = require('../routes/chat');
 const { createFileManagerHandler } = require('../routes/file-manager');
 const { createFilePreviewHandlers } = require('../routes/file-preview');
 const { createRuntimeHandler } = require('../routes/runtime');
+const { createRuntimeHub } = require('../services/runtime-hub');
 const { createSessionHandlers } = require('../routes/session');
 const { createWorkspaceTreeHandler } = require('../routes/workspace-tree');
 const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require('./session-store');
@@ -318,6 +319,11 @@ function createAppContext() {
     sendJson,
   });
 
+  const runtimeHub = createRuntimeHub({
+    buildDashboardSnapshot,
+    config,
+  });
+
   const { handleFilePreview, handleFilePreviewContent, handleFilePreviewSave } = createFilePreviewHandlers({
     parseRequestBody,
     sendFile,
@@ -378,6 +384,7 @@ function createAppContext() {
     handleSessionSearch,
     handleSessionUpdate,
     handleWorkspaceTree,
+    runtimeHub,
     helpers: {
       clearLocalSessionConversation,
       clearLocalSessionFileEntries,

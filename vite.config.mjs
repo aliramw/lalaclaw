@@ -27,6 +27,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      "/api/runtime/ws": {
+        target: "http://127.0.0.1:3000",
+        changeOrigin: true,
+        ws: true,
+      },
       "/api": {
         target: "http://127.0.0.1:3000",
         changeOrigin: true,
