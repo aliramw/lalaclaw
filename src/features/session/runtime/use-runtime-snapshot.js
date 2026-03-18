@@ -333,7 +333,7 @@ export function useRuntimeSnapshot({
         setSession(nextSessionState);
       }
       setMessagesSynced(hydratedConversation);
-      setBusy(hasActivePendingTurn);
+      setBusy(effectiveRunning);
 
       if (pendingEntry && !hasActivePendingTurn) {
         setPendingChatTurns((current) => {
