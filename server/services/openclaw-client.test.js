@@ -16,7 +16,8 @@ describe('createOpenClawClient', () => {
       execFileAsync: async (_bin, args) => {
         const method = args[5];
         const params = JSON.parse(args[10]);
-        gatewayCalls.push({ method, params });
+        const timeout = Number(args[12]);
+        gatewayCalls.push({ method, params, timeout });
 
         if (method === 'agent') {
           return {
@@ -82,6 +83,16 @@ describe('createOpenClawClient', () => {
         channel: 'dingtalk-connector',
         to: 'user:398058',
         accountId: '__default__',
+      }),
+    );
+    expect(gatewayCalls[1]).toEqual(
+      expect.objectContaining({
+        method: 'agent.wait',
+        params: expect.objectContaining({
+          runId: 'run-1',
+          timeoutMs: 900,
+        }),
+        timeout: 10000,
       }),
     );
   });

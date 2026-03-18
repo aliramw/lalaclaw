@@ -5,6 +5,8 @@ const { URL, pathToFileURL } = require('node:url');
 
 let gatewaySdkPromise = null;
 const GATEWAY_RETRY_DELAYS_MS = [250, 1000];
+const OPENCLAW_WAIT_POLL_TIMEOUT_MS = 900;
+const OPENCLAW_WAIT_POLL_COMMAND_TIMEOUT_MS = 10000;
 const GATEWAY_RETRYABLE_ERROR_CODES = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
@@ -1172,7 +1174,7 @@ function createOpenClawClient({
                 runId: activeRunState.runId,
                 timeoutMs: 1,
               },
-              2500,
+              OPENCLAW_WAIT_POLL_COMMAND_TIMEOUT_MS,
             ),
             readOpenClawSessionAssistant(activeRunState, { strictTurnMatch: true }),
           ]);
@@ -1327,9 +1329,9 @@ function createOpenClawClient({
         'agent.wait',
         {
           runId: runState.runId,
-          timeoutMs: 900,
+          timeoutMs: OPENCLAW_WAIT_POLL_TIMEOUT_MS,
         },
-        2500,
+        OPENCLAW_WAIT_POLL_COMMAND_TIMEOUT_MS,
       );
 
       const latestAssistant = await readOpenClawSessionAssistant(runState);

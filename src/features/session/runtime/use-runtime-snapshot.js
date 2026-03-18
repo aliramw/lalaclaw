@@ -9,7 +9,7 @@ import {
   mergePendingConversation,
   mergeStaleLocalConversationTail,
 } from "@/features/app/storage";
-import { isImSessionUser } from "@/features/session/im-session";
+import { isImBootstrapSessionUser, isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { apiFetch } from "@/lib/api-client";
 import { useRuntimeSocket } from "./use-runtime-socket";
@@ -99,6 +99,79 @@ export function mergeTaskRelationships(previousRelationships, nextRelationships)
 
 function setIfChanged(setter, nextValue) {
   setter((current) => (areJsonEqual(current, nextValue) ? current : nextValue));
+}
+
+function fileActionPriority(action = "") {
+  if (action === "created") {
+    return 3;
+  }
+  if (action === "modified") {
+    return 2;
+  }
+  if (action === "viewed") {
+    return 1;
+  }
+  return 0;
+}
+
+export function mergeRuntimeFiles(previousFiles = [], nextFiles = []) {
+  const merged = new Map();
+
+  for (const item of previousFiles || []) {
+    const key = String(item?.fullPath || item?.path || "").trim();
+    if (!key) {
+      continue;
+    }
+
+    merged.set(key, { ...item });
+  }
+
+  for (const item of nextFiles || []) {
+    const key = String(item?.fullPath || item?.path || "").trim();
+    if (!key) {
+      continue;
+    }
+
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...item });
+      continue;
+    }
+
+    const existingPrimaryAction = String(existing?.primaryAction || "").trim();
+    const nextPrimaryAction = String(item?.primaryAction || "").trim();
+    const mergedActions = Array.from(new Set([
+      ...(Array.isArray(existing?.actions) ? existing.actions : []),
+      ...(Array.isArray(item?.actions) ? item.actions : []),
+    ].filter(Boolean)));
+    const preferredPrimaryAction =
+      fileActionPriority(nextPrimaryAction) >= fileActionPriority(existingPrimaryAction)
+        ? (nextPrimaryAction || existingPrimaryAction)
+        : (existingPrimaryAction || nextPrimaryAction);
+    const existingObservedAt = Number(existing?.observedAt || 0);
+    const nextObservedAt = Number(item?.observedAt || 0);
+    const existingUpdatedAt = Number(existing?.updatedAt || 0);
+    const nextUpdatedAt = Number(item?.updatedAt || 0);
+    const preferNext = nextObservedAt >= existingObservedAt || nextUpdatedAt >= existingUpdatedAt;
+
+    merged.set(key, {
+      ...(preferNext ? existing : item),
+      ...(preferNext ? item : existing),
+      primaryAction: preferredPrimaryAction || "viewed",
+      actions: mergedActions,
+      observedAt: Math.max(existingObservedAt, nextObservedAt),
+      updatedAt: Math.max(existingUpdatedAt, nextUpdatedAt),
+    });
+  }
+
+  return [...merged.values()].sort((left, right) => {
+    const observedDelta = Number(right?.observedAt || 0) - Number(left?.observedAt || 0);
+    if (observedDelta !== 0) {
+      return observedDelta;
+    }
+
+    return Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0);
+  });
 }
 
 function snapshotHasPendingUserMessage(snapshotMessages = [], pendingEntry = null) {
@@ -192,12 +265,16 @@ function shouldApplyRuntimeSnapshot({
     && normalizedRequestedSessionUser
     && normalizedResolvedSessionUser !== normalizedRequestedSessionUser
   ) {
+    const allowImBootstrapResolution =
+      isImBootstrapSessionUser(normalizedRequestedSessionUser)
+      && isImSessionUser(normalizedResolvedSessionUser)
+      && !isImBootstrapSessionUser(normalizedResolvedSessionUser);
     const allowGeneratedBootstrapFallback =
       normalizedRequestedAgentId
       && normalizedResolvedSessionUser === "command-center"
       && isGeneratedAgentBootstrapSessionUser(normalizedRequestedSessionUser, normalizedRequestedAgentId);
 
-    if (!allowGeneratedBootstrapFallback && normalizedCurrentSessionUser !== normalizedResolvedSessionUser) {
+    if (!allowGeneratedBootstrapFallback && !allowImBootstrapResolution && normalizedCurrentSessionUser !== normalizedResolvedSessionUser) {
       return false;
     }
   }
@@ -219,6 +296,7 @@ export function useRuntimeSnapshot({
   i18n,
   messagesRef,
   pendingChatTurns,
+  runtimeSessionUser = "",
   session,
   setBusy,
   setFastMode,
@@ -250,6 +328,14 @@ export function useRuntimeSnapshot({
 
   pendingChatTurnsRef.current = pendingChatTurns;
   sessionRef.current = session;
+
+  const setFilesFromSnapshot = useCallback((nextFiles = []) => {
+    const normalizedNextFiles = Array.isArray(nextFiles) ? nextFiles : [];
+    setFiles((current) => {
+      const mergedFiles = mergeRuntimeFiles(current, normalizedNextFiles);
+      return areJsonEqual(current, mergedFiles) ? current : mergedFiles;
+    });
+  }, []);
 
   const hydrateRuntimeState = useCallback((state = null) => {
     const nextState = state || {};
@@ -366,7 +452,7 @@ export function useRuntimeSnapshot({
       setIfChanged(setTaskRelationships, []);
     }
     setIfChanged(setTaskTimeline, snapshot.taskTimeline || []);
-    setIfChanged(setFiles, snapshot.files || []);
+    setFilesFromSnapshot(snapshot.files || []);
     setIfChanged(setArtifacts, snapshot.artifacts || []);
     setIfChanged(setSnapshots, snapshot.snapshots || []);
     setIfChanged(setAgents, snapshot.agents || []);
@@ -387,6 +473,7 @@ export function useRuntimeSnapshot({
     }
   }, [
     i18n.chat.thinkingPlaceholder,
+    i18n.common.idle,
     i18n.common.running,
     i18n.sessionOverview.fastMode.on,
     messagesRef,
@@ -397,7 +484,7 @@ export function useRuntimeSnapshot({
     setAgents,
     setBusy,
     setFastMode,
-    setFiles,
+    setFilesFromSnapshot,
     setMessagesSynced,
     setModel,
     setPeeks,
@@ -539,7 +626,7 @@ export function useRuntimeSnapshot({
     }
 
     if (payload.type === 'files.sync') {
-      setIfChanged(setFiles, payload.files || []);
+      setFilesFromSnapshot(payload.files || []);
       return;
     }
 
@@ -562,7 +649,7 @@ export function useRuntimeSnapshot({
       applyIncrementalConversation(payload.conversation);
       return;
     }
-  }, [applyIncrementalConversation, applySnapshot, i18n.sessionOverview.fastMode.on, setAvailableAgents, setAvailableModels, setBusy, setFastMode, setModel, setSession]);
+  }, [applyIncrementalConversation, applySnapshot, i18n.common.idle, i18n.sessionOverview.fastMode.on, setAvailableAgents, setAvailableModels, setBusy, setFastMode, setFilesFromSnapshot, setModel, setSession]);
 
   useEffect(() => {
     setOnMessage(handleWsMessage);
@@ -631,19 +718,20 @@ export function useRuntimeSnapshot({
       return;
     }
 
+    const requestedRuntimeSessionUser = String(runtimeSessionUser || session.sessionUser || "").trim();
     const runtimeOverrides = {
       agentId: session.agentId,
     };
     let retryTimerId = 0;
     let cancelled = false;
 
-    loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {
+    loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
       if (cancelled) {
         return;
       }
 
       retryTimerId = window.setTimeout(() => {
-        loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {
+        loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
           if (cancelled) {
             return;
           }
@@ -656,10 +744,10 @@ export function useRuntimeSnapshot({
       recoveringPendingReply,
       busy,
       activePendingChat,
-      sessionUser: session.sessionUser,
+      sessionUser: requestedRuntimeSessionUser || session.sessionUser,
     });
     const id = window.setInterval(() => {
-      loadRuntime(session.sessionUser, runtimeOverrides).catch(() => {});
+      loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {});
     }, pollInterval);
 
     return () => {
@@ -667,7 +755,7 @@ export function useRuntimeSnapshot({
       window.clearInterval(id);
       window.clearTimeout(retryTimerId);
     };
-  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, recoveringPendingReply, session.agentId, session.sessionUser, setSession, wsConnected]);
+  }, [activePendingChat, busy, i18n.common.offline, loadRuntime, recoveringPendingReply, runtimeSessionUser, session.agentId, session.sessionUser, setSession, wsConnected]);
 
   const updateSessionSettings = async (payload) => {
     const targetSessionUser = String(payload?.sessionUser || session.sessionUser || "").trim();

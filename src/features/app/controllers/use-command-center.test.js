@@ -5,6 +5,7 @@ import {
   hasActiveAssistantReply,
   isChatTabBusy,
   planSearchedSessionTabTarget,
+  resolveImRuntimeSessionUser,
   shouldReuseTabState,
   shouldApplyRuntimeSnapshotToTab,
 } from "@/features/app/controllers/use-command-center";
@@ -42,6 +43,18 @@ describe("shouldApplyRuntimeSnapshotToTab", () => {
         requestedAgentId: "paint",
         requestedSessionUser: "command-center-paint-1773639313324",
         resolvedSessionUser: "command-center",
+      }),
+    ).toBe(true);
+  });
+
+  it("allows IM bootstrap tabs to resolve to the latest real IM session", () => {
+    expect(
+      shouldApplyRuntimeSnapshotToTab({
+        currentAgentId: "main",
+        currentSessionUser: "feishu:direct:default",
+        requestedAgentId: "main",
+        requestedSessionUser: "feishu:direct:default",
+        resolvedSessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
       }),
     ).toBe(true);
   });
@@ -162,6 +175,42 @@ describe("planSearchedSessionTabTarget", () => {
         title: "企微 main",
       }),
     );
+  });
+});
+
+describe("resolveImRuntimeSessionUser", () => {
+  it("keeps generic IM channel tabs polling through their bootstrap anchor", () => {
+    const { tabId } = planSearchedSessionTabTarget({
+      activeTabId: "agent:main",
+      agentId: "main",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      sessionUser: "agent:main:wecom:direct:marila",
+    });
+
+    expect(
+      resolveImRuntimeSessionUser({
+        tabId,
+        agentId: "main",
+        sessionUser: "agent:main:wecom:direct:marila",
+      }),
+    ).toBe("agent:main:wecom:direct:marila");
+  });
+
+  it("uses the IM bootstrap anchor when the tab id still belongs to the generic IM channel tab", () => {
+    const { tabId } = planSearchedSessionTabTarget({
+      activeTabId: "agent:main",
+      agentId: "main",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      sessionUser: "wecom:direct:default",
+    });
+
+    expect(
+      resolveImRuntimeSessionUser({
+        tabId,
+        agentId: "main",
+        sessionUser: "agent:main:wecom:group:project-room",
+      }),
+    ).toBe("wecom:direct:default");
   });
 });
 

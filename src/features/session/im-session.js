@@ -38,6 +38,22 @@ export function isImSessionUser(sessionUser = "") {
   return Boolean(resolveImSessionType(sessionUser));
 }
 
+export function isImBootstrapSessionUser(sessionUser = "") {
+  const normalizedSessionUser = String(sessionUser || "").trim();
+
+  if (!normalizedSessionUser) {
+    return false;
+  }
+
+  return (
+    normalizedSessionUser === "dingtalk-connector"
+    || normalizedSessionUser === "feishu:direct:default"
+    || normalizedSessionUser === "wecom:direct:default"
+    || /^agent:[^:]+:feishu:[^:]+:default$/i.test(normalizedSessionUser)
+    || /^agent:[^:]+:wecom:[^:]+:default$/i.test(normalizedSessionUser)
+  );
+}
+
 export function getImSessionDisplayName(sessionUser = "", { locale = "zh", shortWecom = false } = {}) {
   const type = resolveImSessionType(sessionUser);
   const normalizedLocale = String(locale || "").trim().toLowerCase();
@@ -55,6 +71,42 @@ export function getImSessionDisplayName(sessionUser = "", { locale = "zh", short
     }
     return shortWecom ? "企微" : "企业微信";
   }
+  return "";
+}
+
+export function createImBootstrapSessionUser(channel = "") {
+  const normalizedChannel = String(channel || "").trim();
+
+  if (normalizedChannel === "dingtalk-connector") {
+    return "dingtalk-connector";
+  }
+
+  if (normalizedChannel === "feishu") {
+    return "feishu:direct:default";
+  }
+
+  if (normalizedChannel === "wecom") {
+    return "wecom:direct:default";
+  }
+
+  return "";
+}
+
+export function createImRuntimeAnchorSessionUser(sessionUser = "") {
+  const type = resolveImSessionType(sessionUser);
+
+  if (type === "dingtalk") {
+    return createImBootstrapSessionUser("dingtalk-connector");
+  }
+
+  if (type === "feishu") {
+    return createImBootstrapSessionUser("feishu");
+  }
+
+  if (type === "wecom") {
+    return createImBootstrapSessionUser("wecom");
+  }
+
   return "";
 }
 

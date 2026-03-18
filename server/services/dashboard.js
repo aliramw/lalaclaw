@@ -147,6 +147,56 @@ function mergeProjectedFiles(primary = [], secondary = []) {
   return [...merged.values()];
 }
 
+function parseImSessionIdentity(sessionUser = '') {
+  const normalizedSessionUser = String(sessionUser || '').trim();
+  if (!normalizedSessionUser) {
+    return null;
+  }
+
+  if (normalizedSessionUser === 'dingtalk-connector' || normalizedSessionUser.includes('dingtalk-connector')) {
+    return {
+      type: 'dingtalk',
+      chatType: '',
+      peerId: normalizedSessionUser,
+    };
+  }
+
+  let match = normalizedSessionUser.match(/^agent:[^:]+:(feishu|wecom):([^:]+):(.+)$/i);
+  if (!match) {
+    match = normalizedSessionUser.match(/^(feishu|wecom):([^:]+):(.+)$/i);
+  }
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    type: String(match[1] || '').trim().toLowerCase(),
+    chatType: String(match[2] || '').trim().toLowerCase(),
+    peerId: String(match[3] || '').trim(),
+  };
+}
+
+function isImBootstrapSessionUser(sessionUser = '') {
+  const identity = parseImSessionIdentity(sessionUser);
+  if (!identity?.type) {
+    return false;
+  }
+
+  return identity.type === 'dingtalk'
+    ? String(sessionUser || '').trim() === 'dingtalk-connector'
+    : identity.peerId === 'default';
+}
+
+function isRoutableImSessionUser(sessionUser = '') {
+  const identity = parseImSessionIdentity(sessionUser);
+  if (!identity?.type) {
+    return false;
+  }
+
+  return !isImBootstrapSessionUser(sessionUser);
+}
+
 function serializeEnvironmentValue(value) {
   if (value == null) {
     return '';
@@ -323,6 +373,7 @@ function createDashboardService({
   listWorkspaceFiles = defaultListWorkspaceFiles,
   normalizeSessionUser,
   findLatestSessionForAgent,
+  listImSessionsForAgent,
   parseSessionStatusText,
   readJsonLines,
   readTextIfExists,
@@ -623,6 +674,33 @@ function createDashboardService({
     const forcedThinkMode = String(overrides?.thinkMode || '').trim();
     const agentId = forcedAgentId || resolveSessionAgentId(sessionUser);
     let effectiveSessionUser = sessionUser;
+
+    if (typeof listImSessionsForAgent === 'function' && isImBootstrapSessionUser(effectiveSessionUser)) {
+      const requestedIdentity = parseImSessionIdentity(effectiveSessionUser);
+      const latestImSession = listImSessionsForAgent(agentId).find((entry) => {
+        const candidateSessionUser = String(entry?.sessionUser || '').trim();
+        const candidateIdentity = parseImSessionIdentity(candidateSessionUser);
+
+        if (!candidateIdentity?.type || candidateIdentity.type !== requestedIdentity?.type) {
+          return false;
+        }
+
+        const shouldMatchRequestedChatType =
+          requestedIdentity?.chatType
+          && requestedIdentity?.peerId !== 'default';
+
+        if (shouldMatchRequestedChatType && candidateIdentity.chatType !== requestedIdentity.chatType) {
+          return false;
+        }
+
+        return isRoutableImSessionUser(candidateSessionUser);
+      });
+
+      if (latestImSession?.sessionUser) {
+        effectiveSessionUser = latestImSession.sessionUser;
+      }
+    }
+
     let sessionKey = getCommandCenterSessionKey(agentId, effectiveSessionUser);
     let sessionRecord = resolveSessionRecord(agentId, sessionKey);
     let localConversation = getLocalSessionConversation(effectiveSessionUser);

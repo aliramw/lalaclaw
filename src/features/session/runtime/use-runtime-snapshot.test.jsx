@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
-import { getRuntimePollInterval } from "@/features/session/runtime/use-runtime-snapshot";
+import { getRuntimePollInterval, mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
 
 function mockJsonResponse(payload, ok = true, status = ok ? 200 : 500) {
   return Promise.resolve({
@@ -118,7 +118,9 @@ describe("useRuntimeSnapshot", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main", { credentials: "same-origin" });
       expect(result.current.availableModels).toEqual(["gpt-5"]);
-      expect(result.current.files).toEqual([{ path: "src/App.jsx" }]);
+      expect(result.current.files).toEqual([
+        expect.objectContaining({ path: "src/App.jsx" }),
+      ]);
     });
 
     expect(setFastMode).toHaveBeenCalledWith(true);
@@ -130,6 +132,135 @@ describe("useRuntimeSnapshot", () => {
       { role: "assistant", content: "正在思考…", timestamp: 60, pending: true },
     ]);
     expect(setPromptHistoryByConversation).toHaveBeenCalled();
+  });
+
+  it("preserves previously detected files when a later snapshot temporarily reports no files", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const initialSnapshot = {
+      ok: true,
+      session: {
+        sessionUser: "agent:main:wecom:direct:marila",
+        agentId: "main",
+        selectedModel: "gpt-5",
+        availableModels: ["gpt-5"],
+        availableAgents: ["main"],
+        status: "空闲",
+      },
+      files: [
+        {
+          path: "/Users/marila/.openclaw/workspace/HEARTBEAT.md",
+          fullPath: "/Users/marila/.openclaw/workspace/HEARTBEAT.md",
+          kind: "文件",
+          primaryAction: "viewed",
+          observedAt: 100,
+          updatedAt: 90,
+        },
+      ],
+      conversation: [],
+    };
+    const fetchMock = vi.fn(() => mockJsonResponse(initialSnapshot));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession({
+          mode: "openclaw",
+          sessionUser: "agent:main:wecom:direct:marila",
+        }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.files).toHaveLength(1);
+    });
+
+    result.current.applySnapshot({
+      session: {
+        sessionUser: "agent:main:wecom:direct:marila",
+        agentId: "main",
+        selectedModel: "gpt-5",
+        availableModels: ["gpt-5"],
+        availableAgents: ["main"],
+        status: "空闲",
+      },
+      files: [],
+      conversation: [],
+    });
+
+    expect(result.current.files).toEqual([
+      expect.objectContaining(initialSnapshot.files[0]),
+    ]);
+  });
+
+  it("uses the provided IM runtime anchor for polling instead of the last resolved native session user", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "agent:main:wecom:group:project-room",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "空闲",
+        },
+        conversation: [{ role: "assistant", content: "群聊最新消息", timestamp: 100 }],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        runtimeSessionUser: "wecom:direct:default",
+        session: createSession({
+          mode: "openclaw",
+          sessionUser: "agent:main:wecom:direct:marila",
+        }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=wecom%3Adirect%3Adefault&agentId=main", { credentials: "same-origin" });
+    });
   });
 
   it("keeps a restored pending turn even when the runtime snapshot still reports completed", async () => {
@@ -200,6 +331,59 @@ describe("useRuntimeSnapshot", () => {
       { role: "user", content: "刷新后继续显示", timestamp: 100 },
       { role: "assistant", content: "正在思考…", timestamp: 101, pending: true },
     ]);
+  });
+
+  it("applies runtime snapshots that resolve an IM bootstrap session to the latest real session", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        model: "openclaw",
+        session: {
+          sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          fastMode: "关闭",
+          status: "就绪",
+        },
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession({ sessionUser: "feishu:direct:default" }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=feishu%3Adirect%3Adefault&agentId=main", { credentials: "same-origin" });
+      expect(setSession).toHaveBeenCalledWith(expect.objectContaining({
+        sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
+      }));
+    });
   });
 
   it("deduplicates the initial runtime request under StrictMode", async () => {
@@ -1091,5 +1275,25 @@ describe("useRuntimeSnapshot", () => {
 
     expect(setBusy).toHaveBeenCalledWith(false);
     expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "就绪" }));
+  });
+});
+
+describe("mergeRuntimeFiles", () => {
+  it("keeps higher-priority file actions while merging repeated file snapshots", () => {
+    expect(
+      mergeRuntimeFiles(
+        [{ fullPath: "/tmp/a.md", path: "/tmp/a.md", primaryAction: "created", actions: ["created"], observedAt: 10, updatedAt: 10 }],
+        [{ fullPath: "/tmp/a.md", path: "/tmp/a.md", primaryAction: "viewed", actions: ["viewed"], observedAt: 20, updatedAt: 20 }],
+      ),
+    ).toEqual([
+      {
+        fullPath: "/tmp/a.md",
+        path: "/tmp/a.md",
+        primaryAction: "created",
+        actions: ["created", "viewed"],
+        observedAt: 20,
+        updatedAt: 20,
+      },
+    ]);
   });
 });

@@ -280,6 +280,11 @@ function createTranscriptProjector({
     );
   }
 
+  function isDeliveryMirrorAssistantMessage(payload = {}) {
+    return String(payload?.role || '').trim() === 'assistant'
+      && String(payload?.model || '').trim() === 'delivery-mirror';
+  }
+
   function parseSessionStatusText(statusText) {
     if (!statusText) {
       return null;
@@ -689,6 +694,10 @@ function createTranscriptProjector({
       }
 
       if (payload.role === 'assistant') {
+        if (isDeliveryMirrorAssistantMessage(payload)) {
+          return;
+        }
+
         const content = cleanAssistantReply(extractPlainTextSegments(payload.content).join('\n\n'));
         const isTransientAssistantMessage = sawTransientAssistantFailureAfterLastUser || isTransientAssistantFailure(payload);
         if (!content) {
@@ -1897,6 +1906,20 @@ function createTranscriptProjector({
     });
   }
 
+  function listImSessionsForAgent(agentId) {
+    const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
+    const sessions = loadSessionsIndex(normalizedAgentId);
+    return Object.entries(sessions)
+      .map(([sessionKey, sessionRecord]) => ({
+        sessionKey,
+        sessionRecord,
+        sessionUser: extractSearchableSessionUser(normalizedAgentId, sessionKey),
+        updatedAt: Number(sessionRecord?.updatedAt || 0),
+      }))
+      .filter((entry) => entry.sessionUser)
+      .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
+  }
+
   return {
     buildAgentGraph,
     cleanAssistantReply,
@@ -1911,6 +1934,7 @@ function createTranscriptProjector({
     extractTextSegments,
     getTranscriptPath,
     listDirectoryPreview,
+    listImSessionsForAgent,
     parseSessionStatusText,
     readJsonLines,
     findLatestSessionForAgent,

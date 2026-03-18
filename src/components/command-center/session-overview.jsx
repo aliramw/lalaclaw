@@ -18,7 +18,7 @@ import { SelectionMenu } from "@/components/command-center/selection-menu";
 import { lobsterWalkTuning, sampleLobsterCompanionCount, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { useI18n } from "@/lib/i18n";
-import { getImSessionDisplayName } from "@/features/session/im-session";
+import { getImSessionDisplayName, resolveImSessionType } from "@/features/session/im-session";
 
 const thinkModeOptions = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
 const LOBSTER_WALK_MARGIN = 32;
@@ -1651,11 +1651,13 @@ export function SessionOverview({
   onAccessLogout,
   onFastModeChange,
   onModelChange,
+  onOpenImSession,
   onSearchSessions,
   onSelectSearchedSession,
   onThinkModeChange,
   onThemeChange,
   openAgentIds = [],
+  openSessionUsers = [],
   resolvedTheme,
   session,
   theme,
@@ -1676,6 +1678,13 @@ export function SessionOverview({
       .map((agentId) => String(agentId || "").trim())
       .filter(Boolean),
   );
+  const normalizedOpenImChannels = useMemo(() => (
+    new Set(
+      (openSessionUsers || [])
+        .map((sessionUser) => resolveImSessionType(sessionUser))
+        .filter(Boolean),
+    )
+  ), [openSessionUsers]);
   const selectableAgents = (availableAgents || []).filter((agentId) => !normalizedOpenAgentIds.has(String(agentId || "").trim()));
   const sessionSearchCopy = useMemo(() => (
     sessionSearchChannel === "feishu"
@@ -1701,6 +1710,40 @@ export function SessionOverview({
     setSessionSearchChannel(channel);
     setSessionSearchOpen(true);
   }, []);
+  const availableImMenuItems = useMemo(() => (
+    [
+      {
+        channel: "dingtalk-connector",
+        colorClassName: "bg-[#1677ff]",
+        icon: "钉",
+        label: dingTalkLabel,
+        type: "dingtalk",
+      },
+      {
+        channel: "feishu",
+        colorClassName: "bg-[#3370ff]",
+        icon: "飞",
+        label: feishuLabel,
+        type: "feishu",
+      },
+      {
+        channel: "wecom",
+        colorClassName: "bg-[#1aad19]",
+        icon: "企",
+        label: wecomLabel,
+        type: "wecom",
+      },
+    ].filter((item) => !normalizedOpenImChannels.has(item.type))
+  ), [dingTalkLabel, feishuLabel, normalizedOpenImChannels, wecomLabel]);
+  const handleImMenuSelect = useCallback((channel, suppressTooltip) => {
+    if (onOpenImSession) {
+      suppressTooltip?.();
+      void onOpenImSession(channel);
+      return;
+    }
+
+    openSessionSearch(channel, suppressTooltip);
+  }, [onOpenImSession, openSessionSearch]);
 
   const statusContent = (
     <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
@@ -1866,45 +1909,28 @@ export function SessionOverview({
                     </div>
                   </div>
                 )}
-                {onSearchSessions && onSelectSearchedSession ? (
+                {(onOpenImSession || (onSearchSessions && onSelectSearchedSession)) && availableImMenuItems.length ? (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="px-1 pb-1 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
                       {messages.sessionOverview.menus.imConversations || messages.sessionOverview.sessionSearch?.title || messages.sessionOverview.menus.switchAgent}
                     </DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => openSessionSearch("dingtalk-connector", suppressTooltip)}>
-                      <div className="flex items-center gap-2 leading-none">
-                        <div
-                          aria-hidden="true"
-                          className="flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] bg-[#1677ff] text-[10px] font-semibold leading-none text-white"
-                        >
-                          钉
+                    {availableImMenuItems.map((item) => (
+                      <DropdownMenuItem key={item.channel} onSelect={() => handleImMenuSelect(item.channel, suppressTooltip)}>
+                        <div className="flex items-center gap-2 leading-none">
+                          <div
+                            aria-hidden="true"
+                            className={cn(
+                              "flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] text-[10px] font-semibold leading-none text-white",
+                              item.colorClassName,
+                            )}
+                          >
+                            {item.icon}
+                          </div>
+                          <span className="self-center leading-none">{item.label}</span>
                         </div>
-                        <span className="self-center leading-none">{dingTalkLabel}</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => openSessionSearch("feishu", suppressTooltip)}>
-                      <div className="flex items-center gap-2 leading-none">
-                        <div
-                          aria-hidden="true"
-                          className="flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] bg-[#3370ff] text-[10px] font-semibold leading-none text-white"
-                        >
-                          飞
-                        </div>
-                        <span className="self-center leading-none">{feishuLabel}</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => openSessionSearch("wecom", suppressTooltip)}>
-                      <div className="flex items-center gap-2 leading-none">
-                        <div
-                          aria-hidden="true"
-                          className="flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] bg-[#1aad19] text-[10px] font-semibold leading-none text-white"
-                        >
-                          企
-                        </div>
-                        <span className="self-center leading-none">{wecomLabel}</span>
-                      </div>
-                    </DropdownMenuItem>
+                      </DropdownMenuItem>
+                    ))}
                   </>
                 ) : null}
               </>

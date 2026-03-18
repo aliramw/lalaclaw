@@ -28,7 +28,16 @@ import { useAppPersistence } from "@/features/app/storage";
 import { formatCompactK, formatTime, maxPromptRows } from "@/features/chat/utils";
 import { useChatController, usePromptHistory } from "@/features/chat/controllers";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
-import { createResetImSessionUser, getImSessionDisplayName, isImSessionUser } from "@/features/session/im-session";
+import { mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
+import {
+  createImBootstrapSessionUser,
+  createImRuntimeAnchorSessionUser,
+  createResetImSessionUser,
+  getImSessionDisplayName,
+  isImBootstrapSessionUser,
+  isImSessionUser,
+  resolveImSessionType,
+} from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
 import { apiFetch } from "@/lib/api-client";
@@ -129,6 +138,27 @@ function createSessionScopedTabId(agentId = "main", sessionUser = "") {
   return `${createAgentTabId(agentId)}::${hashSessionUser(sessionUser)}`;
 }
 
+export function resolveImRuntimeSessionUser({
+  tabId = "",
+  agentId = "main",
+  sessionUser = "",
+} = {}) {
+  const normalizedSessionUser = String(sessionUser || "").trim();
+  if (!isImSessionUser(normalizedSessionUser) || isImBootstrapSessionUser(normalizedSessionUser)) {
+    return normalizedSessionUser;
+  }
+
+  const normalizedAgentId = String(agentId || "main").trim() || "main";
+  const runtimeAnchorSessionUser = createImRuntimeAnchorSessionUser(normalizedSessionUser);
+  if (!runtimeAnchorSessionUser) {
+    return normalizedSessionUser;
+  }
+
+  return String(tabId || "").trim() === createSessionScopedTabId(normalizedAgentId, runtimeAnchorSessionUser)
+    ? runtimeAnchorSessionUser
+    : normalizedSessionUser;
+}
+
 export function planSearchedSessionTabTarget({
   activeTabId = "",
   agentId = "main",
@@ -222,12 +252,16 @@ export function shouldApplyRuntimeSnapshotToTab({
     && normalizedRequestedSessionUser
     && normalizedResolvedSessionUser !== normalizedRequestedSessionUser
   ) {
+    const allowImBootstrapResolution =
+      isImBootstrapSessionUser(normalizedRequestedSessionUser)
+      && isImSessionUser(normalizedResolvedSessionUser)
+      && !isImBootstrapSessionUser(normalizedResolvedSessionUser);
     const allowGeneratedBootstrapFallback =
       normalizedRequestedAgentId
       && normalizedResolvedSessionUser === "command-center"
       && isGeneratedAgentBootstrapSessionUser(normalizedRequestedSessionUser, normalizedRequestedAgentId);
 
-    if (!allowGeneratedBootstrapFallback && normalizedCurrentSessionUser !== normalizedResolvedSessionUser) {
+    if (!allowGeneratedBootstrapFallback && !allowImBootstrapResolution && normalizedCurrentSessionUser !== normalizedResolvedSessionUser) {
       return false;
     }
   }
@@ -441,6 +475,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
   const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
   const runtimeRequestByTabIdRef = useRef({});
+  const pendingSendPreparationByTabRef = useRef({});
   const sessionStateRef = useRef({
     sessionUser: initialActiveMeta.sessionUser,
     agentId: initialActiveMeta.agentId,
@@ -555,6 +590,15 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   }, [activeChatTab, tabMetaById]);
   const activeSessionUser = activeTabMeta?.sessionUser || session.sessionUser;
   const activeAgentId = activeTabMeta?.agentId || session.agentId;
+  const activeRuntimeSessionUser = useMemo(
+    () =>
+      resolveImRuntimeSessionUser({
+        tabId: activeChatTab?.id,
+        agentId: activeAgentId,
+        sessionUser: activeSessionUser,
+      }),
+    [activeAgentId, activeChatTab?.id, activeSessionUser],
+  );
   const activeIdentityRef = useRef({ agentId: activeAgentId, sessionUser: activeSessionUser });
   activeIdentityRef.current = { agentId: activeAgentId, sessionUser: activeSessionUser };
   const getActiveIdentity = useCallback(() => activeIdentityRef.current, []);
@@ -746,6 +790,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     messagesRef,
     pendingChatTurns,
     recoveringPendingReply: activePendingWasRestored,
+    runtimeSessionUser: activeRuntimeSessionUser,
     session,
     setBusy,
     setFastMode,
@@ -1291,6 +1336,11 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       const tabId = String(tab?.id || "").trim();
       const sessionUser = String(tab?.sessionUser || "").trim();
       const agentId = String(resolveAgentIdFromTabId(tabId) || tab?.agentId || "main").trim() || "main";
+      const runtimeSessionUser = resolveImRuntimeSessionUser({
+        tabId,
+        agentId,
+        sessionUser,
+      });
 
       if (!tabId || !sessionUser) {
         return;
@@ -1298,7 +1348,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
 
       try {
         const params = new URLSearchParams({
-          sessionUser,
+          sessionUser: runtimeSessionUser || sessionUser,
           agentId,
         });
         const response = await apiFetch(`/api/runtime?${params.toString()}`);
@@ -1308,6 +1358,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         }
 
         const snapshotSession = payload.session || {};
+        const resolvedSessionUser = String(snapshotSession.sessionUser || "").trim();
         const normalizedStatus = normalizeStatusKey(snapshotSession.status);
         const nextFastMode =
           snapshotSession.fastMode === i18n.sessionOverview.fastMode.on
@@ -1322,7 +1373,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
             artifacts: payload.artifacts || [],
             availableAgents: snapshotSession.availableAgents || payload.availableAgents || [],
             availableModels: snapshotSession.availableModels || payload.availableModels || [],
-            files: payload.files || [],
+            files: mergeRuntimeFiles(previous.files || [], payload.files || []),
             peeks: payload.peeks || { workspace: null, terminal: null, browser: null, environment: null },
             snapshots: payload.snapshots || [],
             taskRelationships: payload.taskRelationships || [],
@@ -1342,10 +1393,11 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         updateTabMeta(tabId, (current) => ({
           ...current,
           agentId: snapshotSession.agentId || current.agentId || agentId,
-          sessionUser: snapshotSession.sessionUser || current.sessionUser || sessionUser,
+          sessionUser: resolvedSessionUser || current.sessionUser || sessionUser,
           model: snapshotSession.selectedModel || payload.model || current.model || "",
           fastMode: nextFastMode,
           thinkMode: snapshotSession.thinkMode || current.thinkMode || "off",
+          title: buildChatTabTitle(snapshotSession.agentId || current.agentId || agentId, resolvedSessionUser || current.sessionUser || sessionUser, { locale: intlLocale }),
         }));
 
         updateTabSession(tabId, (current) => ({
@@ -1353,9 +1405,16 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           ...snapshotSession,
           agentId: snapshotSession.agentId || current.agentId || agentId,
           selectedAgentId: snapshotSession.agentId || current.selectedAgentId || agentId,
-          sessionUser: snapshotSession.sessionUser || current.sessionUser || sessionUser,
+          sessionUser: resolvedSessionUser || current.sessionUser || sessionUser,
           mode: snapshotSession.mode || current.mode,
         }));
+
+        if (resolvedSessionUser && resolvedSessionUser !== sessionUser) {
+          updateTabIdentity(tabId, {
+            agentId: snapshotSession.agentId || agentId,
+            sessionUser: resolvedSessionUser,
+          });
+        }
 
         setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching");
       } catch {
@@ -1381,9 +1440,121 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     chatTabs,
     i18n.sessionOverview.fastMode.on,
     setBusyForTab,
+    updateTabIdentity,
     updateTabMeta,
     updateTabSession,
+    intlLocale,
   ]);
+
+  const syncResolvedImTabIdentity = useCallback((tabId, agentId, previousSessionUser, nextSessionUser) => {
+    const normalizedTabId = String(tabId || "").trim();
+    const normalizedAgentId = String(agentId || "main").trim() || "main";
+    const normalizedPreviousSessionUser = String(previousSessionUser || "").trim();
+    const normalizedNextSessionUser = String(nextSessionUser || "").trim();
+
+    if (
+      !normalizedTabId
+      || !normalizedNextSessionUser
+      || normalizedNextSessionUser === normalizedPreviousSessionUser
+    ) {
+      return;
+    }
+
+    updateTabIdentity(normalizedTabId, {
+      agentId: normalizedAgentId,
+      sessionUser: normalizedNextSessionUser,
+    });
+    updateTabMeta(normalizedTabId, {
+      agentId: normalizedAgentId,
+      sessionUser: normalizedNextSessionUser,
+      title: buildChatTabTitle(normalizedAgentId, normalizedNextSessionUser, { locale: intlLocale }),
+    });
+    updateTabSession(normalizedTabId, (current) => ({
+      ...current,
+      agentId: normalizedAgentId,
+      selectedAgentId: normalizedAgentId,
+      sessionUser: normalizedNextSessionUser,
+    }));
+
+    if (normalizedTabId === activeChatTabIdRef.current) {
+      sessionStateRef.current = {
+        ...sessionStateRef.current,
+        agentId: normalizedAgentId,
+        sessionUser: normalizedNextSessionUser,
+      };
+      setActiveTarget({
+        agentId: normalizedAgentId,
+        sessionUser: normalizedNextSessionUser,
+      });
+    }
+  }, [intlLocale, setActiveTarget, updateTabIdentity, updateTabMeta, updateTabSession]);
+
+  const resolveImSessionUserForSend = useCallback(async ({ agentId = "main", sessionUser = "", tabId = "" } = {}) => {
+    const normalizedAgentId = String(agentId || "main").trim() || "main";
+    const normalizedSessionUser = String(sessionUser || "").trim();
+    const normalizedTabId = String(tabId || "").trim();
+
+    if (!isImBootstrapSessionUser(normalizedSessionUser)) {
+      return normalizedSessionUser;
+    }
+
+    let resolvedSessionUser = normalizedSessionUser;
+
+    try {
+      const runtimePayload = await loadRuntime(normalizedSessionUser, { agentId: normalizedAgentId });
+      const runtimeResolvedSessionUser = String(runtimePayload?.session?.sessionUser || "").trim();
+      if (
+        runtimeResolvedSessionUser
+        && runtimeResolvedSessionUser !== normalizedSessionUser
+        && isImSessionUser(runtimeResolvedSessionUser)
+        && !isImBootstrapSessionUser(runtimeResolvedSessionUser)
+      ) {
+        resolvedSessionUser = runtimeResolvedSessionUser;
+      }
+    } catch {
+      // Fall through to the session search fallback.
+    }
+
+    if (resolvedSessionUser === normalizedSessionUser) {
+      const imType = resolveImSessionType(normalizedSessionUser);
+      const channel = imType === "dingtalk" ? "dingtalk-connector" : imType;
+
+      if (channel) {
+        try {
+          const params = new URLSearchParams({
+            agentId: normalizedAgentId,
+            channel,
+            limit: "12",
+          });
+          const response = await apiFetch(`/api/session/search?${params.toString()}`);
+          const data = await response.json();
+          if (response.ok && data.ok) {
+            const matchedSession = (Array.isArray(data.sessions) ? data.sessions : []).find((item) => {
+              const candidateSessionUser = String(item?.sessionUser || "").trim();
+              return (
+                candidateSessionUser
+                && String(item?.agentId || normalizedAgentId).trim() === normalizedAgentId
+                && resolveImSessionType(candidateSessionUser) === imType
+                && !isImBootstrapSessionUser(candidateSessionUser)
+              );
+            });
+
+            if (matchedSession?.sessionUser) {
+              resolvedSessionUser = String(matchedSession.sessionUser).trim();
+            }
+          }
+        } catch {
+          // Keep the bootstrap value and let the chat request surface the error if resolution still fails.
+        }
+      }
+    }
+
+    if (resolvedSessionUser !== normalizedSessionUser) {
+      syncResolvedImTabIdentity(normalizedTabId, normalizedAgentId, normalizedSessionUser, resolvedSessionUser);
+    }
+
+    return resolvedSessionUser;
+  }, [loadRuntime, syncResolvedImTabIdentity]);
 
   const sendCurrentPrompt = async () => {
     const content = String(promptRef.current?.value || promptValueRef.current || "").trim();
@@ -1391,6 +1562,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     if (!content && !attachments.length) return;
     shouldAutoScrollRef.current = true;
     const targetTabId = activeChatTab?.id || activeChatTabId || activeChatTabIdRef.current;
+    const normalizedTargetTabId = String(targetTabId || "").trim();
+    if (normalizedTargetTabId && pendingSendPreparationByTabRef.current[normalizedTargetTabId]) {
+      return;
+    }
     const targetTab = chatTabsRef.current.find((tab) => tab.id === targetTabId) || activeChatTab;
     const targetMeta = (targetTabId && tabMetaByIdRef.current[targetTabId]) || null;
     const targetSession = (targetTabId && sessionByTabIdRef.current[targetTabId]) || null;
@@ -1411,6 +1586,34 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       targetAgentId && targetAgentId !== "main" && rawTargetSessionUser === defaultSessionUser
         ? createAgentSessionUser(targetAgentId)
         : rawTargetSessionUser;
+    if (normalizedTargetTabId) {
+      pendingSendPreparationByTabRef.current = {
+        ...pendingSendPreparationByTabRef.current,
+        [normalizedTargetTabId]: true,
+      };
+    }
+    setPromptForConversation("", activeConversationKey, { flushDrafts: true, syncVisible: true });
+    if (promptRef.current) {
+      promptRef.current.value = "";
+    }
+    setComposerAttachments([]);
+    setPromptHistoryNavigation(null);
+    resetRapidEnterState();
+
+    let resolvedTargetSessionUser = targetSessionUser;
+    try {
+      resolvedTargetSessionUser = await resolveImSessionUserForSend({
+        agentId: targetAgentId,
+        sessionUser: targetSessionUser,
+        tabId: targetTabId,
+      });
+    } finally {
+      if (normalizedTargetTabId && pendingSendPreparationByTabRef.current[normalizedTargetTabId]) {
+        const nextPendingPreparation = { ...pendingSendPreparationByTabRef.current };
+        delete nextPendingPreparation[normalizedTargetTabId];
+        pendingSendPreparationByTabRef.current = nextPendingPreparation;
+      }
+    }
     const targetModel =
       targetMeta?.model
       || targetSession?.selectedModel
@@ -1434,22 +1637,18 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     const entry = {
       id: entryId,
       tabId: targetTabId,
-      key: `${targetSessionUser}:${targetAgentId}`,
+      key: `${resolvedTargetSessionUser}:${targetAgentId}`,
       content,
       attachments,
       timestamp: entryTimestamp,
       userMessageId: `msg-user-${entryId}`,
       agentId: targetAgentId,
-      sessionUser: targetSessionUser,
+      sessionUser: resolvedTargetSessionUser,
       model: targetModel,
       fastMode: targetFastMode,
       thinkMode: targetThinkMode,
     };
 
-    setPromptForConversation("", activeConversationKey, { flushDrafts: true, syncVisible: true });
-    setComposerAttachments([]);
-    setPromptHistoryNavigation(null);
-    resetRapidEnterState();
     setPromptHistoryByConversation((current) => appendPromptHistory(current, entry.key, content));
 
     await enqueueOrRunEntry(entry);
@@ -2035,6 +2234,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     flushVisibleConversationScrollTop,
     focusPrompt,
     i18n,
+    intlLocale,
     loadRuntime,
     session,
     setBusyForTab,
@@ -2046,14 +2246,42 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     updateTabSession,
   ]);
 
-  const handleActivateChatTab = (tabId) => {
+  const handleOpenImSession = useCallback(async (channel) => {
+    const nextAgentId = String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main";
+    const bootstrapSessionUser = createImBootstrapSessionUser(channel);
+    const targetImType = resolveImSessionType(bootstrapSessionUser);
+
+    if (!bootstrapSessionUser || !targetImType) {
+      return;
+    }
+
+    const existingImTab = chatTabsRef.current.find((tab) =>
+      String(resolveAgentIdFromTabId(tab?.id) || tab?.agentId || "").trim() === nextAgentId
+      && resolveImSessionType(tab?.sessionUser || "") === targetImType,
+    );
+
+    if (existingImTab?.id) {
+      flushVisibleConversationScrollTop();
+      activeChatTabIdRef.current = existingImTab.id;
+      setActiveChatTabId(existingImTab.id);
+      return;
+    }
+
+    await handleSelectSearchedSession({
+      agentId: nextAgentId,
+      sessionUser: bootstrapSessionUser,
+      title: buildChatTabTitle(nextAgentId, bootstrapSessionUser, { locale: intlLocale }),
+    });
+  }, [flushVisibleConversationScrollTop, handleSelectSearchedSession, intlLocale, session.agentId, setActiveChatTabId]);
+
+  const handleActivateChatTab = useCallback((tabId) => {
     if (!tabId || tabId === activeChatTabIdRef.current) {
       return;
     }
     flushVisibleConversationScrollTop();
     activeChatTabIdRef.current = tabId;
     setActiveChatTabId(tabId);
-  };
+  }, [flushVisibleConversationScrollTop, setActiveChatTabId]);
 
   const handleActivateChatTabByIndex = useCallback((index) => {
     const numericIndex = Number(index);
@@ -2067,7 +2295,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     }
 
     handleActivateChatTab(targetTab.id);
-  }, []);
+  }, [handleActivateChatTab]);
 
   const handleActivateAdjacentChatTab = useCallback((direction) => {
     const normalizedDirection = Number(direction);
@@ -2086,7 +2314,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     }
 
     handleActivateChatTab(targetTab.id);
-  }, []);
+  }, [handleActivateChatTab]);
 
   const handleCloseChatTab = (tabId) => {
     setChatTabs((current) => {
@@ -2219,7 +2447,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           messagesByTabId,
         }),
       })),
-    [activeChatTabId, busyByTabId, chatTabs, messagesByTabId, session.status],
+    [activeChatTabId, busyByTabId, chatTabs, intlLocale, messagesByTabId, session.status],
   );
   return {
     activeChatTabId,
@@ -2245,6 +2473,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     handleChatFontSizeChange,
     handleComposerSendModeToggle,
     handleCloseChatTab,
+    handleOpenImSession,
     handleReorderChatTabs,
     handleSearchSessions,
     handleFastModeChange,

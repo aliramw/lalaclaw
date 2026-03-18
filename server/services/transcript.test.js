@@ -438,6 +438,45 @@ describe("searchSessionsForAgent", () => {
 });
 
 describe("collectConversationMessages", () => {
+  it("drops delivery-mirror assistant echoes even before any replayed inbound user turn arrives", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
+    try {
+      const projector = createTestProjector(rootDir);
+
+      const conversation = projector.collectConversationMessages([
+        {
+          type: "message",
+          timestamp: "2026-03-19T04:54:58.000Z",
+          message: {
+            role: "assistant",
+            model: "delivery-mirror",
+            timestamp: 1773867298000,
+            content: [{ type: "text", text: "marila：f安琪儿" }],
+          },
+        },
+        {
+          type: "message",
+          timestamp: "2026-03-19T04:55:00.000Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773867300000,
+            content: [{ type: "text", text: "[[reply_to_current]] 你是想让我处理安琪儿相关的事情？" }],
+          },
+        },
+      ]);
+
+      expect(conversation).toEqual([
+        {
+          role: "assistant",
+          content: "你是想让我处理安琪儿相关的事情？",
+          timestamp: 1773867300000,
+        },
+      ]);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it("drops Feishu mirrored assistant echoes and their replayed inbound user turns", () => {
     const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
     try {

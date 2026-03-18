@@ -437,6 +437,7 @@ function AppContent() {
     handleChatFontSizeChange,
     handleComposerSendModeToggle,
     handleCloseChatTab,
+    handleOpenImSession,
     handleReorderChatTabs,
     handleFastModeChange,
     handleInspectorPanelWidthChange,
@@ -654,6 +655,7 @@ function AppContent() {
     [compactInspectorPanelWidth, isWideLayout, resolvedInspectorPanelWidth],
   );
   const openAgentIds = useMemo(() => chatTabs.map((tab) => tab.agentId), [chatTabs]);
+  const openSessionUsers = useMemo(() => chatTabs.map((tab) => tab.sessionUser), [chatTabs]);
   const tabBrandOverview = useMemo(() => (
     <SessionOverview
       layout="tab-brand"
@@ -713,11 +715,13 @@ function AppContent() {
       onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
+      onOpenImSession={handleOpenImSession}
       onSearchSessions={handleSearchSessions}
       onSelectSearchedSession={handleSelectSearchedSession}
       onThinkModeChange={handleThinkModeChange}
       onThemeChange={setTheme}
       openAgentIds={openAgentIds}
+      openSessionUsers={openSessionUsers}
       resolvedTheme={resolvedTheme}
       session={session}
       theme={theme}
@@ -734,11 +738,13 @@ function AppContent() {
     logout,
     handleFastModeChange,
     handleModelChange,
+    handleOpenImSession,
     handleSearchSessions,
     handleSelectSearchedSession,
     handleThinkModeChange,
     model,
     openAgentIds,
+    openSessionUsers,
     resolvedTheme,
     session,
     setTheme,

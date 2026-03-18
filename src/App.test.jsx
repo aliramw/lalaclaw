@@ -75,6 +75,17 @@ function stubFetchWithAccessState(fetchImpl) {
   );
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function createSessionSnapshot(sessionUser = "command-center") {
   const snapshot = createSnapshot();
   return {
@@ -2390,6 +2401,191 @@ describe("App", () => {
     expect(
       screen.getByText(/可以和主 Agent 对话让他帮你创建新的 Agent/),
     ).toBeInTheDocument();
+  });
+
+  it("opens an IM tab directly from the switcher menu without requiring session search", async () => {
+    const harness = createInteractiveFetchMock({
+      availableAgents: ["main"],
+      availableModels: ["openai-codex/gpt-5.4"],
+      model: "openai-codex/gpt-5.4",
+    });
+
+    stubFetchWithAccessState(harness.fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "飞书" }));
+
+    expect(await screen.findByRole("button", { name: "飞书 main" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "定位飞书会话" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    expect(screen.queryByRole("menuitem", { name: "飞书" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "企微" })).toBeInTheDocument();
+  });
+
+  it("resolves a bootstrap Feishu tab before sending the first message", async () => {
+    const chatBodies = [];
+    const nativeSessionUser = "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58";
+    let feishuRuntimeRequestCount = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center";
+
+        if (sessionUser === "feishu:direct:default") {
+          feishuRuntimeRequestCount += 1;
+          return mockJsonResponse(createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId: "main",
+              selectedAgentId: "main",
+              sessionUser: feishuRuntimeRequestCount > 1 ? nativeSessionUser : "feishu:direct:default",
+              sessionKey: `agent:main:openai-user:${feishuRuntimeRequestCount > 1 ? nativeSessionUser : "feishu:direct:default"}`,
+              status: "空闲",
+            },
+          }));
+        }
+
+        return mockJsonResponse(createSessionSnapshot(sessionUser));
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        return mockJsonResponse({
+          ok: true,
+          outputText: "收到",
+          session: {
+            ...createSnapshot().session,
+            agentId: "main",
+            selectedAgentId: "main",
+            sessionUser: nativeSessionUser,
+            sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+            status: "空闲",
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "飞书" }));
+    expect(await screen.findByRole("button", { name: "飞书 main" })).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox"), "hi");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(chatBodies[0]).toMatchObject({
+        agentId: "main",
+        sessionUser: nativeSessionUser,
+      });
+    });
+  });
+
+  it("clears the prompt immediately and avoids duplicate sends while a bootstrap IM send is still resolving", async () => {
+    const deferredRuntime = createDeferred();
+    const chatBodies = [];
+    const nativeSessionUser = "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58";
+    let feishuRuntimeRequestCount = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center";
+
+        if (sessionUser === "feishu:direct:default") {
+          feishuRuntimeRequestCount += 1;
+          if (feishuRuntimeRequestCount === 1) {
+            return mockJsonResponse(createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                agentId: "main",
+                selectedAgentId: "main",
+                sessionUser: "feishu:direct:default",
+                sessionKey: "agent:main:openai-user:feishu:direct:default",
+                status: "空闲",
+              },
+            }));
+          }
+
+          return deferredRuntime.promise;
+        }
+
+        return mockJsonResponse(createSessionSnapshot(sessionUser));
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        return mockJsonResponse({
+          ok: true,
+          outputText: "收到",
+          session: {
+            ...createSnapshot().session,
+            agentId: "main",
+            selectedAgentId: "main",
+            sessionUser: nativeSessionUser,
+            sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+            status: "空闲",
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "飞书" }));
+
+    const textarea = await screen.findByRole("textbox");
+    await user.type(textarea, "hi");
+    await user.keyboard("{Enter}{Enter}{Enter}");
+
+    expect(textarea).toHaveValue("");
+
+    deferredRuntime.resolve(mockJsonResponse(createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        agentId: "main",
+        selectedAgentId: "main",
+        sessionUser: nativeSessionUser,
+        sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+        status: "空闲",
+      },
+    })));
+
+    await waitFor(() => {
+      expect(chatBodies).toHaveLength(1);
+      expect(chatBodies[0]).toMatchObject({
+        agentId: "main",
+        sessionUser: nativeSessionUser,
+      });
+    });
   });
 
   it("restores the previous chat scroll position when switching away and back to a conversation", async () => {

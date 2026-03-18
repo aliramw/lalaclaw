@@ -466,4 +466,328 @@ describe("createDashboardService", () => {
       },
     ]);
   });
+
+  it("resolves bootstrap Feishu runtime requests to the latest real Feishu session", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-feishu-bootstrap-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const bootstrapSessionUser = "feishu:direct:default";
+    const nativeDefaultSessionUser = "agent:main:feishu:direct:default";
+    const nativeSessionUser = "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58";
+    const nativeSessionRecord = {
+      updatedAt: 1773865223983,
+      sessionId: "feishu-native-session-id",
+    };
+    const defaultSessionRecord = {
+      updatedAt: 1773868913020,
+      sessionId: "feishu-default-session-id",
+    };
+
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        [nativeSessionUser]: nativeSessionRecord,
+        [nativeDefaultSessionUser]: defaultSessionRecord,
+      }),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "feishu-native-session-id.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "feishu-native-session-id", timestamp: "2026-03-19T04:16:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-19T04:16:04.000Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773865164000,
+            content: [{ type: "text", text: "收到 👌" }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "feishu-default-session-id.jsonl"),
+      JSON.stringify({ type: "session", id: "feishu-default-session-id", timestamp: "2026-03-19T02:00:00.000Z" }),
+      "utf8",
+    );
+
+    const projector = buildTestTranscriptProjector(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: projector.collectConversationMessages,
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: { mode: "openclaw", workspaceRoot: rootDir, model: "openai-codex/gpt-5.4", localConfig: {} },
+      extractTextSegments: projector.extractTextSegments,
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (agentId, nextSessionUser) => String(nextSessionUser || "").startsWith("agent:") ? nextSessionUser : `agent:${agentId}:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: projector.getTranscriptEntriesForSession,
+      getTranscriptPath: projector.getTranscriptPath,
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: projector.listImSessionsForAgent,
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: projector.readJsonLines,
+      readTextIfExists: (filePath) => (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""),
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: (agentId, sessionKey) => {
+        const sessions = {
+          [nativeSessionUser]: nativeSessionRecord,
+          [nativeDefaultSessionUser]: defaultSessionRecord,
+        };
+        return sessions[sessionKey] || null;
+      },
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot(bootstrapSessionUser, { agentId: "main" });
+
+    expect(snapshot.session.sessionUser).toBe(nativeSessionUser);
+  });
+
+  it("resolves bootstrap WeCom runtime requests to the latest real WeCom direct session", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-wecom-bootstrap-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const bootstrapSessionUser = "wecom:direct:default";
+    const nativeDefaultSessionUser = "agent:main:wecom:direct:default";
+    const nativeSessionUser = "agent:main:wecom:direct:marila";
+    const nativeSessionRecord = {
+      updatedAt: 1773865214025,
+      sessionId: "wecom-native-session-id",
+    };
+    const defaultSessionRecord = {
+      updatedAt: 1773868913020,
+      sessionId: "wecom-default-session-id",
+    };
+
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        [nativeSessionUser]: nativeSessionRecord,
+        [nativeDefaultSessionUser]: defaultSessionRecord,
+      }),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "wecom-native-session-id.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "wecom-native-session-id", timestamp: "2026-03-19T04:20:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-19T04:20:06.000Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773865206000,
+            content: [{ type: "text", text: "在，啥事？" }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "wecom-default-session-id.jsonl"),
+      JSON.stringify({ type: "session", id: "wecom-default-session-id", timestamp: "2026-03-19T02:00:00.000Z" }),
+      "utf8",
+    );
+
+    const projector = buildTestTranscriptProjector(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: projector.collectConversationMessages,
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: { mode: "openclaw", workspaceRoot: rootDir, model: "openai-codex/gpt-5.4", localConfig: {} },
+      extractTextSegments: projector.extractTextSegments,
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (agentId, nextSessionUser) => String(nextSessionUser || "").startsWith("agent:") ? nextSessionUser : `agent:${agentId}:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: projector.getTranscriptEntriesForSession,
+      getTranscriptPath: projector.getTranscriptPath,
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: projector.listImSessionsForAgent,
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: projector.readJsonLines,
+      readTextIfExists: (filePath) => (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""),
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: (agentId, sessionKey) => {
+        const sessions = {
+          [nativeSessionUser]: nativeSessionRecord,
+          [nativeDefaultSessionUser]: defaultSessionRecord,
+        };
+        return sessions[sessionKey] || null;
+      },
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot(bootstrapSessionUser, { agentId: "main" });
+
+    expect(snapshot.session.sessionUser).toBe(nativeSessionUser);
+  });
+
+  it("resolves a default WeCom bootstrap tab to the latest group session when the group is the active conversation", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-wecom-group-bootstrap-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const bootstrapSessionUser = "wecom:direct:default";
+    const nativeGroupSessionUser = "agent:main:wecom:group:marila";
+    const nativeDirectSessionUser = "agent:main:wecom:direct:marila";
+    const nativeGroupSessionRecord = {
+      updatedAt: 1773868913020,
+      sessionId: "wecom-group-session-id",
+    };
+    const nativeDirectSessionRecord = {
+      updatedAt: 1773865214025,
+      sessionId: "wecom-direct-session-id",
+    };
+
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        [nativeGroupSessionUser]: nativeGroupSessionRecord,
+        [nativeDirectSessionUser]: nativeDirectSessionRecord,
+      }),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "wecom-group-session-id.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "wecom-group-session-id", timestamp: "2026-03-19T04:25:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-19T04:25:06.000Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773866706000,
+            content: [{ type: "text", text: "群里最新消息" }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "wecom-direct-session-id.jsonl"),
+      JSON.stringify({ type: "session", id: "wecom-direct-session-id", timestamp: "2026-03-19T04:20:00.000Z" }),
+      "utf8",
+    );
+
+    const projector = buildTestTranscriptProjector(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: projector.collectConversationMessages,
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: { mode: "openclaw", workspaceRoot: rootDir, model: "openai-codex/gpt-5.4", localConfig: {} },
+      extractTextSegments: projector.extractTextSegments,
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (agentId, nextSessionUser) => String(nextSessionUser || "").startsWith("agent:") ? nextSessionUser : `agent:${agentId}:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: projector.getTranscriptEntriesForSession,
+      getTranscriptPath: projector.getTranscriptPath,
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: projector.listImSessionsForAgent,
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: projector.readJsonLines,
+      readTextIfExists: (filePath) => (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""),
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: (agentId, sessionKey) => {
+        const sessions = {
+          [nativeGroupSessionUser]: nativeGroupSessionRecord,
+          [nativeDirectSessionUser]: nativeDirectSessionRecord,
+        };
+        return sessions[sessionKey] || null;
+      },
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot(bootstrapSessionUser, { agentId: "main" });
+
+    expect(snapshot.session.sessionUser).toBe(nativeGroupSessionUser);
+  });
 });

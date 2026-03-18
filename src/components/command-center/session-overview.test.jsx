@@ -136,18 +136,10 @@ describe("SessionOverview", () => {
     });
   });
 
-  it("searches DingTalk sessions from the agent tab trigger and switches to the selected result", async () => {
+  it("opens IM sessions directly from the agent tab trigger", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
-    const onSearchSessions = vi.fn().mockResolvedValue([
-      {
-        agentId: "main",
-        preview: "这是最近一条和发布群有关的消息。",
-        sessionKey: "agent:main:openai-user:dingtalk-connector:release-room",
-        sessionUser: "dingtalk-connector:release-room",
-        title: "发布群",
-        updatedLabel: "03/17 12:10",
-      },
-    ]);
+    const onOpenImSession = vi.fn().mockResolvedValue(undefined);
+    const onSearchSessions = vi.fn().mockResolvedValue([]);
     const onSelectSearchedSession = vi.fn().mockResolvedValue(undefined);
 
     render(
@@ -163,6 +155,7 @@ describe("SessionOverview", () => {
             onAgentChange={() => {}}
             onFastModeChange={() => {}}
             onModelChange={() => {}}
+            onOpenImSession={onOpenImSession}
             onSearchSessions={onSearchSessions}
             onSelectSearchedSession={onSelectSearchedSession}
             onThinkModeChange={() => {}}
@@ -181,47 +174,29 @@ describe("SessionOverview", () => {
     await user.click(trigger);
     expect(screen.getByText("Agent 对话")).toBeInTheDocument();
     expect(screen.getByText("IM 对话")).toBeInTheDocument();
-    const dingTalkItem = screen.getByRole("menuitem", { name: "钉钉" });
-    expect(screen.getByRole("menuitem", { name: "飞书" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
+    const feishuItem = screen.getByRole("menuitem", { name: "飞书" });
     expect(screen.getByRole("menuitem", { name: "企微" })).toBeInTheDocument();
-    expect(dingTalkItem).toHaveClass("cursor-pointer");
-    const dingTalkIcon = within(dingTalkItem).getByText("钉");
-    expect(dingTalkIcon).toHaveClass("self-center");
-    expect(dingTalkIcon).toHaveClass("bg-[#1677ff]");
-    await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
+    expect(feishuItem).toHaveClass("cursor-pointer");
+    const feishuIcon = within(feishuItem).getByText("飞");
+    expect(feishuIcon).toHaveClass("self-center");
+    expect(feishuIcon).toHaveClass("bg-[#3370ff]");
+    await user.click(feishuItem);
 
     await waitFor(() => {
       expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     });
 
-    expect(screen.getByText("输入最近消息关键词等以便找到真正要同步的钉钉会话，比如你在钉钉发一句：宝塔镇河妖，然后就在这里搜“宝塔镇河妖”就能找到啦！")).toBeInTheDocument();
-    expect(screen.getByText("输入关键词找会话，或直接点搜索直接找。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "关闭" })).toHaveClass("rounded-full");
-    expect(screen.getByPlaceholderText("输入最近消息的关键词最准，其次是昵称…")).toBeInTheDocument();
-
-    await user.type(screen.getByLabelText("搜索词"), "发布群");
-    await user.click(screen.getByRole("button", { name: "搜索" }));
-
     await waitFor(() => {
-      expect(onSearchSessions).toHaveBeenCalledWith("发布群", { channel: "dingtalk-connector" });
+      expect(onOpenImSession).toHaveBeenCalledWith("feishu");
     });
 
-    expect(await screen.findByText("发布群")).toBeInTheDocument();
-    expect(screen.getByText(/dingtalk-connector:release-room/)).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "同步此会话" }));
-
-    await waitFor(() => {
-      expect(onSelectSearchedSession).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sessionUser: "dingtalk-connector:release-room",
-          title: "发布群",
-        }),
-      );
-    });
+    expect(onSearchSessions).not.toHaveBeenCalled();
+    expect(onSelectSearchedSession).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "定位飞书会话" })).not.toBeInTheDocument();
   });
 
-  it("closes the DingTalk search dialog from the circular close button", async () => {
+  it("hides IM channels that already have an open tab from the switcher menu", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 
     render(
@@ -237,9 +212,12 @@ describe("SessionOverview", () => {
             onAgentChange={() => {}}
             onFastModeChange={() => {}}
             onModelChange={() => {}}
-            onSearchSessions={vi.fn().mockResolvedValue([])}
-            onSelectSearchedSession={vi.fn()}
+            onOpenImSession={vi.fn()}
             onThinkModeChange={() => {}}
+            openSessionUsers={[
+              "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
+              "agent:main:wecom:direct:marila",
+            ]}
             session={createSession()}
           />
         </TooltipProvider>
@@ -248,168 +226,10 @@ describe("SessionOverview", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "切换 Agent" }));
-    await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
-    await user.click(screen.getByRole("button", { name: "关闭" }));
 
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "定位钉钉会话" })).not.toBeInTheDocument();
-    });
-  });
-
-  it("shows the full DingTalk session id in search results", async () => {
-    window.localStorage.setItem(localeStorageKey, "zh");
-    const fullSessionUser = "{\"channel\":\"dingtalk-connector\",\"accountid\":\"__default__\",\"chattype\":\"direct\",\"peerid\":\"398058\",\"sendername\":\"马锐拉\"}";
-    const displaySessionUser = "dingtalk-connector:__default__:direct:398058:马锐拉";
-    const onSearchSessions = vi.fn().mockResolvedValue([
-      {
-        agentId: "main",
-        displaySessionUser,
-        preview: "最近一条消息",
-        sessionKey: `agent:main:openai-user:${fullSessionUser}`,
-        sessionUser: fullSessionUser,
-        title: "马锐拉",
-        updatedLabel: "03/17 14:38",
-      },
-    ]);
-
-    render(
-      <I18nProvider>
-        <TooltipProvider>
-          <SessionOverview
-            availableAgents={["main"]}
-            availableModels={["openclaw"]}
-            fastMode={false}
-            formatCompactK={(value) => `${value}`}
-            layout="agent-tab"
-            model="openclaw"
-            onAgentChange={() => {}}
-            onFastModeChange={() => {}}
-            onModelChange={() => {}}
-            onSearchSessions={onSearchSessions}
-            onSelectSearchedSession={vi.fn()}
-            onThinkModeChange={() => {}}
-            session={createSession()}
-          />
-        </TooltipProvider>
-      </I18nProvider>,
-    );
-
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
-    await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
-    await user.click(screen.getByRole("button", { name: "搜索" }));
-
-    await waitFor(() => {
-      expect(onSearchSessions).toHaveBeenCalledWith("", { channel: "dingtalk-connector" });
-    });
-
-    const sessionLine = await screen.findByText((content) => content.includes(displaySessionUser));
-    expect(sessionLine).toBeInTheDocument();
-    expect(sessionLine).not.toHaveClass("rounded-md");
-    expect(sessionLine).not.toHaveClass("bg-background/55");
-    expect(screen.queryByText((content) => content.includes(fullSessionUser))).not.toBeInTheDocument();
-  });
-
-  it("searches Feishu sessions from the IM menu", async () => {
-    window.localStorage.setItem(localeStorageKey, "zh");
-    const onSearchSessions = vi.fn().mockResolvedValue([
-      {
-        agentId: "main",
-        displaySessionUser: "feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
-        preview: "宝塔镇河妖",
-        sessionKey: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
-        sessionUser: "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
-        title: "飞书小助手",
-        updatedLabel: "03/17 14:38",
-      },
-    ]);
-
-    render(
-      <I18nProvider>
-        <TooltipProvider>
-          <SessionOverview
-            availableAgents={["main"]}
-            availableModels={["openclaw"]}
-            fastMode={false}
-            formatCompactK={(value) => `${value}`}
-            layout="agent-tab"
-            model="openclaw"
-            onAgentChange={() => {}}
-            onFastModeChange={() => {}}
-            onModelChange={() => {}}
-            onSearchSessions={onSearchSessions}
-            onSelectSearchedSession={vi.fn()}
-            onThinkModeChange={() => {}}
-            session={createSession()}
-          />
-        </TooltipProvider>
-      </I18nProvider>,
-    );
-
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
-    await user.click(screen.getByRole("menuitem", { name: "飞书" }));
-
-    expect(screen.getByText("定位飞书会话")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "搜索" }));
-
-    await waitFor(() => {
-      expect(onSearchSessions).toHaveBeenCalledWith("", { channel: "feishu" });
-    });
-
-    expect(await screen.findByText("飞书小助手")).toBeInTheDocument();
-    expect(screen.getByText(/feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58/)).toBeInTheDocument();
-  });
-
-  it("searches WeCom sessions from the IM menu", async () => {
-    window.localStorage.setItem(localeStorageKey, "zh");
-    const onSearchSessions = vi.fn().mockResolvedValue([
-      {
-        agentId: "main",
-        displaySessionUser: "wecom:direct:marila",
-        preview: "宝塔镇河妖",
-        sessionKey: "agent:main:wecom:direct:marila",
-        sessionUser: "agent:main:wecom:direct:marila",
-        title: "marila",
-        updatedLabel: "03/17 17:03",
-      },
-    ]);
-
-    render(
-      <I18nProvider>
-        <TooltipProvider>
-          <SessionOverview
-            availableAgents={["main"]}
-            availableModels={["openclaw"]}
-            fastMode={false}
-            formatCompactK={(value) => `${value}`}
-            layout="agent-tab"
-            model="openclaw"
-            onAgentChange={() => {}}
-            onFastModeChange={() => {}}
-            onModelChange={() => {}}
-            onSearchSessions={onSearchSessions}
-            onSelectSearchedSession={vi.fn()}
-            onThinkModeChange={() => {}}
-            session={createSession()}
-          />
-        </TooltipProvider>
-      </I18nProvider>,
-    );
-
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
-    await user.click(screen.getByRole("menuitem", { name: "企微" }));
-
-    expect(screen.getByText("定位企业微信会话")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "搜索" }));
-
-    await waitFor(() => {
-      expect(onSearchSessions).toHaveBeenCalledWith("", { channel: "wecom" });
-    });
-
-    expect(await screen.findByText("marila")).toBeInTheDocument();
-    expect(screen.getByText(/wecom:direct:marila/)).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "飞书" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "企微" })).not.toBeInTheDocument();
   });
 
   it("disables model, fast mode, think mode, and agent-session controls until OpenClaw is connected", () => {
