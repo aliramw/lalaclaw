@@ -296,6 +296,15 @@
     background-color: var(--scrollbar-thumb-hover);
   }
 
+  .cc-tab-scrollbar-hidden {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .cc-tab-scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
   html[data-theme="dark"] .cc-inline-code,
   html[data-theme="dark"] .cc-inline-code[class] {
     border: 0 !important;

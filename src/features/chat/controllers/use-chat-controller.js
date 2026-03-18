@@ -130,6 +130,27 @@ function ensureOptimisticTurnMessages(
   return next;
 }
 
+function removeOptimisticTurnMessages(current = [], entry = {}) {
+  const next = Array.isArray(current) ? [...current] : [];
+  const userMessageId = String(entry.userMessageId || "").trim();
+  const assistantMessageId = String(entry.assistantMessageId || "").trim();
+  const pendingTimestamp = Number(entry.pendingTimestamp || 0);
+
+  return next.filter((message) => {
+    const messageId = String(message?.id || "").trim();
+    if (userMessageId && messageId === userMessageId) {
+      return false;
+    }
+    if (assistantMessageId && messageId === assistantMessageId) {
+      return false;
+    }
+    if (pendingTimestamp && Number(message?.timestamp || 0) === pendingTimestamp && message?.pending) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function replacePendingAssistantMessage(current = [], pendingTimestamp, content, tokenBadge = "", streaming = false, messageId = "") {
   const next = Array.isArray(current) ? [...current] : [];
   const assistantMessage = {
@@ -797,6 +818,81 @@ export function useChatController({
     setComposerAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
   };
 
+  const clearLastAcceptedEntryForTab = useCallback((tabId, entry = null) => {
+    const normalizedTabId = String(tabId || resolvedActiveTabId || "").trim();
+    if (!normalizedTabId) {
+      return;
+    }
+
+    const lastAcceptedEntry = lastAcceptedEntryByTabRef.current[normalizedTabId];
+    if (!lastAcceptedEntry) {
+      return;
+    }
+
+    if (entry) {
+      const entryFingerprint = createEntryFingerprint(entry);
+      const entryTimestamp = Number(entry.timestamp || 0);
+      if (lastAcceptedEntry.fingerprint !== entryFingerprint || lastAcceptedEntry.timestamp !== entryTimestamp) {
+        return;
+      }
+    }
+
+    const nextAcceptedEntries = { ...lastAcceptedEntryByTabRef.current };
+    delete nextAcceptedEntries[normalizedTabId];
+    lastAcceptedEntryByTabRef.current = nextAcceptedEntries;
+  }, [resolvedActiveTabId]);
+
+  const removeQueuedEntry = useCallback((entryId) => {
+    const normalizedEntryId = String(entryId || "").trim();
+    if (!normalizedEntryId) {
+      return false;
+    }
+
+    const queuedEntry = queuedMessages.find((item) => String(item?.id || "").trim() === normalizedEntryId);
+    if (!queuedEntry) {
+      return false;
+    }
+
+    const targetTabId = queuedEntry.tabId || resolvedActiveTabId;
+    const nextMessages = removeOptimisticTurnMessages(getMessagesForTab(targetTabId), queuedEntry);
+    setQueuedMessages((current) => current.filter((item) => String(item?.id || "").trim() !== normalizedEntryId));
+    setMessagesForTab(targetTabId, nextMessages);
+    clearLastAcceptedEntryForTab(targetTabId, queuedEntry);
+    persistOptimisticChatState({
+      tabId: targetTabId,
+      nextMessages,
+    });
+    return true;
+  }, [clearLastAcceptedEntryForTab, getMessagesForTab, persistOptimisticChatState, queuedMessages, resolvedActiveTabId, setMessagesForTab]);
+
+  const clearQueuedEntries = useCallback((tabId = resolvedActiveTabId) => {
+    const targetTabId = String(tabId || resolvedActiveTabId || "").trim();
+    if (!targetTabId) {
+      return 0;
+    }
+
+    const entriesToClear = queuedMessages.filter((item) => String(item?.tabId || resolvedActiveTabId || "").trim() === targetTabId);
+    if (!entriesToClear.length) {
+      return 0;
+    }
+
+    const nextMessages = entriesToClear.reduce(
+      (current, entry) => removeOptimisticTurnMessages(current, entry),
+      getMessagesForTab(targetTabId),
+    );
+
+    setQueuedMessages((current) =>
+      current.filter((item) => String(item?.tabId || resolvedActiveTabId || "").trim() !== targetTabId),
+    );
+    setMessagesForTab(targetTabId, nextMessages);
+    clearLastAcceptedEntryForTab(targetTabId);
+    persistOptimisticChatState({
+      tabId: targetTabId,
+      nextMessages,
+    });
+    return entriesToClear.length;
+  }, [clearLastAcceptedEntryForTab, getMessagesForTab, persistOptimisticChatState, queuedMessages, resolvedActiveTabId, setMessagesForTab]);
+
   const enqueueOrRunEntry = async (entry) => {
     const targetTabId = entry.tabId || resolvedActiveTabId;
     const resolvedEntry = withOptimisticTurnIds({ ...entry, tabId: targetTabId });
@@ -856,9 +952,11 @@ export function useChatController({
     activeQueuedMessages,
     composerAttachments,
     enqueueOrRunEntry,
+    clearQueuedEntries,
     handleAddAttachments,
     handleRemoveAttachment,
     handleStop,
+    removeQueuedEntry,
     setComposerAttachments,
     setQueuedMessages,
   };

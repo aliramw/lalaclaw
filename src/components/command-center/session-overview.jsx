@@ -1906,11 +1906,11 @@ export function SessionOverview({
               disabled={!openClawConnected}
               aria-label={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
               className={cn(
-                "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55",
-                "border-border/45 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/30 focus-visible:border-border/70 focus-visible:bg-muted/30 focus-visible:ring-border/50",
+                "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55",
+                "border-border/80 bg-muted/20 text-foreground hover:border-border hover:bg-muted/45 focus-visible:border-border focus-visible:bg-muted/45 focus-visible:ring-border/50",
               )}
             >
-              <Plus className="h-4 w-4 text-foreground" aria-hidden="true" />
+              <Plus className="h-4 w-4" aria-hidden="true" />
             </button>
           </SelectionMenu>
         </div>

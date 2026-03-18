@@ -75,7 +75,7 @@ describe("ChatPanel", () => {
     ).toBe(false);
   });
 
-  it("keeps the tabs strip from showing a vertical scrollbar when the leading control animates", () => {
+  it("keeps the scrollable tab viewport clipped when the leading control animates", () => {
     const { container } = render(
       <TooltipProvider>
         <ChatTabsStrip
@@ -85,7 +85,83 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(container.firstChild).toHaveClass("overflow-x-auto", "overflow-y-hidden");
+    expect(container.firstChild).toHaveClass("min-w-0");
+    expect(container.firstChild).not.toHaveClass("overflow-x-auto");
+  });
+
+  it("renders scroll buttons for overflowing tabs and scrolls the tab rail", async () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:writer", agentId: "writer", active: false, busy: false, title: "writer" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+            { id: "agent:transformer", agentId: "transformer", active: false, busy: false, title: "transformer" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = container.querySelector(".cc-chat-tabs-viewport");
+    expect(viewport).toBeTruthy();
+
+    let scrollLeftValue = 0;
+    Object.defineProperty(viewport, "clientWidth", {
+      configurable: true,
+      get: () => 180,
+    });
+    Object.defineProperty(viewport, "scrollWidth", {
+      configurable: true,
+      get: () => 520,
+    });
+    Object.defineProperty(viewport, "scrollLeft", {
+      configurable: true,
+      get: () => scrollLeftValue,
+      set: (value) => {
+        scrollLeftValue = value;
+      },
+    });
+    viewport.scrollBy = vi.fn(({ left }) => {
+      scrollLeftValue += left;
+      fireEvent.scroll(viewport);
+    });
+
+    fireEvent(window, new Event("resize"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "向左滚动会话标签" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "向右滚动会话标签" })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: "向左滚动会话标签" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "向右滚动会话标签" })).not.toBeDisabled();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "向右滚动会话标签" }));
+
+    expect(viewport.scrollBy).toHaveBeenCalledTimes(1);
+    expect(scrollLeftValue).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "向左滚动会话标签" })).not.toBeDisabled();
+  });
+
+  it("keeps the trailing control inside the tab rail after the session tabs", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:writer", agentId: "writer", active: false, busy: false, title: "writer" },
+          ]}
+          trailingControl={<button type="button">Open session</button>}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = container.querySelector(".cc-chat-tabs-viewport");
+    expect(viewport).toContainElement(screen.getByRole("button", { name: "Open session" }));
+
+    const trackLabels = Array.from(viewport.textContent.matchAll(/main|writer|Open session/g)).map(([value]) => value);
+    expect(trackLabels).toEqual(["main", "writer", "Open session"]);
   });
 
   it("renders empty state and forwards reset/send actions", async () => {
@@ -127,7 +203,7 @@ describe("ChatPanel", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the agent name in the composer placeholder with semibold weight", () => {
+  it("renders the composer placeholder with the agent name emphasized but not darker than the rest", () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -149,7 +225,9 @@ describe("ChatPanel", () => {
     );
 
     expect(screen.getByPlaceholderText("💡 想要和 writer 一起做点什么？")).toBeInTheDocument();
-    expect(screen.getByText("writer", { selector: "span" })).toHaveClass("font-semibold");
+    const overlay = screen.getByTestId("composer-placeholder-overlay");
+    expect(overlay).toHaveTextContent("想要和 writer 一起做点什么？💡");
+    expect(screen.getByText("writer", { selector: "span" })).toHaveClass("font-medium", "text-muted-foreground/75");
   });
 
   it("cancels resetting the conversation when the custom dialog is dismissed", async () => {
@@ -806,8 +884,23 @@ describe("ChatPanel", () => {
     );
 
     expect(screen.getAllByText("1").length).toBeGreaterThan(0);
-    expect(screen.queryByText("2")).not.toBeInTheDocument();
+    expect(screen.getAllByText("2").length).toBeGreaterThan(0);
     expect(screen.getAllByText("3").length).toBeGreaterThan(0);
+  });
+
+  it("pins inactive tab shortcut numbers to the top-left corner badge position", () => {
+    render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:writer", agentId: "writer", active: false, busy: false, title: "writer" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("2")).toHaveClass("absolute", "left-3", "top-[-0.72rem]", "text-[11px]");
   });
 
   it("adds the breathing highlight treatment to busy tab dots only", () => {
