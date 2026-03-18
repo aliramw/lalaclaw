@@ -352,7 +352,7 @@ function createAppContext() {
     sendJson,
   });
 
-  const { handleSession, handleSessionSearch, handleSessionUpdate } = createSessionHandlers({
+  const { handleSession, handleSessionContext, handleSessionSearch, handleSessionUpdate } = createSessionHandlers({
     buildDashboardSnapshot,
     callOpenClawGateway,
     collectAvailableAgents,
@@ -394,6 +394,7 @@ function createAppContext() {
     handleFilePreviewSave,
     handleRuntime,
     handleSession,
+    handleSessionContext,
     handleSessionSearch,
     handleSessionUpdate,
     handleWorkspaceTree,

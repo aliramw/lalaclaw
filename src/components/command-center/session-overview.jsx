@@ -1253,42 +1253,15 @@ function ShortcutHelpButton({ composerSendMode = "enter-send" }) {
 function LanguageToggle() {
   const { locale, localeOptions, messages, setLocale } = useI18n();
   const activeLocale = localeOptions.find((option) => option.value === locale);
-  const [tooltipOpen, setTooltipOpen] = useState(false);
-  const [tooltipSuppressed, setTooltipSuppressed] = useState(false);
-
-  const clearTooltipSuppression = useCallback(() => {
-    setTooltipSuppressed(false);
-  }, []);
-
-  const closeTooltip = useCallback(() => {
-    setTooltipOpen(false);
-  }, []);
-
-  const handleTooltipOpenChange = useCallback((nextOpen) => {
-    if (tooltipSuppressed) {
-      setTooltipOpen(false);
-      return;
-    }
-    setTooltipOpen(nextOpen);
-  }, [tooltipSuppressed]);
-
-  const handleLocaleChange = useCallback((nextLocale) => {
-    setTooltipOpen(false);
-    setTooltipSuppressed(true);
-    setLocale(nextLocale);
-  }, [setLocale]);
 
   return (
     <DropdownMenu>
-      <Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
+      <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label={messages.locale.switchLabel}
-              onBlur={clearTooltipSuppression}
-              onPointerDown={closeTooltip}
-              onPointerLeave={clearTooltipSuppression}
               className="inline-flex h-9 items-center self-stretch gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
             >
               <Languages className="h-4 w-4" />
@@ -1305,7 +1278,7 @@ function LanguageToggle() {
           <DropdownMenuCheckboxItem
             key={option.value}
             checked={option.value === locale}
-            onCheckedChange={() => handleLocaleChange(option.value)}
+            onCheckedChange={() => setLocale(option.value)}
           >
             {option.label}
           </DropdownMenuCheckboxItem>
