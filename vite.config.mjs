@@ -73,6 +73,22 @@ export default defineConfig({
             return "ui-utils-vendor";
           }
 
+          if (packageName === "mermaid" || packageName.startsWith("mermaid/")) {
+            return "mermaid-vendor";
+          }
+
+          if (packageName === "katex" || packageName.startsWith("katex/")) {
+            return "katex-vendor";
+          }
+
+          if (packageName === "xlsx") {
+            return "xlsx-vendor";
+          }
+
+          if (packageName === "docx-preview") {
+            return "docx-vendor";
+          }
+
           return "vendor";
         },
       },

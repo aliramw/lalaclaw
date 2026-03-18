@@ -44,13 +44,30 @@ function createTranscriptProjector({
     return sessionsIndex[sessionKey] || null;
   }
 
+  const jsonLinesCache = new Map();
+  const JSON_LINES_CACHE_MAX = 32;
+
   function readJsonLines(filePath) {
-    const raw = readTextIfExists(filePath);
-    if (!raw) {
+    let mtime = 0;
+    try {
+      mtime = fs.statSync(filePath).mtimeMs;
+    } catch {
+      jsonLinesCache.delete(filePath);
       return [];
     }
 
-    return raw
+    const cached = jsonLinesCache.get(filePath);
+    if (cached && cached.mtime === mtime) {
+      return cached.entries;
+    }
+
+    const raw = readTextIfExists(filePath);
+    if (!raw) {
+      jsonLinesCache.delete(filePath);
+      return [];
+    }
+
+    const entries = raw
       .split('\n')
       .filter(Boolean)
       .map((line) => {
@@ -61,6 +78,14 @@ function createTranscriptProjector({
         }
       })
       .filter(Boolean);
+
+    if (jsonLinesCache.size >= JSON_LINES_CACHE_MAX) {
+      const oldest = jsonLinesCache.keys().next().value;
+      jsonLinesCache.delete(oldest);
+    }
+    jsonLinesCache.set(filePath, { mtime, entries });
+
+    return entries;
   }
 
   function extractTextSegments(content) {

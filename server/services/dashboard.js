@@ -340,6 +340,7 @@ function createDashboardService({
     fetchedAt: 0,
     value: null,
   };
+  let liveConfigFetchPromise = null;
 
   function inferOpenClawSessionStatus(parsedStatus, conversation = []) {
     const latestUserTimestamp = [...conversation]
@@ -377,24 +378,36 @@ function createDashboardService({
       return liveConfigCache.value;
     }
 
+    if (liveConfigFetchPromise) {
+      return await liveConfigFetchPromise;
+    }
+
+    liveConfigFetchPromise = (async () => {
+      try {
+        const result = await callOpenClawGateway('config.get');
+        const nextConfig =
+          result?.config ||
+          result?.resolved ||
+          result?.parsed ||
+          (result?.agents?.list ? result : null);
+
+        if (nextConfig?.agents?.list) {
+          liveConfigCache = {
+            fetchedAt: Date.now(),
+            value: nextConfig,
+          };
+          return nextConfig;
+        }
+      } catch {}
+
+      return config.localConfig;
+    })();
+
     try {
-      const result = await callOpenClawGateway('config.get');
-      const nextConfig =
-        result?.config ||
-        result?.resolved ||
-        result?.parsed ||
-        (result?.agents?.list ? result : null);
-
-      if (nextConfig?.agents?.list) {
-        liveConfigCache = {
-          fetchedAt: Date.now(),
-          value: nextConfig,
-        };
-        return nextConfig;
-      }
-    } catch {}
-
-    return config.localConfig;
+      return await liveConfigFetchPromise;
+    } finally {
+      liveConfigFetchPromise = null;
+    }
   }
 
   function buildWorkspacePeek(workspaceRoot = config.workspaceRoot) {

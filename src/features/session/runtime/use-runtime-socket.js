@@ -84,7 +84,9 @@ export function useRuntimeSocket({ sessionUser, agentId, enabled = true }) {
       }, delay);
     };
 
-    ws.onerror = () => {};
+    ws.onerror = () => {
+      clearTimeout(pingTimerRef.current);
+    };
   }, [sessionUser, agentId]);
 
   const disconnect = useCallback(() => {

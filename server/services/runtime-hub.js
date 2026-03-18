@@ -11,6 +11,8 @@ const IDLE_POLL_MS = 8000;
 // When gateway events are available, polling is just a safety net.
 const ACTIVE_POLL_WITH_EVENTS_MS = 8000;
 const IDLE_POLL_WITH_EVENTS_MS = 30000;
+const CHANNEL_TTL_MS = 10 * 60 * 1000;
+const CHANNEL_TTL_CHECK_MS = 60 * 1000;
 
 const DIFF_SECTIONS = [
   'session',
@@ -146,6 +148,7 @@ function channelKey(sessionUser, agentId) {
 function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEvents }) {
   const channels = new Map();
   let gatewaySubscription = null;
+  let ttlCheckTimer = null;
 
   function safeSend(ws, data) {
     try {
@@ -191,6 +194,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
 
       const patches = diffSnapshot(channel.latestSnapshot, next);
       channel.latestSnapshot = next;
+      channel.lastActivityAt = Date.now();
 
       if (patches && patches.length > 0) {
         for (const patch of patches) {
@@ -235,6 +239,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
         overrides,
         subscribers: new Set(),
         latestSnapshot: null,
+        lastActivityAt: Date.now(),
         timer: null,
         currentInterval: ACTIVE_POLL_MS,
         inFlight: false,
@@ -243,6 +248,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     }
 
     channel.subscribers.add(ws);
+    channel.lastActivityAt = Date.now();
 
     ws.on('close', () => {
       channel.subscribers.delete(ws);
@@ -275,6 +281,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
 
     startChannelLoop(key, channel);
     startGatewaySubscription();
+    ensureTtlCheck();
   }
 
   function getChannelCount() {
@@ -338,7 +345,32 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     });
   }
 
+  function evictStaleChannels() {
+    const now = Date.now();
+    for (const [key, channel] of channels) {
+      if (channel.subscribers.size > 0) continue;
+      if (now - channel.lastActivityAt > CHANNEL_TTL_MS) {
+        stopChannelLoop(channel);
+        channels.delete(key);
+      }
+    }
+    if (channels.size === 0 && ttlCheckTimer) {
+      clearInterval(ttlCheckTimer);
+      ttlCheckTimer = null;
+    }
+  }
+
+  function ensureTtlCheck() {
+    if (ttlCheckTimer) return;
+    ttlCheckTimer = setInterval(evictStaleChannels, CHANNEL_TTL_CHECK_MS);
+    if (ttlCheckTimer.unref) ttlCheckTimer.unref();
+  }
+
   function shutdown() {
+    if (ttlCheckTimer) {
+      clearInterval(ttlCheckTimer);
+      ttlCheckTimer = null;
+    }
     if (gatewaySubscription) {
       gatewaySubscription.stop();
       gatewaySubscription = null;
