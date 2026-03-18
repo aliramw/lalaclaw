@@ -42,3 +42,38 @@ if (!HTMLElement.prototype.hasPointerCapture) {
 if (!HTMLElement.prototype.releasePointerCapture) {
   HTMLElement.prototype.releasePointerCapture = () => {};
 }
+
+const fallbackStorageState = new Map();
+const fallbackLocalStorage = {
+  getItem(key) {
+    return fallbackStorageState.has(key) ? fallbackStorageState.get(key) : null;
+  },
+  setItem(key, value) {
+    fallbackStorageState.set(String(key), String(value));
+  },
+  removeItem(key) {
+    fallbackStorageState.delete(String(key));
+  },
+  clear() {
+    fallbackStorageState.clear();
+  },
+  key(index) {
+    return Array.from(fallbackStorageState.keys())[index] || null;
+  },
+  get length() {
+    return fallbackStorageState.size;
+  },
+};
+
+const localStorageCandidate = window.localStorage;
+if (
+  !localStorageCandidate
+  || typeof localStorageCandidate.getItem !== "function"
+  || typeof localStorageCandidate.setItem !== "function"
+  || typeof localStorageCandidate.removeItem !== "function"
+) {
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: fallbackLocalStorage,
+  });
+}
