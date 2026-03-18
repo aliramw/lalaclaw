@@ -226,6 +226,8 @@ const fr = {
     agentBusy: "Réflexion",
     agentIdleTooltip: "L'Agent actuel est en attente et prêt pour votre prochaine instruction.",
     agentBusyTooltip: "L'Agent actuel traite votre demande et restera en mode réflexion jusqu'à ce que la réponse soit prête.",
+    agentStaleRunning: "Peut-être bloqué",
+    staleRunningWarning: (seconds) => `Pas de réponse depuis ${seconds}s — le modèle ne répond peut-être plus. Essayez de cliquer sur Arrêter.`,
     openClawStatusTooltip: "Statut d'OpenClaw",
     connectionStatusConnected: "Connecté",
     connectionStatusDisconnected: "Déconnecté",

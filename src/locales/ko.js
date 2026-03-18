@@ -208,6 +208,8 @@ const ko = {
     agentBusy: "생각 중",
     agentIdleTooltip: "현재 에이전트는 대기 중이며 다음 지시를 기다리고 있습니다.",
     agentBusyTooltip: "현재 에이전트는 요청을 처리 중이며, 응답이 준비될 때까지 생각 중 상태를 유지합니다.",
+    agentStaleRunning: "응답 없음",
+    staleRunningWarning: (seconds) => `${seconds}초 동안 응답이 없습니다. 모델이 응답하지 않을 수 있습니다. 중지를 시도해 보세요.`,
     openClawStatusTooltip: "OpenClaw 상태",
     connectionStatusConnected: "연결됨",
     connectionStatusDisconnected: "연결 끊김",

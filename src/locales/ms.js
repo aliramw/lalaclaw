@@ -211,6 +211,8 @@ const ms = {
     agentBusy: "Sedang berfikir",
     agentIdleTooltip: "Ejen semasa sedang melahu dan menunggu arahan anda yang seterusnya.",
     agentBusyTooltip: "Ejen semasa sedang mengerjakan permintaan anda dan akan kekal dalam keadaan Berfikir sehingga balasan siap.",
+    agentStaleRunning: "Mungkin tersekat",
+    staleRunningWarning: (seconds) => `Tiada respons selama ${seconds}s — model mungkin tidak bertindak balas. Cuba klik Berhenti.`,
     openClawStatusTooltip: "Status OpenClaw",
     connectionStatusConnected: "Disambungkan",
     connectionStatusDisconnected: "Terputus",

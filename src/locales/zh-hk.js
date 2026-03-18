@@ -213,6 +213,8 @@ const zhHk = {
     agentBusy: "消化 Token 中",
     agentIdleTooltip: "目前 Agent 處於閒置狀態，等待你的下一步指示。",
     agentBusyTooltip: "目前 Agent 正在處理你的請求，直到回覆準備完成前都會保持消化 Token 中狀態。",
+    agentStaleRunning: "可能卡住",
+    staleRunningWarning: (seconds) => `已等待 ${seconds} 秒無回應，模型可能無回應。可以點擊「停止」重試。`,
     openClawStatusTooltip: "OpenClaw 連線狀態",
     connectionStatusConnectedDisplay: "大鉗在握",
     connectionStatusConnected: "已連線",

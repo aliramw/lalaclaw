@@ -15,6 +15,7 @@ import { createConversationKey } from "@/features/app/storage";
 import { maxPromptRows } from "@/features/chat/utils";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
+import { useStaleRunningDetector } from "@/features/session/runtime/use-stale-running-detector";
 import { useI18n } from "@/lib/i18n";
 
 const LazyFilePreviewOverlay = lazy(() =>
@@ -867,6 +868,7 @@ const MessageBubble = memo(function MessageBubble({
   previousMessageId,
   resolvedTheme,
   sessionUser,
+  staleWarning,
   chatFontSize,
   userLabel,
 }) {
@@ -1148,6 +1150,9 @@ const MessageBubble = memo(function MessageBubble({
             </Card>
             <MessageMeta align="right" content={renderedContent} formatTime={formatTime} pending compact textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
           </div>
+          {staleWarning ? (
+            <p className="mt-1 text-xs text-muted-foreground/80">{staleWarning}</p>
+          ) : null}
         </div>
       </div>
     );
@@ -1365,7 +1370,8 @@ const MessageBubble = memo(function MessageBubble({
     && prevProps.message?.pending === nextProps.message?.pending
     && prevProps.message?.timestamp === nextProps.message?.timestamp
     && prevProps.message?.tokenBadge === nextProps.message?.tokenBadge
-    && areMessageAttachmentsEqual(prevProps.message?.attachments || [], nextProps.message?.attachments || []);
+    && areMessageAttachmentsEqual(prevProps.message?.attachments || [], nextProps.message?.attachments || [])
+    && prevProps.staleWarning === nextProps.staleWarning;
 });
 
 function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSendMode, resolvedTheme = "dark", session }) {
@@ -1978,7 +1984,7 @@ export function ChatTabsStrip({
 	                        type="button"
 	                        draggable={false}
 	                        className="relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-                        onClick={(event) => {
+                        onClick={() => {
                           if (suppressTabClickRef.current) {
                             suppressTabClickRef.current = false;
                             return;
@@ -2213,6 +2219,7 @@ export function ChatPanel({
       && ["running", "dispatching"].includes(normalizeStatusKey(session.status))
     );
   const showStopButton = Boolean(onStop) && showBusyBadge;
+  const { isStaleRunning, staleSeconds } = useStaleRunningDetector({ busy: showBusyBadge, messages });
   const latestAssistantMessage = useMemo(() => {
     if (!latestAssistantMessageId) {
       return null;
@@ -3173,6 +3180,7 @@ export function ChatPanel({
           previousMessageId={previousMessageId}
           resolvedTheme={resolvedTheme}
           sessionUser={session?.sessionUser}
+          staleWarning={message.pending && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
           separated={index > 0 && messages[index - 1]?.role !== message.role}
           chatFontSize={chatFontSize}
           userLabel={userLabel}
@@ -3234,11 +3242,11 @@ export function ChatPanel({
               <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Badge variant={showBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
-                    {showBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
+                  <Badge variant={isStaleRunning ? "outline" : showBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
+                    {isStaleRunning ? i18n.chat.agentStaleRunning : showBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
                   </Badge>
                 </TooltipTrigger>
-                <TooltipContent>{showBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
+                <TooltipContent>{isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : showBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
               </Tooltip>
             </div>
 

@@ -211,6 +211,8 @@ const ta = {
     agentBusy: "சிந்திக்கிறது",
     agentIdleTooltip: "தற்போதைய ஏஜென்ட் ஓய்வில் இருந்து உங்கள் அடுத்த வழிமுறைக்காக காத்திருக்கிறது.",
     agentBusyTooltip: "தற்போதைய ஏஜென்ட் உங்கள் கோரிக்கையில் வேலை செய்கிறது; பதில் தயாராகும் வரை இது சிந்திக்கும் நிலையில் இருக்கும்.",
+    agentStaleRunning: "சிக்கியிருக்கலாம்",
+    staleRunningWarning: (seconds) => `${seconds} வினாடிகளாக பதில் இல்லை — மாடல் பதிலளிக்காமல் இருக்கலாம். நிறுத்து என்பதைக் கிளிக் செய்யவும்.`,
     openClawStatusTooltip: "OpenClaw நிலை",
     connectionStatusConnected: "இணைக்கப்பட்டது",
     connectionStatusDisconnected: "இணைப்பு துண்டிக்கப்பட்டது",
