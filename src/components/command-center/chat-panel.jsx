@@ -1978,7 +1978,7 @@ export function ChatTabsStrip({
 	                        type="button"
 	                        draggable={false}
 	                        className="relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-                        onClick={(event) => {
+                        onClick={() => {
                           if (suppressTabClickRef.current) {
                             suppressTabClickRef.current = false;
                             return;
