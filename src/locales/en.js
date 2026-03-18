@@ -311,6 +311,8 @@ const en = {
     agentBusy: "Thinking",
     agentIdleTooltip: "The current Agent is idle and waiting for your next instruction.",
     agentBusyTooltip: "The current Agent is working on your request and will stay in Thinking until the reply is ready.",
+    agentStaleRunning: "May be stuck",
+    staleRunningWarning: (seconds) => `No response for ${seconds}s — the model may be unresponsive. Try clicking Stop.`,
     openClawStatusTooltip: "OpenClaw status",
     connectionStatusConnected: "Connected",
     connectionStatusDisconnected: "Disconnected",

@@ -286,6 +286,8 @@ const ja = {
     agentBusy: "思考中",
     agentIdleTooltip: "現在の Agent は待機状態で、次の指示を待っています。",
     agentBusyTooltip: "現在の Agent はリクエストを処理中で、返信が完了するまで思考中のままです。",
+    agentStaleRunning: "応答なし",
+    staleRunningWarning: (seconds) => `${seconds}秒間応答がありません。モデルが応答していない可能性があります。停止をお試しください。`,
     openClawStatusTooltip: "OpenClaw の状態",
     connectionStatusConnected: "接続済み",
     connectionStatusDisconnected: "未接続",

@@ -311,6 +311,8 @@ const zh = {
     agentBusy: "消化 Token 中",
     agentIdleTooltip: "当前 Agent 处于待命状态，正在等待你的下一条指令。",
     agentBusyTooltip: "当前 Agent 正在处理你的请求，回复完成前状态会保持为消化 Token 中。",
+    agentStaleRunning: "可能卡住",
+    staleRunningWarning: (seconds) => `已等待 ${seconds} 秒无响应，模型可能无响应。可以点击「停止」重试。`,
     openClawStatusTooltip: "OpenClaw 连接状态",
     connectionStatusConnectedDisplay: "大钳在握",
     connectionStatusConnected: "已连接",

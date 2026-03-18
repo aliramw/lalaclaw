@@ -226,6 +226,8 @@ const pt = {
     agentBusy: "Pensando",
     agentIdleTooltip: "O Agent atual está ocioso e esperando sua próxima instrução.",
     agentBusyTooltip: "O Agent atual está trabalhando na sua solicitação e continuará pensando até a resposta ficar pronta.",
+    agentStaleRunning: "Possivelmente travado",
+    staleRunningWarning: (seconds) => `Sem resposta há ${seconds}s — o modelo pode não estar respondendo. Tente clicar em Parar.`,
     openClawStatusTooltip: "Status do OpenClaw",
     connectionStatusConnected: "Conectado",
     connectionStatusDisconnected: "Desconectado",

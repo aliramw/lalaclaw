@@ -211,6 +211,8 @@ const de = {
     agentBusy: "Denkt nach",
     agentIdleTooltip: "Der aktuelle Agent ist im Leerlauf und wartet auf deine nächste Anweisung.",
     agentBusyTooltip: "Der aktuelle Agent bearbeitet deine Anfrage und bleibt im Status Denken, bis die Antwort bereit ist.",
+    agentStaleRunning: "Möglicherweise hängt",
+    staleRunningWarning: (seconds) => `Keine Antwort seit ${seconds}s — das Modell reagiert möglicherweise nicht. Versuchen Sie, auf Stopp zu klicken.`,
     openClawStatusTooltip: "OpenClaw-Status",
     connectionStatusConnected: "Verbunden",
     connectionStatusDisconnected: "Getrennt",
