@@ -1198,7 +1198,7 @@ describe("ChatPanel", () => {
   it("waits until the pointer clearly crosses the target midpoint before reordering", () => {
     const onReorder = vi.fn();
 
-    const { container } = render(
+    render(
       <TooltipProvider>
         <ChatTabsStrip
           items={[
