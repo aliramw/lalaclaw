@@ -7,7 +7,10 @@ const os = require('node:os');
 const path = require('node:path');
 const readline = require('node:readline/promises');
 const { spawn, spawnSync } = require('node:child_process');
-const { version: PACKAGE_VERSION } = require('../package.json');
+const {
+  version: PACKAGE_VERSION,
+  engines: PACKAGE_ENGINES = {},
+} = require('../package.json');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_HOST = '127.0.0.1';
@@ -18,7 +21,7 @@ const DEFAULT_FRONTEND_PORT = DEFAULT_DEV_SERVER_PORT;
 const DEFAULT_MODEL = 'openclaw';
 const DEFAULT_AGENT_ID = 'main';
 const DEFAULT_ACCESS_MODE = 'off';
-const REQUIRED_NODE_MAJOR = 22;
+const SUPPORTED_NODE_VERSION_RANGE = String(PACKAGE_ENGINES.node || '22.x').trim() || '22.x';
 const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const EXAMPLE_ENV_FILE = path.join(PROJECT_ROOT, '.env.local.example');
 const PACKAGE_NAME = 'lalaclaw';
@@ -235,6 +238,88 @@ function truthy(value) {
 function isValidPort(value) {
   const numeric = Number(value);
   return Number.isInteger(numeric) && numeric >= 1 && numeric <= 65535;
+}
+
+function parseVersionTriplet(value = '') {
+  const [majorRaw = '0', minorRaw = '0', patchRaw = '0'] = String(value || '').trim().split('.');
+  const major = Number(majorRaw);
+  const minor = Number(minorRaw);
+  const patch = Number(patchRaw);
+  if (![major, minor, patch].every(Number.isFinite)) {
+    return null;
+  }
+  return { major, minor, patch };
+}
+
+function compareVersionTriplets(left, right) {
+  if (left.major !== right.major) {
+    return left.major - right.major;
+  }
+  if (left.minor !== right.minor) {
+    return left.minor - right.minor;
+  }
+  return left.patch - right.patch;
+}
+
+function isVersionInRange(version, comparator) {
+  const normalized = String(comparator || '').trim();
+  if (!normalized) {
+    return true;
+  }
+
+  const majorOnlyMatch = normalized.match(/^(\d+)\.x$/);
+  if (majorOnlyMatch) {
+    return version.major === Number(majorOnlyMatch[1]);
+  }
+
+  if (normalized.startsWith('^')) {
+    const floor = parseVersionTriplet(normalized.slice(1));
+    if (!floor) {
+      return false;
+    }
+    const ceiling = { major: floor.major + 1, minor: 0, patch: 0 };
+    return compareVersionTriplets(version, floor) >= 0 && compareVersionTriplets(version, ceiling) < 0;
+  }
+
+  for (const operator of ['>=', '<=', '>', '<']) {
+    if (!normalized.startsWith(operator)) {
+      continue;
+    }
+    const target = parseVersionTriplet(normalized.slice(operator.length));
+    if (!target) {
+      return false;
+    }
+    const comparison = compareVersionTriplets(version, target);
+    if (operator === '>=') {
+      return comparison >= 0;
+    }
+    if (operator === '<=') {
+      return comparison <= 0;
+    }
+    if (operator === '>') {
+      return comparison > 0;
+    }
+    return comparison < 0;
+  }
+
+  const exact = parseVersionTriplet(normalized);
+  if (!exact) {
+    return false;
+  }
+  return compareVersionTriplets(version, exact) === 0;
+}
+
+function isNodeVersionSupported(version, range = SUPPORTED_NODE_VERSION_RANGE) {
+  const parsedVersion = parseVersionTriplet(version);
+  if (!parsedVersion) {
+    return false;
+  }
+
+  return String(range || '')
+    .split('||')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .some((entry) => entry.split(/\s+/).every((comparator) => isVersionInRange(parsedVersion, comparator)));
 }
 
 function normalizeApiStyle(value = '') {
@@ -1308,7 +1393,7 @@ function buildDoctorReport({
   const errors = [...validation.errors];
 
   if (!nodeMatches) {
-    warnings.push(`Node.js ${nodeVersion} does not match required major ${REQUIRED_NODE_MAJOR}.`);
+    warnings.push(`Node.js ${nodeVersion} is outside the supported range ${SUPPORTED_NODE_VERSION_RANGE}.`);
   }
 
   if (!frontendPortFree) {
@@ -1352,7 +1437,7 @@ function buildDoctorReport({
     envFileExists,
     node: {
       version: nodeVersion,
-      requiredMajor: REQUIRED_NODE_MAJOR,
+      requiredRange: SUPPORTED_NODE_VERSION_RANGE,
       matches: nodeMatches,
     },
     localOpenClaw: {
@@ -1434,8 +1519,7 @@ async function collectDoctorData(envFilePath) {
   const localOpenClaw = detectLocalOpenClaw();
   const config = resolveConfig(envValues, localOpenClaw);
   const nodeVersion = process.versions.node;
-  const nodeMajor = Number(String(nodeVersion || '').split('.')[0] || 0);
-  const nodeMatches = nodeMajor === REQUIRED_NODE_MAJOR;
+  const nodeMatches = isNodeVersionSupported(nodeVersion);
   const openclawBinary = findExecutable(config.openclawBin || process.env.OPENCLAW_BIN || 'openclaw');
   const sofficeBinary = findExecutable(process.env.SOFFICE_BIN || 'soffice');
   const brewBinary = process.platform === 'darwin' ? findExecutable('brew') : '';
@@ -1476,7 +1560,7 @@ async function collectDoctorData(envFilePath) {
 function printDoctorReport(report) {
   console.log(`INFO  Project root: ${report.projectRoot}`);
   console.log(`INFO  Env file: ${report.envFileExists ? report.envFilePath : `${report.envFilePath} (not found, using defaults)`}`);
-  console.log(`${report.node.matches ? 'OK   ' : 'WARN '} Node.js ${report.node.version} ${report.node.matches ? `matches required major ${report.node.requiredMajor}` : `does not match required major ${report.node.requiredMajor}`}`);
+  console.log(`${report.node.matches ? 'OK   ' : 'WARN '} Node.js ${report.node.version} ${report.node.matches ? `matches supported range ${report.node.requiredRange}` : `is outside supported range ${report.node.requiredRange}`}`);
 
   if (!report.localOpenClaw.exists) {
     console.log(`WARN  Local OpenClaw config not found at ${report.localOpenClaw.path}`);
@@ -2263,7 +2347,7 @@ module.exports = {
   DEFAULT_BACKEND_PORT,
   DEFAULT_MODEL,
   DEFAULT_AGENT_ID,
-  REQUIRED_NODE_MAJOR,
+  SUPPORTED_NODE_VERSION_RANGE,
   PACKAGE_NAME,
   PACKAGE_VERSION,
   LEGACY_ENV_FILE,
@@ -2273,6 +2357,10 @@ module.exports = {
   readEnvFile,
   truthy,
   isValidPort,
+  parseVersionTriplet,
+  compareVersionTriplets,
+  isVersionInRange,
+  isNodeVersionSupported,
   normalizeApiStyle,
   normalizeAccessMode,
   normalizeProfile,
