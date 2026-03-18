@@ -555,6 +555,9 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   }, [activeChatTab, tabMetaById]);
   const activeSessionUser = activeTabMeta?.sessionUser || session.sessionUser;
   const activeAgentId = activeTabMeta?.agentId || session.agentId;
+  const activeIdentityRef = useRef({ agentId: activeAgentId, sessionUser: activeSessionUser });
+  activeIdentityRef.current = { agentId: activeAgentId, sessionUser: activeSessionUser };
+  const getActiveIdentity = useCallback(() => activeIdentityRef.current, []);
   const activeConversationKey = createConversationKey(activeSessionUser, activeAgentId);
   const activePendingChat = pendingChatTurns[activeConversationKey] || null;
   const activePendingWasRestored = Boolean(
@@ -768,6 +771,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     activeConversationKey,
     applySnapshot,
     busyByTabId,
+    getActiveIdentity,
     getMessagesForTab,
     i18n,
     isTabActive,

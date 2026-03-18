@@ -344,6 +344,7 @@ export function useChatController({
   applySnapshot,
   busy = false,
   busyByTabId = {},
+  getActiveIdentity,
   getMessagesForTab: getMessagesForTabProp,
   invalidateRuntimeRequestForTab = () => {},
   i18n,
@@ -424,7 +425,12 @@ export function useChatController({
 
   const handleStop = useCallback(async (tabId = resolvedActiveTabId) => {
     const activeTurn = inFlightTurnsRef.current[tabId];
-    if (!activeTurn) {
+
+    const identity = activeTurn
+      ? { agentId: activeTurn.agentId, sessionUser: activeTurn.sessionUser }
+      : typeof getActiveIdentity === "function" ? getActiveIdentity() : null;
+
+    if (!identity?.agentId) {
       return false;
     }
 
@@ -433,21 +439,21 @@ export function useChatController({
       [tabId]: true,
     };
 
-    activeTurn.abortController?.abort?.();
+    activeTurn?.abortController?.abort?.();
 
     try {
       await apiFetch("/api/chat/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          agentId: activeTurn.agentId,
-          sessionUser: activeTurn.sessionUser,
+          agentId: identity.agentId,
+          sessionUser: identity.sessionUser,
         }),
       });
     } catch {}
 
     return true;
-  }, [resolvedActiveTabId]);
+  }, [resolvedActiveTabId, getActiveIdentity]);
 
   const activeQueuedMessages = useMemo(
     () =>
