@@ -195,7 +195,7 @@ LalaClaw verwendet npm-kompatible Kalenderversionen.
 - Aktualisiere [CHANGELOG.md](../CHANGELOG.md) bei jeder Versionsaenderung
 - Fuer mehrere Releases am selben Tag nutze `YYYY.M.D-N`, zum Beispiel `2026.3.17-9`
 - Inkompatible Aenderungen sollten in Release-Notizen und Migrationsdoku klar genannt werden
-- Die Zielversion fuer Node.js ist `22` gemaess [`.nvmrc`](../.nvmrc)
+- Fuer die Entwicklung wird Node.js `22` gemaess [`.nvmrc`](../.nvmrc) empfohlen. Das veroeffentlichte npm-Paket unterstuetzt `^20.19.0 || ^22.12.0 || >=24.0.0`
 
 ## OpenClaw-Anbindung
 

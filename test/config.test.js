@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
 const configModule = require("../server/core");
+const packageJson = require("../package.json");
 
 const {
   LOCAL_OPENCLAW_DIR,
@@ -51,6 +52,10 @@ function withEnv(nextEnv, run) {
 describe("config", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("declares the supported Node.js ranges required by the current toolchain", () => {
+    expect(packageJson.engines?.node).toBe("^20.19.0 || ^22.12.0 || >=24.0.0");
   });
 
   it("resolves canonical model ids from exact matches, aliases, and suffixes", () => {

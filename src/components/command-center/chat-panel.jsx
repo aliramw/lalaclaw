@@ -2768,6 +2768,12 @@ export function ChatPanel({
         applyRestoredScroll();
       }, delay);
 
+    resizeFrameId = window.requestAnimationFrame(() => {
+      if (restoredScrollKeyRef.current !== restoreSignature || !restoreStabilizingRef.current) {
+        return;
+      }
+      applyRestoredScroll();
+    });
     restoredScrollStabilizerRefs.current = [40, 120, 240, 480].map(scheduleRestoreStabilizer);
 
     const latestViewport = resolvedMessageViewport;

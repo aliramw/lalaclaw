@@ -271,10 +271,12 @@ describe("FilePreviewOverlay", () => {
         }),
       }),
     );
-    expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
-    expect(screen.getByText("After")).toBeInTheDocument();
-    expect(screen.getByText("Saved in preview")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/Saved successfully\.|保存成功/);
+    await waitFor(() => {
+      expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
+      expect(screen.getByText("After")).toBeInTheDocument();
+      expect(screen.getByText("Saved in preview")).toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent(/Saved successfully\.|保存成功/);
+    });
   });
 
   it("starts editing near the same scroll position as the preview", async () => {

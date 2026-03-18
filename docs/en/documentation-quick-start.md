@@ -6,7 +6,7 @@
 
 ## Requirements
 
-- Use the Node.js version defined in [`.nvmrc`](../../.nvmrc), currently `22`
+- For development, use the Node.js version defined in [`.nvmrc`](../../.nvmrc), currently `22`. The published package supports `^20.19.0 || ^22.12.0 || >=24.0.0`
 - npm installation is recommended for normal local use
 - Use a GitHub source checkout only if you want development mode or local code changes
 

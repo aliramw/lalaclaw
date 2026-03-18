@@ -761,6 +761,19 @@ describe("LalaClaw CLI helpers", () => {
     expect(cli.canPromptInteractively({ isTTY: true }, { isTTY: false })).toBe(false);
   });
 
+  it("accepts the widened supported Node.js ranges in doctor checks", () => {
+    expect(cli.SUPPORTED_NODE_VERSION_RANGE).toBe("^20.19.0 || ^22.12.0 || >=24.0.0");
+    expect(cli.isNodeVersionSupported("20.19.0")).toBe(true);
+    expect(cli.isNodeVersionSupported("20.25.1")).toBe(true);
+    expect(cli.isNodeVersionSupported("22.12.0")).toBe(true);
+    expect(cli.isNodeVersionSupported("22.22.0")).toBe(true);
+    expect(cli.isNodeVersionSupported("24.0.0")).toBe(true);
+    expect(cli.isNodeVersionSupported("25.1.0")).toBe(true);
+    expect(cli.isNodeVersionSupported("20.18.9")).toBe(false);
+    expect(cli.isNodeVersionSupported("22.11.9")).toBe(false);
+    expect(cli.isNodeVersionSupported("23.0.0")).toBe(false);
+  });
+
   it("waits until a port becomes occupied", async () => {
     const probe = net.createServer();
     await new Promise((resolve, reject) => {
@@ -1507,6 +1520,7 @@ describe("LalaClaw CLI helpers", () => {
       envFileExists: true,
       node: {
         version: "22.22.0",
+        requiredRange: "^20.19.0 || ^22.12.0 || >=24.0.0",
         matches: true,
       },
       localOpenClaw: {
@@ -1605,5 +1619,45 @@ describe("LalaClaw CLI helpers", () => {
     });
     expect(report.summary.warnings[0]).toContain("LibreOffice-backed preview is unavailable");
     expect(report.summary.errors[0]).toContain("Remote runtime validation failed");
+  });
+
+  it("warns when the Node.js version falls outside the supported range", () => {
+    const report = cli.buildDoctorReport({
+      envFilePath: "/tmp/.env.local",
+      envFileExists: true,
+      nodeVersion: "20.18.0",
+      nodeMatches: false,
+      localOpenClaw: {
+        exists: true,
+        path: "/Users/example/.openclaw/openclaw.json",
+        token: "token-123",
+        workspaceRoot: "/Users/example/.openclaw/workspace",
+      },
+      openclawBinary: "/usr/local/bin/openclaw",
+      sofficeBinary: "/opt/homebrew/bin/soffice",
+      libreOfficeInstallCommand: "brew install --cask libreoffice",
+      libreOfficeFixSupported: true,
+      frontendPortFree: true,
+      backendPortFree: true,
+      config: {
+        host: "127.0.0.1",
+        backendPort: "3000",
+        frontendHost: "127.0.0.1",
+        frontendPort: "5173",
+        profile: "local-openclaw",
+        openclawBaseUrl: "",
+        openclawModel: "openclaw",
+        openclawAgentId: "main",
+        openclawApiStyle: "chat",
+        openclawApiPath: "/v1/chat/completions",
+      },
+      validation: {
+        errors: [],
+        warnings: [],
+        notes: [],
+      },
+    });
+
+    expect(report.summary.warnings).toContain("Node.js 20.18.0 is outside the supported range ^20.19.0 || ^22.12.0 || >=24.0.0.");
   });
 });

@@ -209,7 +209,7 @@ LalaClaw uses npm-compatible calendar versioning for releases.
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes
 - Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-9`, not `YYYY.M.D.N`
 - Call out breaking changes explicitly in release notes and migration-facing docs
-- The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc)
+- For development, the repository targets Node.js `22` via [`.nvmrc`](./.nvmrc). The published package supports `^20.19.0 || ^22.12.0 || >=24.0.0`
 
 ## OpenClaw Wiring
 
