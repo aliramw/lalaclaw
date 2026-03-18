@@ -339,6 +339,7 @@ async function consumeChatStream(response, { entry, pendingTimestamp, setMessage
 }
 
 export function useChatController({
+  activateStopOverride,
   activeConversationKey,
   activeChatTabId = "",
   applySnapshot,
@@ -453,12 +454,14 @@ export function useChatController({
     } catch {}
 
     if (!activeTurn) {
+      activateStopOverride?.();
       setBusyForTab(tabId, false);
       invalidateRuntimeRequestForTab(tabId);
+      setSession?.((current) => ({ ...current, status: i18n.common.idle }));
     }
 
     return true;
-  }, [resolvedActiveTabId, getActiveIdentity, setBusyForTab, invalidateRuntimeRequestForTab]);
+  }, [resolvedActiveTabId, getActiveIdentity, activateStopOverride, setBusyForTab, invalidateRuntimeRequestForTab, setSession, i18n?.common?.idle]);
 
   const activeQueuedMessages = useMemo(
     () =>

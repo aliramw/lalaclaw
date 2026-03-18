@@ -723,6 +723,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const isTabActive = useCallback((tabId) => activeChatTabIdRef.current === tabId, []);
 
   const {
+    activateStopOverride,
     agents,
     applySnapshot,
     artifacts,
@@ -767,6 +768,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     setComposerAttachments,
     setQueuedMessages,
   } = useChatController({
+    activateStopOverride,
     activeChatTabId,
     activeConversationKey,
     applySnapshot,
