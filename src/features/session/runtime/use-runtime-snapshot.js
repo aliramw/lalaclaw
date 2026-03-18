@@ -315,7 +315,9 @@ export function useRuntimeSnapshot({
             mergedConversation,
             shouldClearPending ? localMessagesWithoutPending : localMessages,
           );
-      const hydratedConversation = shouldClearPending
+      const stopOverrideActive = Date.now() < stopOverrideUntilRef.current;
+      const effectiveClearPending = shouldClearPending || stopOverrideActive;
+      const hydratedConversation = effectiveClearPending
         ? mergedConversationWithLocalTail
         : mergePendingConversation(
             mergedConversationWithLocalTail,
@@ -323,15 +325,13 @@ export function useRuntimeSnapshot({
             i18n.chat.thinkingPlaceholder,
             effectiveLocalMessages,
           );
-      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !shouldClearPending;
-      const stopOverrideActive = Date.now() < stopOverrideUntilRef.current;
-      const effectiveRunning = hasActivePendingTurn && !stopOverrideActive;
-      const nextSessionState = { ...nextSession, status: effectiveRunning ? i18n.common.running : (stopOverrideActive ? i18n.common.idle : nextSession.status) };
+      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !effectiveClearPending;
+      const nextSessionState = { ...nextSession, status: hasActivePendingTurn ? i18n.common.running : (stopOverrideActive ? i18n.common.idle : nextSession.status) };
       if (!areSessionSnapshotsEqual(currentSession, nextSessionState)) {
         setSession(nextSessionState);
       }
       setMessagesSynced(hydratedConversation);
-      setBusy(effectiveRunning);
+      setBusy(hasActivePendingTurn);
 
       if (pendingEntry && !hasActivePendingTurn) {
         setPendingChatTurns((current) => {
