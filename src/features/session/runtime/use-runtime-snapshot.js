@@ -240,7 +240,9 @@ export function useRuntimeSnapshot({
   const [snapshots, setSnapshots] = useState([]);
   const [agents, setAgents] = useState([]);
   const [peeks, setPeeks] = useState({ workspace: null, terminal: null, browser: null, environment: null });
-  const stopOverrideUntilRef = useRef(0);
+  const stopOverrideUntilRef = useRef(
+    (() => { try { const v = Number(sessionStorage.getItem("cc-stop-override-until") || 0); return v > Date.now() ? v : 0; } catch { return 0; } })()
+  );
   const runtimeRequestRef = useRef(0);
   const inflightRuntimeRequestRef = useRef(null);
   const pendingChatTurnsRef = useRef(pendingChatTurns);
@@ -698,7 +700,9 @@ export function useRuntimeSnapshot({
   };
 
   const activateStopOverride = useCallback(() => {
-    stopOverrideUntilRef.current = Date.now() + STOP_OVERRIDE_DURATION_MS;
+    const until = Date.now() + STOP_OVERRIDE_DURATION_MS;
+    stopOverrideUntilRef.current = until;
+    try { sessionStorage.setItem("cc-stop-override-until", String(until)); } catch {}
   }, []);
 
   return {
