@@ -23,6 +23,8 @@ const PACKAGE_NAME = 'lalaclaw';
 const LEGACY_ENV_FILE = path.join(PROJECT_ROOT, '.env.local');
 const MACOS_LAUNCHD_LABEL = 'ai.lalaclaw.app';
 const MACOS_LIBREOFFICE_INSTALL_SCRIPT = path.join(PROJECT_ROOT, 'deploy', 'macos', 'install-libreoffice.sh');
+const WINDOWS_BACKGROUND_SERVICE_MARKER = '--lalaclaw-background-service';
+const WINDOWS_BACKGROUND_SERVICE_STATE_FILE = 'lalaclaw-background-service.json';
 const ANSI_RED = '\u001B[31m';
 const ANSI_RESET = '\u001B[0m';
 const OPTION_ALIASES = {
@@ -105,7 +107,7 @@ Commands:
   init      Create or refresh local config, then start Server and Frontend in the background when available.
   doctor    Check Node.js, OpenClaw discovery, ports, local config, and Office preview dependencies.
   status    Show Server background service (launchd) status for npm installs.
-  stop      Stop the Server background service (launchd) for npm installs.
+  stop      Stop the managed background backend on macOS or Windows.
   restart   Restart the Server background service (launchd) for npm installs.
   dev       Start both frontend and backend in development mode.
   start     Start the built backend server after checking dist/.
@@ -932,6 +934,111 @@ function getLaunchdTargets() {
   };
 }
 
+function resolveWindowsBackgroundServiceStatePath(envFilePath = DEFAULT_ENV_FILE) {
+  return path.join(path.dirname(envFilePath), WINDOWS_BACKGROUND_SERVICE_STATE_FILE);
+}
+
+function readWindowsBackgroundServiceState(envFilePath = DEFAULT_ENV_FILE, fsImpl = fs) {
+  const statePath = resolveWindowsBackgroundServiceStatePath(envFilePath);
+  if (!fsImpl.existsSync(statePath)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(fsImpl.readFileSync(statePath, 'utf8'));
+    const pid = Number.parseInt(parsed?.pid, 10);
+    const port = String(parsed?.port || '').trim();
+    if (!Number.isInteger(pid) || pid <= 0 || !port) {
+      return null;
+    }
+
+    return {
+      pid,
+      port,
+      host: String(parsed?.host || '').trim(),
+      marker: String(parsed?.marker || WINDOWS_BACKGROUND_SERVICE_MARKER).trim() || WINDOWS_BACKGROUND_SERVICE_MARKER,
+      statePath,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeWindowsBackgroundServiceState(envFilePath = DEFAULT_ENV_FILE, state = {}, fsImpl = fs) {
+  const statePath = resolveWindowsBackgroundServiceStatePath(envFilePath);
+  const pid = Number.parseInt(state?.pid, 10);
+  const port = String(state?.port || '').trim();
+  if (!Number.isInteger(pid) || pid <= 0 || !port) {
+    throw new Error('Windows background service state requires a valid pid and port.');
+  }
+
+  fsImpl.mkdirSync(path.dirname(statePath), { recursive: true });
+  fsImpl.writeFileSync(
+    statePath,
+    JSON.stringify({
+      pid,
+      port,
+      host: String(state?.host || '').trim(),
+      marker: String(state?.marker || WINDOWS_BACKGROUND_SERVICE_MARKER).trim() || WINDOWS_BACKGROUND_SERVICE_MARKER,
+      updatedAt: new Date().toISOString(),
+    }, null, 2),
+    'utf8',
+  );
+  return statePath;
+}
+
+function clearWindowsBackgroundServiceState(envFilePath = DEFAULT_ENV_FILE, fsImpl = fs) {
+  const statePath = resolveWindowsBackgroundServiceStatePath(envFilePath);
+  fsImpl.rmSync(statePath, { force: true });
+  return statePath;
+}
+
+function readWindowsProcessCommandLine(pid, spawnSyncImpl = spawnSync) {
+  const normalizedPid = Number.parseInt(pid, 10);
+  if (!Number.isInteger(normalizedPid) || normalizedPid <= 0) {
+    return '';
+  }
+
+  const result = spawnSyncImpl(
+    'powershell',
+    [
+      '-NoProfile',
+      '-Command',
+      `(Get-CimInstance Win32_Process -Filter "ProcessId = ${normalizedPid}").CommandLine`,
+    ],
+    { encoding: 'utf8' },
+  );
+
+  if (result.status !== 0) {
+    return '';
+  }
+
+  return String(result.stdout || '').trim();
+}
+
+function isManagedWindowsBackgroundService(commandLine = '', marker = WINDOWS_BACKGROUND_SERVICE_MARKER) {
+  const normalizedCommandLine = String(commandLine || '');
+  const normalizedMarker = String(marker || WINDOWS_BACKGROUND_SERVICE_MARKER).trim() || WINDOWS_BACKGROUND_SERVICE_MARKER;
+  return normalizedCommandLine.includes('server.js') && normalizedCommandLine.includes(normalizedMarker);
+}
+
+function registerWindowsBackgroundService(envFilePath, child, config, fsImpl = fs) {
+  if (process.platform !== 'win32' || !child?.pid) {
+    return '';
+  }
+
+  return writeWindowsBackgroundServiceState(
+    envFilePath,
+    {
+      pid: child.pid,
+      port: config.backendPort,
+      host: config.host,
+      marker: WINDOWS_BACKGROUND_SERVICE_MARKER,
+    },
+    fsImpl,
+  );
+}
+
 function readLaunchdServiceStatus(spawnSyncImpl = spawnSync) {
   const { serviceTarget, plistPath } = getLaunchdTargets();
   const result = runLaunchctl(['print', serviceTarget], spawnSyncImpl);
@@ -960,6 +1067,58 @@ function stopLaunchdService(spawnSyncImpl = spawnSync) {
     installed: true,
     stopped: true,
     plistPath,
+  };
+}
+
+function stopWindowsBackgroundService(envFilePath, spawnSyncImpl = spawnSync, fsImpl = fs) {
+  const statePath = resolveWindowsBackgroundServiceStatePath(envFilePath);
+  const state = readWindowsBackgroundServiceState(envFilePath, fsImpl);
+  if (!state) {
+    return {
+      configured: false,
+      pid: null,
+      port: '',
+      statePath,
+      stopped: false,
+      stale: false,
+    };
+  }
+
+  const commandLine = readWindowsProcessCommandLine(state.pid, spawnSyncImpl);
+  if (!isManagedWindowsBackgroundService(commandLine, state.marker)) {
+    clearWindowsBackgroundServiceState(envFilePath, fsImpl);
+    return {
+      configured: true,
+      pid: state.pid,
+      port: state.port,
+      statePath,
+      stopped: false,
+      stale: true,
+    };
+  }
+
+  const result = spawnSyncImpl('taskkill', ['/pid', String(state.pid), '/t', '/f'], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    return {
+      configured: true,
+      failedPids: [state.pid],
+      pid: state.pid,
+      port: state.port,
+      statePath,
+      stopped: false,
+      stale: false,
+    };
+  }
+
+  clearWindowsBackgroundServiceState(envFilePath, fsImpl);
+  return {
+    configured: true,
+    failedPids: [],
+    pid: state.pid,
+    port: state.port,
+    statePath,
+    stopped: true,
+    stale: false,
   };
 }
 
@@ -1547,8 +1706,9 @@ async function startInitBackgroundServices(envFilePath) {
   await ensurePortAvailable('Frontend port', config.frontendHost, config.frontendPort);
 
   console.log(`INFO  Starting Server in background at http://${config.host}:${config.backendPort}`);
-  const backend = runDetachedChild(process.execPath, ['server.js'], childEnv);
+  const backend = runDetachedChild(process.execPath, ['server.js', WINDOWS_BACKGROUND_SERVICE_MARKER], childEnv);
   await waitForPortInUse('Server port', config.host, config.backendPort, backend);
+  registerWindowsBackgroundService(envFilePath, backend, config);
 
   console.log(`INFO  Starting Frontend in background at http://${config.frontendHost}:${config.frontendPort}`);
   const frontend = runDetachedChild(
@@ -1568,8 +1728,9 @@ async function startInitBackgroundServer(envFilePath) {
   const { childEnv, config } = buildChildEnv(envFilePath);
   await ensurePortAvailable('Server port', config.host, config.backendPort);
   console.log(`INFO  Starting Server in background at http://${config.host}:${config.backendPort}`);
-  const backend = runDetachedChild(process.execPath, ['server.js'], childEnv);
+  const backend = runDetachedChild(process.execPath, ['server.js', WINDOWS_BACKGROUND_SERVICE_MARKER], childEnv);
   await waitForPortInUse('Server port', config.host, config.backendPort, backend);
+  registerWindowsBackgroundService(envFilePath, backend, config);
   return {
     openUrl: `http://${config.host}:${config.backendPort}`,
     openHint: `${config.host}:${config.backendPort}`,
@@ -1768,19 +1929,39 @@ function runStatus() {
   }
 }
 
-function runStop() {
-  if (process.platform !== 'darwin') {
-    console.log('INFO  Server background service (launchd) stop is only available on macOS.');
+function runStop(envFilePath) {
+  if (process.platform === 'darwin') {
+    const result = stopLaunchdService();
+    if (!result.installed) {
+      console.log(`INFO  No Server background service (launchd) is installed at ${result.plistPath}`);
+      return;
+    }
+
+    console.log(`OK    Stopped Server background service (launchd) at ${result.plistPath}`);
     return;
   }
 
-  const result = stopLaunchdService();
-  if (!result.installed) {
-    console.log(`INFO  No Server background service (launchd) is installed at ${result.plistPath}`);
+  if (process.platform === 'win32') {
+    const result = stopWindowsBackgroundService(envFilePath);
+    if (!result.configured) {
+      console.log(`INFO  No managed Windows background backend is registered at ${result.statePath}.`);
+      return;
+    }
+
+    if (result.stale) {
+      console.log(`INFO  Cleared stale Windows background backend state for port ${result.port}.`);
+      return;
+    }
+
+    if (!result.stopped) {
+      throw new Error(`Failed to stop Windows background backend PID(s): ${result.failedPids.join(', ')}`);
+    }
+
+    console.log(`OK    Stopped Windows background backend on port ${result.port} (PID: ${result.pid}).`);
     return;
   }
 
-  console.log(`OK    Stopped Server background service (launchd) at ${result.plistPath}`);
+  console.log('INFO  Server background service stop is only available on macOS and Windows.');
 }
 
 function runRestart() {
@@ -1843,7 +2024,7 @@ async function main() {
   }
 
   if (command === 'stop') {
-    runStop();
+    runStop(envFilePath);
     return;
   }
 
@@ -1922,6 +2103,13 @@ module.exports = {
   readLaunchdServiceStatus,
   stopLaunchdService,
   restartLaunchdService,
+  resolveWindowsBackgroundServiceStatePath,
+  readWindowsBackgroundServiceState,
+  writeWindowsBackgroundServiceState,
+  clearWindowsBackgroundServiceState,
+  readWindowsProcessCommandLine,
+  isManagedWindowsBackgroundService,
+  stopWindowsBackgroundService,
   supportsColor,
   formatCliLevel,
   canPromptInteractively,
@@ -1930,6 +2118,7 @@ module.exports = {
   resolveLibreOfficeInstallCommand,
   runDoctorFix,
   buildChildEnv,
+  registerWindowsBackgroundService,
   waitForPortInUse,
   startInitBackgroundServices,
   findExecutable,

@@ -1010,6 +1010,175 @@ describe("LalaClaw CLI helpers", () => {
     }
   });
 
+  it("writes and reads windows background service state", () => {
+    const previousConfigFile = process.env.LALACLAW_CONFIG_FILE;
+    const tempConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-win-state-"));
+    const envFile = path.join(tempConfigDir, ".env.local");
+    process.env.LALACLAW_CONFIG_FILE = envFile;
+
+    try {
+      const statePath = cli.writeWindowsBackgroundServiceState(envFile, {
+        pid: 4321,
+        port: "3900",
+        host: "127.0.0.1",
+      });
+
+      expect(statePath).toBe(cli.resolveWindowsBackgroundServiceStatePath(envFile));
+      expect(cli.readWindowsBackgroundServiceState(envFile)).toMatchObject({
+        pid: 4321,
+        port: "3900",
+        host: "127.0.0.1",
+      });
+    } finally {
+      fs.rmSync(tempConfigDir, { recursive: true, force: true });
+      if (previousConfigFile === undefined) {
+        delete process.env.LALACLAW_CONFIG_FILE;
+      } else {
+        process.env.LALACLAW_CONFIG_FILE = previousConfigFile;
+      }
+    }
+  });
+
+  it("registers windows background backend state for detached server processes", () => {
+    const previousPlatform = process.platform;
+    const previousConfigFile = process.env.LALACLAW_CONFIG_FILE;
+    const tempConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-win-register-"));
+    const envFile = path.join(tempConfigDir, ".env.local");
+    process.env.LALACLAW_CONFIG_FILE = envFile;
+
+    Object.defineProperty(process, "platform", { value: "win32" });
+
+    try {
+      const statePath = cli.registerWindowsBackgroundService(
+        envFile,
+        { pid: 6789 },
+        { backendPort: "3900", host: "127.0.0.1" },
+      );
+
+      expect(statePath).toBe(cli.resolveWindowsBackgroundServiceStatePath(envFile));
+      expect(cli.readWindowsBackgroundServiceState(envFile)).toMatchObject({
+        pid: 6789,
+        port: "3900",
+        host: "127.0.0.1",
+      });
+    } finally {
+      fs.rmSync(tempConfigDir, { recursive: true, force: true });
+      if (previousConfigFile === undefined) {
+        delete process.env.LALACLAW_CONFIG_FILE;
+      } else {
+        process.env.LALACLAW_CONFIG_FILE = previousConfigFile;
+      }
+      Object.defineProperty(process, "platform", { value: previousPlatform });
+    }
+  });
+
+  it("stops a registered windows background backend by managed pid", () => {
+    const previousConfigFile = process.env.LALACLAW_CONFIG_FILE;
+    const tempConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-stop-win-"));
+    const envFile = path.join(tempConfigDir, ".env.local");
+    process.env.LALACLAW_CONFIG_FILE = envFile;
+
+    try {
+      cli.writeWindowsBackgroundServiceState(envFile, {
+        pid: 7890,
+        port: "3900",
+        host: "127.0.0.1",
+      });
+
+      const calls = [];
+      const result = cli.stopWindowsBackgroundService(envFile, (command, args) => {
+        calls.push({ command, args });
+        if (command === "powershell") {
+          return {
+            status: 0,
+            stdout: "node server.js --lalaclaw-background-service\n",
+            stderr: "",
+          };
+        }
+        if (command === "taskkill") {
+          return { status: 0, stdout: "", stderr: "" };
+        }
+
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      expect(result).toMatchObject({
+        configured: true,
+        pid: 7890,
+        port: "3900",
+        stopped: true,
+        stale: false,
+        failedPids: [],
+      });
+      expect(calls).toEqual([
+        {
+          command: "powershell",
+          args: ["-NoProfile", "-Command", '(Get-CimInstance Win32_Process -Filter "ProcessId = 7890").CommandLine'],
+        },
+        { command: "taskkill", args: ["/pid", "7890", "/t", "/f"] },
+      ]);
+      expect(cli.readWindowsBackgroundServiceState(envFile)).toBeNull();
+    } finally {
+      fs.rmSync(tempConfigDir, { recursive: true, force: true });
+      if (previousConfigFile === undefined) {
+        delete process.env.LALACLAW_CONFIG_FILE;
+      } else {
+        process.env.LALACLAW_CONFIG_FILE = previousConfigFile;
+      }
+    }
+  });
+
+  it("clears stale windows background state instead of killing an unrelated process", () => {
+    const previousConfigFile = process.env.LALACLAW_CONFIG_FILE;
+    const tempConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-stop-win-stale-"));
+    const envFile = path.join(tempConfigDir, ".env.local");
+    process.env.LALACLAW_CONFIG_FILE = envFile;
+
+    try {
+      cli.writeWindowsBackgroundServiceState(envFile, {
+        pid: 7890,
+        port: "3900",
+        host: "127.0.0.1",
+      });
+
+      const calls = [];
+      const result = cli.stopWindowsBackgroundService(envFile, (command, args) => {
+        calls.push({ command, args });
+        if (command === "powershell") {
+          return {
+            status: 0,
+            stdout: "node some-other-server.js\n",
+            stderr: "",
+          };
+        }
+
+        throw new Error(`Unexpected command: ${command}`);
+      });
+
+      expect(result).toMatchObject({
+        configured: true,
+        pid: 7890,
+        port: "3900",
+        stopped: false,
+        stale: true,
+      });
+      expect(calls).toEqual([
+        {
+          command: "powershell",
+          args: ["-NoProfile", "-Command", '(Get-CimInstance Win32_Process -Filter "ProcessId = 7890").CommandLine'],
+        },
+      ]);
+      expect(cli.readWindowsBackgroundServiceState(envFile)).toBeNull();
+    } finally {
+      fs.rmSync(tempConfigDir, { recursive: true, force: true });
+      if (previousConfigFile === undefined) {
+        delete process.env.LALACLAW_CONFIG_FILE;
+      } else {
+        process.env.LALACLAW_CONFIG_FILE = previousConfigFile;
+      }
+    }
+  });
+
   it("restarts the launchd service with kickstart when a plist exists", () => {
     const previousConfigDir = process.env.LALACLAW_CONFIG_DIR;
     const tempConfigDir = path.join(os.tmpdir(), "lalaclaw-restart-test");
