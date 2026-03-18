@@ -1521,6 +1521,13 @@ export function ChatTabsStrip({
   const scrollViewportRef = useRef(null);
   const scrollContentRef = useRef(null);
   const dragSessionRef = useRef(null);
+  const dragBodyNodeRef = useRef(null);
+  const cachedTabRectsRef = useRef(new Map());
+  const itemsRef = useRef(items);
+  const onReorderRef = useRef(onReorder);
+
+  itemsRef.current = items;
+  onReorderRef.current = onReorder;
 
   useEffect(() => {
     dragSessionRef.current = dragSession;
@@ -1670,33 +1677,49 @@ export function ChatTabsStrip({
   }, [items.length, updateTabScrollState]);
 
   useEffect(() => {
-    if (!dragSession) {
-      return undefined;
-    }
-
     const previousUserSelect = document.body.style.userSelect;
     const previousCursor = document.body.style.cursor;
 
     const finishDrag = () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
       draggingTabIdRef.current = "";
       lastReorderIntentRef.current = "";
+      cachedTabRectsRef.current.clear();
       setDraggingTabId("");
       setDragSession(null);
+    };
+
+    const snapshotTabRects = () => {
+      cachedTabRectsRef.current.clear();
+      const currentItems = itemsRef.current;
+      for (const item of currentItems) {
+        if (!item?.id) {
+          continue;
+        }
+        const node = tabNodeMapRef.current.get(item.id);
+        if (node) {
+          cachedTabRectsRef.current.set(item.id, node.getBoundingClientRect());
+        }
+      }
     };
 
     const maybeAutoScrollTabs = (clientX) => {
       const viewport = scrollViewportRef.current;
       if (!viewport) {
-        return;
+        return false;
       }
 
       const bounds = viewport.getBoundingClientRect();
       const edgeThreshold = 40;
       if (clientX < bounds.left + edgeThreshold) {
         viewport.scrollLeft -= 20;
+        return true;
       } else if (clientX > bounds.right - edgeThreshold) {
         viewport.scrollLeft += 20;
+        return true;
       }
+      return false;
     };
 
     const handlePointerMove = (event) => {
@@ -1708,40 +1731,50 @@ export function ChatTabsStrip({
       const deltaX = event.clientX - currentSession.startX;
       const deltaY = event.clientY - currentSession.startY;
       const distance = Math.hypot(deltaX, deltaY);
-      const active = currentSession.active || distance >= chatTabDragActivationDistancePx;
+      const wasActive = currentSession.active;
+      const active = wasActive || distance >= chatTabDragActivationDistancePx;
+
       const viewportBounds = scrollViewportRef.current?.getBoundingClientRect();
       const unclampedLeft = event.clientX - currentSession.xOffset;
       const minLeft = viewportBounds?.left ?? unclampedLeft;
       const maxLeft = viewportBounds ? Math.max(minLeft, viewportBounds.right - currentSession.width) : unclampedLeft;
       const clampedLeft = Math.min(Math.max(unclampedLeft, minLeft), maxLeft);
 
-      const nextSession = {
-        ...currentSession,
-        active,
-        currentX: clampedLeft + currentSession.xOffset,
-        currentY: currentSession.currentY,
-      };
+      currentSession.active = active;
+      currentSession.currentX = clampedLeft + currentSession.xOffset;
 
-      setDragSession(nextSession);
       if (!active) {
         return;
       }
 
-      document.body.style.userSelect = "none";
-      document.body.style.cursor = "grabbing";
-      maybeAutoScrollTabs(event.clientX);
+      if (!wasActive) {
+        document.body.style.userSelect = "none";
+        document.body.style.cursor = "grabbing";
+        snapshotTabRects();
+        setDragSession({ ...currentSession });
+      } else {
+        const bodyNode = dragBodyNodeRef.current;
+        if (bodyNode) {
+          bodyNode.style.left = `${clampedLeft}px`;
+        }
+      }
 
-      for (const item of items) {
+      const didScroll = maybeAutoScrollTabs(event.clientX);
+      if (didScroll) {
+        snapshotTabRects();
+      }
+
+      const currentItems = itemsRef.current;
+      for (const item of currentItems) {
         if (!item?.id || item.id === currentSession.tabId) {
           continue;
         }
 
-        const node = tabNodeMapRef.current.get(item.id);
-        if (!node) {
+        const rect = cachedTabRectsRef.current.get(item.id);
+        if (!rect) {
           continue;
         }
 
-        const rect = node.getBoundingClientRect();
         if (event.clientX < rect.left || event.clientX > rect.right) {
           continue;
         }
@@ -1758,7 +1791,8 @@ export function ChatTabsStrip({
         }
 
         lastReorderIntentRef.current = intentKey;
-        onReorder?.(currentSession.tabId, item.id, placeAfter ? "after" : "before");
+        onReorderRef.current?.(currentSession.tabId, item.id, placeAfter ? "after" : "before");
+        requestAnimationFrame(() => snapshotTabRects());
         return;
       }
     };
@@ -1783,7 +1817,7 @@ export function ChatTabsStrip({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [dragSession, items, onReorder]);
+  }, []);
 
   if (!items.length && !leadingControl && !trailingControl) {
     return null;
@@ -1919,6 +1953,7 @@ export function ChatTabsStrip({
 	                      </Tooltip>
 	                    ) : null}
 	                    <div
+                        ref={isDraggingThisTab && dragSession?.active ? dragBodyNodeRef : undefined}
 	                      className={cn(
 	                        "inline-flex h-9 items-center overflow-visible rounded-md border transition",
 	                        item.active
@@ -1927,7 +1962,7 @@ export function ChatTabsStrip({
 	                            : "border-transparent bg-[#1677eb] text-white shadow-sm hover:bg-[#0f6fe0]"
 	                          : "border-border/45 bg-muted/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/88",
 	                      )}
-                        style={dragSession?.tabId === item.id && dragSession?.active
+                        style={isDraggingThisTab && dragSession?.active
                           ? {
                               boxShadow: "none",
                               left: `${dragSession.currentX - dragSession.xOffset}px`,
