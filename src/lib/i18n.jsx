@@ -102,9 +102,28 @@ function loadStoredLocale() {
   }
 }
 
+function deepMerge(base, override) {
+  if (!override) return base;
+  if (!base) return override;
+  const result = { ...base };
+  for (const key of Object.keys(override)) {
+    const bv = base[key];
+    const ov = override[key];
+    if (ov != null && typeof ov === "object" && !Array.isArray(ov) && typeof bv === "object" && !Array.isArray(bv) && typeof bv !== "function") {
+      result[key] = deepMerge(bv, ov);
+    } else if (ov !== undefined) {
+      result[key] = ov;
+    }
+  }
+  return result;
+}
+
 function getLocaleDictionary(locale) {
   const normalizedLocale = supportedLocales.includes(locale) ? locale : "zh";
-  return dictionaries[normalizedLocale] || zh;
+  const dictionary = dictionaries[normalizedLocale] || zh;
+  if (normalizedLocale === "en" || normalizedLocale === "zh") return dictionary;
+  const fallback = normalizedLocale === "zh-hk" ? zh : en;
+  return deepMerge(fallback, dictionary);
 }
 
 const I18nContext = createContext({

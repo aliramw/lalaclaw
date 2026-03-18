@@ -353,6 +353,7 @@ const ta = {
       previewFontSizeOptionTooltip: (label) => `முன்னோட்ட எழுத்தளவு: ${label}`,
       renderingDocx: "DOCX முன்னோட்டம் உருவாக்கப்படுகிறது...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "திருத்தும்போது இந்த கோப்பு வகையைத் தேர்ந்தெடுக்க முடியாது.",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorer",

@@ -353,6 +353,7 @@ const de = {
       previewFontSizeOptionTooltip: (label) => `Vorschau-Schriftgröße: ${label}`,
       renderingDocx: "DOCX-Vorschau wird gerendert...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "Dieser Dateityp kann während der Bearbeitung nicht ausgewählt werden.",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorer",

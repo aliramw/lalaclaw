@@ -368,6 +368,7 @@ const fr = {
       previewFontSizeOptionTooltip: (label) => `Taille du texte d'aperçu : ${label}`,
       renderingDocx: "Rendu de l'aperçu DOCX...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "Ce type de fichier ne peut pas être sélectionné pendant l'édition.",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorateur",

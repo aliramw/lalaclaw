@@ -353,6 +353,7 @@ const ms = {
       previewFontSizeOptionTooltip: (label) => `Saiz fon pratonton: ${label}`,
       renderingDocx: "Sedang merender pratonton DOCX...",
       frontMatter: "Front Matter",
+      editSelectionUnavailable: "Jenis fail ini tidak boleh dipilih semasa mengedit.",
       fileManagers: {
         finder: "Finder",
         explorer: "Explorer",
