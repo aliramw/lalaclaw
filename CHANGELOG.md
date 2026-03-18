@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Added an optional token access mode for remote/browser deployments, including cookie-backed login, protected `/api/*` and runtime WebSocket access, and a dedicated unlock screen in the web app
+
+### Changed
+
+- Documented direct URL deployments alongside the existing SSH port-forward workflow, and added access-token environment examples to `.env.local.example`
+
 ### Fixed
 
 - Windows-style `file:///C:/...` markdown image links now resolve through local file preview URLs correctly in chat rendering

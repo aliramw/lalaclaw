@@ -77,3 +77,12 @@ npm run dev:all
 - Frontend: `http://127.0.0.1:5173`
 - Backend: `http://127.0.0.1:3000`
 - Titik masuk pelayar: `http://127.0.0.1:5173`
+
+## Browser Access Tokens
+
+Jika pelayar memaparkan skrin buka kunci token, anda boleh mencari atau menjana semula token seperti berikut:
+
+- `lalaclaw access token` untuk melihat token semasa
+- `lalaclaw access token --rotate` untuk menjana dan menyimpan token baharu
+- semak `COMMANDCENTER_ACCESS_TOKENS` atau `COMMANDCENTER_ACCESS_TOKENS_FILE` dalam `~/.config/lalaclaw/.env.local`
+- jika instans ini bukan anda yang pasang, minta token daripada pentadbirnya

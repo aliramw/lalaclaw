@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -900,7 +900,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByText("2")).toHaveClass("absolute", "left-3", "top-[-0.72rem]", "text-[11px]");
+    expect(screen.getByText("2")).toHaveClass("absolute", "left-[0.8125rem]", "top-0", "-translate-x-1/2", "text-[12px]", "font-bold");
   });
 
   it("adds the breathing highlight treatment to busy tab dots only", () => {
@@ -972,7 +972,7 @@ describe("ChatPanel", () => {
     expect(onActivateChatTab).toHaveBeenCalledWith("agent:expert");
   });
 
-  it("activates an inactive tab on mousedown before mouseup", () => {
+  it("activates an inactive tab on click", async () => {
     const onActivate = vi.fn();
 
     render(
@@ -987,10 +987,337 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    fireEvent.mouseDown(screen.getByRole("button", { name: "expert" }), { button: 0 });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "expert" }));
 
     expect(onActivate).toHaveBeenCalledTimes(1);
     expect(onActivate).toHaveBeenCalledWith("agent:expert");
+  });
+
+  it("drags the tab itself with pointer reordering instead of a ghost preview", () => {
+    const onReorder = vi.fn();
+
+    const { container } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+          onReorder={onReorder}
+        />
+      </TooltipProvider>,
+    );
+
+    const sourceButton = screen.getByRole("button", { name: "main" });
+    const targetButton = screen.getByRole("button", { name: "expert" });
+    const sourceWrapper = sourceButton.closest(".group");
+    const targetWrapper = targetButton.closest(".group");
+    const viewport = container.querySelector(".cc-chat-tabs-viewport");
+    expect(sourceWrapper).toBeTruthy();
+    expect(targetWrapper).toBeTruthy();
+    expect(viewport).toBeTruthy();
+
+    viewport.getBoundingClientRect = () => ({
+      top: 10,
+      left: 10,
+      right: 500,
+      bottom: 120,
+      width: 490,
+      height: 110,
+      x: 10,
+      y: 10,
+      toJSON: () => ({}),
+    });
+    sourceWrapper.getBoundingClientRect = () => ({
+      top: 20,
+      left: 20,
+      right: 140,
+      bottom: 73,
+      width: 120,
+      height: 53,
+      x: 20,
+      y: 20,
+      toJSON: () => ({}),
+    });
+    targetWrapper.getBoundingClientRect = () => ({
+      top: 20,
+      left: 160,
+      right: 280,
+      bottom: 73,
+      width: 120,
+      height: 53,
+      x: 160,
+      y: 20,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 80, clientY: 46, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 250, clientY: 96, pointerId: 1 });
+
+    expect(sourceWrapper).not.toHaveClass("opacity-75");
+    expect(onReorder).toHaveBeenCalledWith("agent:main", "agent:expert", "after");
+    expect(sourceWrapper.lastElementChild).toHaveStyle({
+      position: "fixed",
+      pointerEvents: "none",
+      top: "33px",
+    });
+  });
+
+  it("hides the close button on the tab currently being dragged", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = container.querySelector(".cc-chat-tabs-viewport");
+    const sourceWrapper = screen.getByRole("button", { name: "main" }).closest(".group");
+    expect(viewport).toBeTruthy();
+    expect(sourceWrapper).toBeTruthy();
+
+    viewport.getBoundingClientRect = () => ({
+      top: 10,
+      left: 10,
+      right: 500,
+      bottom: 120,
+      width: 490,
+      height: 110,
+      x: 10,
+      y: 10,
+      toJSON: () => ({}),
+    });
+    sourceWrapper.getBoundingClientRect = () => ({
+      top: 20,
+      left: 20,
+      right: 140,
+      bottom: 73,
+      width: 120,
+      height: 53,
+      x: 20,
+      y: 20,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 80, clientY: 46, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 120, clientY: 46, pointerId: 1 });
+
+    expect(within(sourceWrapper).queryByLabelText(/close tab/i)).not.toBeInTheDocument();
+  });
+
+  it("does not activate an inactive tab while dragging it", () => {
+    const onActivate = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+          onActivate={onActivate}
+        />
+      </TooltipProvider>,
+    );
+
+    const sourceWrapper = screen.getByRole("button", { name: "expert" }).closest(".group");
+    expect(sourceWrapper).toBeTruthy();
+
+    sourceWrapper.getBoundingClientRect = () => ({
+      top: 20,
+      left: 160,
+      right: 280,
+      bottom: 73,
+      width: 120,
+      height: 53,
+      x: 160,
+      y: 20,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 220, clientY: 46, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 260, clientY: 46, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dragged tab inside the horizontal tab rail bounds", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = container.querySelector(".cc-chat-tabs-viewport");
+    const sourceWrapper = screen.getByRole("button", { name: "main" }).closest(".group");
+
+    viewport.getBoundingClientRect = () => ({
+      top: 10,
+      left: 50,
+      right: 260,
+      bottom: 120,
+      width: 210,
+      height: 110,
+      x: 50,
+      y: 10,
+      toJSON: () => ({}),
+    });
+    sourceWrapper.getBoundingClientRect = () => ({
+      top: 20,
+      left: 60,
+      right: 180,
+      bottom: 73,
+      width: 120,
+      height: 53,
+      x: 60,
+      y: 20,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 120, clientY: 46, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: -40, clientY: 46, pointerId: 1 });
+
+    expect(sourceWrapper.lastElementChild).toHaveStyle({ left: "50px" });
+
+    fireEvent.pointerMove(window, { clientX: 400, clientY: 46, pointerId: 1 });
+
+    expect(sourceWrapper.lastElementChild).toHaveStyle({ left: "140px" });
+  });
+
+  it("waits until the pointer clearly crosses the target midpoint before reordering", () => {
+    const onReorder = vi.fn();
+
+    const { container } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+          onReorder={onReorder}
+        />
+      </TooltipProvider>,
+    );
+
+    const sourceButton = screen.getByRole("button", { name: "main" });
+    const targetButton = screen.getByRole("button", { name: "expert" });
+    const sourceWrapper = sourceButton.closest(".group");
+    const targetWrapper = targetButton.closest(".group");
+
+    sourceWrapper.getBoundingClientRect = () => ({
+      top: 20,
+      left: 20,
+      right: 140,
+      bottom: 73,
+      width: 120,
+      height: 53,
+      x: 20,
+      y: 20,
+      toJSON: () => ({}),
+    });
+    targetWrapper.getBoundingClientRect = () => ({
+      top: 20,
+      left: 160,
+      right: 280,
+      bottom: 73,
+      width: 120,
+      height: 53,
+      x: 160,
+      y: 20,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 80, clientY: 46, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 214, clientY: 46, pointerId: 1 });
+
+    expect(onReorder).not.toHaveBeenCalled();
+
+    fireEvent.pointerMove(window, { clientX: 250, clientY: 46, pointerId: 1 });
+
+    expect(onReorder).toHaveBeenCalledWith("agent:main", "agent:expert", "after");
+  });
+
+  it("animates the displaced tab into its new slot while dragging reorders", () => {
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const sourceButton = screen.getByRole("button", { name: "main" });
+    const targetButton = screen.getByRole("button", { name: "expert" });
+    const sourceWrapper = sourceButton.closest(".group");
+    const targetWrapper = targetButton.closest(".group");
+    expect(sourceWrapper).toBeTruthy();
+    expect(targetWrapper).toBeTruthy();
+
+    let layout = {
+      "agent:main": { top: 20, left: 20, width: 120, height: 53 },
+      "agent:expert": { top: 20, left: 160, width: 120, height: 53 },
+    };
+    const toRect = ({ top, left, width, height }) => ({
+      top,
+      left,
+      right: left + width,
+      bottom: top + height,
+      width,
+      height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    });
+
+    sourceWrapper.getBoundingClientRect = () => toRect(layout["agent:main"]);
+    targetWrapper.getBoundingClientRect = () => toRect(layout["agent:expert"]);
+
+    const animateMock = vi.fn();
+    targetWrapper.animate = animateMock;
+
+    fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 80, clientY: 46, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 250, clientY: 46, pointerId: 1 });
+
+    layout = {
+      "agent:main": { top: 20, left: 160, width: 120, height: 53 },
+      "agent:expert": { top: 20, left: 20, width: 120, height: 53 },
+    };
+
+    rerender(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(animateMock).toHaveBeenCalledWith(
+      [
+        { transform: "translate(140px, 0px)" },
+        { transform: "translate(0px, 0px)" },
+      ],
+      expect.objectContaining({
+        duration: 180,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+      }),
+    );
   });
 
   it("renders IM tab agent-name with muted color", () => {
@@ -1018,6 +1345,27 @@ describe("ChatPanel", () => {
 
     expect(agentNameLabel).toBeTruthy();
     expect(agentNameLabel).toHaveClass("text-[11px]");
+  });
+
+  it("keeps the tab rail at a stable height during drag interactions", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+            { id: "agent:expert", agentId: "expert", active: false, busy: false, title: "expert" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const rail = container.firstElementChild;
+    const viewport = container.querySelector(".cc-chat-tabs-viewport");
+    const firstTabWrapper = screen.getByRole("button", { name: "main" }).closest(".group");
+
+    expect(rail).toHaveClass("min-h-[54px]");
+    expect(viewport).toHaveClass("min-h-[54px]");
+    expect(firstTabWrapper).toHaveClass("h-[50px]");
   });
 
   it("renders the current conversation title with the IM platform prefix", () => {

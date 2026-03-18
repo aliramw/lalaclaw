@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Keyboard, Languages, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
+import { Keyboard, Languages, LogOut, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
 import {
   DropdownIcon,
   DropdownMenu,
@@ -1315,6 +1315,38 @@ function LanguageToggle() {
   );
 }
 
+function AccessLogoutButton({ loggingOut = false, onLogout }) {
+  const { messages } = useI18n();
+  const handleClick = useCallback(async () => {
+    try {
+      await onLogout?.();
+    } catch {
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(messages.authGate.errors.logout);
+      }
+    }
+  }, [messages.authGate.errors.logout, onLogout]);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={loggingOut ? messages.common.loggingOut : messages.common.logOut}
+          onClick={handleClick}
+          disabled={loggingOut}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {loggingOut ? messages.common.loggingOut : messages.common.logOutTooltip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function LobsterBrand({ compact = false, subtitle }) {
   const anchorRef = useRef(null);
   const activeWalkersRef = useRef([]);
@@ -1565,7 +1597,7 @@ function LobsterBrand({ compact = false, subtitle }) {
 
   return (
     <>
-      <div className={cn("inline-flex min-w-0 items-center", compact ? "mr-3 h-9 gap-0.5" : "mr-1 h-14 gap-2")}>
+      <div className={cn("inline-flex min-w-0 items-center", compact ? "mr-3 gap-1 translate-y-[4px]" : "mr-1 h-14 gap-2")}>
         <button
           ref={anchorRef}
           type="button"
@@ -1573,7 +1605,7 @@ function LobsterBrand({ compact = false, subtitle }) {
           aria-label="Let the lobster crawl"
           className={cn(
             "inline-flex shrink-0 items-center justify-center rounded-full transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-            compact ? "h-9 w-8 self-stretch" : "h-10 w-10",
+            compact ? "h-8 w-7 self-auto" : "h-10 w-10",
           )}
         >
           <span
@@ -1587,7 +1619,7 @@ function LobsterBrand({ compact = false, subtitle }) {
           </span>
         </button>
         {compact ? (
-          <div className="flex h-9 min-w-0 items-center self-stretch">
+          <div className="flex min-w-0 items-center self-auto">
             <h1 className="max-w-full truncate font-['Avenir_Next','SF_Pro_Display','Helvetica_Neue',sans-serif] text-[1.45rem] font-bold leading-none tracking-[-0.035em] text-foreground/85">
               LalaClaw
             </h1>
@@ -1633,6 +1665,8 @@ function LobsterBrand({ compact = false, subtitle }) {
 }
 
 export function SessionOverview({
+  accessLoggingOut = false,
+  accessMode = "off",
   availableAgents,
   availableModels,
   composerSendMode = "enter-send",
@@ -1641,6 +1675,7 @@ export function SessionOverview({
   layout = "full",
   model,
   onAgentChange,
+  onAccessLogout,
   onFastModeChange,
   onModelChange,
   onSearchSessions,
@@ -1794,6 +1829,7 @@ export function SessionOverview({
         <LanguageToggle />
         <ThemeToggle value={theme} resolvedTheme={resolvedTheme} onChange={onThemeChange} />
         <ShortcutHelpButton composerSendMode={composerSendMode} />
+        {accessMode === "token" && onAccessLogout ? <AccessLogoutButton loggingOut={accessLoggingOut} onLogout={onAccessLogout} /> : null}
       </div>
     </div>
   );

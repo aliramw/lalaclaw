@@ -95,9 +95,19 @@ const ko = {
     modelSwitchSucceeded: (model) => `모델 전환 완료: ${model}`,
     modelSwitchFailed: (model) => `모델 전환 실패: ${model}`,
     requestFailed: "요청에 실패했습니다.",
+    logOut: "로그아웃",
+    loggingOut: "로그아웃하는 중…",
+    logOutTooltip: "로그아웃",
     attachment: "첨부파일",
     removeAttachment: "제거",
     resizePanels: "채팅 패널과 추적 패널 크기를 조절하려면 드래그하세요",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "지금은 로그아웃할 수 없습니다.",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

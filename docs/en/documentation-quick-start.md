@@ -58,6 +58,8 @@ Notes:
 - `lalaclaw init` writes local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
 - By default, `lalaclaw init` uses `HOST=127.0.0.1`, `PORT=5678`, and `FRONTEND_PORT=4321` unless you override them
 - When local OpenClaw is detected, `lalaclaw init` also writes a resolved `OPENCLAW_BIN` path and a `launchd` `PATH` that includes the current Node runtime
+- If you enable `COMMANDCENTER_ACCESS_MODE=token`, browser users will need a token from `COMMANDCENTER_ACCESS_TOKENS` or `COMMANDCENTER_ACCESS_TOKENS_FILE` in that same config file
+- If you have shell access on the host, run `lalaclaw access token` to print the current token or `lalaclaw access token --rotate` to replace it
 - In a source checkout, `lalaclaw init` starts both Server and Vite Dev Server in the background, then prompts to open the Dev Server URL
 - On macOS npm installs, `lalaclaw init` installs and starts the Server `launchd` service, then prompts to open the Server URL
 - On Linux npm installs, `lalaclaw init` starts the Server in the background, then prompts to open the Server URL
@@ -65,6 +67,17 @@ Notes:
 - After `--no-background`, run `lalaclaw doctor`, then use `lalaclaw dev` for source checkouts or `lalaclaw start` for packaged installs
 - `lalaclaw status`, `lalaclaw restart`, and `lalaclaw stop` control the macOS `launchd` Server service only
 - Previewing `doc`, `ppt`, and `pptx` files requires LibreOffice. On macOS, run `lalaclaw doctor --fix` or `brew install --cask libreoffice`
+
+## Browser Access Tokens
+
+If the browser shows the unlock screen, use one of these paths to get the token:
+
+- If you have terminal access on the host, run `lalaclaw access token`
+- If you need to replace it, run `lalaclaw access token --rotate`
+- If you are checking config files directly, look for `COMMANDCENTER_ACCESS_TOKENS` or `COMMANDCENTER_ACCESS_TOKENS_FILE`
+- `lalaclaw init` usually writes the config to `~/.config/lalaclaw/.env.local` on macOS/Linux
+- On Windows, the default config file is usually `%APPDATA%\LalaClaw\.env.local`
+- If someone else deployed the workspace, ask that deployer to share a token with you
 
 ## Install From GitHub
 

@@ -54,10 +54,17 @@ const {
   parseTokenDisplay,
   tailLines,
 } = require('../formatters/usage-format');
+const { createAccessController } = require('../auth/access-control');
 
 function createAppContext() {
   const execFileAsync = promisify(execFile);
   const config = buildRuntimeConfig();
+  const accessController = createAccessController({
+    config,
+    parseRequestBody,
+    readTextIfExists,
+    sendJson,
+  });
 
   function getAgentConfig(agentId) {
     return config.localConfig?.agents?.list?.find((agent) => agent?.id === agentId) || null;
@@ -373,8 +380,12 @@ function createAppContext() {
   });
 
   return {
+    accessController,
     config,
     getStaticDir,
+    handleAccessLogout: accessController.handleLogout,
+    handleAccessState: accessController.handleState,
+    handleAccessToken: accessController.handleToken,
     handleChat,
     handleChatStop,
     handleFileManagerReveal,
@@ -401,6 +412,7 @@ function createAppContext() {
       mergeConversationMessages,
       normalizeChatMessage,
       normalizeSessionUser,
+      requireAccess: accessController.requireAccess,
       parseCompactNumber,
       parseOpenClawResponse,
       parseSessionStatusText,

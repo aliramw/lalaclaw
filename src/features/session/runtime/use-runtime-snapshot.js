@@ -11,7 +11,34 @@ import {
 } from "@/features/app/storage";
 import { isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
+import { apiFetch } from "@/lib/api-client";
 import { useRuntimeSocket } from "./use-runtime-socket";
+
+function areJsonEqual(left, right) {
+  if (left === right) {
+    return true;
+  }
+
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+function areSessionSnapshotsEqual(left = {}, right = {}) {
+  if (left === right) {
+    return true;
+  }
+
+  const keys = new Set([...Object.keys(left || {}), ...Object.keys(right || {})]);
+  for (const key of keys) {
+    if (!areJsonEqual(left?.[key], right?.[key])) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function getRuntimePollInterval({
   recoveringPendingReply = false,
@@ -68,6 +95,10 @@ export function mergeTaskRelationships(previousRelationships, nextRelationships)
   }
 
   return [...merged.values()].sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0));
+}
+
+function setIfChanged(setter, nextValue) {
+  setter((current) => (areJsonEqual(current, nextValue) ? current : nextValue));
 }
 
 function snapshotHasPendingUserMessage(snapshotMessages = [], pendingEntry = null) {
@@ -218,15 +249,15 @@ export function useRuntimeSnapshot({
 
   const hydrateRuntimeState = useCallback((state = null) => {
     const nextState = state || {};
-    setAvailableModels(nextState.availableModels || []);
-    setAvailableAgents(nextState.availableAgents || []);
-    setTaskRelationships(nextState.taskRelationships || []);
-    setTaskTimeline(nextState.taskTimeline || []);
-    setFiles(nextState.files || []);
-    setArtifacts(nextState.artifacts || []);
-    setSnapshots(nextState.snapshots || []);
-    setAgents(nextState.agents || []);
-    setPeeks(nextState.peeks || { workspace: null, terminal: null, browser: null, environment: null });
+    setIfChanged(setAvailableModels, nextState.availableModels || []);
+    setIfChanged(setAvailableAgents, nextState.availableAgents || []);
+    setIfChanged(setTaskRelationships, nextState.taskRelationships || []);
+    setIfChanged(setTaskTimeline, nextState.taskTimeline || []);
+    setIfChanged(setFiles, nextState.files || []);
+    setIfChanged(setArtifacts, nextState.artifacts || []);
+    setIfChanged(setSnapshots, nextState.snapshots || []);
+    setIfChanged(setAgents, nextState.agents || []);
+    setIfChanged(setPeeks, nextState.peeks || { workspace: null, terminal: null, browser: null, environment: null });
   }, []);
 
   const applySnapshot = useCallback((snapshot, options = {}) => {
@@ -291,7 +322,10 @@ export function useRuntimeSnapshot({
             effectiveLocalMessages,
           );
       const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !shouldClearPending;
-      setSession({ ...nextSession, status: hasActivePendingTurn ? i18n.common.running : nextSession.status });
+      const nextSessionState = { ...nextSession, status: hasActivePendingTurn ? i18n.common.running : nextSession.status };
+      if (!areSessionSnapshotsEqual(currentSession, nextSessionState)) {
+        setSession(nextSessionState);
+      }
       setMessagesSynced(hydratedConversation);
       setBusy(hasActivePendingTurn);
 
@@ -306,23 +340,29 @@ export function useRuntimeSnapshot({
         });
       }
     } else {
-      setSession({ ...nextSession, status: shouldDeferConversationSync ? i18n.common.running : nextSession.status });
+      const nextSessionState = { ...nextSession, status: shouldDeferConversationSync ? i18n.common.running : nextSession.status };
+      if (!areSessionSnapshotsEqual(currentSession, nextSessionState)) {
+        setSession(nextSessionState);
+      }
       setBusy(Boolean(shouldDeferConversationSync));
     }
 
-    setAvailableModels(snapshot.session?.availableModels || snapshot.availableModels || []);
-    setAvailableAgents(snapshot.session?.availableAgents || snapshot.availableAgents || []);
+    setIfChanged(setAvailableModels, snapshot.session?.availableModels || snapshot.availableModels || []);
+    setIfChanged(setAvailableAgents, snapshot.session?.availableAgents || snapshot.availableAgents || []);
     if (Object.prototype.hasOwnProperty.call(snapshot, "taskRelationships")) {
-      setTaskRelationships((current) => mergeTaskRelationships(current, snapshot.taskRelationships || []));
+      setTaskRelationships((current) => {
+        const merged = mergeTaskRelationships(current, snapshot.taskRelationships || []);
+        return areJsonEqual(current, merged) ? current : merged;
+      });
     } else if (nextConversationKey !== currentConversationKey) {
-      setTaskRelationships([]);
+      setIfChanged(setTaskRelationships, []);
     }
-    setTaskTimeline(snapshot.taskTimeline || []);
-    setFiles(snapshot.files || []);
-    setArtifacts(snapshot.artifacts || []);
-    setSnapshots(snapshot.snapshots || []);
-    setAgents(snapshot.agents || []);
-    setPeeks(snapshot.peeks || { workspace: null, terminal: null, browser: null, environment: null });
+    setIfChanged(setTaskTimeline, snapshot.taskTimeline || []);
+    setIfChanged(setFiles, snapshot.files || []);
+    setIfChanged(setArtifacts, snapshot.artifacts || []);
+    setIfChanged(setSnapshots, snapshot.snapshots || []);
+    setIfChanged(setAgents, snapshot.agents || []);
+    setIfChanged(setPeeks, snapshot.peeks || { workspace: null, terminal: null, browser: null, environment: null });
     setModel(snapshot.session?.selectedModel || snapshot.model || nextSession.model || "");
 
     if (!shouldDeferConversationSync && snapshotPromptHistory.length) {
@@ -440,12 +480,16 @@ export function useRuntimeSnapshot({
     }
 
     if (payload.type === 'session.sync' && payload.session) {
-      setSession((current) => ({ ...current, ...payload.session }));
+      const currentSession = sessionRef.current;
+      const nextSession = { ...currentSession, ...payload.session };
+      if (!areSessionSnapshotsEqual(currentSession, nextSession)) {
+        setSession(nextSession);
+      }
       if (payload.session.availableModels) {
-        setAvailableModels(payload.session.availableModels);
+        setIfChanged(setAvailableModels, payload.session.availableModels);
       }
       if (payload.session.availableAgents) {
-        setAvailableAgents(payload.session.availableAgents);
+        setIfChanged(setAvailableAgents, payload.session.availableAgents);
       }
       if (payload.session.selectedModel) {
         setModel(payload.session.selectedModel);
@@ -465,37 +509,40 @@ export function useRuntimeSnapshot({
     }
 
     if (payload.type === 'taskRelationships.sync') {
-      setTaskRelationships((current) => mergeTaskRelationships(current, payload.taskRelationships || []));
+      setTaskRelationships((current) => {
+        const merged = mergeTaskRelationships(current, payload.taskRelationships || []);
+        return areJsonEqual(current, merged) ? current : merged;
+      });
       return;
     }
 
     if (payload.type === 'taskTimeline.sync') {
-      setTaskTimeline(payload.taskTimeline || []);
+      setIfChanged(setTaskTimeline, payload.taskTimeline || []);
       return;
     }
 
     if (payload.type === 'artifacts.sync') {
-      setArtifacts(payload.artifacts || []);
+      setIfChanged(setArtifacts, payload.artifacts || []);
       return;
     }
 
     if (payload.type === 'files.sync') {
-      setFiles(payload.files || []);
+      setIfChanged(setFiles, payload.files || []);
       return;
     }
 
     if (payload.type === 'snapshots.sync') {
-      setSnapshots(payload.snapshots || []);
+      setIfChanged(setSnapshots, payload.snapshots || []);
       return;
     }
 
     if (payload.type === 'agents.sync') {
-      setAgents(payload.agents || []);
+      setIfChanged(setAgents, payload.agents || []);
       return;
     }
 
     if (payload.type === 'peeks.sync') {
-      setPeeks(payload.peeks || { workspace: null, terminal: null, browser: null, environment: null });
+      setIfChanged(setPeeks, payload.peeks || { workspace: null, terminal: null, browser: null, environment: null });
       return;
     }
 
@@ -530,7 +577,7 @@ export function useRuntimeSnapshot({
     runtimeRequestRef.current = requestId;
 
     const requestPromise = (async () => {
-      const response = await fetch(`/api/runtime?${requestKey}`);
+      const response = await apiFetch(`/api/runtime?${requestKey}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Runtime snapshot failed");
@@ -612,7 +659,7 @@ export function useRuntimeSnapshot({
 
   const updateSessionSettings = async (payload) => {
     const targetSessionUser = String(payload?.sessionUser || session.sessionUser || "").trim();
-    const response = await fetch("/api/session", {
+    const response = await apiFetch("/api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

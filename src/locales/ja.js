@@ -113,9 +113,19 @@ const ja = {
     modelSwitchSucceeded: (model) => `モデルの切り替えに成功しました: ${model}`,
     modelSwitchFailed: (model) => `モデルの切り替えに失敗しました: ${model}`,
     requestFailed: "リクエストに失敗しました。",
+    logOut: "ログアウト",
+    loggingOut: "ログアウト中…",
+    logOutTooltip: "ログアウト",
     attachment: "添付",
     removeAttachment: "削除",
     resizePanels: "ドラッグしてチャットと追跡パネルの幅を調整",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "現在ログアウトできません。",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

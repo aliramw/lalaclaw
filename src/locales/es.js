@@ -113,9 +113,19 @@ const es = {
     modelSwitchSucceeded: (model) => `Modelo cambiado correctamente: ${model}`,
     modelSwitchFailed: (model) => `Error al cambiar el modelo: ${model}`,
     requestFailed: "La solicitud falló.",
+    logOut: "Cerrar sesión",
+    loggingOut: "Cerrando sesión…",
+    logOutTooltip: "Cerrar sesión",
     attachment: "Adjuntos",
     removeAttachment: "Quitar",
     resizePanels: "Arrastra para ajustar el ancho del chat y del panel de seguimiento",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "No se puede cerrar sesión ahora mismo.",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

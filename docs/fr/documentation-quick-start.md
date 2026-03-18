@@ -77,3 +77,12 @@ npm run dev:all
 - Frontend : `http://127.0.0.1:5173`
 - Backend : `http://127.0.0.1:3000`
 - Entrée navigateur : `http://127.0.0.1:5173`
+
+## Browser Access Tokens
+
+Si l'ecran de deverrouillage par token apparait dans le navigateur, vous pouvez trouver ou regenerer le token ainsi :
+
+- `lalaclaw access token` pour afficher le token actuel
+- `lalaclaw access token --rotate` pour generer et enregistrer un nouveau token
+- verifier `COMMANDCENTER_ACCESS_TOKENS` ou `COMMANDCENTER_ACCESS_TOKENS_FILE` dans `~/.config/lalaclaw/.env.local`
+- si cette instance n'est pas la votre, demandez le token a la personne qui l'administre

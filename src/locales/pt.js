@@ -113,9 +113,19 @@ const pt = {
     modelSwitchSucceeded: (model) => `Modelo alterado com sucesso: ${model}`,
     modelSwitchFailed: (model) => `Falha ao alterar o modelo: ${model}`,
     requestFailed: "Falha na solicitação.",
+    logOut: "Sair",
+    loggingOut: "Saindo…",
+    logOutTooltip: "Sair",
     attachment: "Anexos",
     removeAttachment: "Remover",
     resizePanels: "Arraste para ajustar a largura do chat e do painel de rastreamento",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "Não foi possível sair agora.",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

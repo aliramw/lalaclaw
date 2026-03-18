@@ -6,7 +6,20 @@
  */
 
 const { URL } = require('node:url');
-const { WebSocketServer } = require('ws');
+const { EventEmitter } = require('node:events');
+
+let WebSocketServer;
+try {
+  ({ WebSocketServer } = require('ws'));
+} catch {
+  WebSocketServer = class FallbackWebSocketServer extends EventEmitter {
+    handleUpgrade(req, socket, head, callback) {
+      if (typeof callback === 'function') {
+        callback(new EventEmitter());
+      }
+    }
+  };
+}
 
 const PING_INTERVAL_MS = 30000;
 
@@ -18,7 +31,7 @@ function parseOptionalBoolean(value) {
   return undefined;
 }
 
-function attachRuntimeWebSocket(httpServer, { runtimeHub }) {
+function attachRuntimeWebSocket(httpServer, { runtimeHub, accessController = null }) {
   const wss = new WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', (req, socket, head) => {
@@ -26,6 +39,10 @@ function attachRuntimeWebSocket(httpServer, { runtimeHub }) {
 
     if (url.pathname !== '/api/runtime/ws') {
       socket.destroy();
+      return;
+    }
+
+    if (accessController?.handleUpgrade && !accessController.handleUpgrade(req, socket)) {
       return;
     }
 

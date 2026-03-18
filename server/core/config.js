@@ -12,6 +12,35 @@ const LOCAL_OPENCLAW_DIR = path.join(HOME_DIR, '.openclaw');
 const OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw';
 const NPM_GLOBAL_DIR = path.join(HOME_DIR, '.npm-global');
 
+function resolveDefaultConfigDir() {
+  const explicitConfigDir = String(process.env.LALACLAW_CONFIG_DIR || '').trim();
+  if (explicitConfigDir) {
+    return path.resolve(explicitConfigDir);
+  }
+
+  if (process.platform === 'win32') {
+    const appDataDir = String(process.env.APPDATA || '').trim();
+    if (appDataDir) {
+      return path.join(appDataDir, 'LalaClaw');
+    }
+  }
+
+  if (HOME_DIR) {
+    return path.join(HOME_DIR, '.config', 'lalaclaw');
+  }
+
+  return PROJECT_ROOT;
+}
+
+function resolveServerConfigFile() {
+  const explicitConfigFile = String(process.env.LALACLAW_CONFIG_FILE || '').trim();
+  if (explicitConfigFile) {
+    return path.resolve(explicitConfigFile);
+  }
+
+  return path.join(resolveDefaultConfigDir(), '.env.local');
+}
+
 function readJsonIfExists(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) {
@@ -267,6 +296,12 @@ function buildRuntimeConfig() {
     availableModels,
     availableAgents,
     availableSkills,
+    accessMode: process.env.COMMANDCENTER_ACCESS_MODE || 'off',
+    accessTokensRaw: process.env.COMMANDCENTER_ACCESS_TOKENS || '',
+    accessTokensFile: process.env.COMMANDCENTER_ACCESS_TOKENS_FILE || '',
+    accessCookieName: process.env.COMMANDCENTER_ACCESS_COOKIE_NAME || '',
+    accessSessionTtlMs: Number(process.env.COMMANDCENTER_ACCESS_SESSION_TTL_MS || 0),
+    accessConfigFile: resolveServerConfigFile(),
   };
 }
 

@@ -7,6 +7,7 @@ const { attachRuntimeWebSocket } = require('./server/routes/runtime-ws');
 
 const defaultAppContext = createAppContext();
 const {
+  accessController,
   config,
   getStaticDir,
   helpers,
@@ -43,8 +44,12 @@ function runRouteHandler(handler, req, res) {
 
 function createRequestHandler(appContext = defaultAppContext) {
   const {
+    accessController,
     handleChat,
     handleChatStop,
+    handleAccessLogout,
+    handleAccessState,
+    handleAccessToken,
     handleFileManagerReveal,
     handleFilePreview,
     handleFilePreviewContent,
@@ -57,9 +62,45 @@ function createRequestHandler(appContext = defaultAppContext) {
     getStaticDir: resolveStaticDir,
     helpers: appHelpers,
   } = appContext;
+  const requireAccess = appHelpers?.requireAccess || (() => true);
 
   return (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
+
+    if (req.method === 'GET' && url.pathname === '/api/auth/state') {
+      if (handleAccessState) {
+        runRouteHandler(handleAccessState, req, res);
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        accessMode: accessController?.accessMode || 'off',
+        authenticated: true,
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/auth/token') {
+      if (handleAccessToken) {
+        runRouteHandler(handleAccessToken, req, res);
+        return;
+      }
+      sendJson(res, 404, { ok: false, error: 'Auth route unavailable' });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+      if (handleAccessLogout) {
+        runRouteHandler(handleAccessLogout, req, res);
+        return;
+      }
+      sendJson(res, 404, { ok: false, error: 'Auth route unavailable' });
+      return;
+    }
+
+    if (url.pathname.startsWith('/api/') && !requireAccess(req, res)) {
+      return;
+    }
 
     if (req.method === 'GET' && url.pathname === '/api/session') {
       runRouteHandler(handleSession, req, res);
@@ -147,7 +188,10 @@ function createAppServer(appContext = defaultAppContext) {
   const server = http.createServer(createRequestHandler(appContext));
 
   if (appContext.runtimeHub) {
-    attachRuntimeWebSocket(server, { runtimeHub: appContext.runtimeHub });
+    attachRuntimeWebSocket(server, {
+      runtimeHub: appContext.runtimeHub,
+      accessController: appContext.accessController,
+    });
   }
 
   return server;
@@ -158,6 +202,7 @@ function startServer() {
   server.listen(PORT, HOST, () => {
     console.log(`CommandCenter running at http://${HOST}:${PORT}`);
     console.log(`Mode: ${config.mode}`);
+    console.log(`Access: ${accessController?.accessMode || 'off'}`);
   });
   return server;
 }

@@ -116,7 +116,7 @@ describe("useRuntimeSnapshot", () => {
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main");
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main", { credentials: "same-origin" });
       expect(result.current.availableModels).toEqual(["gpt-5"]);
       expect(result.current.files).toEqual([{ path: "src/App.jsx" }]);
     });
@@ -191,7 +191,7 @@ describe("useRuntimeSnapshot", () => {
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main");
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main", { credentials: "same-origin" });
     });
 
     expect(setBusy).toHaveBeenCalledWith(true);
@@ -241,7 +241,7 @@ describe("useRuntimeSnapshot", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main");
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main", { credentials: "same-origin" });
     });
 
     deferred.resolve(
@@ -311,6 +311,7 @@ describe("useRuntimeSnapshot", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         `/api/runtime?${new URLSearchParams({ sessionUser: resetSessionUser, agentId: "main" }).toString()}`,
+        { credentials: "same-origin" },
       );
     });
 

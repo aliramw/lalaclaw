@@ -96,9 +96,19 @@ const zhHk = {
     modelSwitchSucceeded: (model) => `模型切換成功：${model}`,
     modelSwitchFailed: (model) => `模型切換失敗：${model}`,
     requestFailed: "請求失敗。",
+    logOut: "登出",
+    loggingOut: "正在登出…",
+    logOutTooltip: "登出",
     attachment: "附件",
     removeAttachment: "移除",
     resizePanels: "拖曳以調整聊天與追蹤面板大小",
+  },
+  authGate: {
+    ...zh.authGate,
+    errors: {
+      ...zh.authGate.errors,
+      logout: "暫時無法登出。",
+    },
   },
   sessionOverview: {
     ...zh.sessionOverview,

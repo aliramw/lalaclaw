@@ -6,6 +6,7 @@ import {
   readFileAsText,
 } from "@/features/chat/utils";
 import { getLocalizedStatusLabel } from "@/features/session/status-display";
+import { apiFetch } from "@/lib/api-client";
 
 const duplicateSendGuardWindowMs = 1500;
 
@@ -435,7 +436,7 @@ export function useChatController({
     activeTurn.abortController?.abort?.();
 
     try {
-      await fetch("/api/chat/stop", {
+      await apiFetch("/api/chat/stop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -532,7 +533,7 @@ export function useChatController({
     }
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortController.signal,

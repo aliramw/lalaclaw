@@ -103,6 +103,39 @@ describe("SessionOverview", () => {
     expect(screen.getByText("暂无可选模型")).toBeInTheDocument();
   });
 
+  it("shows a logout button in token access mode and calls the logout handler", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    const onAccessLogout = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            accessMode="token"
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAccessLogout={onAccessLogout}
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "退出登录" }));
+
+    await waitFor(() => {
+      expect(onAccessLogout).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("searches DingTalk sessions from the agent tab trigger and switches to the selected result", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
     const onSearchSessions = vi.fn().mockResolvedValue([

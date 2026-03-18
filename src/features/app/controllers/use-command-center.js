@@ -31,7 +31,24 @@ import { useRuntimeSnapshot } from "@/features/session/runtime";
 import { createResetImSessionUser, getImSessionDisplayName, isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
+import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
+
+function areJsonEqual(left, right) {
+  if (left === right) {
+    return true;
+  }
+
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+export function shouldReuseTabState(previous, next) {
+  return areJsonEqual(previous, next);
+}
 
 function createTabMeta(tab, overrides = {}) {
   const canonicalAgentId = resolveAgentIdFromTabId(tab?.id) || tab?.agentId || "main";
@@ -570,7 +587,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       const previous = current[tabId] || [];
       const next = typeof value === "function" ? value(previous) : value;
 
-      if (current[tabId] === next) {
+      if (current[tabId] === next || shouldReuseTabState(previous, next)) {
         return current;
       }
 
@@ -629,7 +646,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       const previous = current[tabId] || createSessionForTab(i18n, tab, meta);
       const next = typeof value === "function" ? value(previous) : value;
 
-      if (current[tabId] === next) {
+      if (current[tabId] === next || shouldReuseTabState(previous, next)) {
         return current;
       }
 
@@ -1278,7 +1295,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           sessionUser,
           agentId,
         });
-        const response = await fetch(`/api/runtime?${params.toString()}`);
+        const response = await apiFetch(`/api/runtime?${params.toString()}`);
         const payload = await response.json();
         if (!response.ok || !payload.ok || cancelled) {
           return;
@@ -1306,17 +1323,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
             taskTimeline: payload.taskTimeline || [],
           };
 
-          if (
-            previous.agents === nextCache.agents
-            && previous.artifacts === nextCache.artifacts
-            && previous.availableAgents === nextCache.availableAgents
-            && previous.availableModels === nextCache.availableModels
-            && previous.files === nextCache.files
-            && previous.peeks === nextCache.peeks
-            && previous.snapshots === nextCache.snapshots
-            && previous.taskRelationships === nextCache.taskRelationships
-            && previous.taskTimeline === nextCache.taskTimeline
-          ) {
+          if (shouldReuseTabState(previous, nextCache)) {
             return current;
           }
 
@@ -1898,7 +1905,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       params.set("q", normalizedSearchTerm);
     }
 
-    const response = await fetch(`/api/session/search?${params.toString()}`);
+    const response = await apiFetch(`/api/session/search?${params.toString()}`);
     const data = await response.json();
     if (!response.ok || !data.ok) {
       throw new Error(data.error || i18n.common.requestFailed);

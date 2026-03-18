@@ -172,3 +172,12 @@ npm run lalaclaw:start
 ```bash
 COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
 ```
+
+## Browser Access Tokens
+
+ブラウザでアクセストークンの解除画面が表示された場合は、次の方法で token を確認または更新できます。
+
+- `lalaclaw access token` で現在の token を表示する
+- `lalaclaw access token --rotate` で新しい token を生成して保存する
+- `~/.config/lalaclaw/.env.local` の `COMMANDCENTER_ACCESS_TOKENS` または `COMMANDCENTER_ACCESS_TOKENS_FILE` を確認する
+- 自分でデプロイしていない環境なら、管理者に token を確認する

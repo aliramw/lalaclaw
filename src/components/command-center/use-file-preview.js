@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 
 function buildLocalFilePreviewUrl(filePath = "") {
@@ -74,7 +75,7 @@ export function useFilePreview() {
     });
 
     try {
-      const response = await fetch(`/api/file-preview?path=${encodeURIComponent(targetPath)}`);
+      const response = await apiFetch(`/api/file-preview?path=${encodeURIComponent(targetPath)}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
         throw new Error(resolvePreviewErrorMessage(payload));

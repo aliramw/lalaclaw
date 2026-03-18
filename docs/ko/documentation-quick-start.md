@@ -104,3 +104,12 @@ npm run dev:all
 - Frontend: `http://127.0.0.1:5173`
 - Backend: `http://127.0.0.1:3000`
 - 브라우저 진입점: `http://127.0.0.1:5173`
+
+## Browser Access Tokens
+
+브라우저에서 접근 토큰 잠금 해제 화면이 보이면 아래 방법으로 token 을 확인하거나 새로 만들 수 있습니다.
+
+- `lalaclaw access token` 으로 현재 token 확인
+- `lalaclaw access token --rotate` 로 새 token 생성 및 저장
+- `~/.config/lalaclaw/.env.local` 의 `COMMANDCENTER_ACCESS_TOKENS` 또는 `COMMANDCENTER_ACCESS_TOKENS_FILE` 확인
+- 직접 배포한 인스턴스가 아니라면 배포 관리자에게 token 요청

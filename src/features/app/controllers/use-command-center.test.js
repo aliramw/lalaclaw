@@ -5,6 +5,7 @@ import {
   hasActiveAssistantReply,
   isChatTabBusy,
   planSearchedSessionTabTarget,
+  shouldReuseTabState,
   shouldApplyRuntimeSnapshotToTab,
 } from "@/features/app/controllers/use-command-center";
 
@@ -67,6 +68,32 @@ describe("getLatestUserMessageKey", () => {
         { id: "msg-assistant-pending-2", role: "assistant", content: "正在思考…", timestamp: 220, pending: true },
       ]),
     ).toBe("msg-user-2");
+  });
+});
+
+describe("shouldReuseTabState", () => {
+  it("reuses identical synced message arrays even when they arrive as new objects", () => {
+    expect(
+      shouldReuseTabState(
+        [
+          { role: "user", content: "hello", timestamp: 1 },
+          { role: "assistant", content: "world", timestamp: 2 },
+        ],
+        [
+          { role: "user", content: "hello", timestamp: 1 },
+          { role: "assistant", content: "world", timestamp: 2 },
+        ],
+      ),
+    ).toBe(true);
+  });
+
+  it("does not reuse changed runtime cache payloads", () => {
+    expect(
+      shouldReuseTabState(
+        { files: [{ path: "src/App.jsx" }], agents: [{ id: "main" }] },
+        { files: [{ path: "src/App.jsx" }], agents: [{ id: "reviewer" }] },
+      ),
+    ).toBe(false);
   });
 });
 

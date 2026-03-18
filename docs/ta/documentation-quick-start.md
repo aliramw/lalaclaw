@@ -77,3 +77,12 @@ npm run dev:all
 - Frontend: `http://127.0.0.1:5173`
 - Backend: `http://127.0.0.1:3000`
 - Browser entrypoint: `http://127.0.0.1:5173`
+
+## Browser Access Tokens
+
+Browserல் token unlock screen தெரிந்தால், tokenஐ கண்டுபிடிக்க அல்லது புதிதாக மாற்ற இதைப் பயன்படுத்தலாம்:
+
+- `lalaclaw access token` மூலம் தற்போதைய token பார்க்கலாம்
+- `lalaclaw access token --rotate` மூலம் புதிய token உருவாக்கி சேமிக்கலாம்
+- `~/.config/lalaclaw/.env.local` உள்ள `COMMANDCENTER_ACCESS_TOKENS` அல்லது `COMMANDCENTER_ACCESS_TOKENS_FILE` ஐ பார்க்கலாம்
+- இந்த instanceஐ நீங்கள் deploy செய்யவில்லை என்றால், deploy செய்தவரிடம் token கேளுங்கள்

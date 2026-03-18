@@ -57,6 +57,22 @@ function mockJsonResponse(payload, ok = true, status = ok ? 200 : 500) {
   });
 }
 
+function stubFetchWithAccessState(fetchImpl) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input, init) => {
+      if (String(input) === "/api/auth/state") {
+        return mockJsonResponse({
+          ok: true,
+          accessMode: "off",
+          authenticated: true,
+        });
+      }
+      return fetchImpl(input, init);
+    }),
+  );
+}
+
 function createSessionSnapshot(sessionUser = "command-center") {
   const snapshot = createSnapshot();
   return {
@@ -301,7 +317,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -335,7 +351,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
     mockDesktopLayout();
 
     render(<App />);
@@ -361,7 +377,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
     mockNarrowLayout();
 
     const { container } = render(<App />);
@@ -394,7 +410,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
     mockDesktopLayout();
 
     render(<App />);
@@ -451,7 +467,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -520,7 +536,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -605,7 +621,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -697,7 +713,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -772,7 +788,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -830,7 +846,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -892,7 +908,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
     mockDesktopLayout();
 
     render(<App />);
@@ -1346,7 +1362,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1387,7 +1403,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1435,7 +1451,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1478,7 +1494,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1525,7 +1541,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     const user = userEvent.setup();
     const firstRender = render(<App />);
@@ -1558,7 +1574,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1612,7 +1628,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1639,7 +1655,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1672,7 +1688,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -1720,7 +1736,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     const { container } = render(<App />);
 
@@ -1757,7 +1773,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     const { container } = render(<App />);
     const user = userEvent.setup();
@@ -1811,7 +1827,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     const { container, unmount } = render(<App />);
     const user = userEvent.setup();
@@ -2084,7 +2100,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -2129,7 +2145,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -2174,7 +2190,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -2202,7 +2218,7 @@ describe("App", () => {
       model: "openai-codex/gpt-5.4",
     });
 
-    vi.stubGlobal("fetch", harness.fetchMock);
+    stubFetchWithAccessState(harness.fetchMock);
 
     render(<App />);
 
@@ -2274,7 +2290,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -2305,7 +2321,7 @@ describe("App", () => {
       model: "openai-codex/gpt-5.4",
     });
 
-    vi.stubGlobal("fetch", harness.fetchMock);
+    stubFetchWithAccessState(harness.fetchMock);
 
     render(<App />);
 
@@ -2354,7 +2370,7 @@ describe("App", () => {
       model: "openai-codex/gpt-5.4",
     });
 
-    vi.stubGlobal("fetch", harness.fetchMock);
+    stubFetchWithAccessState(harness.fetchMock);
 
     render(<App />);
 
@@ -2441,7 +2457,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 
@@ -2562,7 +2578,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetchWithAccessState(fetchMock);
 
     render(<App />);
 

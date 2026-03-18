@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const net = require('node:net');
 const os = require('node:os');
@@ -16,6 +17,7 @@ const DEFAULT_BACKEND_PORT = DEFAULT_SERVER_PORT;
 const DEFAULT_FRONTEND_PORT = DEFAULT_DEV_SERVER_PORT;
 const DEFAULT_MODEL = 'openclaw';
 const DEFAULT_AGENT_ID = 'main';
+const DEFAULT_ACCESS_MODE = 'off';
 const REQUIRED_NODE_MAJOR = 22;
 const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const EXAMPLE_ENV_FILE = path.join(PROJECT_ROOT, '.env.local.example');
@@ -94,6 +96,7 @@ function printHelp() {
 
 Usage:
   lalaclaw init [--defaults] [--write-example] [--no-background] [--config-file <path>] [--profile <name>] [--base-url <url>]
+  lalaclaw access token [--config-file <path>] [--rotate]
   lalaclaw doctor [--config-file <path>] [--json] [--fix]
   lalaclaw status
   lalaclaw stop
@@ -105,6 +108,7 @@ Usage:
 
 Commands:
   init      Create or refresh local config, then start Server and Frontend in the background when available.
+  access    Show or rotate browser access tokens from the local config file.
   doctor    Check Node.js, OpenClaw discovery, ports, local config, and Office preview dependencies.
   status    Show Server background service (launchd) status for npm installs.
   stop      Stop the managed background backend on macOS or Windows.
@@ -165,6 +169,11 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (token === '--rotate') {
+      options.rotate = true;
+      continue;
+    }
+
     if (token in OPTION_ALIASES) {
       const value = argv[index + 1];
       if (!value) {
@@ -179,8 +188,12 @@ function parseArgs(argv) {
     throw new Error(`Unknown option: ${token}`);
   }
 
+  const command = args[0] === 'access' && args[1]
+    ? `${args[0]} ${args[1]}`
+    : args[0] || 'help';
+
   return {
-    command: args[0] || 'help',
+    command,
     options,
   };
 }
@@ -229,8 +242,24 @@ function normalizeApiStyle(value = '') {
   return normalized || 'chat';
 }
 
+function normalizeAccessMode(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'token' ? 'token' : DEFAULT_ACCESS_MODE;
+}
+
 function normalizeProfile(value = '') {
   return String(value || '').trim().toLowerCase();
+}
+
+function parseAccessTokenEntries(value = '') {
+  return String(value || '')
+    .split(/[\r\n,]+/u)
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+}
+
+function generateAccessToken() {
+  return crypto.randomBytes(24).toString('base64url');
 }
 
 function clipText(value, length = 200) {
@@ -357,6 +386,9 @@ function resolveConfig(envValues, localOpenClaw) {
     openclawAgentId: String(envValues.OPENCLAW_AGENT_ID || localOpenClaw.defaultAgentId || DEFAULT_AGENT_ID).trim() || DEFAULT_AGENT_ID,
     openclawApiStyle: apiStyle,
     openclawApiPath: String(envValues.OPENCLAW_API_PATH || (apiStyle === 'responses' ? '/v1/responses' : '/v1/chat/completions')).trim(),
+    accessMode: normalizeAccessMode(envValues.COMMANDCENTER_ACCESS_MODE || DEFAULT_ACCESS_MODE),
+    accessTokens: String(envValues.COMMANDCENTER_ACCESS_TOKENS || '').trim(),
+    accessTokensFile: String(envValues.COMMANDCENTER_ACCESS_TOKENS_FILE || '').trim(),
   };
 }
 
@@ -429,6 +461,7 @@ function validateConfig(config, localOpenClaw, openclawBinary = '') {
   const errors = [];
   const warnings = [];
   const notes = [];
+  const accessMode = normalizeAccessMode(config.accessMode || DEFAULT_ACCESS_MODE);
 
   if (!config.host) {
     errors.push('HOST is required.');
@@ -456,6 +489,14 @@ function validateConfig(config, localOpenClaw, openclawBinary = '') {
 
   if (!String(config.openclawApiPath || '').startsWith('/')) {
     errors.push(`OPENCLAW_API_PATH must start with "/". Received: ${config.openclawApiPath}`);
+  }
+
+  if (!['off', 'token'].includes(accessMode)) {
+    errors.push(`COMMANDCENTER_ACCESS_MODE must be "off" or "token". Received: ${config.accessMode}`);
+  }
+
+  if (accessMode === 'token' && !config.accessTokens && !config.accessTokensFile) {
+    errors.push('COMMANDCENTER_ACCESS_MODE=token requires COMMANDCENTER_ACCESS_TOKENS or COMMANDCENTER_ACCESS_TOKENS_FILE.');
   }
 
   if (config.profile === 'local-openclaw') {
@@ -499,6 +540,10 @@ function validateConfig(config, localOpenClaw, openclawBinary = '') {
     notes.push('Mock mode will keep the UI usable without connecting to a live OpenClaw gateway.');
   }
 
+  if (accessMode === 'token') {
+    notes.push('Token access mode is enabled. Browser users must sign in before the app can load runtime data.');
+  }
+
   return {
     errors,
     warnings,
@@ -537,6 +582,7 @@ function getRuntimeUrls(config) {
 function printConfigSummary(config) {
   const urls = getRuntimeUrls(config);
   console.log(`INFO  Runtime profile: ${config.profile}`);
+  console.log(`INFO  Browser access: ${config.accessMode}`);
   console.log(`INFO  Server URL (App + API): ${urls.appUrl}`);
   console.log(`INFO  API URL:           ${urls.apiUrl}`);
   console.log(`INFO  Dev Server URL (Vite): ${urls.devFrontendUrl}`);
@@ -544,6 +590,18 @@ function printConfigSummary(config) {
     console.log(`INFO  Gateway URL:  ${config.openclawBaseUrl}`);
     console.log(`INFO  API style:    ${config.openclawApiStyle}`);
     console.log(`INFO  API path:     ${config.openclawApiPath}`);
+  }
+}
+
+function printAccessTokenHelp(config, envFilePath) {
+  if (config.accessMode !== 'token') {
+    return;
+  }
+
+  console.log('INFO  Token access mode is enabled.');
+  console.log(`INFO  Browser users can look in ${envFilePath} for COMMANDCENTER_ACCESS_TOKENS or COMMANDCENTER_ACCESS_TOKENS_FILE.`);
+  if (config.accessTokensFile) {
+    console.log(`INFO  Token file: ${config.accessTokensFile}`);
   }
 }
 
@@ -703,6 +761,19 @@ function quoteEnvValue(value) {
     return '""';
   }
   return /[\s#"'`]/.test(value) ? JSON.stringify(value) : value;
+}
+
+function resolveConfigRelativePath(baseFilePath, targetPath = '') {
+  const normalizedTargetPath = String(targetPath || '').trim();
+  if (!normalizedTargetPath) {
+    return '';
+  }
+
+  if (path.isAbsolute(normalizedTargetPath)) {
+    return normalizedTargetPath;
+  }
+
+  return path.resolve(path.dirname(baseFilePath), normalizedTargetPath);
 }
 
 function buildPathEnv(currentPath = '', extraEntries = []) {
@@ -1177,6 +1248,24 @@ function renderEnvFile(config) {
     );
   }
 
+  lines.push(
+    '',
+    '# Optional browser access protection: off | token',
+    `COMMANDCENTER_ACCESS_MODE=${quoteEnvValue(config.accessMode || DEFAULT_ACCESS_MODE)}`,
+  );
+
+  if (config.accessMode === 'token') {
+    lines.push(
+      config.accessTokens ? `COMMANDCENTER_ACCESS_TOKENS=${quoteEnvValue(config.accessTokens)}` : '# COMMANDCENTER_ACCESS_TOKENS=',
+      config.accessTokensFile ? `COMMANDCENTER_ACCESS_TOKENS_FILE=${quoteEnvValue(config.accessTokensFile)}` : '# COMMANDCENTER_ACCESS_TOKENS_FILE=',
+    );
+  } else {
+    lines.push(
+      '# COMMANDCENTER_ACCESS_TOKENS=',
+      '# COMMANDCENTER_ACCESS_TOKENS_FILE=',
+    );
+  }
+
   lines.push('');
   return `${lines.join('\n')}\n`;
 }
@@ -1511,6 +1600,7 @@ async function runInit(envFilePath, options = {}) {
   fs.writeFileSync(envFilePath, renderEnvFile(nextConfig), 'utf8');
   console.log(`OK    Wrote ${envFilePath}`);
   printConfigSummary(nextConfig);
+  printAccessTokenHelp(nextConfig, envFilePath);
   const sourceCheckout = isSourceCheckout();
 
   if (!options.noBackground) {
@@ -1553,6 +1643,97 @@ async function runInit(envFilePath, options = {}) {
   console.log('Next steps:');
   console.log('  1. lalaclaw doctor');
   console.log(`  2. ${sourceCheckout ? 'lalaclaw dev' : 'lalaclaw start'}`);
+}
+
+function readAccessTokenState(envFilePath) {
+  const envValues = readEnvFile(envFilePath);
+  const localOpenClaw = detectLocalOpenClaw();
+  const config = resolveConfig(envValues, localOpenClaw);
+  const inlineTokens = parseAccessTokenEntries(config.accessTokens);
+  const resolvedAccessTokensFile = resolveConfigRelativePath(envFilePath, config.accessTokensFile);
+  const tokensFileExists = Boolean(resolvedAccessTokensFile) && fs.existsSync(resolvedAccessTokensFile);
+  const fileTokens = tokensFileExists
+    ? parseAccessTokenEntries(fs.readFileSync(resolvedAccessTokensFile, 'utf8'))
+    : [];
+
+  return {
+    config,
+    envFilePath,
+    fileTokens,
+    inlineTokens,
+    resolvedAccessTokensFile,
+    tokensFileExists,
+  };
+}
+
+function writeAccessTokenState(envFilePath, config, nextToken) {
+  const nextConfig = {
+    ...config,
+    accessMode: 'token',
+  };
+  const resolvedAccessTokensFile = resolveConfigRelativePath(envFilePath, nextConfig.accessTokensFile);
+
+  if (resolvedAccessTokensFile) {
+    fs.mkdirSync(path.dirname(resolvedAccessTokensFile), { recursive: true });
+    fs.writeFileSync(resolvedAccessTokensFile, `${nextToken}\n`, 'utf8');
+    nextConfig.accessTokens = '';
+  } else {
+    nextConfig.accessTokens = nextToken;
+  }
+
+  fs.mkdirSync(path.dirname(envFilePath), { recursive: true });
+  fs.writeFileSync(envFilePath, renderEnvFile(nextConfig), 'utf8');
+
+  return {
+    nextConfig,
+    resolvedAccessTokensFile,
+  };
+}
+
+function runAccessToken(envFilePath, options = {}) {
+  const state = readAccessTokenState(envFilePath);
+
+  if (options.rotate) {
+    const nextToken = generateAccessToken();
+    const { nextConfig, resolvedAccessTokensFile } = writeAccessTokenState(envFilePath, state.config, nextToken);
+
+    console.log('OK    Rotated browser access token.');
+    console.log(`INFO  Env file: ${envFilePath}`);
+    if (resolvedAccessTokensFile) {
+      console.log(`INFO  Token file: ${resolvedAccessTokensFile}`);
+    }
+    console.log(`INFO  Access mode: ${nextConfig.accessMode}`);
+    console.log(`TOKEN ${nextToken}`);
+    return;
+  }
+
+  console.log(`INFO  Env file: ${envFilePath}`);
+  console.log(`INFO  Access mode: ${state.config.accessMode}`);
+
+  if (state.inlineTokens.length) {
+    console.log('INFO  Inline tokens:');
+    state.inlineTokens.forEach((token, index) => {
+      console.log(`TOKEN ${index + 1}: ${token}`);
+    });
+  }
+
+  if (state.resolvedAccessTokensFile) {
+    console.log(`INFO  Token file: ${state.resolvedAccessTokensFile}`);
+    if (state.tokensFileExists && state.fileTokens.length) {
+      state.fileTokens.forEach((token, index) => {
+        console.log(`FILE_TOKEN ${index + 1}: ${token}`);
+      });
+    } else if (!state.tokensFileExists) {
+      console.log('WARN  Token file is configured but does not exist yet.');
+    } else {
+      console.log('WARN  Token file is configured but no tokens were found.');
+    }
+  }
+
+  if (!state.inlineTokens.length && !state.fileTokens.length) {
+    console.log('INFO  No browser access tokens are configured yet.');
+    console.log('INFO  Use `lalaclaw access token --rotate` to generate one and enable token mode in the env file.');
+  }
 }
 
 function findExecutable(binName) {
@@ -1745,6 +1926,7 @@ function buildChildEnv(envFilePath, overrides = {}) {
   const childEnv = {
     ...process.env,
     HOST: config.host,
+    LALACLAW_CONFIG_FILE: envFilePath,
     PORT: config.backendPort,
     PATH: buildPathEnv(process.env.PATH, [
       path.dirname(process.execPath),
@@ -1778,6 +1960,17 @@ function buildChildEnv(envFilePath, overrides = {}) {
   childEnv.OPENCLAW_AGENT_ID = config.openclawAgentId;
   childEnv.OPENCLAW_API_STYLE = config.openclawApiStyle;
   childEnv.OPENCLAW_API_PATH = config.openclawApiPath;
+  childEnv.COMMANDCENTER_ACCESS_MODE = config.accessMode;
+  if (config.accessTokens) {
+    childEnv.COMMANDCENTER_ACCESS_TOKENS = config.accessTokens;
+  } else {
+    delete childEnv.COMMANDCENTER_ACCESS_TOKENS;
+  }
+  if (config.accessTokensFile) {
+    childEnv.COMMANDCENTER_ACCESS_TOKENS_FILE = config.accessTokensFile;
+  } else {
+    delete childEnv.COMMANDCENTER_ACCESS_TOKENS_FILE;
+  }
   if (config.openclawBin) {
     childEnv.OPENCLAW_BIN = config.openclawBin;
   } else {
@@ -1998,6 +2191,11 @@ async function main() {
     return;
   }
 
+  if (command === 'access token') {
+    runAccessToken(envFilePath, options);
+    return;
+  }
+
   if (command === 'doctor') {
     let report = await collectDoctorData(envFilePath);
     if (options.fix) {
@@ -2076,7 +2274,10 @@ module.exports = {
   truthy,
   isValidPort,
   normalizeApiStyle,
+  normalizeAccessMode,
   normalizeProfile,
+  parseAccessTokenEntries,
+  generateAccessToken,
   applyConfigOverrides,
   clipText,
   isExecutableFile,
@@ -2087,6 +2288,7 @@ module.exports = {
   resolveRuntimeProfile,
   resolveConfig,
   applyResolvedOpenClawBin,
+  resolveConfigRelativePath,
   buildPathEnv,
   resolveLaunchdPlistPath,
   resolveLaunchdLogDir,
@@ -2118,6 +2320,9 @@ module.exports = {
   resolveLibreOfficeInstallCommand,
   runDoctorFix,
   buildChildEnv,
+  readAccessTokenState,
+  writeAccessTokenState,
+  runAccessToken,
   registerWindowsBackgroundService,
   waitForPortInUse,
   startInitBackgroundServices,

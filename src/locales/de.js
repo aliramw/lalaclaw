@@ -98,9 +98,19 @@ const de = {
     modelSwitchSucceeded: (model) => `Modell erfolgreich gewechselt: ${model}`,
     modelSwitchFailed: (model) => `Modellwechsel fehlgeschlagen: ${model}`,
     requestFailed: "Anfrage fehlgeschlagen.",
+    logOut: "Abmelden",
+    loggingOut: "Abmeldung läuft…",
+    logOutTooltip: "Abmelden",
     attachment: "Anhänge",
     removeAttachment: "Entfernen",
     resizePanels: "Ziehen, um Chat- und Trace-Panels zu ändern",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "Abmeldung ist im Moment nicht möglich.",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

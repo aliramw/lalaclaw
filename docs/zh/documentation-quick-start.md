@@ -234,3 +234,12 @@ npm run doctor
 ```
 
 在 `remote-gateway` 模式下，`doctor` 还会对远端网关做一次真实探测，并发送一个最小 API 请求来验证配置的模型和 Agent。
+
+## Browser Access Tokens
+
+如果浏览器打开后看到访问令牌解锁页，可以按下面的方式找到或重置 token：
+
+- 运行 `lalaclaw access token` 查看当前 token
+- 运行 `lalaclaw access token --rotate` 生成并写入新的 token
+- 检查 `~/.config/lalaclaw/.env.local` 里的 `COMMANDCENTER_ACCESS_TOKENS` 或 `COMMANDCENTER_ACCESS_TOKENS_FILE`
+- 如果这台实例不是你自己部署的，向部署者索取 token

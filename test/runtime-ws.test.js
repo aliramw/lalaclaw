@@ -99,4 +99,27 @@ describe("attachRuntimeWebSocket", () => {
     httpServer.emit("upgrade", req, socket, Buffer.alloc(0));
     expect(socket.destroy).toHaveBeenCalled();
   });
+
+  it("stops the upgrade when access control rejects the request", () => {
+    const accessController = {
+      handleUpgrade: vi.fn(() => false),
+    };
+    const wss = attachRuntimeWebSocket(httpServer, { runtimeHub, accessController });
+    wss.handleUpgrade = vi.fn();
+
+    const socket = createMockSocket();
+    const req = {
+      url: "/api/runtime/ws?sessionUser=test&agentId=worker",
+      headers: {
+        host: "127.0.0.1:3000",
+        upgrade: "websocket",
+        connection: "Upgrade",
+      },
+    };
+
+    httpServer.emit("upgrade", req, socket, Buffer.alloc(0));
+
+    expect(accessController.handleUpgrade).toHaveBeenCalledWith(req, socket);
+    expect(wss.handleUpgrade).not.toHaveBeenCalled();
+  });
 });

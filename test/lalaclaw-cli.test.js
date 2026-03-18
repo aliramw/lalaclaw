@@ -47,6 +47,11 @@ describe("LalaClaw CLI helpers", () => {
     expect(cli.parseArgs(["restart"]).command).toBe("restart");
   });
 
+  it("parses access token commands and rotate mode", () => {
+    expect(cli.parseArgs(["access", "token"]).command).toBe("access token");
+    expect(cli.parseArgs(["access", "token", "--rotate"]).options.rotate).toBe(true);
+  });
+
   it("parses write-example mode for init", () => {
     const parsed = cli.parseArgs(["init", "--write-example", "--config-file", "./tmp/example.env"]);
 
@@ -157,6 +162,29 @@ describe("LalaClaw CLI helpers", () => {
       openclawBaseUrl: "https://gateway.example.com",
       openclawApiStyle: "responses",
       openclawApiPath: "/v1/responses",
+    });
+  });
+
+  it("derives token access settings from env values", () => {
+    const config = cli.resolveConfig(
+      {
+        COMMANDCENTER_ACCESS_MODE: "token",
+        COMMANDCENTER_ACCESS_TOKENS: "demo-token",
+        COMMANDCENTER_ACCESS_TOKENS_FILE: "/tmp/access-tokens.txt",
+      },
+      {
+        exists: false,
+        path: "/Users/example/.openclaw/openclaw.json",
+        token: "",
+        defaultAgentId: "main",
+        defaultModel: "openclaw",
+      },
+    );
+
+    expect(config).toMatchObject({
+      accessMode: "token",
+      accessTokens: "demo-token",
+      accessTokensFile: "/tmp/access-tokens.txt",
     });
   });
 
@@ -310,6 +338,28 @@ describe("LalaClaw CLI helpers", () => {
     });
 
     expect(output).toContain("OPENCLAW_BIN=/Users/example/.npm-global/bin/openclaw");
+  });
+
+  it("renders token access settings into the env file", () => {
+    const output = cli.renderEnvFile({
+      host: "127.0.0.1",
+      backendPort: "3000",
+      frontendHost: "127.0.0.1",
+      frontendPort: "5173",
+      profile: "mock",
+      openclawBin: "",
+      openclawModel: "openclaw",
+      openclawAgentId: "main",
+      openclawApiStyle: "chat",
+      openclawApiPath: "/v1/chat/completions",
+      accessMode: "token",
+      accessTokens: "demo-token",
+      accessTokensFile: "/tmp/access-tokens.txt",
+    });
+
+    expect(output).toContain("COMMANDCENTER_ACCESS_MODE=token");
+    expect(output).toContain("COMMANDCENTER_ACCESS_TOKENS=demo-token");
+    expect(output).toContain("COMMANDCENTER_ACCESS_TOKENS_FILE=/tmp/access-tokens.txt");
   });
 
   it("reads the checked-in example env template", () => {
@@ -861,6 +911,94 @@ describe("LalaClaw CLI helpers", () => {
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it("passes token access settings from the env file into child processes", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-cli-access-"));
+    const envFilePath = path.join(tempDir, ".env.local");
+    fs.writeFileSync(
+      envFilePath,
+      [
+        "HOST=127.0.0.1",
+        "PORT=5678",
+        "FRONTEND_HOST=127.0.0.1",
+        "FRONTEND_PORT=4321",
+        "COMMANDCENTER_FORCE_MOCK=1",
+        "COMMANDCENTER_ACCESS_MODE=token",
+        "COMMANDCENTER_ACCESS_TOKENS=demo-token",
+        "COMMANDCENTER_ACCESS_TOKENS_FILE=/tmp/access-tokens.txt",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const { childEnv, config } = cli.buildChildEnv(envFilePath);
+
+    expect(config.accessMode).toBe("token");
+    expect(config.accessTokens).toBe("demo-token");
+    expect(config.accessTokensFile).toBe("/tmp/access-tokens.txt");
+    expect(childEnv.LALACLAW_CONFIG_FILE).toBe(envFilePath);
+    expect(childEnv.COMMANDCENTER_ACCESS_MODE).toBe("token");
+    expect(childEnv.COMMANDCENTER_ACCESS_TOKENS).toBe("demo-token");
+    expect(childEnv.COMMANDCENTER_ACCESS_TOKENS_FILE).toBe("/tmp/access-tokens.txt");
+  });
+
+  it("reads inline browser access tokens from the env file", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-access-read-"));
+    const envFilePath = path.join(tempDir, ".env.local");
+    fs.writeFileSync(
+      envFilePath,
+      [
+        "COMMANDCENTER_ACCESS_MODE=token",
+        "COMMANDCENTER_ACCESS_TOKENS=first-token,second-token",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const state = cli.readAccessTokenState(envFilePath);
+
+    expect(state.config.accessMode).toBe("token");
+    expect(state.inlineTokens).toEqual(["first-token", "second-token"]);
+    expect(state.fileTokens).toEqual([]);
+  });
+
+  it("rotates browser access tokens inline when no token file is configured", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-access-rotate-inline-"));
+    const envFilePath = path.join(tempDir, ".env.local");
+    fs.writeFileSync(envFilePath, "COMMANDCENTER_ACCESS_MODE=off\n", "utf8");
+
+    const { nextConfig, resolvedAccessTokensFile } = cli.writeAccessTokenState(envFilePath, cli.resolveConfig({}, {
+      exists: false,
+      path: "/Users/example/.openclaw/openclaw.json",
+      token: "",
+      defaultAgentId: "main",
+      defaultModel: "openclaw",
+    }), "rotated-inline-token");
+
+    expect(resolvedAccessTokensFile).toBe("");
+    expect(nextConfig.accessMode).toBe("token");
+    expect(nextConfig.accessTokens).toBe("rotated-inline-token");
+    expect(fs.readFileSync(envFilePath, "utf8")).toContain("COMMANDCENTER_ACCESS_TOKENS=rotated-inline-token");
+  });
+
+  it("rotates browser access tokens into the configured token file", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-access-rotate-file-"));
+    const envFilePath = path.join(tempDir, ".env.local");
+    const tokensFilePath = path.join(tempDir, "tokens.txt");
+    fs.writeFileSync(
+      envFilePath,
+      [
+        "COMMANDCENTER_ACCESS_MODE=token",
+        `COMMANDCENTER_ACCESS_TOKENS_FILE=${tokensFilePath}`,
+      ].join("\n"),
+      "utf8",
+    );
+
+    const state = cli.readAccessTokenState(envFilePath);
+    const result = cli.writeAccessTokenState(envFilePath, state.config, "rotated-file-token");
+
+    expect(result.resolvedAccessTokensFile).toBe(tokensFilePath);
+    expect(fs.readFileSync(tokensFilePath, "utf8")).toBe("rotated-file-token\n");
+    expect(fs.readFileSync(envFilePath, "utf8")).toContain(`COMMANDCENTER_ACCESS_TOKENS_FILE=${tokensFilePath}`);
   });
 
   it("clears remote gateway env vars when child processes run in local-openclaw mode", () => {

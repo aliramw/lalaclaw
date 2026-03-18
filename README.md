@@ -59,6 +59,8 @@ Typical flow:
 4. You forward that remote port to your local computer over SSH.
 5. You open the forwarded local address in your browser.
 
+If you want to expose a remote install through a direct HTTPS URL instead of SSH port forwarding, enable token access mode on the server and put it behind your preferred reverse proxy. See `Token Access Mode` below.
+
 Example SSH port forwarding:
 
 ```bash
@@ -164,6 +166,7 @@ npm run lalaclaw:start
   For `remote-gateway`, it also probes the configured gateway URL and sends a minimal API request to validate the configured model and agent.
 - `npm run doctor -- --fix` installs LibreOffice automatically on macOS when LibreOffice-backed preview support is missing
 - `npm run doctor -- --json` prints the same diagnosis as machine-readable JSON with `summary.status` and `summary.exitCode`
+- `lalaclaw access token` prints the current browser access token from local config, and `lalaclaw access token --rotate` generates a new one
 - `npm run lalaclaw:init` writes a local `.env.local` bootstrap file
 - `lalaclaw -h` / `lalaclaw --help` prints CLI help, and `lalaclaw -v` / `lalaclaw --version` prints the current CLI version
 - `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
@@ -237,5 +240,30 @@ If your gateway is closer to the OpenAI Responses API, use:
 export OPENCLAW_API_STYLE="responses"
 export OPENCLAW_API_PATH="/v1/responses"
 ```
+
+## Token Access Mode
+
+If you want to open LalaClaw through a direct remote URL, keep the normal browser app but require an access token before any `/api/*` or runtime WebSocket traffic is allowed.
+
+Example:
+
+```bash
+export HOST="0.0.0.0"
+export PORT="5678"
+export COMMANDCENTER_ACCESS_MODE="token"
+export COMMANDCENTER_ACCESS_TOKENS="replace-with-a-long-random-token"
+npm run build
+npm run lalaclaw:start
+```
+
+Notes:
+
+- The browser first loads the app shell, then exchanges the token for an `httpOnly` cookie through `/api/auth/token`
+- Protected mode covers the REST API plus `/api/runtime/ws`, so chat, file preview, file save, workspace tree, and runtime snapshots stay behind the same gate
+- For multiple tokens, separate `COMMANDCENTER_ACCESS_TOKENS` entries with commas or newlines, or point `COMMANDCENTER_ACCESS_TOKENS_FILE` at a newline-separated token file
+- If you started LalaClaw with `lalaclaw init`, the token settings usually live in `~/.config/lalaclaw/.env.local` on macOS/Linux or `%APPDATA%\LalaClaw\.env.local` on Windows
+- If you have terminal access on the host, run `lalaclaw access token` to print the current token, or `lalaclaw access token --rotate` to replace it
+- Keep using `HOST=127.0.0.1` when you only need local access or SSH port forwarding
+- For internet-facing deployments, prefer HTTPS through a reverse proxy in front of LalaClaw
 
 Without these variables, the app runs in `mock` mode so the UI and chat loop remain usable during bootstrap.

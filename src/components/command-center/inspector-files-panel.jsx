@@ -3,6 +3,7 @@ import { ChevronDown, Copy, Eye, FolderOpen, Pencil, RotateCcw, X } from "lucide
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
@@ -165,7 +166,7 @@ async function requestWorkspaceTree({
     params.set("filter", filter);
   }
 
-  const response = await fetch(`/api/workspace-tree?${params.toString()}`);
+  const response = await apiFetch(`/api/workspace-tree?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || "Workspace tree failed");

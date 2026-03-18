@@ -77,3 +77,12 @@ npm run dev:all
 - Frontend: `http://127.0.0.1:5173`
 - Backend: `http://127.0.0.1:3000`
 - Browser-Einstieg: `http://127.0.0.1:5173`
+
+## Browser Access Tokens
+
+Wenn im Browser der Entsperrbildschirm fuer das Token erscheint, kannst du das token so finden oder erneuern:
+
+- `lalaclaw access token` zeigt das aktuelle token an
+- `lalaclaw access token --rotate` erzeugt und speichert ein neues token
+- pruefe `COMMANDCENTER_ACCESS_TOKENS` oder `COMMANDCENTER_ACCESS_TOKENS_FILE` in `~/.config/lalaclaw/.env.local`
+- wenn die Instanz nicht von dir bereitgestellt wurde, frage die zustaendige Person nach dem token

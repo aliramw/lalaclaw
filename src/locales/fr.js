@@ -113,9 +113,19 @@ const fr = {
     modelSwitchSucceeded: (model) => `Modèle changé avec succès : ${model}`,
     modelSwitchFailed: (model) => `Échec du changement de modèle : ${model}`,
     requestFailed: "La requête a échoué.",
+    logOut: "Se déconnecter",
+    loggingOut: "Déconnexion…",
+    logOutTooltip: "Se déconnecter",
     attachment: "Pièces jointes",
     removeAttachment: "Retirer",
     resizePanels: "Faites glisser pour redimensionner le chat et le panneau d'observation",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "Impossible de se déconnecter pour le moment.",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

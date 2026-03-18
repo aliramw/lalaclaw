@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
+import { apiFetch } from "@/lib/api-client";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn, stripMarkdownForDisplay } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -188,7 +189,7 @@ async function requestWorkspaceTree({
     params.set("filter", filter);
   }
 
-  const response = await fetch(`/api/workspace-tree?${params.toString()}`);
+  const response = await apiFetch(`/api/workspace-tree?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || "Workspace tree failed");

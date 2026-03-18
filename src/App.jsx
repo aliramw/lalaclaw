@@ -7,6 +7,8 @@ import { SessionOverview } from "@/components/command-center/session-overview";
 import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { useCommandCenter } from "@/features/app/controllers";
+import { AccessGate } from "@/features/auth/access-gate";
+import { useAccessGate } from "@/features/auth/access-context";
 import { defaultInspectorPanelWidth, maxInspectorPanelWidth, minInspectorPanelWidth } from "@/features/app/storage";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, normalizeStatusKey } from "@/features/session/status-display";
 import { I18nProvider } from "@/lib/i18n";
@@ -20,6 +22,7 @@ const minChatPanelWidth = 560;
 const compactInspectorPanelMinWidth = 58;
 const compactInspectorPanelMaxWidth = 72;
 const compactChatPanelMinWidth = 220;
+const shouldBypassAccessGate = Boolean(import.meta.env?.MODE === "test" || import.meta.env?.VITEST);
 
 function getRelationshipDisplay(relationship, messages) {
   const fallbackLabel =
@@ -409,6 +412,7 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
 function AppContent() {
   const userLabel = "marila";
   const { messages: i18nMessages } = useI18n();
+  const { accessMode, loggingOut, logout } = useAccessGate();
   const {
     activeChatTabId,
     activeQueuedMessages,
@@ -653,6 +657,8 @@ function AppContent() {
   const tabBrandOverview = useMemo(() => (
     <SessionOverview
       layout="tab-brand"
+      accessLoggingOut={loggingOut}
+      accessMode={accessMode}
       availableAgents={availableAgents}
       availableModels={availableModels}
       composerSendMode={composerSendMode}
@@ -660,6 +666,7 @@ function AppContent() {
       formatCompactK={formatCompactK}
       model={model}
       onAgentChange={handleAgentChange}
+      onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
       onSearchSessions={handleSearchSessions}
@@ -671,12 +678,15 @@ function AppContent() {
       theme={theme}
     />
   ), [
+    accessMode,
     availableAgents,
     availableModels,
     composerSendMode,
     fastMode,
     formatCompactK,
     handleAgentChange,
+    loggingOut,
+    logout,
     handleFastModeChange,
     handleModelChange,
     handleSearchSessions,
@@ -691,6 +701,8 @@ function AppContent() {
   const agentTabOverview = useMemo(() => (
     <SessionOverview
       layout="agent-tab"
+      accessLoggingOut={loggingOut}
+      accessMode={accessMode}
       availableAgents={availableAgents}
       availableModels={availableModels}
       composerSendMode={composerSendMode}
@@ -698,6 +710,7 @@ function AppContent() {
       formatCompactK={formatCompactK}
       model={model}
       onAgentChange={handleAgentChange}
+      onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
       onSearchSessions={handleSearchSessions}
@@ -710,12 +723,15 @@ function AppContent() {
       theme={theme}
     />
   ), [
+    accessMode,
     availableAgents,
     availableModels,
     composerSendMode,
     fastMode,
     formatCompactK,
     handleAgentChange,
+    loggingOut,
+    logout,
     handleFastModeChange,
     handleModelChange,
     handleSearchSessions,
@@ -731,6 +747,8 @@ function AppContent() {
   const controlsOverview = useMemo(() => (
     <SessionOverview
       layout="controls"
+      accessLoggingOut={loggingOut}
+      accessMode={accessMode}
       availableAgents={availableAgents}
       availableModels={availableModels}
       composerSendMode={composerSendMode}
@@ -738,6 +756,7 @@ function AppContent() {
       formatCompactK={formatCompactK}
       model={model}
       onAgentChange={handleAgentChange}
+      onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
       onSearchSessions={handleSearchSessions}
@@ -749,12 +768,15 @@ function AppContent() {
       theme={theme}
     />
   ), [
+    accessMode,
     availableAgents,
     availableModels,
     composerSendMode,
     fastMode,
     formatCompactK,
     handleAgentChange,
+    loggingOut,
+    logout,
     handleFastModeChange,
     handleModelChange,
     handleSearchSessions,
@@ -769,6 +791,8 @@ function AppContent() {
   const statusOverview = useMemo(() => (
     <SessionOverview
       layout="status"
+      accessLoggingOut={loggingOut}
+      accessMode={accessMode}
       availableAgents={availableAgents}
       availableModels={availableModels}
       composerSendMode={composerSendMode}
@@ -776,6 +800,7 @@ function AppContent() {
       formatCompactK={formatCompactK}
       model={model}
       onAgentChange={handleAgentChange}
+      onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
       onSearchSessions={handleSearchSessions}
@@ -787,12 +812,15 @@ function AppContent() {
       theme={theme}
     />
   ), [
+    accessMode,
     availableAgents,
     availableModels,
     composerSendMode,
     fastMode,
     formatCompactK,
     handleAgentChange,
+    loggingOut,
+    logout,
     handleFastModeChange,
     handleModelChange,
     handleSearchSessions,
@@ -854,7 +882,7 @@ function AppContent() {
         className="h-dvh overflow-hidden bg-background text-foreground"
         aria-busy={switchingAgentOverlay || switchingModelOverlay ? "true" : "false"}
       >
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-2 overflow-hidden px-3 py-3">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-1 overflow-hidden px-3 py-2">
           <div className="flex shrink-0 items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               <ChatTabsStrip
@@ -974,7 +1002,13 @@ function AppContent() {
 export default function App() {
   return (
     <I18nProvider>
-      <AppContent />
+      {shouldBypassAccessGate ? (
+        <AppContent />
+      ) : (
+        <AccessGate>
+          <AppContent />
+        </AccessGate>
+      )}
     </I18nProvider>
   );
 }

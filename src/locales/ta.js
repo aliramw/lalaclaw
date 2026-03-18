@@ -98,9 +98,19 @@ const ta = {
     modelSwitchSucceeded: (model) => `மாதிரி வெற்றிகரமாக மாற்றப்பட்டது: ${model}`,
     modelSwitchFailed: (model) => `மாதிரி மாற்றம் தோல்வியடைந்தது: ${model}`,
     requestFailed: "கோரிக்கை தோல்வியடைந்தது.",
+    logOut: "வெளியேறு",
+    loggingOut: "வெளியேறுகிறது…",
+    logOutTooltip: "வெளியேறு",
     attachment: "இணைப்புகள்",
     removeAttachment: "நீக்கு",
     resizePanels: "அரட்டை மற்றும் trace பலகைகளின் அளவை மாற்ற இழுக்கவும்",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "இப்போது வெளியேற முடியவில்லை.",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

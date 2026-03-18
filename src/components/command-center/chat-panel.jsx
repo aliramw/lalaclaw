@@ -37,6 +37,12 @@ const focusHighlightDurationMs = 1400;
 const messageOutlineViewportBottomGapPx = 20;
 const messageOutlineMinHeightPx = 96;
 const chatTabsScrollStepPx = 220;
+const chatTabDragActivationDistancePx = 4;
+const chatTabReorderSnapThresholdPx = 12;
+const chatTabShortcutBandHeightPx = 14;
+const chatTabDragVisualOffsetYPx = -1;
+const chatTabBodyHeightPx = 36;
+const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx;
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -1500,6 +1506,7 @@ export function ChatTabsStrip({
 }) {
   const { messages } = useI18n();
   const [draggingTabId, setDraggingTabId] = useState("");
+  const [dragSession, setDragSession] = useState(null);
   const [tabScrollState, setTabScrollState] = useState({
     canScrollLeft: false,
     canScrollRight: false,
@@ -1510,8 +1517,14 @@ export function ChatTabsStrip({
   const previousOrderSignatureRef = useRef("");
   const draggingTabIdRef = useRef("");
   const lastReorderIntentRef = useRef("");
+  const suppressTabClickRef = useRef(false);
   const scrollViewportRef = useRef(null);
   const scrollContentRef = useRef(null);
+  const dragSessionRef = useRef(null);
+
+  useEffect(() => {
+    dragSessionRef.current = dragSession;
+  }, [dragSession]);
 
   const updateTabScrollState = useCallback(() => {
     const viewport = scrollViewportRef.current;
@@ -1558,7 +1571,9 @@ export function ChatTabsStrip({
       nextRects.set(item.id, node.getBoundingClientRect());
     });
 
-    const shouldAnimateReorder = previousOrderSignatureRef.current && previousOrderSignatureRef.current !== currentOrderSignature;
+    const shouldAnimateReorder =
+      previousOrderSignatureRef.current
+      && previousOrderSignatureRef.current !== currentOrderSignature;
 
     if (shouldAnimateReorder) {
       nextRects.forEach((rect, id) => {
@@ -1584,8 +1599,8 @@ export function ChatTabsStrip({
             { transform: "translate(0px, 0px)" },
           ],
           {
-            duration: 120,
-            easing: "linear",
+            duration: 180,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
           },
         );
       });
@@ -1593,7 +1608,7 @@ export function ChatTabsStrip({
 
     previousTabRectsRef.current = nextRects;
     previousOrderSignatureRef.current = currentOrderSignature;
-  }, [draggingTabId, items]);
+  }, [dragSession?.active, draggingTabId, items]);
 
   useLayoutEffect(() => {
     updateTabScrollState();
@@ -1654,6 +1669,122 @@ export function ChatTabsStrip({
     };
   }, [items.length, updateTabScrollState]);
 
+  useEffect(() => {
+    if (!dragSession) {
+      return undefined;
+    }
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+
+    const finishDrag = () => {
+      draggingTabIdRef.current = "";
+      lastReorderIntentRef.current = "";
+      setDraggingTabId("");
+      setDragSession(null);
+    };
+
+    const maybeAutoScrollTabs = (clientX) => {
+      const viewport = scrollViewportRef.current;
+      if (!viewport) {
+        return;
+      }
+
+      const bounds = viewport.getBoundingClientRect();
+      const edgeThreshold = 40;
+      if (clientX < bounds.left + edgeThreshold) {
+        viewport.scrollLeft -= 20;
+      } else if (clientX > bounds.right - edgeThreshold) {
+        viewport.scrollLeft += 20;
+      }
+    };
+
+    const handlePointerMove = (event) => {
+      const currentSession = dragSessionRef.current;
+      if (!currentSession || event.pointerId !== currentSession.pointerId) {
+        return;
+      }
+
+      const deltaX = event.clientX - currentSession.startX;
+      const deltaY = event.clientY - currentSession.startY;
+      const distance = Math.hypot(deltaX, deltaY);
+      const active = currentSession.active || distance >= chatTabDragActivationDistancePx;
+      const viewportBounds = scrollViewportRef.current?.getBoundingClientRect();
+      const unclampedLeft = event.clientX - currentSession.xOffset;
+      const minLeft = viewportBounds?.left ?? unclampedLeft;
+      const maxLeft = viewportBounds ? Math.max(minLeft, viewportBounds.right - currentSession.width) : unclampedLeft;
+      const clampedLeft = Math.min(Math.max(unclampedLeft, minLeft), maxLeft);
+
+      const nextSession = {
+        ...currentSession,
+        active,
+        currentX: clampedLeft + currentSession.xOffset,
+        currentY: currentSession.currentY,
+      };
+
+      setDragSession(nextSession);
+      if (!active) {
+        return;
+      }
+
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "grabbing";
+      maybeAutoScrollTabs(event.clientX);
+
+      for (const item of items) {
+        if (!item?.id || item.id === currentSession.tabId) {
+          continue;
+        }
+
+        const node = tabNodeMapRef.current.get(item.id);
+        if (!node) {
+          continue;
+        }
+
+        const rect = node.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right) {
+          continue;
+        }
+
+        const midpoint = rect.left + (rect.width / 2);
+        if (Math.abs(event.clientX - midpoint) < chatTabReorderSnapThresholdPx) {
+          continue;
+        }
+
+        const placeAfter = event.clientX > midpoint;
+        const intentKey = `${currentSession.tabId}:${item.id}:${placeAfter ? "after" : "before"}`;
+        if (lastReorderIntentRef.current === intentKey) {
+          return;
+        }
+
+        lastReorderIntentRef.current = intentKey;
+        onReorder?.(currentSession.tabId, item.id, placeAfter ? "after" : "before");
+        return;
+      }
+    };
+
+    const handlePointerUp = (event) => {
+      const currentSession = dragSessionRef.current;
+      if (!currentSession || event.pointerId !== currentSession.pointerId) {
+        return;
+      }
+      suppressTabClickRef.current = Boolean(currentSession.active);
+      finishDrag();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [dragSession, items, onReorder]);
+
   if (!items.length && !leadingControl && !trailingControl) {
     return null;
   }
@@ -1678,7 +1809,7 @@ export function ChatTabsStrip({
   const scrollButtonClassName = "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground/85 transition hover:border-foreground/25 hover:bg-accent/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:border-border/45 disabled:bg-muted/28 disabled:text-muted-foreground/45 disabled:opacity-100";
 
   return (
-    <div className={cn("flex min-w-0 items-center gap-1 pt-1 pb-0", className)}>
+    <div className={cn("flex h-full min-w-0 min-h-[54px] items-center gap-1 pt-0 pb-0", className)}>
       {leadingControl ? <div className="shrink-0">{leadingControl}</div> : null}
       {tabScrollState.hasOverflow ? (
         <Tooltip>
@@ -1700,12 +1831,13 @@ export function ChatTabsStrip({
         <div className="min-w-0 flex-1">
           <div
             ref={scrollViewportRef}
-            className="cc-chat-tabs-viewport cc-tab-scrollbar-hidden min-w-0 overflow-x-auto overflow-y-hidden pt-4"
+            className="cc-chat-tabs-viewport cc-tab-scrollbar-hidden min-h-[54px] min-w-0 overflow-x-auto overflow-y-hidden"
           >
-            <div ref={scrollContentRef} className="inline-flex min-w-max items-center gap-1 px-1 pt-0 pb-1">
+            <div ref={scrollContentRef} className="inline-flex min-w-max items-end gap-1 px-1 pt-0 pb-1">
               {items.map((item, index) => {
                 const shortcutNumber = index < 9 ? String(index + 1) : null;
-                const isClosableActiveTab = closable && item.active;
+                const isDraggingThisTab = dragSession?.tabId === item.id;
+                const isClosableActiveTab = closable && item.active && !isDraggingThisTab;
                 const tabTitle = item.title || item.agentId;
                 const imTitleParts = splitImTabTitleForDisplay(tabTitle, item.agentId, item.sessionUser);
 
@@ -1719,62 +1851,42 @@ export function ChatTabsStrip({
                       }
                       tabNodeMapRef.current.delete(item.id);
                     }}
-                    draggable={items.length > 1}
-                    onDragStart={(event) => {
-                      draggingTabIdRef.current = item.id;
-                      setDraggingTabId(item.id);
-                      lastReorderIntentRef.current = "";
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", item.id);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                      const currentDraggingTabId = draggingTabIdRef.current || draggingTabId;
-                      if (!currentDraggingTabId || currentDraggingTabId === item.id) {
+                    onPointerDown={(event) => {
+                      if (items.length <= 1 || event.button !== 0) {
+                        return;
+                      }
+                      if (event.target.closest("[data-tab-close-button='true']")) {
                         return;
                       }
 
-                      const sourceIndex = items.findIndex((entry) => entry.id === currentDraggingTabId);
-                      const targetIndex = items.findIndex((entry) => entry.id === item.id);
-                      if (sourceIndex === -1 || targetIndex === -1) {
-                        return;
-                      }
-
+                      suppressTabClickRef.current = false;
                       const rect = event.currentTarget.getBoundingClientRect();
-                      const placeAfter = event.clientX > rect.left + rect.width / 2;
-                      const currentIntentKey = `${currentDraggingTabId}:${item.id}:${placeAfter ? "after" : "before"}`;
-                      if (lastReorderIntentRef.current === currentIntentKey) {
-                        return;
-                      }
-
-                      if ((placeAfter && sourceIndex === targetIndex + 1) || (!placeAfter && sourceIndex === targetIndex - 1)) {
-                        return;
-                      }
-
-                      lastReorderIntentRef.current = currentIntentKey;
-                      onReorder?.(currentDraggingTabId, item.id, placeAfter ? "after" : "before");
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      draggingTabIdRef.current = "";
-                      setDraggingTabId("");
+                      draggingTabIdRef.current = item.id;
                       lastReorderIntentRef.current = "";
-                    }}
-                    onDragEnd={() => {
-                      draggingTabIdRef.current = "";
-                      setDraggingTabId("");
-                      lastReorderIntentRef.current = "";
+                      setDraggingTabId(item.id);
+                      setDragSession({
+                        active: false,
+                        currentX: event.clientX,
+                        currentY: rect.top,
+                        dragBodyTop: rect.top + chatTabShortcutBandHeightPx + chatTabDragVisualOffsetYPx,
+                        height: rect.height,
+                        pointerId: event.pointerId,
+                        rectTop: rect.top,
+                        startX: event.clientX,
+                        startY: event.clientY,
+                        tabId: item.id,
+                        width: rect.width,
+                        xOffset: event.clientX - rect.left,
+                        yOffset: event.clientY - rect.top,
+                      });
                     }}
                     className={cn(
-                      "group relative inline-flex h-9 max-w-[13rem] items-center overflow-visible rounded-md border transition",
-                      item.active
-                        ? resolvedTheme === "dark"
-                          ? "border-transparent bg-[#0f3e6a] text-white shadow-sm hover:bg-[#0f3e6a]"
-                          : "border-transparent bg-[#1677eb] text-white shadow-sm hover:bg-[#0f6fe0]"
-                        : "border-border/45 bg-muted/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/88",
-                      draggingTabId === item.id ? "cursor-grabbing opacity-75" : "cursor-grab",
+                      "group relative inline-flex box-border h-[50px] max-w-[13rem] pt-[14px]",
+                      draggingTabId === item.id ? "cursor-grabbing" : "cursor-grab",
                     )}
+                    style={dragSession?.tabId === item.id && dragSession?.active
+                      ? { height: `${chatTabWrapperHeightPx}px`, width: `${dragSession.width}px` }
+                      : undefined}
                   >
 	                    {shortcutNumber ? (
 	                      <Tooltip>
@@ -1783,8 +1895,8 @@ export function ChatTabsStrip({
 	                            type="button"
 	                            draggable={false}
 	                            className={cn(
-	                              "absolute left-3 top-[-0.72rem] z-10 inline-flex min-w-3 items-center justify-center px-0.5 text-[11px] font-semibold leading-none tabular-nums",
-	                              item.active ? "text-primary" : "text-muted-foreground",
+	                              "absolute left-[0.8125rem] top-0 z-10 inline-flex min-w-3 -translate-x-1/2 items-center justify-center px-0.5 text-[12px] font-bold leading-none tabular-nums",
+	                              item.active ? "text-primary/22" : "text-muted-foreground/22",
 	                            )}
 	                            onMouseDown={(event) => {
 	                              event.stopPropagation();
@@ -1806,70 +1918,91 @@ export function ChatTabsStrip({
 	                        </TooltipContent>
 	                      </Tooltip>
 	                    ) : null}
-	                    <button
-	                      type="button"
-	                      draggable={false}
-	                      className="relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-	                      onMouseDown={(event) => {
-                        if (event.button !== 0 || item.active) {
-                          return;
-                        }
-                        onActivate?.(item.id);
-                      }}
-                      onClick={(event) => {
-                        if (event.detail !== 0) {
-                          return;
-                        }
-                        onActivate?.(item.id);
-                      }}
-                    >
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 shrink-0 rounded-full",
-                          item.busy
-                            ? "cc-chat-tab-busy-dot bg-emerald-500"
-                            : item.active ? "bg-white/65" : "bg-muted-foreground/35",
-                        )}
-                      />
-                      <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>
-                        {imTitleParts ? (
-                          <>
-                            <span>{imTitleParts.platformLabel}</span>
-                            {" "}
-                            <span className={cn("text-[11px]", item.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
-                          </>
-                        ) : tabTitle}
-                      </span>
-	                    </button>
-                    {shortcutNumber ? (
-                      isClosableActiveTab ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              draggable={false}
-                              className={cn(
-                                "mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[11px] font-semibold leading-none transition",
-                                item.active
-                                  ? "text-white/90 hover:bg-white/14 hover:text-white"
-                                  : "text-foreground/80 hover:bg-accent/60 hover:text-foreground",
-                              )}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onClose?.(item.id);
-                              }}
-                              aria-label={messages.chat.closeTabAriaLabel(tabTitle)}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom" className="max-w-[16rem] px-2.5 py-2 text-left">
-                            <div className="text-xs font-medium leading-4">{messages.chat.closeTab}</div>
-                            <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{messages.chat.closeTabHint}</div>
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : null
-                    ) : null}
+	                    <div
+	                      className={cn(
+	                        "inline-flex h-9 items-center overflow-visible rounded-md border transition",
+	                        item.active
+	                          ? resolvedTheme === "dark"
+	                            ? "border-transparent bg-[#0f3e6a] text-white shadow-sm hover:bg-[#0f3e6a]"
+	                            : "border-transparent bg-[#1677eb] text-white shadow-sm hover:bg-[#0f6fe0]"
+	                          : "border-border/45 bg-muted/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:border-border/70 hover:bg-muted/88",
+	                      )}
+                        style={dragSession?.tabId === item.id && dragSession?.active
+                          ? {
+                              boxShadow: "none",
+                              left: `${dragSession.currentX - dragSession.xOffset}px`,
+                              pointerEvents: "none",
+                              position: "fixed",
+                              top: `${dragSession.dragBodyTop}px`,
+                              width: `${dragSession.width}px`,
+                              zIndex: 40,
+                            }
+                          : undefined}
+	                    >
+	                      <button
+	                        type="button"
+	                        draggable={false}
+	                        className="relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+                        onClick={(event) => {
+                          if (suppressTabClickRef.current) {
+                            suppressTabClickRef.current = false;
+                            return;
+                          }
+                          if (item.active) {
+                            return;
+                          }
+                          onActivate?.(item.id);
+                        }}
+                      >
+                        <span
+                          className={cn(
+                            "h-1.5 w-1.5 shrink-0 rounded-full",
+                            item.busy
+                              ? "cc-chat-tab-busy-dot bg-emerald-500"
+                              : item.active ? "bg-white/65" : "bg-muted-foreground/35",
+                          )}
+                        />
+                        <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>
+                          {imTitleParts ? (
+                            <>
+                              <span>{imTitleParts.platformLabel}</span>
+                              {" "}
+                              <span className={cn("text-[11px]", item.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
+                            </>
+                          ) : tabTitle}
+                        </span>
+	                      </button>
+                      {shortcutNumber ? (
+                        isClosableActiveTab ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                draggable={false}
+                                data-tab-close-button="true"
+                                className={cn(
+                                  "mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[11px] font-semibold leading-none transition",
+                                  item.active
+                                    ? "text-white/90 hover:bg-white/14 hover:text-white"
+                                    : "text-foreground/80 hover:bg-accent/60 hover:text-foreground",
+                                )}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onClose?.(item.id);
+                                }}
+                                aria-label={messages.chat.closeTabAriaLabel(tabTitle)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[16rem] px-2.5 py-2 text-left">
+                              <div className="text-xs font-medium leading-4">{messages.chat.closeTab}</div>
+                              <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{messages.chat.closeTabHint}</div>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : null
+                      ) : null}
+	                    </div>
                   </div>
                 );
               })}
@@ -3047,7 +3180,7 @@ export function ChatPanel({
           onReset?.();
         }}
       />
-      <div className={cn("grid h-full min-h-0", showTabsStrip ? "grid-rows-[auto_minmax(0,1fr)] gap-2" : "grid-rows-[minmax(0,1fr)] gap-0")}>
+      <div className={cn("grid h-full min-h-0", showTabsStrip ? "grid-rows-[54px_minmax(0,1fr)] gap-2" : "grid-rows-[minmax(0,1fr)] gap-0")}>
         {showTabsStrip ? (
           <ChatTabsStrip
             items={chatTabs}

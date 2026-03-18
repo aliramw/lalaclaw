@@ -98,9 +98,19 @@ const ms = {
     modelSwitchSucceeded: (model) => `Model berjaya ditukar: ${model}`,
     modelSwitchFailed: (model) => `Penukaran model gagal: ${model}`,
     requestFailed: "Permintaan gagal.",
+    logOut: "Log keluar",
+    loggingOut: "Sedang log keluar…",
+    logOutTooltip: "Log keluar",
     attachment: "Lampiran",
     removeAttachment: "Buang",
     resizePanels: "Seret untuk ubah saiz panel chat dan trace",
+  },
+  authGate: {
+    ...en.authGate,
+    errors: {
+      ...en.authGate.errors,
+      logout: "Tidak dapat log keluar sekarang.",
+    },
   },
   sessionOverview: {
     ...en.sessionOverview,

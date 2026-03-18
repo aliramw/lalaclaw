@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn, isApplePlatform } from "@/lib/utils";
@@ -449,7 +450,7 @@ function DocxPreviewContent({ preview, resolvedTheme = "light" }) {
 
       try {
         const [response, docxPreviewModule] = await Promise.all([
-          fetch(preview.contentUrl),
+          apiFetch(preview.contentUrl),
           import("docx-preview"),
         ]);
 
@@ -758,7 +759,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
 
     try {
       setOpeningInFileManager(true);
-      const response = await fetch("/api/file-manager/reveal", {
+      const response = await apiFetch("/api/file-manager/reveal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: image.path }),
@@ -1020,7 +1021,7 @@ export function FilePreviewOverlay({
 
     try {
       setOpeningInFileManager(true);
-      const response = await fetch("/api/file-manager/reveal", {
+      const response = await apiFetch("/api/file-manager/reveal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: title }),
@@ -1069,7 +1070,7 @@ export function FilePreviewOverlay({
       setIsSaving(true);
       setSaveError("");
       setSaveNotice(null);
-      const response = await fetch("/api/file-preview/save", {
+      const response = await apiFetch("/api/file-preview/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
