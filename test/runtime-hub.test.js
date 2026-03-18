@@ -104,6 +104,54 @@ describe("diffSnapshot", () => {
     const patches = diffSnapshot(prev, next);
     expect(patches.some((p) => p.type === "conversation.sync")).toBe(true);
   });
+
+  it("detects conversation tail content change without length change", () => {
+    const base = { session: {}, taskRelationships: [], taskTimeline: [], files: [], artifacts: [], snapshots: [], agents: [], peeks: {} };
+    const prev = { ...base, conversation: [{ role: "user", content: "hello", timestamp: 1 }, { role: "assistant", content: "partial", timestamp: 2 }] };
+    const next = { ...base, conversation: [{ role: "user", content: "hello", timestamp: 1 }, { role: "assistant", content: "complete answer", timestamp: 2 }] };
+    const patches = diffSnapshot(prev, next);
+    expect(patches.some((p) => p.type === "conversation.sync")).toBe(true);
+  });
+
+  it("skips conversation patch when tail matches", () => {
+    const base = { session: {}, taskRelationships: [], taskTimeline: [], files: [], artifacts: [], snapshots: [], agents: [], peeks: {} };
+    const conversation = [{ role: "user", content: "hello", timestamp: 1 }, { role: "assistant", content: "hi", timestamp: 2 }];
+    const prev = { ...base, conversation: [...conversation] };
+    const next = { ...base, conversation: [...conversation] };
+    const patches = diffSnapshot(prev, next);
+    expect(patches.some((p) => p.type === "conversation.sync")).toBe(false);
+  });
+
+  it("detects session field-level changes", () => {
+    const base = { conversation: [], taskRelationships: [], taskTimeline: [], files: [], artifacts: [], snapshots: [], agents: [], peeks: {} };
+    const prev = { ...base, session: { status: "就绪", model: "gpt-5", agentId: "main" } };
+    const next = { ...base, session: { status: "就绪", model: "gpt-5", agentId: "main" } };
+    expect(diffSnapshot(prev, next).some((p) => p.type === "session.sync")).toBe(false);
+
+    const changed = { ...base, session: { status: "运行中", model: "gpt-5", agentId: "main" } };
+    expect(diffSnapshot(prev, changed).some((p) => p.type === "session.sync")).toBe(true);
+  });
+
+  it("detects peeks changes via summary and items", () => {
+    const base = { session: {}, conversation: [], taskRelationships: [], taskTimeline: [], files: [], artifacts: [], snapshots: [], agents: [] };
+    const peeks1 = { workspace: { summary: "foo", items: [{ label: "a", value: "1" }] } };
+    const peeks2 = { workspace: { summary: "foo", items: [{ label: "a", value: "2" }] } };
+    const prev = { ...base, peeks: peeks1 };
+    const next = { ...base, peeks: peeks2 };
+    expect(diffSnapshot(prev, next).some((p) => p.type === "peeks.sync")).toBe(true);
+
+    const same = { ...base, peeks: { workspace: { summary: "foo", items: [{ label: "a", value: "1" }] } } };
+    expect(diffSnapshot(prev, same).some((p) => p.type === "peeks.sync")).toBe(false);
+  });
+
+  it("detects array section changes via tail sampling", () => {
+    const base = { session: {}, conversation: [], taskRelationships: [], taskTimeline: [], files: [], snapshots: [], agents: [], peeks: {} };
+    const artifacts1 = [{ id: "a1", title: "first" }, { id: "a2", title: "second" }];
+    const artifacts2 = [{ id: "a1", title: "first" }, { id: "a2", title: "updated" }];
+    const prev = { ...base, artifacts: artifacts1 };
+    const next = { ...base, artifacts: artifacts2 };
+    expect(diffSnapshot(prev, next).some((p) => p.type === "artifacts.sync")).toBe(true);
+  });
 });
 
 describe("createRuntimeHub", () => {

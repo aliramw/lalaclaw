@@ -367,6 +367,70 @@ export function useRuntimeSnapshot({
     enabled: wsEnabled,
   });
 
+  const applyIncrementalConversation = useCallback((nextConversation) => {
+    const currentSession = sessionRef.current;
+    const currentPendingChatTurns = pendingChatTurnsRef.current;
+    const conversationKey = createConversationKey(currentSession.sessionUser, currentSession.agentId);
+    const localMessages = messagesRef.current || [];
+    const pendingEntry = currentPendingChatTurns[conversationKey] || derivePendingEntryFromLocalMessages(localMessages) || null;
+
+    const mergedConversation = mergeConversationIdentity(
+      mergeConversationAttachments(nextConversation, localMessages),
+      localMessages,
+    );
+    const snapshotHasAssistantReply = pendingEntry
+      ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
+      : false;
+    const snapshotIncludesPendingUserMessage = pendingEntry
+      ? snapshotHasPendingUserMessage(mergedConversation, pendingEntry)
+      : false;
+    const shouldClearPending = shouldClearRecoveredPendingTurn({
+      pendingEntry,
+      recoveringPendingReply,
+      snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
+      snapshotHasAssistantReply,
+      status: currentSession.status,
+    });
+    const effectiveLocalMessages = pendingEntry && !snapshotHasAssistantReply ? localMessages : [];
+    const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
+    const mergedConversationWithLocalTail = pendingEntry && !shouldClearPending
+      ? mergedConversation
+      : mergeStaleLocalConversationTail(
+          mergedConversation,
+          shouldClearPending ? localMessagesWithoutPending : localMessages,
+        );
+    const hydratedConversation = shouldClearPending
+      ? mergedConversationWithLocalTail
+      : mergePendingConversation(
+          mergedConversationWithLocalTail,
+          pendingEntry,
+          i18n.chat.thinkingPlaceholder,
+          effectiveLocalMessages,
+        );
+    const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !snapshotHasAssistantReply && !shouldClearPending;
+
+    setMessagesSynced(hydratedConversation);
+    setBusy(hasActivePendingTurn);
+
+    if (pendingEntry && !hasActivePendingTurn) {
+      setPendingChatTurns((current) => {
+        if (!current[conversationKey]) return current;
+        const next = { ...current };
+        delete next[conversationKey];
+        return next;
+      });
+    }
+
+    const snapshotPromptHistory = extractUserPromptHistory(nextConversation);
+    if (snapshotPromptHistory.length) {
+      setPromptHistoryByConversation((current) => {
+        const previous = current[conversationKey] || [];
+        if (JSON.stringify(previous) === JSON.stringify(snapshotPromptHistory)) return current;
+        return { ...current, [conversationKey]: snapshotPromptHistory };
+      });
+    }
+  }, [i18n.chat.thinkingPlaceholder, messagesRef, recoveringPendingReply, setBusy, setMessagesSynced, setPendingChatTurns, setPromptHistoryByConversation]);
+
   const handleWsMessage = useCallback((payload) => {
     if (!payload || !payload.type) return;
 
@@ -391,6 +455,12 @@ export function useRuntimeSnapshot({
         payload.session.fastMode === '开启' ||
         payload.session.fastMode === true;
       setFastMode(nextFastMode);
+      const statusKey = normalizeStatusKey(payload.session.status);
+      if (statusKey === 'idle' || statusKey === 'completed') {
+        setBusy(false);
+      } else if (statusKey === 'running' || statusKey === 'busy') {
+        setBusy(true);
+      }
       return;
     }
 
@@ -430,10 +500,10 @@ export function useRuntimeSnapshot({
     }
 
     if (payload.type === 'conversation.sync' && Array.isArray(payload.conversation)) {
-      applySnapshot({ conversation: payload.conversation, session: sessionRef.current });
+      applyIncrementalConversation(payload.conversation);
       return;
     }
-  }, [applySnapshot, i18n.sessionOverview.fastMode.on, setAvailableAgents, setAvailableModels, setFastMode, setModel, setSession]);
+  }, [applyIncrementalConversation, applySnapshot, i18n.sessionOverview.fastMode.on, setAvailableAgents, setAvailableModels, setBusy, setFastMode, setModel, setSession]);
 
   useEffect(() => {
     setOnMessage(handleWsMessage);

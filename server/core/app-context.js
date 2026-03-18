@@ -203,6 +203,7 @@ function createAppContext() {
     invokeOpenClawTool,
     mirrorOpenClawUserMessage,
     parseOpenClawResponse,
+    subscribeGatewayEvents,
   } = createOpenClawClient({
     config,
     execFileAsync,
@@ -322,6 +323,7 @@ function createAppContext() {
   const runtimeHub = createRuntimeHub({
     buildDashboardSnapshot,
     config,
+    subscribeGatewayEvents,
   });
 
   const { handleFilePreview, handleFilePreviewContent, handleFilePreviewSave } = createFilePreviewHandlers({
