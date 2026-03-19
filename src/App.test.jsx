@@ -294,6 +294,13 @@ describe("App", () => {
     vi.restoreAllMocks();
   });
 
+  async function waitForAgentSwitcherReady() {
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(screen.getByLabelText("切换 Agent")).toBeEnabled();
+    });
+  }
+
   it("loads runtime data and sends a chat message", async () => {
     const openClawSnapshot = createSnapshot({
       session: {
@@ -2298,7 +2305,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw");
+    await waitForAgentSwitcherReady();
 
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "worker" }));
@@ -2329,12 +2336,15 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw");
+    await waitForAgentSwitcherReady();
 
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "worker" }));
     await screen.findByText("worker - 当前会话");
 
+    await waitFor(() => {
+      expect(screen.getByRole("textbox")).toBeEnabled();
+    });
     await user.type(screen.getByRole("textbox"), "继续处理 worker 任务");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
@@ -2378,7 +2388,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await screen.findByText("LalaClaw");
+    await waitForAgentSwitcherReady();
 
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "worker" }));
