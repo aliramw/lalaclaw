@@ -125,10 +125,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Pour installer une version precise, par exemple `2026.3.19-1` :
+Pour installer une version precise, par exemple `2026.3.19-2` :
 
 ```bash
-npm install -g lalaclaw@2026.3.19-1
+npm install -g lalaclaw@2026.3.19-2
 lalaclaw init
 ```
 
@@ -142,12 +142,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Pour passer a une version precise, par exemple `2026.3.19-1` :
+Pour passer a une version precise, par exemple `2026.3.19-2` :
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-1
+git checkout 2026.3.19-2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +193,7 @@ La checklist complete est dans [CONTRIBUTING.md](../CONTRIBUTING.md).
 LalaClaw utilise un versionnement calendaire compatible avec npm.
 
 - Mettez a jour [CHANGELOG.md](../CHANGELOG.md) a chaque changement de version
-- Pour plusieurs releases le meme jour, utilisez `YYYY.M.D-N`, par exemple `2026.3.19-1`
+- Pour plusieurs releases le meme jour, utilisez `YYYY.M.D-N`, par exemple `2026.3.19-2`
 - Signalez clairement les changements cassants dans les release notes et les documents de migration
 - Pour le developpement, la version Node.js recommandee est `22` via [`.nvmrc`](../.nvmrc). Le package npm publie prend en charge `^20.19.0 || ^22.12.0 || >=24.0.0`
 

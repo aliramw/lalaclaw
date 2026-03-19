@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026.3.19-2]
+
+### Changed
+
+- Replaced the IM conversation switcher text badges with branded SVG logos for DingTalk, Feishu, and WeCom while keeping the existing menu flow and labels intact
+- Updated published-version examples in the root README, localized README variants, and localized quick-start guides to `2026.3.19-2`
+
+### Fixed
+
+- Removed the Mermaid-specific manual vendor split that could produce a circular `mermaid-vendor -> vendor -> mermaid-vendor` chunk graph and break production startup after install
+- Stabilized App-level agent switch regressions by waiting for the switcher UI to become ready before exercising post-switch interactions
+
 ## [2026.3.19-1]
 
 ### Added
