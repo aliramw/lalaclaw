@@ -22,6 +22,12 @@ Author: Marila Wang
 - Top overview bar for agent, model, fast mode, think mode, context, queue, theme, and locale
 - Main chat workspace for prompts, attachments, streaming replies, and session reset
 - Inspector panel for timeline, files, artifacts, snapshots, and runtime activity
+- Environment diagnostics inside the Inspector for OpenClaw version, gateway health, doctor-style checks, logs, and live runtime sync state
+- Controlled OpenClaw management actions inside the Inspector, with confirmation, command output, follow-up health checks, and environment refresh
+- Structured OpenClaw config editing inside the Inspector, with backup, validation, before/after diffs, and optional gateway restart
+- OpenClaw safeguards inside the Inspector, with persistent audit history, explicit remote config authorization, and local/remote rollback restore flow
+- Local OpenClaw install/update status inside the Inspector, with official update preview, official install guidance, and controlled update execution
+- Environment paths inside the Inspector that distinguish previewable files from directories that should open in the system file manager
 - Runtime loop that works in `mock` mode by default and can switch to live OpenClaw gateways
 
 A longer walkthrough lives in [docs/en/showcase.md](./docs/en/showcase.md).
@@ -128,10 +134,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.19-2`:
+If you want a specific published version instead, such as `2026.3.20-1`:
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -145,12 +151,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.19-2`:
+If you want a specific released version instead, such as `2026.3.20-1`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -175,6 +181,7 @@ npm run lalaclaw:start
 - `npm run lalaclaw:start` starts the built app after running doctor preflight checks and verifying `dist/`
 - `npm run build` creates the production bundle
 - `npm test` runs the Vitest suite once
+- `npm run test:coverage` runs the Vitest suite with coverage
 - `npm run lint` runs ESLint across the workspace
 
 For the full command list and contributor workflow, see [CONTRIBUTING.md](./CONTRIBUTING.md).
@@ -190,6 +197,11 @@ Before opening a PR:
 - Route new user-facing copy through `src/locales/*.js`
 - Update docs for user-visible behavior changes
 - Update [CHANGELOG.md](./CHANGELOG.md) when versioned behavior changes
+- Run the minimum sufficient checks for your change:
+  - Docs-only or copy-only changes can skip tests if you say so explicitly
+  - Typical behavior changes should run affected tests or `npm test`
+  - Release-facing, build-related, or high-risk changes should run `npm run lint`, `npm test`, and `npm run build`
+  - Use `npm run test:coverage` for broader regression confidence on cross-cutting changes
 
 The full contribution checklist lives in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
@@ -200,20 +212,33 @@ The full contribution checklist lives in [CONTRIBUTING.md](./CONTRIBUTING.md).
 - Use `npm run lalaclaw:start` or `npm start` only for built output that depends on `dist/`
 - By default, the app auto-detects a local OpenClaw gateway when available
 - To force `mock` mode for reproducible UI or frontend debugging, set `COMMANDCENTER_FORCE_MOCK=1`
-- Before submitting a PR, prefer running `npm run lint`, `npm test`, and `npm run build`
+- Before submitting a PR, report the exact validation you ran; if you only ran targeted tests or skipped checks, say why
 
 ## Versioning
 
 LalaClaw uses npm-compatible calendar versioning for releases.
 
 - Update [CHANGELOG.md](./CHANGELOG.md) whenever the project version changes
-- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.19-2`, not `YYYY.M.D.N`
+- Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.20-1`, not `YYYY.M.D.N`
 - Call out breaking changes explicitly in release notes and migration-facing docs
 - For development, the repository targets Node.js `22` via [`.nvmrc`](./.nvmrc). The published package supports `^20.19.0 || ^22.12.0 || >=24.0.0`
 
 ## OpenClaw Wiring
 
 If `~/.openclaw/openclaw.json` exists, LalaClaw automatically detects your local OpenClaw gateway and reuses its loopback endpoint plus gateway token.
+
+When you point the app at a non-loopback OpenClaw gateway through `OPENCLAW_BASE_URL`, the inspector now treats that target as `remote`.
+
+- Remote targets stay readable in the `Environment` tab, including diagnostics, config path hints, and runtime status
+- Local-only OpenClaw mutations such as install, update, config apply, and management actions stay blocked until the dedicated remote-operations flow is ready
+- The inspector's `OpenClaw operation history` is now persisted across backend restarts in `~/.config/lalaclaw/openclaw-operation-history.json`
+- Saved rollback metadata for local and remote config changes is also persisted in `~/.config/lalaclaw/openclaw-backups.json`
+- Remote snapshot bodies are written to protected per-backup files under `~/.config/lalaclaw/openclaw-backup-snapshots/` instead of being inlined into the main metadata JSON
+- Local config writes still create on-disk snapshot files beside `~/.openclaw/openclaw.json` using `openclaw.json.backup.<timestamp>` names
+- Blocked remote attempts are recorded in that same operation history so you can see what was prevented and why
+- Successful local and remote config writes both record rollback labels in that history, and the inspector can restore a saved snapshot after an explicit confirmation step
+- Rollback points are now bound to the OpenClaw target that created them, so a backup from one remote cannot be restored into another target by mistake
+- The same inspector surface now offers a recovery guide with official OpenClaw docs links so you can decide whether to switch back to a local-safe target or operate on the remote host directly
 
 For a fresh source checkout, a typical setup looks like this:
 

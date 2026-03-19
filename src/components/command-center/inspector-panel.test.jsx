@@ -100,12 +100,50 @@ function getToolCard(name, toggleLabel = "收起详情") {
   return card;
 }
 
+async function ensureEnvironmentSectionExpanded(user, label) {
+  const expandButton = screen.queryByRole("button", { name: `${label} 查看详情` });
+  if (expandButton) {
+    await user.click(expandButton);
+  }
+  expect(screen.getByRole("button", { name: `${label} 收起详情` })).toBeInTheDocument();
+}
+
 describe("InspectorPanel", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ ok: true, items: [] }),
-    })));
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: ["Run global package manager update with spec openclaw@latest"] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [] }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    }));
   });
 
   afterEach(() => {
@@ -117,6 +155,7 @@ describe("InspectorPanel", () => {
 
   it("renders timeline details and switches tabs", async () => {
     renderWithTooltip(<TestHarness />);
+    const user = userEvent.setup();
 
     expect(screen.getAllByRole("tab").slice(0, 3).map((tab) => tab.textContent)).toEqual(["文件1", "回复摘要", "运行记录"]);
     expect(screen.getByText("查看 Agent 执行记录的明细")).toBeInTheDocument();
@@ -146,7 +185,6 @@ describe("InspectorPanel", () => {
     expect(within(editFileCard).getAllByText((_, element) => element?.textContent === "{}").length).toBeGreaterThan(0);
     expect(within(editFileCard).getAllByText((_, element) => element?.textContent === "ok").length).toBeGreaterThan(0);
 
-    const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: "回复摘要" }));
     expect(screen.getByText("这里列出本次会话的回复摘要，点击可以直接定位到会话位置")).toBeInTheDocument();
 
@@ -158,18 +196,51 @@ describe("InspectorPanel", () => {
     expect(screen.queryByRole("tab", { name: "快照" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "环境" }));
-    expect(screen.getByText("这里列出 Gateway 与会话环境信息。")).toBeInTheDocument();
+    expect(screen.getByText("这里汇总 OpenClaw 诊断、管理动作与当前会话环境信息，便于排查与检阅。")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "实时同步");
     expect(screen.getByText("runtime.transport")).toBeInTheDocument();
     expect(screen.getByText("轮询")).toBeInTheDocument();
     expect(screen.getByText("runtime.socket")).toBeInTheDocument();
     expect(screen.getByText("重连中")).toBeInTheDocument();
+    expect(screen.getByText("实时同步")).toBeInTheDocument();
     expect(screen.getByText("runtime.reconnectAttempts")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("runtime.fallbackReason")).toBeInTheDocument();
     expect(screen.getByText("Ping timeout")).toBeInTheDocument();
-    expect(screen.getByText("gateway.baseUrl")).toBeInTheDocument();
-    expect(screen.getByText("http://127.0.0.1:18789")).toBeInTheDocument();
-    expect(screen.getByText("gateway.baseUrl").closest('[role="tabpanel"]')).toHaveClass("min-w-0");
+    expect(screen.queryByText("gateway.baseUrl")).not.toBeInTheDocument();
+    expect(screen.getByText("runtime.transport").closest('[role="tabpanel"]')).toHaveClass("min-w-0");
+  });
+
+  it("keeps a visible background badge for inactive inspector tabs", () => {
+    mockResizeObserver(520);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="timeline"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace-writer"
+        files={[{ path: "src/App.jsx", kind: "文件" }]}
+        peeks={{ environment: null, workspace: null, terminal: null, browser: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={() => {}}
+        taskTimeline={[
+          {
+            id: "run-1",
+            title: "执行 10:00",
+            prompt: "修复错误",
+            status: "已完成",
+          },
+        ]}
+      />,
+    );
+
+    const inactiveCountBadge = within(screen.getByRole("tab", { name: "文件" })).getByText("1");
+
+    expect(inactiveCountBadge).toHaveClass(
+      "bg-[var(--inspector-tab-count-bg)]",
+      "text-[var(--inspector-tab-count-fg)]",
+      "border-[var(--inspector-tab-count-border)]",
+    );
   });
 
   it("localizes timeline statuses and tool summaries for english UI", async () => {
@@ -178,6 +249,1587 @@ describe("InspectorPanel", () => {
     expect(await screen.findByRole("tab", { name: "Run Log" })).toBeInTheDocument();
     expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
     expect(screen.getByText("Tools: edit_file(Completed)")).toBeInTheDocument();
+  });
+
+  it("renders OpenClaw diagnostics cards in the environment tab", async () => {
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace-writer"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "LALACLAW.VERSION", value: "2026.3.19-2" },
+              { label: "LALACLAW.FRONTEND_URL", value: "http://127.0.0.1:5173" },
+              { label: "LALACLAW.SERVER_URL", value: "http://127.0.0.1:3000" },
+              { label: "LALACLAW.ACCESS_MODE", value: "token" },
+              { label: "LALACLAW.GATEWAY_AUTH", value: "token" },
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+              { label: "openclaw.config.path", value: "/Users/marila/.openclaw/openclaw.json", previewable: true },
+              { label: "openclaw.config.status", value: "ok" },
+              { label: "openclaw.workspace.root", value: "/Users/marila/.openclaw/workspace", revealable: true },
+              { label: "openclaw.workspace.status", value: "ok" },
+              { label: "openclaw.gateway.status", value: "unreachable" },
+              { label: "openclaw.gateway.baseUrl", value: "http://127.0.0.1:18789" },
+              { label: "openclaw.gateway.healthUrl", value: "http://127.0.0.1:18789/healthz" },
+              { label: "openclaw.doctor.summary", value: "attention" },
+              { label: "openclaw.doctor.config", value: "ok" },
+              { label: "openclaw.doctor.workspace", value: "ok" },
+              { label: "openclaw.doctor.gateway", value: "unreachable" },
+              { label: "openclaw.doctor.logs", value: "missing" },
+              { label: "openclaw.logs.dir", value: "/Users/marila/.openclaw/logs", revealable: true },
+              { label: "openclaw.logs.gatewayPath", value: "/Users/marila/.openclaw/logs/gateway.log", previewable: true },
+              { label: "openclaw.logs.supervisorPath", value: "/Users/marila/.openclaw/logs/supervisor.log" },
+              { label: "session.agent", value: "main" },
+              { label: "session.selectedModel", value: "openrouter/minimax/minimax-m2.5" },
+              { label: "runtime.transport", value: "ws" },
+              { label: "runtimeHub.channel.key", value: 'main::{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","sendername":"锐拉"}' },
+              { label: "runtimeHub.channelCount", value: "1" },
+              { label: "gateway.port", value: "18789" },
+              { label: "gateway.apiStyle", value: "chat" },
+              { label: "misc.note", value: "custom" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.queryByText("OpenClaw 诊断")).not.toBeInTheDocument();
+    expect(screen.getByText("概览")).toBeInTheDocument();
+    expect(screen.getByText("连接概况")).toBeInTheDocument();
+    expect(screen.getByText("OpenClaw Doctor")).toBeInTheDocument();
+    expect(screen.getByText("日志")).toBeInTheDocument();
+    expect(screen.getByText("会话上下文")).toBeInTheDocument();
+    expect(screen.getByText("实时同步")).toBeInTheDocument();
+    expect(screen.getByText("Gateway 配置")).toBeInTheDocument();
+    expect(screen.getByText("LalaClaw")).toBeInTheDocument();
+    expect(screen.getByText("其他")).toBeInTheDocument();
+    expect(screen.queryByText("openclaw.version")).not.toBeInTheDocument();
+    expect(screen.queryByText("gateway.baseUrl")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    const sectionButtons = screen.getAllByRole("button", { name: /(?:查看|收起)详情/i }).map((button) => button.getAttribute("aria-label"));
+    expect(sectionButtons).toEqual(expect.arrayContaining([
+      "概览 查看详情",
+      "连接概况 查看详情",
+      "OpenClaw Doctor 查看详情",
+      "日志 查看详情",
+      "会话上下文 查看详情",
+      "实时同步 查看详情",
+      "Gateway 配置 查看详情",
+      "LalaClaw 查看详情",
+      "其他 查看详情",
+    ]));
+    const diagnosticsSection = screen.getByRole("button", { name: "概览 查看详情" });
+    expect(diagnosticsSection).toHaveClass("min-h-9");
+    for (const sectionLabel of ["概览", "连接概况", "OpenClaw Doctor", "日志", "会话上下文", "实时同步", "Gateway 配置", "LalaClaw", "其他"]) {
+      await ensureEnvironmentSectionExpanded(user, sectionLabel);
+    }
+    expect(screen.getAllByText("版本").length).toBeGreaterThan(0);
+    expect(screen.getByText("前端访问地址")).toBeInTheDocument();
+    expect(screen.getByText("http://127.0.0.1:5173")).toBeInTheDocument();
+    expect(screen.getByText("后端服务地址")).toBeInTheDocument();
+    expect(screen.getByText("http://127.0.0.1:3000")).toBeInTheDocument();
+    expect(screen.queryByText("服务器主机")).not.toBeInTheDocument();
+    expect(screen.queryByText("服务器端口")).not.toBeInTheDocument();
+    expect(screen.getAllByText("令牌").length).toBeGreaterThan(0);
+    expect(screen.getByText("1.2.3")).toBeInTheDocument();
+    expect(screen.getByText("运行档位")).toBeInTheDocument();
+    expect(screen.getByText("实时网关")).toBeInTheDocument();
+    expect(screen.getByText("Doctor 摘要")).toBeInTheDocument();
+    expect(screen.getByText("需要关注")).toBeInTheDocument();
+    expect(screen.getByText("Gateway 状态")).toBeInTheDocument();
+    expect(screen.getAllByText("不可达").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: /实时同步 收起详情/i }));
+    expect(screen.queryByText("runtime.transport")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /实时同步 (?:查看|收起)详情/i }));
+    const syncSection = screen.getByRole("button", { name: /实时同步 收起详情/i }).closest(".rounded-2xl");
+    expect(syncSection).not.toBeNull();
+    expect(within(syncSection).getAllByText("runtime.transport").length).toBeGreaterThan(0);
+    const longValueLabel = within(syncSection).getByText("runtimeHub.channel.key");
+    const longValueContainer = longValueLabel.parentElement?.querySelector(".font-mono");
+    expect(longValueContainer).not.toBeNull();
+    expect(longValueContainer?.className).toContain("overflow-hidden");
+    expect(longValueContainer?.className).toContain("break-all");
+  });
+
+  it("opens a file preview when an environment value is an absolute file path", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+            ok: true,
+            kind: "text",
+            path: "/Users/marila/.openclaw/logs/gateway.log",
+            name: "gateway.log",
+            content: "gateway ready",
+          }),
+        };
+      }),
+    );
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.logs.gatewayPath", value: "/Users/marila/.openclaw/logs/gateway.log", previewable: true },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await ensureEnvironmentSectionExpanded(user, "日志");
+    await user.click(screen.getByRole("button", { name: "/Users/marila/.openclaw/logs/gateway.log" }));
+
+    expect(await screen.findByText("gateway ready")).toBeInTheDocument();
+  });
+
+  it("renders environment directory paths as file-manager shortcuts instead of preview links", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/file-manager/reveal") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, path: "/Users/marila/.openclaw/logs", label: "Finder" }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.logs.dir", value: "/Users/marila/.openclaw/logs", revealable: true },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await ensureEnvironmentSectionExpanded(user, "日志");
+    const directoryLink = screen.getByRole("button", { name: "/Users/marila/.openclaw/logs" });
+    const directoryIcon = within(directoryLink).getByTestId("file-link-directory-icon");
+
+    expect(directoryIcon).toBeInTheDocument();
+    expect(directoryIcon.parentElement).toHaveClass("text-muted-foreground/80", "items-center", "justify-center");
+
+    await user.click(directoryLink);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/file-manager/reveal",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ path: "/Users/marila/.openclaw/logs" }),
+      }),
+    );
+  });
+
+  it("keeps missing log paths as plain text when preview metadata is absent", async () => {
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.logs.supervisorPath", value: "/Users/marila/.openclaw/logs/supervisor.log" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await ensureEnvironmentSectionExpanded(user, "日志");
+    expect(screen.queryByRole("button", { name: "/Users/marila/.openclaw/logs/supervisor.log" })).not.toBeInTheDocument();
+    expect(screen.getByText("/Users/marila/.openclaw/logs/supervisor.log")).toBeInTheDocument();
+  });
+
+  it("keeps gateway API paths as plain text instead of preview links", async () => {
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "gateway.apiPath", value: "/v1/chat/completions" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await ensureEnvironmentSectionExpanded(user, "Gateway 配置");
+    expect(screen.queryByRole("button", { name: "/v1/chat/completions" })).not.toBeInTheDocument();
+    expect(screen.getByText("/v1/chat/completions")).toBeInTheDocument();
+  });
+
+  it("runs a confirmed OpenClaw management action and renders the structured result", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/manage") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "restart",
+            command: { display: "openclaw gateway restart" },
+            commandResult: {
+              ok: true,
+              stdout: "gateway restarted",
+              stderr: "",
+            },
+            healthCheck: {
+              status: "healthy",
+              url: "http://127.0.0.1:18792/healthz",
+            },
+            guidance: ["The command completed successfully. Verify the updated gateway state in the diagnostics summary if needed."],
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 管理动作");
+    await user.click(screen.getByRole("button", { name: "重启" }));
+
+    expect(screen.getByRole("alertdialog", { name: "确认执行重启？" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "确认执行" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/manage",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ action: "restart" }),
+      }),
+    );
+    expect(await screen.findByText("最近一次动作结果")).toBeInTheDocument();
+    expect(screen.getByText("openclaw gateway restart")).toBeInTheDocument();
+    expect(screen.getByText("健康检查")).toBeInTheDocument();
+    expect(screen.getByText("gateway restarted")).toBeInTheDocument();
+  });
+
+  it("refreshes the environment after a successful OpenClaw management action", async () => {
+    const onRefreshEnvironment = vi.fn(async () => {});
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/manage") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "status",
+            command: { display: "openclaw gateway status" },
+            commandResult: { ok: true, stdout: "ok", stderr: "" },
+            healthCheck: { status: "healthy", url: "http://127.0.0.1:18792/healthz" },
+            guidance: ["Looks good."],
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        onRefreshEnvironment={onRefreshEnvironment}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 管理动作");
+    await user.click(screen.getByRole("button", { name: "查看状态" }));
+
+    expect(await screen.findByText("最近一次动作结果")).toBeInTheDocument();
+    expect(onRefreshEnvironment).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads structured OpenClaw config values and applies them with restart", async () => {
+    const onRefreshEnvironment = vi.fn(async () => {});
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config?agentId=main" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            baseHash: "base-hash-1",
+            currentAgentId: "main",
+            modelOptions: [
+              "openai/gpt-5.4",
+              "openai-codex/gpt-5.4",
+              "openrouter/minimax/minimax-m2.5",
+            ],
+            fields: [
+              { key: "modelPrimary", value: "openai/gpt-5.4" },
+              { key: "agentModel", value: "openrouter/minimax/minimax-m2.5", meta: { agentId: "main" } },
+              { key: "gatewayBind", value: "loopback" },
+              { key: "chatCompletionsEnabled", value: true },
+            ],
+            validation: { ok: true, valid: true },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            backupPath: "/Users/marila/.openclaw/openclaw.json.backup.20260319T102030Z",
+            changedFields: [
+              { key: "modelPrimary", before: "openai/gpt-5.4", after: "openrouter/minimax/minimax-m2.5" },
+              { key: "agentModel", before: "openrouter/minimax/minimax-m2.5", after: "openai-codex/gpt-5.4", meta: { agentId: "main" } },
+            ],
+            validation: { ok: true, valid: true },
+            restartRequested: true,
+            healthCheck: { status: "healthy", url: "http://127.0.0.1:18789/healthz" },
+            state: {
+              ok: true,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              baseHash: "base-hash-2",
+              currentAgentId: "main",
+              modelOptions: [
+                "openai/gpt-5.4",
+                "openai-codex/gpt-5.4",
+                "openrouter/minimax/minimax-m2.5",
+              ],
+              fields: [
+                { key: "modelPrimary", value: "openrouter/minimax/minimax-m2.5" },
+                { key: "agentModel", value: "openai-codex/gpt-5.4", meta: { agentId: "main" } },
+                { key: "gatewayBind", value: "loopback" },
+                { key: "chatCompletionsEnabled", value: true },
+              ],
+              validation: { ok: true, valid: true },
+            },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentAgentId="main"
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        onRefreshEnvironment={onRefreshEnvironment}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 配置")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 配置");
+    expect(screen.getByRole("combobox", { name: "默认模型" })).toHaveValue("openai/gpt-5.4");
+    expect(screen.getByRole("combobox", { name: "main 默认模型" })).toHaveValue("openrouter/minimax/minimax-m2.5");
+    expect(screen.getByRole("button", { name: "应用并重启" })).toBeDisabled();
+    await user.selectOptions(screen.getByRole("combobox", { name: "默认模型" }), "openrouter/minimax/minimax-m2.5");
+    await user.selectOptions(screen.getByRole("combobox", { name: "main 默认模型" }), "openai-codex/gpt-5.4");
+    expect(screen.getByRole("button", { name: "应用并重启" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "应用并重启" }));
+
+    const configPostCall = fetchMock.mock.calls.find(([url, options]) => url === "/api/openclaw/config" && options?.method === "POST");
+    expect(configPostCall).toBeTruthy();
+    expect(JSON.parse(configPostCall[1].body)).toEqual({
+      agentId: "main",
+      baseHash: "base-hash-1",
+      remoteAuthorization: null,
+      restartGateway: true,
+      values: {
+        modelPrimary: "openrouter/minimax/minimax-m2.5",
+        agentModel: "openai-codex/gpt-5.4",
+        gatewayBind: "loopback",
+        chatCompletionsEnabled: true,
+      },
+    });
+    expect(await screen.findByText("最近一次配置结果")).toBeInTheDocument();
+    expect(screen.getByText("备份文件")).toBeInTheDocument();
+    expect(screen.getByText("修改前: openai/gpt-5.4")).toBeInTheDocument();
+    expect(screen.getByText("修改后: openrouter/minimax/minimax-m2.5")).toBeInTheDocument();
+    expect(screen.getByText("修改前: openrouter/minimax/minimax-m2.5")).toBeInTheDocument();
+    expect(screen.getByText("修改后: openai-codex/gpt-5.4")).toBeInTheDocument();
+    expect(onRefreshEnvironment).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads the OpenClaw update state and runs the official update flow", async () => {
+    const onRefreshEnvironment = vi.fn(async () => {});
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.19",
+            availability: { available: true },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: ["Run global package manager update with spec openclaw@latest"] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw update --yes --json" },
+              stdout: "{\"ok\":true}",
+            },
+            result: { targetVersion: "2026.3.19" },
+            healthCheck: { status: "healthy", url: "http://127.0.0.1:18789/healthz" },
+            state: {
+              ok: true,
+              installed: true,
+              currentVersion: "2026.3.19",
+              targetVersion: "2026.3.19",
+              availability: { available: false },
+              update: { installKind: "package", packageManager: "pnpm" },
+              channel: { value: "stable", label: "stable (default)" },
+              preview: { actions: ["Run global package manager update with spec openclaw@latest"] },
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        onRefreshEnvironment={onRefreshEnvironment}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    expect(screen.getByText("有可用更新")).toBeInTheDocument();
+    expect(screen.getByText("目标版本: 2026.3.19")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "执行官方更新" }));
+
+    expect(fetchMock.mock.calls).toEqual(expect.arrayContaining([
+      [
+        "/api/openclaw/update",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ action: "update", restartGateway: true }),
+        }),
+      ],
+    ]));
+    expect(await screen.findByText("最近一次更新结果")).toBeInTheDocument();
+    expect(screen.getByText("openclaw update --yes --json")).toBeInTheDocument();
+    expect(onRefreshEnvironment).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the official update action when OpenClaw is already up to date", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: ["Run global package manager update with spec openclaw@latest"] },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    expect(await screen.findByText("已是最新")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "执行官方更新" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新状态" })).toBeInTheDocument();
+  });
+
+  it("shows official install guidance and can trigger the install flow when OpenClaw is missing", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: false,
+            installGuidance: {
+              docsUrl: "https://docs.openclaw.ai/install",
+              command: "curl -fsSL https://openclaw.ai/install.sh | bash",
+            },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "install",
+            commandResult: {
+              ok: true,
+              command: { display: "bash -lc curl -fsSL https://openclaw.ai/install.sh | bash" },
+              stdout: "installed",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              currentVersion: "2026.3.19",
+              targetVersion: "2026.3.19",
+              availability: { available: false },
+              update: { installKind: "package", packageManager: "pnpm" },
+              channel: { value: "stable", label: "stable (default)" },
+              preview: { actions: ["Run global package manager update with spec openclaw@latest"] },
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    expect(await screen.findByText("未安装")).toBeInTheDocument();
+    expect(screen.getByText("curl -fsSL https://openclaw.ai/install.sh | bash")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "执行官方安装" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/update",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ action: "install", restartGateway: true }),
+      }),
+    );
+    expect(await screen.findByText("bash -lc curl -fsSL https://openclaw.ai/install.sh | bash")).toBeInTheDocument();
+  });
+
+  it("shows stderr plus troubleshooting guidance for install failures", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: false,
+            installGuidance: {
+              docsUrl: "https://docs.openclaw.ai/install",
+              command: "curl -fsSL https://openclaw.ai/install.sh | bash",
+            },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: false,
+            action: "install",
+            commandResult: {
+              ok: false,
+              exitCode: 6,
+              timedOut: false,
+              stderr: "curl: (6) Could not resolve host: openclaw.ai",
+              stdout: "",
+              command: { display: "bash -lc curl -fsSL https://openclaw.ai/install.sh | bash" },
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    await user.click(await screen.findByRole("button", { name: "执行官方安装" }));
+
+    expect(await screen.findByText("最近一次更新结果")).toBeInTheDocument();
+    expect(screen.getByText("错误输出")).toBeInTheDocument();
+    expect(screen.getByText("curl: (6) Could not resolve host: openclaw.ai")).toBeInTheDocument();
+    expect(screen.getByText("检查网络或代理配置")).toBeInTheDocument();
+
+    const docsLinks = screen.getAllByRole("link", { name: "安装文档" });
+    expect(docsLinks[0]).toHaveAttribute("href", "https://docs.openclaw.ai/install");
+
+    await user.click(screen.getAllByRole("button", { name: "查看解决办法" })[0]);
+
+    expect(screen.getByRole("dialog", { name: "检查网络或代理配置" })).toBeInTheDocument();
+    expect(screen.getByText("确认这台机器能访问 `https://openclaw.ai/install.sh` 和 npm registry。")).toBeInTheDocument();
+  });
+
+  it("shows structured troubleshooting for request-level install errors", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: false,
+            installGuidance: {
+              docsUrl: "https://docs.openclaw.ai/install",
+              command: "curl -fsSL https://openclaw.ai/install.sh | bash",
+            },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update" && init?.method === "POST") {
+        return {
+          ok: false,
+          json: async () => ({
+            ok: false,
+            errorCode: "install_platform_unsupported",
+            error: "The local OpenClaw install flow is not supported on this platform yet",
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    await user.click(await screen.findByRole("button", { name: "执行官方安装" }));
+
+    expect(await screen.findByText("当前平台暂不支持在这里直接执行 OpenClaw 官方安装流程。")).toBeInTheDocument();
+    expect(screen.getByText("改为在应用外执行官方安装")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "安装文档" })).toHaveAttribute("href", "https://docs.openclaw.ai/install");
+  });
+
+  it("blocks local-only OpenClaw mutations when the active gateway target is remote and shows operation history", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            entries: [
+              {
+                id: "entry-1",
+                scope: "config",
+                action: "apply",
+                target: "remote",
+                outcome: "blocked",
+                blocked: true,
+                finishedAt: 1773912000000,
+                summary: "Blocked a local-only OpenClaw mutation because the active gateway target is remote.",
+              },
+            ],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            remoteTarget: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            baseHash: "remote-hash-1",
+            modelOptions: [
+              "openai/gpt-5.4",
+              "openrouter/minimax/minimax-m2.5",
+            ],
+            fields: [
+              { key: "modelPrimary", value: "openai/gpt-5.4" },
+              { key: "gatewayBind", value: "loopback" },
+              { key: "chatCompletionsEnabled", value: true },
+            ],
+            validation: { ok: true, valid: true },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        throw new Error(`Should not load local-only update route in remote mode: ${url}`);
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+              { label: "openclaw.remote.target", value: "remote" },
+              { label: "openclaw.remote.writeAccess", value: "blocked" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(await screen.findByText("OpenClaw 配置")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 配置");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 管理动作");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 操作历史");
+    expect(await screen.findAllByText("远端 OpenClaw 写操作暂时禁用")).toHaveLength(3);
+    expect(screen.getByText("OpenClaw 操作历史")).toBeInTheDocument();
+    expect(screen.getByText("config.apply")).toBeInTheDocument();
+    expect(screen.getByText("已在执行前阻止")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/openclaw/history", expect.objectContaining({ method: "GET" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/openclaw/config", expect.objectContaining({ method: "GET" }));
+    expect(screen.queryByRole("button", { name: "执行官方安装" })).not.toBeInTheDocument();
+    expect(screen.getByText("/Users/marila/.openclaw/openclaw.json")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "/Users/marila/.openclaw/openclaw.json" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "授权并应用远端变更" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "查看恢复引导" })).toHaveLength(4);
+    expect(screen.getByRole("button", { name: /OpenClaw 配置 收起详情/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /OpenClaw 管理动作 收起详情/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /OpenClaw 安装与更新 收起详情/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /OpenClaw 操作历史 收起详情/i })).toBeInTheDocument();
+
+    const remoteConfirm = screen.getByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" });
+    expect(remoteConfirm.closest("label")).toHaveClass("items-center");
+    await user.click(remoteConfirm);
+    await user.selectOptions(screen.getByRole("combobox", { name: "默认模型" }), "openrouter/minimax/minimax-m2.5");
+
+    expect(remoteConfirm).toBeChecked();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "授权并应用远端变更" })).toBeEnabled();
+    });
+
+    await user.click(screen.getAllByRole("button", { name: "查看恢复引导" })[0]);
+
+    expect(screen.getByRole("dialog", { name: "远端 OpenClaw 恢复引导" })).toBeInTheDocument();
+    expect(screen.getByText("建议下一步")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "安装文档" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /OpenClaw 配置 收起详情/i }));
+    expect(screen.queryByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /OpenClaw 配置 (?:查看|收起)详情/i }));
+    expect(screen.getByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" })).toBeInTheDocument();
+  });
+
+  it("reloads the latest config state before showing a config conflict error", async () => {
+    const initialState = {
+      ok: true,
+      configPath: "/Users/marila/.openclaw/openclaw.json",
+      baseHash: "hash-1",
+      currentAgentId: "main",
+      modelOptions: ["openai/gpt-5.4", "openrouter/minimax/minimax-m2.5"],
+      fields: [
+        { key: "modelPrimary", path: "agents.defaults.model.primary", type: "string", options: [], restartRequired: false, allowUnset: true, value: "openai/gpt-5.4" },
+        { key: "gatewayBind", path: "gateway.bind", type: "enum", options: ["loopback", "lan"], restartRequired: true, allowUnset: false, value: "loopback" },
+        { key: "chatCompletionsEnabled", path: "gateway.http.endpoints.chatCompletions.enabled", type: "boolean", options: [], restartRequired: true, allowUnset: false, value: true },
+      ],
+      validation: { ok: true, valid: true },
+    };
+    const reloadedState = {
+      ...initialState,
+      baseHash: "hash-2",
+      fields: initialState.fields.map((field) => (
+        field.key === "modelPrimary"
+          ? { ...field, value: "openrouter/minimax/minimax-m2.5" }
+          : field
+      )),
+    };
+    let configGetCount = 0;
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config" && (!init || init.method === "GET")) {
+        configGetCount += 1;
+        return {
+          ok: true,
+          json: async () => (configGetCount > 1 ? reloadedState : initialState),
+        };
+      }
+      if (url === "/api/openclaw/config" && init?.method === "POST") {
+        return {
+          ok: false,
+          json: async () => ({ ok: false, errorCode: "config_conflict" }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [] }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 配置")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 配置");
+    await user.selectOptions(screen.getByRole("combobox", { name: "默认模型" }), "openrouter/minimax/minimax-m2.5");
+    await user.click(screen.getByRole("button", { name: "应用变更" }));
+
+    expect(await screen.findByText("OpenClaw 配置已被其他操作修改，请先重新加载最新值。")).toBeInTheDocument();
+    expect(configGetCount).toBe(2);
+    expect(screen.getByRole("combobox", { name: "默认模型" })).toHaveValue("openrouter/minimax/minimax-m2.5");
+  });
+
+  it("does not show the official install action before update state has loaded", async () => {
+    let resolveUpdateRequest;
+    const updateRequest = new Promise((resolve) => {
+      resolveUpdateRequest = resolve;
+    });
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        await updateRequest;
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: false,
+            installGuidance: {
+              docsUrl: "https://docs.openclaw.ai/install",
+              command: "curl -fsSL https://openclaw.ai/install.sh | bash",
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    expect(screen.getByRole("button", { name: "刷新状态" })).toHaveTextContent("刷新中…");
+    expect(screen.queryByRole("button", { name: "执行官方安装" })).not.toBeInTheDocument();
+
+    resolveUpdateRequest();
+
+    expect(await screen.findByText("未安装")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "执行官方安装" })).toBeInTheDocument();
+  });
+
+  it("restores a remote rollback point from the operation history panel", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            entries: [
+              {
+                id: "entry-rollback-source",
+                scope: "config",
+                action: "apply",
+                target: "remote",
+                outcome: "success",
+                ok: true,
+                finishedAt: 1773912000000,
+                summary: "Stored remote rollback point remote-config-backup-1.",
+                backupId: "backup-1",
+                backupLabel: "remote-config-backup-1",
+              },
+            ],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            remoteTarget: true,
+            configPath: "https://gateway.example.test/config",
+            baseHash: "remote-hash-1",
+            modelOptions: ["openai/gpt-5.4", "openrouter/minimax/minimax-m2.5"],
+            fields: [
+              { key: "modelPrimary", value: "openrouter/minimax/minimax-m2.5" },
+              { key: "gatewayBind", value: "loopback" },
+              { key: "chatCompletionsEnabled", value: false },
+            ],
+            validation: { ok: true, valid: true },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            remoteTarget: true,
+            rolledBack: true,
+            backupReference: { id: "backup-1", label: "remote-config-backup-1" },
+            state: {
+              ok: true,
+              remoteTarget: true,
+              configPath: "https://gateway.example.test/config",
+              baseHash: "remote-hash-2",
+              modelOptions: ["openai/gpt-5.4", "openrouter/minimax/minimax-m2.5"],
+              fields: [
+                { key: "modelPrimary", value: "openai/gpt-5.4" },
+                { key: "gatewayBind", value: "loopback" },
+                { key: "chatCompletionsEnabled", value: true },
+              ],
+              validation: { ok: true, valid: true },
+            },
+            validation: { ok: true, valid: true },
+            healthCheck: { status: "healthy", url: "https://gateway.example.test/health" },
+            guidance: ["Remote config rollback restored the snapshot saved as remote-config-backup-1."],
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+              { label: "openclaw.remote.target", value: "remote" },
+              { label: "openclaw.remote.writeAccess", value: "blocked" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(await screen.findByText("OpenClaw 操作历史")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 操作历史");
+    await user.click(await screen.findByRole("button", { name: "恢复到此状态" }));
+
+    const rollbackDialog = screen.getByRole("alertdialog", { name: "恢复远端 OpenClaw 配置状态" });
+    expect(rollbackDialog).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "恢复回滚点" })).toBeDisabled();
+
+    await user.click(screen.getByRole("checkbox", { name: "我确认要用选中的回滚点覆盖当前远端 OpenClaw 配置。" }));
+    await user.type(within(rollbackDialog).getByRole("textbox", { name: "审计备注" }), "回滚到稳定版本");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "恢复回滚点" })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: "恢复回滚点" }));
+
+    await waitFor(() => {
+      const rollbackCall = fetchMock.mock.calls.find(([url, options]) => url === "/api/openclaw/config" && options?.method === "POST");
+      expect(rollbackCall).toBeTruthy();
+      const rollbackBody = JSON.parse(rollbackCall[1].body);
+      expect(rollbackBody).toEqual({
+        action: "rollback",
+        agentId: "",
+        backupId: "backup-1",
+        remoteAuthorization: {
+          confirmed: true,
+          note: "回滚到稳定版本",
+        },
+      });
+    });
+
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 配置");
+    expect(await screen.findByText("remote-config-backup-1")).toBeInTheDocument();
+  });
+
+  it("restores a local rollback point from the operation history panel", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            entries: [
+              {
+                id: "entry-local-rollback-source",
+                scope: "config",
+                action: "apply+restart",
+                target: "local",
+                outcome: "success",
+                ok: true,
+                finishedAt: 1773912000000,
+                summary: "Stored local rollback point local-config-backup-1.",
+                backupId: "backup-local-1",
+                backupLabel: "local-config-backup-1",
+                backupPath: "/Users/marila/.openclaw/openclaw.json.backup.20260319T101112Z",
+              },
+            ],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            baseHash: "local-hash-1",
+            modelOptions: ["openai/gpt-5.4", "openrouter/minimax/minimax-m2.5"],
+            fields: [
+              { key: "modelPrimary", value: "openrouter/minimax/minimax-m2.5" },
+              { key: "gatewayBind", value: "lan" },
+              { key: "chatCompletionsEnabled", value: false },
+            ],
+            validation: { ok: true, valid: true },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config" && init?.method === "POST") {
+        expect(JSON.parse(init.body)).toEqual({
+          action: "rollback",
+          agentId: "main",
+          backupId: "backup-local-1",
+          remoteAuthorization: {
+            confirmed: true,
+            note: "restore local state",
+          },
+        });
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            rolledBack: true,
+            backupPath: "/Users/marila/.openclaw/openclaw.json.backup.20260319T101112Z",
+            backupReference: { id: "backup-local-1", label: "local-config-backup-1" },
+            state: {
+              ok: true,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              baseHash: "local-hash-2",
+              modelOptions: ["openai/gpt-5.4", "openrouter/minimax/minimax-m2.5"],
+              fields: [
+                { key: "modelPrimary", value: "openai/gpt-5.4" },
+                { key: "gatewayBind", value: "loopback" },
+                { key: "chatCompletionsEnabled", value: true },
+              ],
+              validation: { ok: true, valid: true },
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentAgentId="main"
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(await screen.findByText("OpenClaw 操作历史")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 操作历史");
+    await user.click(screen.getByRole("button", { name: "恢复到此状态" }));
+
+    const rollbackDialog = screen.getByRole("alertdialog", { name: "恢复本机 OpenClaw 配置状态" });
+    await user.click(within(rollbackDialog).getByRole("checkbox", { name: "我确认要用选中的回滚点覆盖当前本机 OpenClaw 配置。" }));
+    await user.type(within(rollbackDialog).getByRole("textbox", { name: "审计备注" }), "restore local state");
+    await user.click(within(rollbackDialog).getByRole("button", { name: "恢复回滚点" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/openclaw/config",
+        expect.objectContaining({
+          method: "POST",
+        }),
+      );
+    });
   });
 
   it("localizes summary titles for english UI", async () => {
@@ -427,7 +2079,7 @@ describe("InspectorPanel", () => {
           peeks={{
             environment: {
               summary: "这里列出 Gateway 与会话环境信息。",
-              items: [{ label: "gateway.baseUrl", value: "http://127.0.0.1:18789" }],
+              items: [{ label: "gateway.port", value: "18789" }],
             },
             workspace: null,
             terminal: null,
@@ -447,8 +2099,10 @@ describe("InspectorPanel", () => {
 
     const sheet = await screen.findByRole("dialog", { name: "追踪与观察 - 环境" });
     expect(within(sheet).getByText("环境")).toBeInTheDocument();
-    expect(within(sheet).getByText("gateway.baseUrl")).toBeInTheDocument();
-    expect(within(sheet).getByText("http://127.0.0.1:18789")).toBeInTheDocument();
+    expect(within(sheet).getByText("Gateway 配置")).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("button", { name: "Gateway 配置 查看详情" }));
+    expect(within(sheet).getByText("gateway.port")).toBeInTheDocument();
+    expect(within(sheet).getByText("18789")).toBeInTheDocument();
 
     await user.click(within(sheet).getByRole("button", { name: "关闭追踪面板" }));
 

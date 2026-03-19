@@ -440,8 +440,10 @@ function AppContent() {
     handleOpenImSession,
     handleReorderChatTabs,
     handleFastModeChange,
+    handleRefreshEnvironment,
     handleInspectorPanelWidthChange,
     handleModelChange,
+    handleSyncCurrentSessionModel,
     handleSearchSessions,
     handlePromptChange,
     handlePromptKeyDown,
@@ -893,6 +895,8 @@ function AppContent() {
       currentWorkspaceRoot={session.workspaceRoot}
       files={files}
       onSelectArtifact={handleArtifactSelect}
+      onRefreshEnvironment={handleRefreshEnvironment}
+      onSyncCurrentSessionModel={handleSyncCurrentSessionModel}
       peeks={peeks}
       renderPeek={renderPeek}
       resolvedTheme={resolvedTheme}
@@ -910,6 +914,8 @@ function AppContent() {
     artifacts,
     files,
     handleArtifactSelect,
+    handleRefreshEnvironment,
+    handleSyncCurrentSessionModel,
     isWideLayout,
     peeks,
     renderPeek,

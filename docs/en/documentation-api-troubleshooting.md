@@ -74,6 +74,23 @@ Fix:
 - For production mode: run `npm run build` first, then `npm start`
 - For development: follow [Quick Start](./documentation-quick-start.md) and run both Vite and Node
 
+### The installed app opens to a white screen and the console mentions `mermaid-vendor`
+
+Typical symptom:
+
+- The app bundle loads, but the screen stays blank
+- The browser console shows an error from `mermaid-vendor-*.js`
+
+Most likely cause:
+
+- You are on the older packaged build `2026.3.19-1`
+- That build used a Mermaid-specific manual vendor split which could break production startup after install
+
+Fix:
+
+- Upgrade to `lalaclaw@2026.3.19-2` or newer
+- If you are running from a source checkout, pull the latest `main`, then rebuild with `npm run build`
+
 ### The page loads in development, but API calls fail
 
 Check these first:
@@ -144,6 +161,11 @@ Best places to inspect:
 
 - The `Environment` tab in [Inspector, File Preview, and Tracing](./documentation-inspector.md)
 - Backend console output
+
+If the problem only appears while switching into another tabbed conversation:
+
+- Confirm the switcher finished opening the target session before sending the next turn
+- Inspect `runtime.transport`, `runtime.socket`, and `runtime.fallbackReason` in the `Environment` tab
 
 ### A file cannot be previewed
 

@@ -74,6 +74,23 @@
 - 生产模式下先执行 `npm run build` 再执行 `npm start`
 - 开发模式下按 [快速开始](./documentation-quick-start.md) 同时启动 Vite 和 Node
 
+### 安装版打开后白屏，控制台里出现 `mermaid-vendor`
+
+常见表现：
+
+- 应用资源已经加载，但页面一直停在白屏
+- 浏览器控制台报错来自 `mermaid-vendor-*.js`
+
+最可能原因：
+
+- 当前安装的是较早的打包版本 `2026.3.19-1`
+- 该版本里 Mermaid 的手工 vendor 分包可能会让生产构建在安装后启动失败
+
+解决：
+
+- 升级到 `lalaclaw@2026.3.19-2` 或更新版本
+- 如果你是源码运行，拉取最新 `main` 后重新执行 `npm run build`
+
 ### 开发时页面能打开，但 API 失败
 
 先检查：
@@ -143,6 +160,11 @@ npm run doctor
 
 - [检查器、文件预览与追踪](./documentation-inspector.md) 中的 `Environment`
 - 后端控制台输出
+
+如果问题只出现在切到另一个标签会话之后：
+
+- 先确认切换器已经完成目标会话的开启，再发送下一条消息
+- 在 `Environment` 里重点看 `runtime.transport`、`runtime.socket` 和 `runtime.fallbackReason`
 
 ### 文件无法预览
 

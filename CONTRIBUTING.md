@@ -17,9 +17,10 @@ Thanks for contributing to LalaClaw.
 npm ci
 npm run lint
 npm test
-npm run test:coverage
 npm run build
 ```
+
+Run `npm run test:coverage` when you are making broader release-facing, cross-cutting, or high-risk changes and want a wider regression signal.
 
 For the standard development workflow, run:
 
@@ -42,6 +43,8 @@ export COMMANDCENTER_FORCE_MOCK=1
 ```
 
 If your change depends on built output, run `npm run build` and verify against `npm run lalaclaw:start` or `npm start`.
+
+If you are preparing a release or changing packaging behavior, do not stop at validating the source checkout. Also validate the actual npm artifact with `npm pack`, install that tarball in a clean temporary directory, and verify one real installed startup path before publishing.
 
 ## Project Shape
 
@@ -74,7 +77,21 @@ If your change depends on built output, run `npm run build` and verify against `
 
 - For bug fixes, add at least one regression test.
 - For streaming, queueing, hydration, persistence recovery, or session/runtime sync, prefer controller-level or `App`-level tests over only pure function tests.
-- If you only ran targeted tests, mention the exact commands in the PR description.
+- Use the existing validation commands as the baseline:
+  - `npm run lint`
+  - `npm test`
+  - `npm run test:coverage`
+  - `npm run build`
+- Pick the minimum sufficient validation based on change scope:
+  - Docs-only or copy-only changes may skip tests, but say so explicitly in the PR.
+  - Typical UI or small backend logic changes should run affected tests, or `npm test` if the impact is unclear.
+  - Runtime, session, storage, streaming, hydration, pending recovery, or concurrency changes should run affected tests and prefer `App`-level or controller-level regressions.
+  - Release-facing changes, dependency upgrades, build pipeline changes, or version bumps should run `npm run lint`, `npm test`, `npm run build`, and `npm pack`, plus `npm run test:coverage` when the risk is broad.
+- If your change depends on built output, run `npm run build` and verify against `npm run lalaclaw:start` or `npm start`.
+- If you are validating a release artifact, install the `npm pack` tarball in a clean temporary directory and check the installed app itself, not only the source workspace.
+- Treat build warnings or install-time smoke failures such as circular chunks, chunk initialization errors, or a blank first screen as release blockers until resolved.
+- If you only ran targeted tests, mention the exact commands and why that narrower scope was sufficient.
+- If any validation was skipped or failed, call that out explicitly together with the remaining risk.
 
 ## Pull Request Notes
 
@@ -89,6 +106,20 @@ If your change depends on built output, run `npm run build` and verify against `
 - Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-2`, not `YYYY.M.D.N`.
 - Breaking changes should be called out explicitly in release notes and migration-facing docs.
 - The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
+
+## Release Artifact Checklist
+
+Before `npm publish`, validate the package that users will actually install:
+
+- Run `npm run lint`
+- Run `npm test`
+- Run `npm run build`
+- Run `npm pack`
+- Install the generated tarball in a clean temporary directory
+- Start the installed package through its real production entry
+- Confirm the first screen renders and the browser console has no new runtime or chunk-init errors
+
+Changes touching `vite.config.*`, `manualChunks`, lazy-loaded bundle boundaries, or packaging-sensitive dependencies such as Mermaid should always include this installed-package smoke test.
 
 ## Scope Guidance
 

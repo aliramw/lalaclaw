@@ -4,9 +4,9 @@
 
 # Sessions, agents et modes d'exécution
 
-## Identité d'une session
+## Comment une session est identifiée
 
-L'état de session repose sur deux valeurs :
+Le frontend et le backend organisent l'état de session autour de deux valeurs :
 
 - `agentId`
 - `sessionUser`
@@ -14,45 +14,47 @@ L'état de session repose sur deux valeurs :
 En pratique :
 
 - `agentId` indique avec quel agent vous collaborez
-- `sessionUser` indique quelle ligne de conversation possède le contexte courant
+- `sessionUser` indique quelle ligne de conversation porte le contexte courant
 
-## Onglets de session agent
+Le même agent peut avoir plusieurs `sessionUser`, ce qui permet de créer un nouveau contexte sans changer d'agent.
+
+## Onglets d'agent et IM
+
+Les onglets du chat sont organisés selon l'identité réelle de la session, pas seulement selon le libellé visible.
 
 - L'onglet principal par défaut est `agent:main`
-- Chaque onglet d'agent garde ses messages, brouillons, position de scroll et métadonnées de session
-- Fermer un onglet masque la session mais ne supprime pas son historique sous-jacent
+- Les onglets d'agent supplémentaires réutilisent souvent le même `agentId`, mais avec leur propre `sessionUser`
+- Les conversations IM peuvent aussi s'ouvrir directement depuis le switcher, par exemple des fils DingTalk, Feishu ou WeCom
+- Chaque onglet ouvert conserve ses messages, brouillons, position de scroll et une partie de ses métadonnées de session
+- Fermer un onglet le masque dans l'interface mais ne supprime pas l'historique sous-jacent
 
-## Préférences de session
+Cela signifie :
 
-Les préférences persistées côté backend comprennent :
+- Deux onglets peuvent pointer vers le même agent avec des `sessionUser` différents
+- Les onglets IM se résolvent eux aussi en interne comme `agentId + sessionUser`
+- Les onglets d'agent déjà ouverts et les canaux IM déjà ouverts sont exclus du switcher
+
+## Réglages au niveau de la session
+
+Ces préférences sont persistées côté backend pour chaque session :
 
 - Agent
 - Modèle
-- Mode rapide
-- Mode de réflexion
+- Fast mode
+- Think mode
 
-## Nouveau contexte
+## Démarrer une nouvelle session
 
-Pour repartir avec un contexte propre :
+Les principales façons de vider le contexte sont :
 
-- Utilisez l'action de nouvelle session
-- Ou `Cmd/Ctrl + N`
-- Ou `/new` et `/reset`
+- Cliquer sur l'action de nouvelle session dans l'en-tête du chat
+- Utiliser `Cmd/Ctrl + N`
+- Envoyer `/new` ou `/reset`
 
 ## Mode `mock`
 
-Le mode `mock` est utilisé si :
-
-- Aucune passerelle OpenClaw locale n'est détectée
-- Ou si `COMMANDCENTER_FORCE_MOCK=1` est défini
-
-Il permet d'utiliser l'interface complète sans gateway réelle.
+L'application passe en `mock` quand aucun gateway OpenClaw local n'est détecté ou quand `COMMANDCENTER_FORCE_MOCK=1` est défini.
 
 ## Mode `openclaw`
 
-Le mode `openclaw` est utilisé si :
-
-- `~/.openclaw/openclaw.json` est détecté
-- Ou si `OPENCLAW_BASE_URL` et les variables associées sont configurés
-
-Dans ce mode, `/api/chat` et `/api/runtime` parlent au runtime réel.
+L'application passe en `openclaw` quand `~/.openclaw/openclaw.json` est détecté ou quand `OPENCLAW_BASE_URL` et les variables liées sont configurés.

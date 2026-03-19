@@ -685,4 +685,205 @@ describe('createOpenClawClient', () => {
       tool: 'message',
     });
   });
+
+  it('tolerates noisy gateway stdout while polling WeCom delivery sessions', async () => {
+    const wecomSessionKey = 'agent:main:wecom:direct:marila';
+    const gatewayCalls = [];
+    const noisyJson = (payload) => `[wecom] v1.0.13 loaded\n${JSON.stringify(payload)}`;
+    const client = createOpenClawClient({
+      config: {
+        apiKey: '',
+        apiPath: '/v1/responses',
+        apiStyle: 'responses',
+        baseUrl: 'http://127.0.0.1:3000',
+        mode: 'openclaw',
+      },
+      execFileAsync: async (_bin, args) => {
+        const method = args[5];
+        const params = JSON.parse(args[10]);
+        gatewayCalls.push({ method, params });
+
+        if (method === 'agent') {
+          return {
+            stdout: noisyJson({
+              acceptedAt: 1773722999708,
+              runId: 'run-wecom-noisy-1',
+            }),
+          };
+        }
+
+        if (method === 'agent.wait') {
+          return {
+            stdout: noisyJson({
+              status: 'completed',
+            }),
+          };
+        }
+
+        if (method === 'chat.history') {
+          return {
+            stdout: noisyJson({
+              messages: [
+                {
+                  role: 'assistant',
+                  content: '企业微信带噪声 JSON 收到。',
+                  timestamp: 1773723000000,
+                },
+              ],
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected gateway method: ${method}`);
+      },
+      PROJECT_ROOT: process.cwd(),
+      OPENCLAW_BIN: 'openclaw',
+      clip: (text, maxLength = 180) => String(text || '').slice(0, maxLength),
+      normalizeSessionUser: (value) => String(value || '').trim(),
+      normalizeChatMessage: (message) => String(message?.content || message || '').trim(),
+      getMessageAttachments: () => [],
+      describeAttachmentForModel: () => '',
+      buildOpenClawMessageContent: () => [],
+      getCommandCenterSessionKey: (_agentId, sessionUser) => String(sessionUser || '').trim(),
+      resolveSessionAgentId: () => 'main',
+      resolveSessionModel: () => 'openai-codex/gpt-5.4',
+      readTextIfExists: () => '',
+      tailLines: () => [],
+      loadGatewaySdk: unavailableGatewaySdk,
+    });
+
+    const reply = await client.dispatchOpenClawStream(
+      [{ role: 'user', content: '测试企业微信带噪声 JSON' }],
+      true,
+      wecomSessionKey,
+      { onDelta: () => {} },
+    );
+
+    expect(reply.outputText).toBe('企业微信带噪声 JSON 收到。');
+    expect(gatewayCalls.map((entry) => entry.method)).toEqual(['agent', 'agent.wait', 'chat.history']);
+  });
+
+  it('uses the gateway agent request for WeCom event streams instead of chat.send delivery params', async () => {
+    const wecomSessionKey = 'agent:main:wecom:direct:marila';
+    const requestCalls = [];
+    const clientLifecycle = [];
+    const execCalls = [];
+
+    class MockGatewayClient {
+      constructor(options) {
+        this.options = options;
+      }
+
+      start() {
+        clientLifecycle.push('start');
+        this.options.onHelloOk?.();
+      }
+
+      async request(method, params) {
+        requestCalls.push({ method, params });
+        if (method !== 'agent') {
+          throw new Error(`Unexpected gateway request method: ${method}`);
+        }
+
+        const runId = String(params.idempotencyKey || 'run-wecom-event-1');
+        this.options.onEvent?.({
+          event: 'chat',
+          payload: {
+            sessionKey: params.sessionKey,
+            runId,
+            state: 'delta',
+            message: { role: 'assistant', content: '企业微信事件流' },
+          },
+        });
+        this.options.onEvent?.({
+          event: 'chat',
+          payload: {
+            sessionKey: params.sessionKey,
+            runId,
+            state: 'final',
+            message: { role: 'assistant', content: '企业微信事件流收到。' },
+          },
+        });
+
+        return {
+          acceptedAt: 1773722999708,
+          runId,
+        };
+      }
+
+      stop() {
+        clientLifecycle.push('stop');
+      }
+    }
+
+    const result = await createOpenClawClient({
+      config: {
+        apiKey: '',
+        apiPath: '/v1/responses',
+        apiStyle: 'responses',
+        baseUrl: 'http://127.0.0.1:3000',
+        mode: 'openclaw',
+      },
+      execFileAsync: async (_bin, args) => {
+        const method = args?.[5];
+        execCalls.push(method || 'exec');
+        if (method === 'chat.history') {
+          return {
+            stdout: JSON.stringify({
+              messages: [
+                {
+                  role: 'assistant',
+                  content: '企业微信事件流收到。',
+                  timestamp: 1773723000000,
+                },
+              ],
+            }),
+          };
+        }
+        throw new Error(`Unexpected CLI fallback method: ${method || 'unknown'}`);
+      },
+      PROJECT_ROOT: process.cwd(),
+      OPENCLAW_BIN: 'openclaw',
+      clip: (text, maxLength = 180) => String(text || '').slice(0, maxLength),
+      normalizeSessionUser: (value) => String(value || '').trim(),
+      normalizeChatMessage: (message) => String(message?.content || message || '').trim(),
+      getMessageAttachments: () => [],
+      describeAttachmentForModel: () => '',
+      buildOpenClawMessageContent: () => [],
+      getCommandCenterSessionKey: (_agentId, sessionUser) => String(sessionUser || '').trim(),
+      resolveSessionAgentId: () => 'main',
+      resolveSessionModel: () => 'openai-codex/gpt-5.4',
+      readTextIfExists: () => '',
+      tailLines: () => [],
+      loadGatewaySdk: async () => ({
+        GatewayClient: MockGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: 'gateway-client' },
+        GATEWAY_CLIENT_MODES: { BACKEND: 'backend' },
+        VERSION: 'test',
+      }),
+    }).dispatchOpenClawStream(
+      [{ role: 'user', content: '测试企业微信事件流' }],
+      true,
+      wecomSessionKey,
+      { onDelta: () => {} },
+    );
+
+    expect(result.outputText).toBe('企业微信事件流收到。');
+    expect(requestCalls).toHaveLength(1);
+    expect(requestCalls[0]).toEqual(
+      expect.objectContaining({
+        method: 'agent',
+        params: expect.objectContaining({
+          sessionKey: wecomSessionKey,
+          deliver: true,
+          channel: 'wecom',
+          to: 'wecom:marila',
+          accountId: 'default',
+          lane: 'nested',
+        }),
+      }),
+    );
+    expect(clientLifecycle).toEqual(['start', 'stop']);
+    expect(execCalls).toEqual(['chat.history']);
+  });
 });

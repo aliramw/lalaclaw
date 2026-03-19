@@ -22,6 +22,7 @@ Autorin: Marila Wang
 - Obere Leiste fuer Agent, Modell, fast mode, think mode, Kontext, Queue, Theme und Sprache
 - Haupt-Chatbereich fuer Prompts, Anhaenge, Streaming-Antworten und Sitzungsreset
 - Inspector fuer Timeline, Dateien, Artefakte, Snapshots und Runtime-Aktivitaet
+- Environment-Bereich im Inspector fuer OpenClaw-Diagnosen, Verwaltungsaktionen, sichere Konfigurationsbearbeitung und Datei/Ordner-Pfade mit unterschiedlichem Oeffnungsverhalten
 - Runtime laeuft standardmaessig im `mock`-Modus und kann auf echte OpenClaw-Gateways umgeschaltet werden
 
 Eine laengere Vorstellung steht in [de/showcase.md](./de/showcase.md).
@@ -125,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.19-2`:
+Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.20-1`:
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -142,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.19-2`:
+Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.20-1`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +194,7 @@ Die vollstaendige Checkliste steht in [CONTRIBUTING.md](../CONTRIBUTING.md).
 LalaClaw verwendet npm-kompatible Kalenderversionen.
 
 - Aktualisiere [CHANGELOG.md](../CHANGELOG.md) bei jeder Versionsaenderung
-- Fuer mehrere Releases am selben Tag nutze `YYYY.M.D-N`, zum Beispiel `2026.3.19-2`
+- Fuer mehrere Releases am selben Tag nutze `YYYY.M.D-N`, zum Beispiel `2026.3.20-1`
 - Inkompatible Aenderungen sollten in Release-Notizen und Migrationsdoku klar genannt werden
 - Fuer die Entwicklung wird Node.js `22` gemaess [`.nvmrc`](../.nvmrc) empfohlen. Das veroeffentlichte npm-Paket unterstuetzt `^20.19.0 || ^22.12.0 || >=24.0.0`
 

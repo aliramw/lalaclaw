@@ -1,0 +1,52 @@
+/* global afterEach, describe, expect, it */
+const http = require('node:http');
+const { once } = require('node:events');
+const WebSocket = require('ws');
+const { attachRuntimeWebSocket } = require('./runtime-ws');
+
+describe('attachRuntimeWebSocket', () => {
+  let server = null;
+
+  afterEach(async () => {
+    if (!server) {
+      return;
+    }
+    await new Promise((resolve) => server.close(resolve));
+    server = null;
+  });
+
+  it('accepts websocket upgrades and subscribes runtime listeners with session params', async () => {
+    let subscribeCall = null;
+    server = http.createServer((_req, res) => {
+      res.statusCode = 404;
+      res.end();
+    });
+
+    attachRuntimeWebSocket(server, {
+      runtimeHub: {
+        subscribe(ws, details) {
+          subscribeCall = { ws, details };
+        },
+      },
+    });
+
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address();
+
+    const client = new WebSocket(`ws://127.0.0.1:${port}/api/runtime/ws?sessionUser=command-center&agentId=main`);
+    await once(client, 'open');
+
+    expect(subscribeCall).toBeTruthy();
+    expect(subscribeCall.details).toEqual({
+      sessionUser: 'command-center',
+      agentId: 'main',
+      overrides: {
+        agentId: 'main',
+      },
+    });
+
+    client.close();
+    await once(client, 'close');
+  });
+});

@@ -4,23 +4,7 @@
 
 # Inspector, File Preview, and Tracing
 
-The right-side inspector is one of LalaClaw's defining surfaces. It projects the run trail, file activity, summaries, and environment data for the current session into one place.
-
-## Run Log
-
-The `Run Log` tab groups information by execution round:
-
-- Run title and time
-- Prompt summary
-- Tool call list
-- Input, output, and status for each tool
-- File changes associated with the run
-- Snapshot entries related to that run
-
-It is the best place to answer:
-
-- What tools did the agent just call?
-- In which run did a particular result happen?
+The right-side inspector is one of LalaClaw's defining surfaces. It now groups session information into four tabs: `Files`, `Artifacts`, `Timeline`, and `Environment`.
 
 ## Files
 
@@ -45,51 +29,68 @@ Interactions:
 
 The file data is not only built from OpenClaw transcripts. It also merges locally tracked file hints from attachments, optimistic session state, and the current workspace root snapshot.
 
-## Summaries
+## Artifacts
 
-The `Summaries` tab lists assistant reply summaries for the current session.
+The `Artifacts` tab lists assistant reply summaries for the current session.
 
 You can:
 
 - Click a summary to jump back to the matching chat message
 - Use it to navigate long conversations without scanning the full transcript
+- Open `View Context` to inspect the current session context that is being sent to the model
+
+## Timeline
+
+The `Timeline` tab groups execution records by run:
+
+- Run title and time
+- Prompt summary and result
+- Tool inputs, outputs, and status
+- File changes associated with the run
+- Collaboration relationships for dispatched work
+
+It is the best place to answer:
+
+- What tools did the agent just call?
+- In which run did a particular result happen?
+- Which files changed during that run?
 
 ## Environment
 
-The `Environment` tab aggregates runtime details such as:
+The `Environment` tab is now a composite surface that combines OpenClaw diagnostics, management actions, config tools, and current-session runtime details such as:
 
-- Whether the current session is in `mock` or `openclaw`
-- The selected agent, model, session key, and workspace root
-- Gateway URL, ports, API path, and API style
-- Context, queue, runtime, and auth status text
-
-This is usually the most useful place to inspect when something behaves differently from what you expected.
-
-## Collab
-
-The `Collab` tab shows collaboration relationships and dispatched work:
-
-- `dispatching`
-- `running`
-- `established`
-- `completed`
-- `failed`
-
-If a collaboration branch fails, the UI keeps that state visible briefly so it is easier to see what happened.
-
-## Preview
-
-The `Preview` tab exposes four read-only peek surfaces:
-
-- Workspace preview
-- Terminal preview
-- Browser preview
-- Environment preview
+- A top-level `OpenClaw diagnostics` summary grouped into `Overview`, `Connectivity`, `OpenClaw Doctor`, and `Logs`
+- OpenClaw version, runtime profile, config path, current session agent workspace directory, gateway status, health URL, and log entry points
+- A local OpenClaw install/update panel for install detection, official install guidance, update availability, and controlled update execution
+- A structured OpenClaw config panel for a small safe field set, including backup, validation, before/after diffs, and optional restart
+- A local OpenClaw management panel for `status`, `start`, `stop`, `restart`, and `doctor repair`
+- Runtime transport and runtime socket status
+- Reconnect attempts and fallback reason when runtime sync leaves WebSocket mode
+- Lower-level technical groups for session context, realtime sync, gateway config, application metadata, and uncategorized fields
 
 Notable behavior:
 
-- In `mock` mode, browser preview shows a disconnected state
-- In `openclaw` mode, it tries to read local Control UI, health status, and browser-control service details
+- Fields already promoted into the top diagnostics summary are intentionally removed from the lower-level technical groups to avoid duplicate rows
+- Long values such as JSON session keys are forced to wrap inside the container instead of overflowing horizontally
+- Absolute file paths in the environment panel, such as log files or config files, open the shared file preview when clicked
+- Directory paths in the environment panel, such as log directories or workspace roots, do not open inline preview; they render with a separate muted folder icon and open directly in Finder, Explorer, or the system file manager
+- When OpenClaw is missing, the install/update panel shows the official install docs link and official install command instead of pretending the app can self-bootstrap everything
+- When OpenClaw is installed, the install/update panel shows the dry-run action list from the official `openclaw update` flow before you trigger the real update
+- Config changes are guarded by a base hash, so the app asks you to reload if the underlying OpenClaw config changed elsewhere
+- Config apply results show the changed fields, validation outcome, and backup file path or rollback-point label in place
+- Mutating management actions require confirmation, then render structured command output, follow-up health checks, and guidance in place
+- After a management action completes, the inspector refreshes the current environment snapshot so diagnostics and technical groups can catch up immediately
+- When the active OpenClaw gateway target is remote instead of local loopback, local-only install, update, config, and management mutations are disabled in place and explained with a warning notice
+- The `OpenClaw operation history` panel is persisted across backend restarts in `~/.config/lalaclaw/openclaw-operation-history.json`
+- Rollback metadata for local and remote config changes is persisted in `~/.config/lalaclaw/openclaw-backups.json`
+- Remote snapshot bodies are written to protected per-backup files under `~/.config/lalaclaw/openclaw-backup-snapshots/`, while local snapshot files still live next to `~/.openclaw/openclaw.json` as `openclaw.json.backup.<timestamp>`
+- Blocked remote-only attempts are appended to that same history panel so you can audit what was prevented, when it happened, and whether a backup or rollback marker exists
+- Local config writes now record restorable backup files, and remote config writes can proceed through an explicit authorization step; both flows can restore a saved snapshot from the same history panel after confirmation
+- Rollback points are scoped to the OpenClaw target that created them, so the inspector refuses to restore a backup into a different local or remote target
+- The same remote warning now links to a recovery guide dialog with suggested next steps plus official OpenClaw install, doctor, and gateway-troubleshooting docs
+- The gray summary hint at the top of the tab is now owned by frontend i18n and intentionally describes diagnostics, management actions, and current-session environment details instead of mirroring a backend-provided summary string
+
+This is usually the most useful place to inspect when something behaves differently from what you expected.
 
 ## File Preview Capabilities
 
@@ -116,3 +117,4 @@ File preview endpoints require absolute paths, so items without one usually cann
 - You want to review which files the agent created or changed
 - You want to jump back to a specific important answer in a long conversation
 - You want to confirm whether the current session is running in `mock` or against a live gateway
+- You want to inspect whether runtime sync is currently on `ws` or has fallen back to `polling`

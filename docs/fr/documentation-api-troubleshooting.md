@@ -6,95 +6,69 @@
 
 ## Vue d'ensemble API
 
-### `GET /api/session`
-
-Récupère les métadonnées de session et les listes disponibles.
-
-### `POST /api/session`
-
-Met à jour `agentId`, `model`, `fastMode` et `thinkMode`.
-
-### `GET /api/runtime`
-
-Récupère le snapshot runtime complet : `conversation`, `timeline`, `files`, `artifacts`, `snapshots`, `agents`, `peeks`.
-
-### `POST /api/chat`
-
-Envoie un tour de chat, en flux NDJSON par défaut.
-
-### `POST /api/chat/stop`
-
-Interrompt la réponse active.
-
-### `GET /api/file-preview`
-
-Retourne les métadonnées d'aperçu et éventuellement un `contentUrl`.
-
-### `GET /api/file-preview/content`
-
-Retourne le contenu réel d'un fichier à partir d'un chemin absolu.
-
-### `POST /api/file-manager/reveal`
-
-Révèle le fichier dans le gestionnaire du système.
+- `GET /api/session`
+- `POST /api/session`
+- `GET /api/runtime`
+- `POST /api/chat`
+- `POST /api/chat/stop`
+- `GET /api/file-preview`
+- `GET /api/file-preview/content`
+- `POST /api/file-manager/reveal`
 
 ## Problèmes fréquents
 
-### `dist` est manquant
+### La page ne charge pas et le backend dit que `dist` manque
 
-- Exécutez `npm run build` avant `npm start`
-- En développement, utilisez Vite et Node ensemble
+- Pour le mode production, lancez d'abord `npm run build`, puis `npm start`
+- Pour le développement, suivez [Démarrage rapide](./documentation-quick-start.md) et démarrez Vite et Node ensemble
 
-### Les API échouent en développement
+### L'application installée ouvre un écran blanc et la console mentionne `mermaid-vendor`
 
-- Vérifiez `127.0.0.1:5173` pour le frontend
-- Vérifiez `127.0.0.1:3000` pour le backend
-- Vérifiez que vous utilisez bien l'entrée Vite
+Symptômes typiques :
 
-### L'application reste en `mock`
+- Le bundle se charge, mais l'écran reste vide
+- La console du navigateur affiche une erreur venant de `mermaid-vendor-*.js`
 
-- Vérifiez `~/.openclaw/openclaw.json`
-- Vérifiez `COMMANDCENTER_FORCE_MOCK=1`
-- Vérifiez `OPENCLAW_BASE_URL` et `OPENCLAW_API_KEY`
+Cause la plus probable :
 
-### Le premier message disparaît et le chat revient à l'etat vide
+- Vous utilisez encore l'ancien build empaqueté `2026.3.19-1`
+- Ce build utilisait un découpage manuel spécifique à Mermaid qui pouvait casser le démarrage en production après installation
 
-Symptomes habituels :
+Correction :
 
-- La page s'ouvre bien sur `127.0.0.1:5173`
-- Vous envoyez un premier `hi`
-- Le panneau revient aussitot a l'etat vide
+- Mettez à jour vers `lalaclaw@2026.3.19-2` ou une version plus récente
+- Si vous lancez depuis un checkout source, récupérez le dernier `main` puis reconstruisez avec `npm run build`
 
-Verifiez d'abord :
+### La page s'ouvre en développement, mais les appels API échouent
 
-- Lancez `npm run doctor`
-- En mode `local-openclaw`, verifiez que la sortie ne dit pas `OpenClaw CLI not found on PATH`
-- Dans l'onglet Network du navigateur, regardez si `POST /api/chat` revient avec `conversation: []`
+Vérifiez d'abord :
 
-Cause la plus frequente :
+- Frontend sur `127.0.0.1:5173`
+- Backend sur `127.0.0.1:3000`
+- Utilisation de l'entrée Vite plutôt que de l'entrée serveur de production
 
-- `~/.openclaw/openclaw.json` existe, donc LalaClaw passe en `local-openclaw`
-- Mais le binaire `openclaw` n'est pas installe correctement ou n'est pas sur le `PATH`
-- Le backend ne peut pas terminer le flux de session OpenClaw local, puis le frontend est ecrase par un snapshot vide
+### OpenClaw est installé, mais l'application reste en `mock`
 
-Resolution :
+Vérifiez :
 
-- Executez `which openclaw`
-- Si rien n'est retourne, installez OpenClaw CLI ou ajoutez-le au `PATH`
-- Si le binaire est dans un chemin personnalise, demarrez le backend avec :
+- Si `~/.openclaw/openclaw.json` existe
+- Si `COMMANDCENTER_FORCE_MOCK=1` est défini
+- Si `OPENCLAW_BASE_URL` et `OPENCLAW_API_KEY` sont vides ou incorrects
 
-```bash
-OPENCLAW_BIN=/absolute/path/to/openclaw PORT=3000 HOST=127.0.0.1 node server.js
-```
+### Les changements de modèle ou d'agent semblent sans effet
 
-- Puis relancez :
+Causes possibles :
 
-```bash
-npm run doctor
-```
+- Vous êtes encore en `mock`, donc seules les préférences locales changent
+- Le patch de session distante a échoué en `openclaw`
+- Le modèle choisi est déjà le modèle par défaut de l'agent
 
-### Un fichier ne peut pas être prévisualisé
+Où regarder :
 
-- Il manque peut-être un chemin absolu
-- Le fichier n'existe plus
-- La cible n'est pas un fichier régulier
+- L'onglet `Environment` dans [Inspecteur, aperçu de fichiers et traçage](./documentation-inspector.md)
+- La sortie console du backend
+
+Si le problème n'apparaît qu'après passage vers un autre onglet :
+
+- Vérifiez que le switcher a fini d'ouvrir la session cible avant d'envoyer le tour suivant
+- Contrôlez `runtime.transport`, `runtime.socket` et `runtime.fallbackReason` dans `Environment`

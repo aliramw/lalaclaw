@@ -22,6 +22,7 @@
 - மேல் பட்டையில் agent, model, fast mode, think mode, context, queue, theme மற்றும் locale கட்டுப்பாடுகள்
 - முக்கிய chat பகுதி prompt, attachment, streaming reply மற்றும் session reset க்காக
 - Inspector பகுதியில் timeline, files, artifacts, snapshots மற்றும் runtime activity
+- Inspector உள்ள Environment பகுதியில் OpenClaw diagnostics, management actions, பாதுகாப்பான config editing, மற்றும் file/directory path களுக்கான வேறுபட்ட open behaviour
 - Runtime இயல்பாக `mock` mode-இல் வேலை செய்யும்; தேவையானால் உண்மையான OpenClaw gateway-க்கு மாறலாம்
 
 விரிவான அறிமுகம் [ta/showcase.md](./ta/showcase.md) இல் உள்ளது.
@@ -125,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.19-2`, நிறுவ:
+குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.20-1`, நிறுவ:
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -142,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.19-2`, பயன்படுத்த:
+குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.20-1`, பயன்படுத்த:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +194,7 @@ PR திறக்கும் முன்:
 LalaClaw npm-க்கு ஏற்ற calendar versioning ஐ பயன்படுத்துகிறது.
 
 - version மாறும் ஒவ்வொரு முறையும் [CHANGELOG.md](../CHANGELOG.md) புதுப்பிக்கவும்
-- அதே நாளில் பல release இருந்தால் `YYYY.M.D-N` வடிவம் பயன்படுத்தவும், உதாரணம் `2026.3.19-2`
+- அதே நாளில் பல release இருந்தால் `YYYY.M.D-N` வடிவம் பயன்படுத்தவும், உதாரணம் `2026.3.20-1`
 - breaking changes இருந்தால் release notes மற்றும் migration documents இல் தெளிவாக குறிப்பிடவும்
 - மேம்பாட்டிற்கு [`.nvmrc`](../.nvmrc) இல் உள்ள Node.js `22` பரிந்துரைக்கப்படுகிறது. வெளியிடப்பட்ட npm package `^20.19.0 || ^22.12.0 || >=24.0.0` ஐ ஆதரிக்கிறது
 

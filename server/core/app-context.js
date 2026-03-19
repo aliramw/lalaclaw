@@ -39,8 +39,20 @@ const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler, createChatStopHandler } = require('../routes/chat');
 const { createFileManagerHandler } = require('../routes/file-manager');
 const { createFilePreviewHandlers } = require('../routes/file-preview');
+const { createOpenClawConfigHandler } = require('../routes/openclaw-config');
+const { createOpenClawHistoryHandler } = require('../routes/openclaw-history');
+const { createOpenClawManagementHandler } = require('../routes/openclaw-management');
+const { createOpenClawUpdateHandler } = require('../routes/openclaw-update');
 const { createRuntimeHandler } = require('../routes/runtime');
 const { createRuntimeHub } = require('../services/runtime-hub');
+const { createOpenClawConfigService } = require('../services/openclaw-config');
+const { createOpenClawFacade } = require('../services/openclaw-facade');
+const { createOpenClawManagementService } = require('../services/openclaw-management');
+const {
+  createOpenClawBackupStore,
+  createOpenClawOperationHistory,
+} = require('../services/openclaw-operations');
+const { createOpenClawUpdateService } = require('../services/openclaw-update');
 const { createSessionHandlers } = require('../routes/session');
 const { createWorkspaceTreeHandler } = require('../routes/workspace-tree');
 const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require('./session-store');
@@ -59,6 +71,13 @@ const { createAccessController } = require('../auth/access-control');
 function createAppContext() {
   const execFileAsync = promisify(execFile);
   const config = buildRuntimeConfig();
+  const lalaclawStateDir = String(config.stateDir || '').trim() || path.dirname(String(config.accessConfigFile || path.join(PROJECT_ROOT, '.env.local')));
+  const openClawBackupStore = createOpenClawBackupStore({
+    storageFile: path.join(lalaclawStateDir, 'openclaw-backups.json'),
+  });
+  const openClawOperationHistory = createOpenClawOperationHistory({
+    storageFile: path.join(lalaclawStateDir, 'openclaw-operation-history.json'),
+  });
   const accessController = createAccessController({
     config,
     parseRequestBody,
@@ -262,6 +281,7 @@ function createAppContext() {
     getTranscriptEntriesForSession,
     getTranscriptPath,
     getRuntimeHubDebugInfo: ({ sessionUser, agentId } = {}) => runtimeHub?.getDebugInfo({ sessionUser, agentId }) || null,
+    getOpenClawOperationSummary: () => openClawOperationHistory.getSummary(),
     invokeOpenClawTool,
     listImSessionsForAgent,
     listDirectoryPreview,
@@ -350,6 +370,60 @@ function createAppContext() {
     sendJson,
   });
 
+  const { runOpenClawAction: runLocalOpenClawAction } = createOpenClawManagementService({
+    config,
+    execFileAsync,
+  });
+  const {
+    applyOpenClawConfigPatch: applyLocalOpenClawConfigPatch,
+    getOpenClawConfigState,
+    restoreOpenClawConfigBackup: restoreLocalOpenClawConfigBackup,
+  } = createOpenClawConfigService({
+    backupStore: openClawBackupStore,
+    callOpenClawGateway,
+    config,
+    execFileAsync,
+  });
+  const { getOpenClawUpdateState, runOpenClawInstall: runLocalOpenClawInstall, runOpenClawUpdate: runLocalOpenClawUpdate } = createOpenClawUpdateService({
+    config,
+    execFileAsync,
+  });
+  const openClawFacade = createOpenClawFacade({
+    config,
+    openClawOperationHistory,
+    getOpenClawConfigState,
+    applyLocalOpenClawConfigPatch,
+    restoreLocalOpenClawConfigBackup,
+    getOpenClawUpdateState,
+    runLocalOpenClawAction,
+    runLocalOpenClawInstall,
+    runLocalOpenClawUpdate,
+  });
+
+  const handleOpenClawManagement = createOpenClawManagementHandler({
+    parseRequestBody,
+    runOpenClawAction: openClawFacade.runOpenClawAction,
+    sendJson,
+  });
+  const handleOpenClawConfig = createOpenClawConfigHandler({
+    applyOpenClawConfigPatch: openClawFacade.applyOpenClawConfigPatch,
+    getOpenClawConfigState: openClawFacade.getOpenClawConfigState,
+    parseRequestBody,
+    restoreRemoteOpenClawConfigBackup: openClawFacade.restoreRemoteOpenClawConfigBackup,
+    sendJson,
+  });
+  const handleOpenClawUpdate = createOpenClawUpdateHandler({
+    getOpenClawUpdateState: openClawFacade.getOpenClawUpdateState,
+    parseRequestBody,
+    runOpenClawInstall: openClawFacade.runOpenClawInstall,
+    runOpenClawUpdate: openClawFacade.runOpenClawUpdate,
+    sendJson,
+  });
+  const handleOpenClawHistory = createOpenClawHistoryHandler({
+    listOpenClawOperationHistory: openClawFacade.listOpenClawOperationHistory,
+    sendJson,
+  });
+
   const handleWorkspaceTree = createWorkspaceTreeHandler({
     normalizeSessionUser,
     resolveAgentWorkspace: getAgentWorkspace,
@@ -394,6 +468,10 @@ function createAppContext() {
     handleChat,
     handleChatStop,
     handleFileManagerReveal,
+    handleOpenClawManagement,
+    handleOpenClawConfig,
+    handleOpenClawHistory,
+    handleOpenClawUpdate,
     handleFilePreview,
     handleFilePreviewContent,
     handleFilePreviewSave,

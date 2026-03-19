@@ -1199,10 +1199,117 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("主会话消息");
+    await screen.findByText("main - 当前会话");
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /飞书/ }).querySelector(".cc-chat-tab-unread-badge")).toHaveTextContent("1");
+    });
+  });
+
+  it("does not stack overlapping background IM runtime requests while a previous poll is still pending", async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        chatTabs: [
+          { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+          { id: "agent:main::feishu", agentId: "main", sessionUser: "agent:main:feishu:direct:ou_test" },
+        ],
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+          "agent:main::feishu": {
+            agentId: "main",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "agent:main:feishu:direct:ou_test",
+            thinkMode: "off",
+          },
+        },
+        messagesByTabId: {
+          "agent:main": [{ role: "assistant", content: "主会话消息", timestamp: 1 }],
+          "agent:main::feishu": [{ role: "assistant", content: "飞书旧消息", timestamp: 2 }],
+        },
+      }),
+    );
+
+    const deferredBackgroundRuntime = createDeferred();
+    const backgroundSessionUser = "agent:main:feishu:direct:ou_test";
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center";
+        const agentId = params.get("agentId") || "main";
+
+        if (sessionUser === backgroundSessionUser) {
+          return deferredBackgroundRuntime.promise;
+        }
+
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId,
+              selectedAgentId: agentId,
+              sessionUser,
+              sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+            },
+            conversation: [{ role: "assistant", content: "主会话消息", timestamp: 1 }],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    await act(async () => {
+      render(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("main - 当前会话")).toBeInTheDocument();
+    const backgroundSessionQuery = encodeURIComponent(backgroundSessionUser);
+    const initialFeishuCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes(`sessionUser=${backgroundSessionQuery}`));
+    expect(initialFeishuCalls).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(16_000);
+    });
+
+    const feishuCallsWhilePending = fetchMock.mock.calls.filter(([input]) => String(input).includes(`sessionUser=${backgroundSessionQuery}`));
+    expect(feishuCallsWhilePending).toHaveLength(1);
+
+    deferredBackgroundRuntime.resolve(
+      mockJsonResponse(
+        createSnapshot({
+          session: {
+            ...createSnapshot().session,
+            agentId: "main",
+            selectedAgentId: "main",
+            sessionUser: backgroundSessionUser,
+            sessionKey: `agent:main:openai-user:${backgroundSessionUser}`,
+          },
+          conversation: [{ role: "assistant", content: "飞书新消息", timestamp: 3 }],
+        }),
+      ),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
   });
 
@@ -2277,7 +2384,7 @@ describe("App", () => {
       }
 
       if (url === "/api/session" && init?.method === "POST") {
-        return mockJsonResponse({ ok: false, error: "Session update failed" }, false, 500);
+        return mockJsonResponse({ ok: false, error: "Gateway RPC returned invalid JSON" }, false, 500);
       }
 
       throw new Error(`Unexpected fetch: ${url}`);
@@ -2307,6 +2414,147 @@ describe("App", () => {
       expect(screen.getAllByText("openai-codex/gpt-5.4").length).toBeGreaterThan(0);
     });
     expect(screen.queryByText("gemini-3-flash-preview")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("切换模型失败：openrouter/google/gemini-3-flash-preview（Gateway RPC returned invalid JSON）"),
+    ).toBeInTheDocument();
+  });
+
+  it("syncs the current session model after applying the current agent default model", async () => {
+    const state = {
+      globalModel: "openai-codex/gpt-5.4",
+      agentModel: "openrouter/minimax/minimax-m2.5",
+      sessionModel: "openrouter/minimax/minimax-m2.5",
+    };
+
+    const buildRuntimeSnapshot = () =>
+      createSnapshot({
+        model: state.sessionModel,
+        session: {
+          ...createSnapshot().session,
+          model: state.sessionModel,
+          selectedModel: state.sessionModel,
+          availableModels: [
+            "openrouter/minimax/minimax-m2.5",
+            "openai-codex/gpt-5.4",
+          ],
+        },
+        peeks: {
+          workspace: null,
+          terminal: null,
+          browser: null,
+          environment: {
+            summary: "这里汇总 OpenClaw 诊断、管理动作与当前会话环境信息，便于排查与检阅。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+        },
+      });
+
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(buildRuntimeSnapshot());
+      }
+
+      if (url === "/api/openclaw/config?agentId=main" && (!init || init.method === "GET")) {
+        return mockJsonResponse({
+          ok: true,
+          currentAgentId: "main",
+          configPath: "/Users/marila/.openclaw/openclaw.json",
+          baseHash: "base-hash-1",
+          modelOptions: [
+            "openrouter/minimax/minimax-m2.5",
+            "openai-codex/gpt-5.4",
+          ],
+          fields: [
+            { key: "modelPrimary", value: state.globalModel },
+            { key: "agentModel", value: state.agentModel, meta: { agentId: "main" } },
+            { key: "gatewayBind", value: "loopback" },
+            { key: "chatCompletionsEnabled", value: true },
+          ],
+          validation: { ok: true, valid: true },
+        });
+      }
+
+      if (url === "/api/openclaw/config" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        state.globalModel = body.values.modelPrimary;
+        state.agentModel = body.values.agentModel;
+        return mockJsonResponse({
+          ok: true,
+          state: {
+            ok: true,
+            currentAgentId: "main",
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            baseHash: "base-hash-2",
+            modelOptions: [
+              "openrouter/minimax/minimax-m2.5",
+              "openai-codex/gpt-5.4",
+            ],
+            fields: [
+              { key: "modelPrimary", value: state.globalModel },
+              { key: "agentModel", value: state.agentModel, meta: { agentId: "main" } },
+              { key: "gatewayBind", value: "loopback" },
+              { key: "chatCompletionsEnabled", value: true },
+            ],
+            validation: { ok: true, valid: true },
+          },
+        });
+      }
+
+      if (url === "/api/openclaw/update") {
+        return mockJsonResponse({
+          ok: true,
+          installed: true,
+          currentVersion: "2026.3.19-2",
+          targetVersion: "2026.3.19-2",
+        });
+      }
+
+      if (url === "/api/openclaw/history") {
+        return mockJsonResponse({ ok: true, entries: [] });
+      }
+
+      if (url === "/api/session" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        state.sessionModel = body.model || state.sessionModel;
+        return mockJsonResponse(buildRuntimeSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+    mockDesktopLayout();
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("main - 当前会话");
+    expect(screen.getByLabelText("切换模型")).toHaveTextContent("openrouter/minimax/minimax-m2.5");
+
+    await user.click(screen.getByRole("tab", { name: "环境" }));
+    await screen.findByText("OpenClaw 配置");
+    await user.click(screen.getByRole("button", { name: "OpenClaw 配置 查看详情" }));
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "main 默认模型" }), "openai-codex/gpt-5.4");
+    await user.click(screen.getByRole("button", { name: "应用并重启" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/session",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("openai-codex/gpt-5.4"),
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("切换模型")).toHaveTextContent("openai-codex/gpt-5.4");
+    });
   });
 
   it("keeps prompt history isolated after resetting into a new session", async () => {

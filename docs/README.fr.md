@@ -22,6 +22,7 @@ Auteure : Marila Wang
 - Barre superieure pour l'agent, le modele, le fast mode, le think mode, le contexte, la file, le theme et la langue
 - Zone de chat principale pour les prompts, les pieces jointes, les reponses en streaming et la reinitialisation de session
 - Inspector pour la timeline, les fichiers, les artefacts, les snapshots et l'activite runtime
+- Surface Environment dans l'Inspector pour les diagnostics OpenClaw, les actions de gestion, l'edition de configuration securisee et les chemins de fichiers/repertoires avec des ouvertures distinctes
 - Runtime utilisable en mode `mock` par defaut, avec bascule possible vers un vrai gateway OpenClaw
 
 Une presentation plus longue est disponible dans [fr/showcase.md](./fr/showcase.md).
@@ -125,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Pour installer une version precise, par exemple `2026.3.19-2` :
+Pour installer une version precise, par exemple `2026.3.20-1` :
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -142,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Pour passer a une version precise, par exemple `2026.3.19-2` :
+Pour passer a une version precise, par exemple `2026.3.20-1` :
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +194,7 @@ La checklist complete est dans [CONTRIBUTING.md](../CONTRIBUTING.md).
 LalaClaw utilise un versionnement calendaire compatible avec npm.
 
 - Mettez a jour [CHANGELOG.md](../CHANGELOG.md) a chaque changement de version
-- Pour plusieurs releases le meme jour, utilisez `YYYY.M.D-N`, par exemple `2026.3.19-2`
+- Pour plusieurs releases le meme jour, utilisez `YYYY.M.D-N`, par exemple `2026.3.20-1`
 - Signalez clairement les changements cassants dans les release notes et les documents de migration
 - Pour le developpement, la version Node.js recommandee est `22` via [`.nvmrc`](../.nvmrc). Le package npm publie prend en charge `^20.19.0 || ^22.12.0 || >=24.0.0`
 

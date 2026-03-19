@@ -208,11 +208,11 @@ describe("createDashboardService", () => {
       time: "2026-03-15 18:00",
       availableSkills: [{ name: "coding", ownerAgentId: "expert" }],
     });
-    expect(snapshot.peeks.environment.items[0]).toEqual({
+    expect(snapshot.peeks.environment.items.find((item) => item.label === "LALACLAW.VERSION")).toEqual({
       label: "LALACLAW.VERSION",
       value: lalaclawVersion,
     });
-    expect(snapshot.peeks.environment.items[1]).toEqual({
+    expect(snapshot.peeks.environment.items.find((item) => item.label === "OPENCLAW.VERSION")).toEqual({
       label: "OPENCLAW.VERSION",
       value: "1.2.3",
     });
@@ -261,11 +261,11 @@ describe("createDashboardService", () => {
     const snapshot = await service.buildDashboardSnapshot("demo-user");
 
     expect(snapshot.session.version).toBe("9.9.9");
-    expect(snapshot.peeks.environment.items[0]).toEqual({
+    expect(snapshot.peeks.environment.items.find((item) => item.label === "LALACLAW.VERSION")).toEqual({
       label: "LALACLAW.VERSION",
       value: lalaclawVersion,
     });
-    expect(snapshot.peeks.environment.items[1]).toEqual({
+    expect(snapshot.peeks.environment.items.find((item) => item.label === "OPENCLAW.VERSION")).toEqual({
       label: "OPENCLAW.VERSION",
       value: "9.9.9",
     });

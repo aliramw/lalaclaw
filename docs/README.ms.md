@@ -22,6 +22,7 @@ Pengarang: Marila Wang
 - Bar atas untuk agent, model, fast mode, think mode, context, queue, tema dan bahasa
 - Ruang chat utama untuk prompt, lampiran, jawapan streaming dan set semula sesi
 - Inspector untuk timeline, fail, artifacts, snapshots dan aktiviti runtime
+- Permukaan Environment dalam Inspector untuk diagnostik OpenClaw, tindakan pengurusan, penyuntingan konfigurasi yang selamat, serta laluan fail/direktori dengan gelagat buka yang berbeza
 - Runtime boleh digunakan dalam mod `mock` secara lalai dan boleh ditukar ke gateway OpenClaw sebenar
 
 Penerangan yang lebih panjang ada di [ms/showcase.md](./ms/showcase.md).
@@ -125,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Jika anda mahu versi tertentu, contohnya `2026.3.19-2`:
+Jika anda mahu versi tertentu, contohnya `2026.3.20-1`:
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -142,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Jika anda mahu versi tertentu, contohnya `2026.3.19-2`:
+Jika anda mahu versi tertentu, contohnya `2026.3.20-1`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +194,7 @@ Senarai semak penuh ada di [CONTRIBUTING.md](../CONTRIBUTING.md).
 LalaClaw menggunakan pemversian kalendar yang serasi dengan npm.
 
 - Kemas kini [CHANGELOG.md](../CHANGELOG.md) setiap kali versi berubah
-- Jika ada beberapa release pada hari yang sama, gunakan `YYYY.M.D-N`, contohnya `2026.3.19-2`
+- Jika ada beberapa release pada hari yang sama, gunakan `YYYY.M.D-N`, contohnya `2026.3.20-1`
 - Perubahan yang memecahkan keserasian perlu dinyatakan dengan jelas dalam nota keluaran dan dokumen migrasi
 - Untuk pembangunan, versi Node.js yang disyorkan ialah `22` seperti dalam [`.nvmrc`](../.nvmrc). Pakej npm yang diterbitkan menyokong `^20.19.0 || ^22.12.0 || >=24.0.0`
 

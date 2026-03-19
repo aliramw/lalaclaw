@@ -12,7 +12,8 @@ import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn, isApplePlatform } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
-const filePreviewCodeTheme = themes.dracula;
+const filePreviewDarkCodeTheme = themes.dracula;
+const filePreviewLightCodeTheme = themes.vsLight;
 const defaultSpreadsheetPreviewLimitRows = 200;
 const defaultSpreadsheetPreviewLimitColumns = 50;
 const filePreviewFontSizeStorageKey = "file-preview-font-size";
@@ -279,25 +280,40 @@ function FilePreviewCodeBlock({
   syntaxTheme,
   variant = "default",
   fontSize = "medium",
+  fillHeight = false,
 }) {
   const isSubtle = variant === "subtle";
-  const theme = syntaxTheme || filePreviewCodeTheme;
+  const isDarkTheme = resolvedTheme === "dark";
+  const theme = syntaxTheme || (isDarkTheme ? filePreviewDarkCodeTheme : filePreviewLightCodeTheme);
   const fontSizeClassName = codePreviewFontSizeClassNames[fontSize] || codePreviewFontSizeClassNames.medium;
   const highlightedLanguage = usePrismLanguage(language);
 
   return (
     <div
+      data-testid="file-preview-code-block"
       className={cn(
-        "overflow-hidden border",
+        "min-w-0 max-w-full overflow-hidden border",
+        fillHeight && "flex min-h-0 flex-1 flex-col",
         isSubtle
-          ? "rounded-2xl border-zinc-800 bg-[#14161a]"
-          : "rounded-xl border-zinc-700 bg-zinc-950",
+          ? isDarkTheme
+            ? "rounded-2xl border-zinc-800 bg-[#14161a]"
+            : "rounded-2xl border-slate-200 bg-[#f8fafc]"
+          : isDarkTheme
+            ? "rounded-xl border-zinc-700 bg-zinc-950"
+            : "rounded-xl border-slate-200 bg-[#f6f8fb]",
       )}
     >
       <div
+        data-testid="file-preview-code-header"
         className={cn(
-          "px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-400",
-          isSubtle ? "border-b border-white/6 bg-transparent" : "border-b border-zinc-800 bg-zinc-900/90",
+          "min-w-0 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em]",
+          isSubtle
+            ? isDarkTheme
+              ? "border-b border-white/6 bg-transparent text-zinc-400"
+              : "border-b border-slate-200/90 bg-transparent text-slate-500"
+            : isDarkTheme
+              ? "border-b border-zinc-800 bg-zinc-900/90 text-zinc-400"
+              : "border-b border-slate-200 bg-white/88 text-slate-500",
         )}
       >
         {language}
@@ -305,18 +321,26 @@ function FilePreviewCodeBlock({
       <Highlight prism={Prism} theme={theme} code={String(content || "")} language={highlightedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
           <pre
+            data-testid="file-preview-code-scroll"
             className={cn(
-              "overflow-auto px-0",
+              "min-w-0 max-w-full overflow-auto px-0",
+              fillHeight && "min-h-0 flex-1",
               fontSizeClassName,
               isSubtle
-                ? resolvedTheme === "dark"
+                ? isDarkTheme
                   ? "py-2.5 text-zinc-50"
                   : "py-2.5 text-slate-900"
-                : "py-3 text-zinc-50",
+                : isDarkTheme
+                  ? "py-3 text-zinc-50"
+                  : "py-3 text-slate-900",
             )}
           >
             {tokens.map((line, lineIndex) => (
-              <div key={lineIndex} {...getLineProps({ line })} className={cn("token-line px-4 font-mono", isSubtle && "text-[12.5px]")}>
+              <div
+                key={lineIndex}
+                {...getLineProps({ line })}
+                className={cn("token-line w-fit min-w-full px-4 font-mono", isSubtle && "text-[12.5px]")}
+              >
                 {line.length ? line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />) : <span>&nbsp;</span>}
               </div>
             ))}
@@ -1207,10 +1231,10 @@ export function FilePreviewOverlay({
   } else if (preview.kind === "docx" && preview.contentUrl) {
     body = <DocxPreviewContent preview={preview} resolvedTheme={resolvedTheme} />;
   } else if (preview.kind === "json") {
-    body = <FilePreviewCodeBlock content={effectivePreviewContent} language="json" fontSize={filePreviewFontSize} />;
+    body = <FilePreviewCodeBlock content={effectivePreviewContent} language="json" fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />;
   } else if (preview.kind === "text") {
     body = isCodeLikePreviewTarget(title, preview.kind)
-      ? <FilePreviewCodeBlock content={effectivePreviewContent} language={inferPreviewLanguage(title, preview.kind)} fontSize={filePreviewFontSize} />
+      ? <FilePreviewCodeBlock content={effectivePreviewContent} language={inferPreviewLanguage(title, preview.kind)} fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />
       : (
         <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-border/70 bg-background/80" : "border-slate-200 bg-white")}>
           <pre className={cn("overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-foreground", richTextPreviewFontSizeClassName)}>{effectivePreviewContent}</pre>
@@ -1252,19 +1276,22 @@ export function FilePreviewOverlay({
     );
   }
 
-  const useDirectBodyLayout = isPdfPreview || isEditing;
+  const useDirectBodyLayout = isPdfPreview
+    || isEditing
+    || preview.kind === "json"
+    || (preview.kind === "text" && isCodeLikePreviewTarget(title, preview.kind));
   const mainBody = useDirectBodyLayout ? (
     <div
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-hidden",
+        "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
         isFullscreen || isEditing ? "h-full p-0" : "px-6 py-5",
       )}
     >
       {body}
     </div>
   ) : (
-    <ScrollArea className="min-h-0 flex-1" viewportRef={previewViewportRef}>
-      <div className="min-h-full px-6 py-5">{body}</div>
+    <ScrollArea className="min-h-0 min-w-0 flex-1" viewportRef={previewViewportRef}>
+      <div className="min-h-full min-w-0 px-6 py-5">{body}</div>
       {preview.truncated ? (
         <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
           {messages.inspector.previewActions.truncatedPreview}

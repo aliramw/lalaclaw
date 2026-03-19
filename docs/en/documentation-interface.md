@@ -23,7 +23,7 @@ The top area is driven by `SessionOverview` and includes:
 
 The main chat panel includes:
 
-- A session tab strip, with one tab per agent session
+- A session tab strip for agent sessions and IM conversations, plus a switcher entry for opening another agent or IM thread
 - A panel header showing the current agent, activity state, font size controls, and new-session action
 - A conversation area for user messages, assistant messages, streamed replies, and attachment previews
 - A composer that supports text, `@` mentions, attachments, and stopping an active reply
@@ -37,16 +37,14 @@ Visible chat behaviors include:
 
 ## Right-Side Inspector
 
-The inspector exposes six main surfaces:
+The inspector exposes four main surfaces:
 
-- `Run Log`
 - `Files`
-- `Summaries`
+- `Artifacts`
+- `Timeline`
 - `Environment`
-- `Collab`
-- `Preview`
 
-It is tightly coupled to the chat session: file activity, tool calls, reply summaries, and environment snapshots from the same run all appear here.
+It is tightly coupled to the chat session: file activity, reply summaries, execution records, and runtime metadata from the same session all appear here.
 
 ## Layout and Sizing
 
@@ -58,10 +56,10 @@ It is tightly coupled to the chat session: file activity, tool calls, reply summ
 
 Tab behavior follows a few simple rules:
 
-- Tabs are organized by agent
-- The real session identity underneath is `agentId + sessionUser`
+- Tabs are keyed by the real session identity underneath, which is `agentId + sessionUser`
+- The switcher can open both agent sessions and IM conversations such as DingTalk, Feishu, and WeCom
 - Closing a tab hides it from the current view but does not delete the actual session state
-- Already-open tabs are excluded from the "switch agent" menu
+- Already-open agent tabs and already-open IM channels are excluded from the switcher menu
 
 ## Where to Go Next
 

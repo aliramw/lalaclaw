@@ -51,6 +51,10 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleAccessState,
     handleAccessToken,
     handleFileManagerReveal,
+    handleOpenClawConfig,
+    handleOpenClawHistory,
+    handleOpenClawManagement,
+    handleOpenClawUpdate,
     handleFilePreview,
     handleFilePreviewContent,
     handleFilePreviewSave,
@@ -150,6 +154,26 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if (req.method === 'POST' && url.pathname === '/api/file-manager/reveal') {
       runRouteHandler(handleFileManagerReveal, req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/openclaw/manage') {
+      runRouteHandler(handleOpenClawManagement, req, res);
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/openclaw/config') {
+      runRouteHandler(handleOpenClawConfig, req, res);
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/openclaw/update') {
+      runRouteHandler(handleOpenClawUpdate, req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/openclaw/history') {
+      runRouteHandler(handleOpenClawHistory, req, res);
       return;
     }
 

@@ -869,4 +869,115 @@ describe("createDashboardService", () => {
       { label: "runtimeHub.channel.lastGatewayEvent", value: "chat:final" },
     ]));
   });
+
+  it("includes OpenClaw diagnostics in the environment peek", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-openclaw-diagnostics-"));
+    tempDirs.push(rootDir);
+    const logsDir = path.join(rootDir, "logs");
+    const localConfigPath = path.join(rootDir, "openclaw.json");
+    fs.mkdirSync(logsDir, { recursive: true });
+    fs.writeFileSync(localConfigPath, JSON.stringify({ gateway: { port: 18789 } }), "utf8");
+    fs.writeFileSync(path.join(logsDir, "gateway.log"), "gateway ready\n", "utf8");
+
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async (method) => {
+        if (method === "config.get") {
+          return {
+            config: {
+              agents: { list: [] },
+              gateway: { version: "1.2.3" },
+            },
+          };
+        }
+        return {};
+      },
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: () => [],
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: {
+        mode: "openclaw",
+        workspaceRoot: rootDir,
+        model: "openai-codex/gpt-5.4",
+        localConfig: {},
+        localConfigPath,
+        logsDir,
+        baseUrl: "http://127.0.0.1:18789",
+        gatewayPort: 18789,
+        healthPort: 18792,
+        apiPath: "/v1/chat/completions",
+        apiStyle: "chat",
+      },
+      extractTextSegments: () => [],
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: () => [],
+      getTranscriptPath: () => "",
+      getRuntimeHubDebugInfo: () => null,
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: () => [],
+      readTextIfExists: () => "",
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: () => null,
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot("command-center", { agentId: "main" });
+    const environmentItems = snapshot.peeks.environment.items;
+
+    expect(environmentItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "LALACLAW.VERSION", value: expect.any(String) }),
+      expect.objectContaining({ label: "LALACLAW.FRONTEND_URL", value: "http://127.0.0.1:5173" }),
+      expect.objectContaining({ label: "LALACLAW.SERVER_URL", value: "http://127.0.0.1:3000" }),
+      expect.objectContaining({ label: "LALACLAW.ACCESS_MODE", value: "off" }),
+      expect.objectContaining({ label: "LALACLAW.GATEWAY_AUTH", value: "none" }),
+      expect.objectContaining({ label: "openclaw.version", value: "1.2.3" }),
+      expect.objectContaining({ label: "openclaw.runtime.profile", value: "openclaw" }),
+      expect.objectContaining({ label: "openclaw.config.path", value: localConfigPath, previewable: true }),
+      expect.objectContaining({ label: "openclaw.config.status", value: "ok" }),
+      expect.objectContaining({ label: "openclaw.workspace.root", value: rootDir, revealable: true }),
+      expect.objectContaining({ label: "openclaw.workspace.status", value: "ok" }),
+      expect.objectContaining({ label: "openclaw.gateway.status", value: "ok" }),
+      expect.objectContaining({ label: "openclaw.gateway.baseUrl", value: "http://127.0.0.1:18789" }),
+      expect.objectContaining({ label: "openclaw.gateway.healthUrl", value: "http://127.0.0.1:18789/healthz" }),
+      expect.objectContaining({ label: "openclaw.doctor.summary", value: "healthy" }),
+      expect.objectContaining({ label: "openclaw.doctor.logs", value: "ok" }),
+      expect.objectContaining({ label: "openclaw.logs.dir", value: logsDir, revealable: true }),
+      expect.objectContaining({ label: "openclaw.logs.gatewayPath", value: path.join(logsDir, "gateway.log"), previewable: true }),
+      expect.objectContaining({ label: "openclaw.logs.supervisorPath", value: path.join(logsDir, "supervisor.log") }),
+      expect.objectContaining({ label: "openclaw.remote.target", value: "local" }),
+      expect.objectContaining({ label: "openclaw.remote.writeAccess", value: "local" }),
+      expect.objectContaining({ label: "openclaw.remote.auditCount", value: "0" }),
+    ]));
+    expect(environmentItems.find((item) => item.label === "openclaw.logs.supervisorPath")).not.toHaveProperty("previewable");
+    expect(environmentItems.find((item) => item.label === "gateway.apiPath")).not.toHaveProperty("previewable");
+  });
 });

@@ -224,6 +224,55 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByText("plain preview").closest("pre")).toHaveClass("text-[16px]", "leading-7");
   });
 
+  it("keeps long code preview lines inside the main panel without widening the layout", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        sessionFiles={[
+          {
+            path: "/Users/marila/projects/lalaclaw/src/alpha.js",
+            fullPath: "/Users/marila/projects/lalaclaw/src/alpha.js",
+            primaryAction: "modified",
+          },
+        ]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: `const digest = "${"x".repeat(500)}";\n`,
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("file-preview-files-sidebar")).toBeInTheDocument();
+    expect(screen.getByTestId("file-preview-code-block")).toHaveClass("min-w-0", "max-w-full");
+    expect(screen.getByTestId("file-preview-code-scroll")).toHaveClass("min-w-0", "max-w-full", "overflow-auto");
+    expect(document.querySelector(".token-line")).toHaveClass("w-fit", "min-w-full");
+  });
+
+  it("uses a light code preview surface and syntax theme in light mode", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "json",
+          name: "config.json",
+          path: "/Users/marila/projects/lalaclaw/config.json",
+          content: '{\n  "enabled": true\n}',
+        }}
+        resolvedTheme="light"
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("file-preview-code-block")).toHaveClass("border-slate-200", "bg-[#f6f8fb]");
+    expect(screen.getByTestId("file-preview-code-header")).toHaveClass("bg-white/88", "text-slate-500");
+    expect(screen.getByTestId("file-preview-code-scroll")).toHaveClass("text-slate-900");
+  });
+
   it("returns markdown previews to preview mode after clicking save and shows a success notice", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026.3.20-1]
+
+### Added
+
+- Added an OpenClaw environment workspace inside the Inspector with install/update status, management actions, safe config editing, operation history, rollback restore, and remote-target safeguards
+- Added backend OpenClaw facade/routes/services for config, update, management, operation history, rollback metadata, and persisted backup snapshots
+- Added regression coverage for the new OpenClaw environment flows, runtime WebSocket handshake, noisy gateway stdout parsing, and current-session model sync after agent-default changes
+
+### Changed
+
+- Expanded the root README plus localized docs to document the new OpenClaw environment tooling, safer validation expectations, and the `2026.3.20-1` published-version examples
+- Reworked the Inspector environment layout so OpenClaw sections appear in a cleaner order, start collapsed by default, and hide zero-count badges
+- Allowed the Inspector to edit the current agent's default model separately from the global default model, and switched those model fields to dropdown selection
+
+### Fixed
+
+- Prevented background IM runtime polling from stacking overlapping `/api/runtime` requests when earlier polls are still in flight
+- Stopped the OpenClaw environment bootstrap loaders from repeatedly re-requesting config, update, and history data after load or failure, which could destabilize the web app over long sessions
+- Tolerated noisy gateway CLI stdout when parsing JSON responses and routed delivery-backed WeCom sends away from the unsupported `chat.send` path
+- Synced the visible current-session model after applying a new current-agent default model and improved model-switch errors so the real backend failure reason reaches the UI
+- Restored runtime WebSocket coverage and install-time validation so packaged installs are less likely to regress into polling-only behavior without detection
+
 ## [2026.3.19-2]
 
 ### Changed

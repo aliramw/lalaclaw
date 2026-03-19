@@ -22,6 +22,7 @@ Autora: Marila Wang
 - Barra superior para agent, modelo, fast mode, think mode, contexto, fila, tema e idioma
 - Area principal de chat para prompts, anexos, respostas em streaming e reset de sessao
 - Inspector para timeline, arquivos, artifacts, snapshots e atividade do runtime
+- Superficie de Environment dentro do Inspector para diagnosticos do OpenClaw, acoes de gerenciamento, edicao segura de configuracao e caminhos de arquivos/diretorios com aberturas distintas
 - Runtime utilizavel em modo `mock` por padrao, com opcao de mudar para gateways OpenClaw reais
 
 Uma apresentacao mais longa esta em [pt/showcase.md](./pt/showcase.md).
@@ -125,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Se quiser uma versao especifica, por exemplo `2026.3.19-2`:
+Se quiser uma versao especifica, por exemplo `2026.3.20-1`:
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -142,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Se quiser uma versao especifica, por exemplo `2026.3.19-2`:
+Se quiser uma versao especifica, por exemplo `2026.3.20-1`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +194,7 @@ A checklist completa esta em [CONTRIBUTING.md](../CONTRIBUTING.md).
 O LalaClaw usa versionamento de calendario compativel com npm.
 
 - Atualize [CHANGELOG.md](../CHANGELOG.md) sempre que a versao mudar
-- Para varias releases no mesmo dia, use `YYYY.M.D-N`, por exemplo `2026.3.19-2`
+- Para varias releases no mesmo dia, use `YYYY.M.D-N`, por exemplo `2026.3.20-1`
 - Explique claramente mudancas breaking em notas de release e documentos de migracao
 - Para desenvolvimento, a versao recomendada de Node.js e `22`, definida em [`.nvmrc`](../.nvmrc). O pacote npm publicado suporta `^20.19.0 || ^22.12.0 || >=24.0.0`
 

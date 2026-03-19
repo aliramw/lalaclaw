@@ -297,10 +297,74 @@ function createOpenClawClient({
     }));
 
     try {
-      return JSON.parse(String(stdout || '').trim() || '{}');
+      return parseGatewayJsonOutput(stdout);
     } catch (error) {
       throw new Error(`Gateway RPC returned invalid JSON: ${error.message}`);
     }
+  }
+
+  function parseGatewayJsonOutput(stdout = '') {
+    const raw = String(stdout || '');
+    const text = raw.trim();
+    if (!text) {
+      return {};
+    }
+
+    const candidates = [];
+    const seen = new Set();
+    const pushCandidate = (value) => {
+      const normalized = String(value || '').trim();
+      if (!normalized || seen.has(normalized)) {
+        return;
+      }
+      seen.add(normalized);
+      candidates.push(normalized);
+    };
+
+    pushCandidate(text);
+
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    lines.forEach((line) => pushCandidate(line));
+    for (let index = 0; index < lines.length; index += 1) {
+      pushCandidate(lines.slice(index).join('\n'));
+    }
+
+    for (let index = 0; index < text.length; index += 1) {
+      const marker = text[index];
+      if (marker === '{' || marker === '[') {
+        pushCandidate(text.slice(index));
+      }
+    }
+
+    for (let index = text.length - 1; index >= 0; index -= 1) {
+      const marker = text[index];
+      if (marker === '}' || marker === ']') {
+        pushCandidate(text.slice(0, index + 1));
+      }
+    }
+
+    let lastError = null;
+    let scalarFallback;
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+        if (scalarFallback === undefined) {
+          scalarFallback = parsed;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (scalarFallback !== undefined) {
+      return scalarFallback;
+    }
+
+    const preview = clip(text.replace(/\s+/g, ' '), 200);
+    throw new Error(`${lastError?.message || 'Unknown JSON parse error'}; stdout preview: ${preview}`);
   }
 
   async function fetchBrowserPeek() {
@@ -697,7 +761,6 @@ function createOpenClawClient({
     const agentId = resolveSessionAgentId(sessionUser);
     const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
     const message = messages.map((entry) => buildOpenClawSessionMessage(entry)).filter(Boolean).join('\n\n').trim();
-    const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
 
     if (!message) {
       return null;
@@ -706,16 +769,7 @@ function createOpenClawClient({
     const runId = crypto.randomUUID();
     const startResult = await callOpenClawGateway(
       'agent',
-      {
-        message,
-        sessionKey,
-        idempotencyKey: runId,
-        deliver: Boolean(deliveryRoute),
-        channel: deliveryRoute?.channel || 'webchat',
-        ...(deliveryRoute?.to ? { to: deliveryRoute.to } : {}),
-        ...(deliveryRoute?.accountId ? { accountId: deliveryRoute.accountId } : {}),
-        lane: 'nested',
-      },
+      buildGatewayAgentStartParams(sessionUser, message, runId),
       10000,
     );
 
@@ -747,6 +801,23 @@ function createOpenClawClient({
         ...(deliveryRoute.to ? { to: deliveryRoute.to } : {}),
         ...(deliveryRoute.accountId ? { accountId: deliveryRoute.accountId } : {}),
       } : {}),
+    };
+  }
+
+  function buildGatewayAgentStartParams(sessionUser = 'command-center', message = '', idempotencyKey = '') {
+    const agentId = resolveSessionAgentId(sessionUser);
+    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
+
+    return {
+      message,
+      sessionKey,
+      idempotencyKey,
+      deliver: Boolean(deliveryRoute),
+      channel: deliveryRoute?.channel || 'webchat',
+      ...(deliveryRoute?.to ? { to: deliveryRoute.to } : {}),
+      ...(deliveryRoute?.accountId ? { accountId: deliveryRoute.accountId } : {}),
+      lane: 'nested',
     };
   }
 
@@ -1089,6 +1160,7 @@ function createOpenClawClient({
     const agentId = resolveSessionAgentId(sessionUser);
     const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
     const message = messages.map((entry) => buildOpenClawSessionMessage(entry)).filter(Boolean).join('\n\n').trim();
+    const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
     if (!message) {
       return {
         outputText: 'OpenClaw returned an empty response.',
@@ -1287,11 +1359,13 @@ function createOpenClawClient({
       ]);
 
       const requestResult = await client.request(
-        'chat.send',
-        buildGatewayChatSendParams(sessionUser, message, timeoutMs, {
-          thinkMode: options.thinkMode,
-          idempotencyKey: runId,
-        }),
+        deliveryRoute ? 'agent' : 'chat.send',
+        deliveryRoute
+          ? buildGatewayAgentStartParams(sessionUser, message, runId)
+          : buildGatewayChatSendParams(sessionUser, message, timeoutMs, {
+            thinkMode: options.thinkMode,
+            idempotencyKey: runId,
+          }),
         { timeoutMs: 10000 },
       );
       activeRunState = {

@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
+import { buildOpenClawConfigFormValues, buildOpenClawRemoteGuard, useOpenClawInspector } from "@/features/app/controllers/use-openclaw-inspector";
 import { apiFetch } from "@/lib/api-client";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn, isApplePlatform, stripMarkdownForDisplay } from "@/lib/utils";
@@ -31,6 +33,54 @@ const lightToolIoTheme = themes.vsLight;
 const inspectorTabKeys = ["files", "artifacts", "timeline", "environment"];
 const WORKSPACE_FILTER_DEBOUNCE_MS = 150;
 const contextMenuViewportPadding = 8;
+const OPENCLAW_DIAGNOSTIC_PREFIX = "openclaw.";
+const openClawDiagnosticFieldsBySection = {
+  overview: [
+    "openclaw.version",
+    "openclaw.runtime.profile",
+    "openclaw.config.path",
+    "openclaw.config.status",
+    "openclaw.workspace.root",
+    "openclaw.workspace.status",
+  ],
+  connectivity: [
+    "openclaw.gateway.status",
+    "openclaw.gateway.baseUrl",
+    "openclaw.gateway.healthUrl",
+  ],
+  doctor: [
+    "openclaw.doctor.summary",
+    "openclaw.doctor.config",
+    "openclaw.doctor.workspace",
+    "openclaw.doctor.gateway",
+    "openclaw.doctor.logs",
+  ],
+  logs: [
+    "openclaw.logs.dir",
+    "openclaw.logs.gatewayPath",
+    "openclaw.logs.supervisorPath",
+  ],
+  remote: [
+    "openclaw.remote.target",
+    "openclaw.remote.writeAccess",
+    "openclaw.remote.auditCount",
+    "openclaw.remote.lastAction",
+    "openclaw.remote.lastOutcome",
+    "openclaw.remote.lastRollback",
+  ],
+};
+const environmentItemGroups = [
+  { key: "session", prefixes: ["session."] },
+  { key: "sync", prefixes: ["runtime.", "runtimeHub."] },
+  { key: "gatewayConfig", prefixes: ["gateway.", "gateway.config."] },
+  { key: "application", prefixes: ["LALACLAW."] },
+];
+const redundantEnvironmentLabels = new Set([
+  "OPENCLAW.VERSION",
+  "session.mode",
+  "session.workspaceRoot",
+  "gateway.baseUrl",
+]);
 const previewableExtensions = new Set([
   "txt", "text", "log", "md", "markdown", "json", "csv", "xls", "xlsx", "xlsm", "pdf", "doc", "docx", "ppt", "pptx",
   "png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif",
@@ -49,6 +99,12 @@ const editableExtensions = new Set([
   "sh", "bash", "zsh", "fish", "ps1", "sql", "css", "scss", "sass", "less",
   "html", "xml", "yml", "yaml", "toml", "ini", "conf", "env",
 ]);
+const OFFICIAL_OPENCLAW_DOC_URLS = {
+  install: "https://docs.openclaw.ai/install",
+  update: "https://docs.openclaw.ai/updating",
+  doctor: "https://docs.openclaw.ai/doctor",
+  troubleshooting: "https://openclawlab.com/en/docs/gateway/troubleshooting/",
+};
 
 function getItemKey(item, index) {
   if (item?.id) {
@@ -78,6 +134,15 @@ function compactHomePath(filePath = "") {
     return "";
   }
   return filePath.startsWith(homePrefix) ? `~${filePath.slice(homePrefix.length)}` : filePath;
+}
+
+function isAbsoluteFileSystemPath(value = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized.startsWith("/") || /^[A-Za-z]:[\\/]/.test(normalized);
 }
 
 function formatDisplayPath(item, currentWorkspaceRoot = "") {
@@ -241,23 +306,1570 @@ function localizeArtifactTitle(title = "", messages) {
   return value.replace(/^(回复|reply)\s*/i, `${messages.inspector.artifactReplyPrefix} `).trim();
 }
 
-function FileLink({ item, compact = false, currentWorkspaceRoot = "", label, onOpenPreview, onOpenContextMenu }) {
-  const canOpen = Boolean((item.fullPath || item.path) && item.kind !== "目录");
+function isOpenClawDiagnosticItem(item) {
+  return String(item?.label || "").startsWith(OPENCLAW_DIAGNOSTIC_PREFIX);
+}
+
+function localizeOpenClawDiagnosticLabel(label = "", messages) {
+  return messages.inspector.openClawDiagnostics.fields?.[label] || label;
+}
+
+function localizeOpenClawDiagnosticValue(value = "", messages) {
+  return messages.inspector.openClawDiagnostics.values?.[value] || String(value || "");
+}
+
+function localizeEnvironmentItemLabel(label = "", messages) {
+  return messages.inspector.environmentFields?.[label] || label;
+}
+
+function localizeEnvironmentItemValue(value = "", messages) {
+  return messages.inspector.environmentValues?.[value] || String(value || "");
+}
+
+function getOpenClawDiagnosticBadgeProps(value = "") {
+  switch (String(value || "").trim()) {
+    case "ok":
+    case "healthy":
+      return { variant: "success", className: "" };
+    case "openclaw":
+      return { variant: "active", className: "" };
+    case "mock":
+      return { variant: "secondary", className: "" };
+    case "missing":
+    case "unreachable":
+    case "attention":
+      return { variant: "default", className: "" };
+    default:
+      return { variant: "outline", className: "" };
+  }
+}
+
+function shouldRenderOpenClawDiagnosticBadge(label = "") {
+  return label === "openclaw.runtime.profile"
+    || label.endsWith(".status")
+    || label.startsWith("openclaw.doctor.");
+}
+
+function collectOpenClawDiagnostics(items = []) {
+  const diagnosticEntries = new Map(
+    items
+      .filter((item) => isOpenClawDiagnosticItem(item))
+      .map((item) => [String(item.label), item]),
+  );
+
+  const sections = Object.entries(openClawDiagnosticFieldsBySection)
+    .map(([sectionKey, labels]) => ({
+      key: sectionKey,
+      items: labels
+        .map((label) => diagnosticEntries.get(label))
+        .filter((item) => item?.value),
+    }))
+    .filter((section) => section.items.length);
+
+  return {
+    sections,
+    remainingItems: items.filter((item) => !isOpenClawDiagnosticItem(item) && !redundantEnvironmentLabels.has(String(item?.label || ""))),
+  };
+}
+
+function getEnvironmentGroupKey(label = "") {
+  const normalizedLabel = String(label || "");
+  for (const group of environmentItemGroups) {
+    if (group.prefixes.some((prefix) => normalizedLabel.startsWith(prefix))) {
+      return group.key;
+    }
+  }
+  return "other";
+}
+
+function collectEnvironmentGroups(items = [], messages) {
+  const groupedItems = new Map();
+  items.forEach((item) => {
+    const groupKey = getEnvironmentGroupKey(item?.label);
+    if (!groupedItems.has(groupKey)) {
+      groupedItems.set(groupKey, []);
+    }
+    groupedItems.get(groupKey).push(item);
+  });
+
+  const orderedGroupKeys = [
+    ...environmentItemGroups.map((group) => group.key),
+    "other",
+  ];
+
+  return orderedGroupKeys
+    .filter((key) => groupedItems.has(key))
+    .map((key) => ({
+      key,
+      label: messages.inspector.environmentGroups?.[key] || key,
+      items: groupedItems.get(key) || [],
+    }));
+}
+
+function shouldRenderEnvironmentPathLink(item) {
+  return Boolean(item?.previewable || item?.revealable);
+}
+
+function buildEnvironmentPathItem(item) {
+  const normalizedValue = String(item?.value || "").trim();
+  const isDirectory = Boolean(item?.revealable);
+  return {
+    path: normalizedValue,
+    fullPath: normalizedValue,
+    kind: isDirectory ? "目录" : "文件",
+  };
+}
+
+function getOpenClawManagementActions(messages) {
+  return [
+    {
+      key: "status",
+      label: messages.inspector.openClawManagement.actions.status,
+      confirm: false,
+    },
+    {
+      key: "start",
+      label: messages.inspector.openClawManagement.actions.start,
+      confirm: true,
+    },
+    {
+      key: "stop",
+      label: messages.inspector.openClawManagement.actions.stop,
+      confirm: true,
+    },
+    {
+      key: "restart",
+      label: messages.inspector.openClawManagement.actions.restart,
+      confirm: true,
+    },
+    {
+      key: "doctorRepair",
+      label: messages.inspector.openClawManagement.actions.doctorRepair,
+      confirm: true,
+    },
+  ];
+}
+
+function getOpenClawManagementOutcome(result = {}) {
+  const healthStatus = String(result?.healthCheck?.status || "").trim();
+  if (result?.commandResult?.ok && healthStatus && healthStatus !== "healthy") {
+    return "warning";
+  }
+  if (result?.ok) {
+    return "success";
+  }
+  if (result?.commandResult?.ok) {
+    return "warning";
+  }
+  return "error";
+}
+
+function getOpenClawManagementOutcomeBadgeProps(outcome = "") {
+  switch (outcome) {
+    case "success":
+      return { variant: "success", className: "" };
+    case "warning":
+      return { variant: "secondary", className: "" };
+    default:
+      return { variant: "default", className: "" };
+  }
+}
+
+function getOpenClawConfigFieldMeta(messages, state = null) {
+  const currentAgentId = String(state?.currentAgentId || "").trim();
+
+  return [
+    {
+      key: "modelPrimary",
+      type: "string",
+      restartRequired: false,
+      label: messages.inspector.openClawConfig.fields.modelPrimary.label,
+      description: messages.inspector.openClawConfig.fields.modelPrimary.description,
+    },
+    ...(currentAgentId
+      ? [{
+          key: "agentModel",
+          type: "string",
+          restartRequired: false,
+          label: messages.inspector.openClawConfig.fields.agentModel.label(currentAgentId),
+          description: messages.inspector.openClawConfig.fields.agentModel.description(currentAgentId),
+        }]
+      : []),
+    {
+      key: "gatewayBind",
+      type: "enum",
+      restartRequired: true,
+      options: ["loopback", "tailnet", "lan", "auto", "custom"].map((value) => ({
+        value,
+        label: messages.inspector.openClawConfig.fields.gatewayBind.options?.[value] || value,
+      })),
+      label: messages.inspector.openClawConfig.fields.gatewayBind.label,
+      description: messages.inspector.openClawConfig.fields.gatewayBind.description,
+    },
+    {
+      key: "chatCompletionsEnabled",
+      type: "boolean",
+      restartRequired: true,
+      label: messages.inspector.openClawConfig.fields.chatCompletionsEnabled.label,
+      description: messages.inspector.openClawConfig.fields.chatCompletionsEnabled.description,
+    },
+  ];
+}
+
+function getOpenClawConfigFieldValueLabel(fieldKey = "", value, messages) {
+  if (typeof value === "boolean") {
+    return value ? messages.inspector.openClawConfig.boolean.on : messages.inspector.openClawConfig.boolean.off;
+  }
+
+  if (value === null || typeof value === "undefined" || String(value).trim() === "") {
+    return messages.inspector.openClawConfig.emptyValue;
+  }
+
+  if (fieldKey === "gatewayBind") {
+    return messages.inspector.openClawConfig.fields.gatewayBind.options?.[value] || String(value);
+  }
+
+  return String(value);
+}
+
+function getOpenClawConfigOutcome(result = {}) {
+  if (result?.ok) {
+    return "success";
+  }
+  if (result?.rolledBack || result?.validation?.ok === false) {
+    return "error";
+  }
+  return "warning";
+}
+
+function getOpenClawConfigOutcomeBadgeProps(outcome = "") {
+  switch (outcome) {
+    case "success":
+      return { variant: "success", className: "" };
+    case "warning":
+      return { variant: "secondary", className: "" };
+    default:
+      return { variant: "default", className: "" };
+  }
+}
+
+function getOpenClawUpdateOutcome(result = {}) {
+  const healthStatus = String(result?.healthCheck?.status || "").trim();
+  if (result?.ok) {
+    return "success";
+  }
+  if (result?.commandResult?.ok && healthStatus && healthStatus !== "healthy") {
+    return "warning";
+  }
+  if (result?.commandResult?.ok) {
+    return "warning";
+  }
+  return "error";
+}
+
+function getOpenClawUpdateOutcomeBadgeProps(outcome = "") {
+  switch (outcome) {
+    case "success":
+      return { variant: "success", className: "" };
+    case "warning":
+      return { variant: "secondary", className: "" };
+    default:
+      return { variant: "default", className: "" };
+  }
+}
+
+function normalizeOpenClawUpdateIssueKey(value = "") {
+  return String(value || "").trim();
+}
+
+function buildOpenClawUpdateTroubleshootingEntries(result = null, messages) {
+  const issueKeys = [];
+  const errorCode = normalizeOpenClawUpdateIssueKey(result?.errorCode);
+  const commandResult = result?.commandResult || {};
+  const diagnosticText = [
+    commandResult?.stderr,
+    commandResult?.stdout,
+    commandResult?.error,
+    result?.error,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join("\n");
+
+  if (errorCode === "install_platform_unsupported") {
+    issueKeys.push("platformUnsupported");
+  }
+  if (errorCode === "openclaw_already_installed") {
+    issueKeys.push("alreadyInstalled");
+  }
+  if (errorCode === "update_status_failed") {
+    issueKeys.push("inspectStateFailed");
+  }
+  if (errorCode === "openclaw_not_installed") {
+    issueKeys.push("manualInstall");
+  }
+
+  if (commandResult?.timedOut) {
+    issueKeys.push("commandTimedOut");
+  }
+  if (/permission denied|operation not permitted|eacces|eperm/.test(diagnosticText)) {
+    issueKeys.push("permissionFailure");
+  }
+  if (/could not resolve host|temporary failure|network is unreachable|connection reset|tls|certificate|proxy|econnreset|enetunreach|socket hang up/.test(diagnosticText)) {
+    issueKeys.push("networkFailure");
+  }
+  if (
+    commandResult?.systemErrorCode === "ENOENT"
+    || /curl: command not found|bash: command not found|env: bash: no such file|env: curl: no such file|command not found/.test(diagnosticText)
+  ) {
+    issueKeys.push("missingShellTools");
+  }
+  if (/npm err!|pnpm|yarn|corepack/.test(diagnosticText)) {
+    issueKeys.push("packageManagerFailure");
+  }
+  if (result?.healthCheck?.status === "unhealthy" || result?.healthCheck?.status === "unreachable") {
+    issueKeys.push("gatewayRecovery");
+  }
+  if (!result?.ok && result?.action === "install") {
+    issueKeys.push("installFailed");
+  }
+  if (!result?.ok && result?.action === "update") {
+    issueKeys.push("updateFailed");
+  }
+  if (!issueKeys.length && result && !result.ok) {
+    issueKeys.push("genericFailure");
+  }
+
+  const uniqueIssueKeys = [...new Set(issueKeys.map(normalizeOpenClawUpdateIssueKey).filter(Boolean))];
+  return uniqueIssueKeys.map((issueKey) => {
+    const issue = messages.inspector.openClawUpdate.guidance?.issues?.[issueKey];
+    if (!issue) {
+      return null;
+    }
+
+    const docs = (issue.docs || []).map((docKey) => ({
+      key: docKey,
+      href: OFFICIAL_OPENCLAW_DOC_URLS[docKey] || OFFICIAL_OPENCLAW_DOC_URLS.install,
+      label: messages.inspector.openClawUpdate.guidance?.docs?.[docKey] || docKey,
+    }));
+
+    return {
+      key: issueKey,
+      title: issue.title,
+      summary: issue.summary,
+      steps: Array.isArray(issue.steps) ? issue.steps : [],
+      commands: Array.isArray(issue.commands) ? issue.commands : [],
+      docs,
+      canPreview: Boolean((issue.steps || []).length || (issue.commands || []).length),
+    };
+  }).filter(Boolean);
+}
+
+function OpenClawRemoteNotice({ messages, onOpenGuide, remoteGuard = null }) {
+  if (!remoteGuard?.blocked) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-500/25 bg-amber-500/6 px-3 py-2.5">
+      <div className="text-[12px] font-medium text-foreground">{messages.inspector.remoteOperations.blockedTitle}</div>
+      <div className="mt-1 text-[12px] leading-5 text-muted-foreground">{messages.inspector.remoteOperations.blockedDescription}</div>
+      <div className="mt-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 rounded-full px-2.5 text-[11px]"
+          onClick={() => onOpenGuide?.()}
+        >
+          <ScrollText className="mr-1 h-3.5 w-3.5" />
+          {messages.inspector.remoteOperations.openGuide}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function OpenClawManagementPanel({
+  actionIntent,
+  busyActionKey = "",
+  messages,
+  onOpenRemoteGuide,
+  onRefresh,
+  onRequestAction,
+  refreshing = false,
+  remoteGuard = null,
+  result = null,
+  showTitle = true,
+}) {
+  const actions = getOpenClawManagementActions(messages);
+  const outcome = getOpenClawManagementOutcome(result);
+  const outcomeBadge = getOpenClawManagementOutcomeBadgeProps(outcome);
+  const activeActionLabel = actions.find((action) => action.key === busyActionKey)?.label || "";
+
+  return (
+    <div className={showTitle ? "grid gap-2" : "grid"}>
+      {showTitle ? (
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          {messages.inspector.openClawManagement.title}
+        </div>
+      ) : null}
+      <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <CardContent className="space-y-3 px-3.5 py-3">
+          <div className="text-[12px] leading-5 text-muted-foreground">
+            {messages.inspector.openClawManagement.description}
+          </div>
+          <OpenClawRemoteNotice messages={messages} onOpenGuide={onOpenRemoteGuide} remoteGuard={remoteGuard} />
+          <div className="flex flex-wrap gap-2">
+            {actions.map((action) => {
+              const pending = busyActionKey === action.key;
+              return (
+                <Button
+                  key={action.key}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(busyActionKey) || remoteGuard?.blocked}
+                  aria-label={action.label}
+                  className="h-8 rounded-full px-3"
+                  onClick={() => onRequestAction(action)}
+                >
+                  {pending ? messages.inspector.openClawManagement.running(activeActionLabel || action.label) : action.label}
+                </Button>
+              );
+            })}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={Boolean(busyActionKey) || refreshing}
+              aria-label={messages.inspector.openClawManagement.refresh}
+              className="h-8 rounded-full px-3"
+              onClick={() => onRefresh?.()}
+            >
+              {refreshing ? messages.inspector.openClawManagement.refreshing : messages.inspector.openClawManagement.refresh}
+            </Button>
+          </div>
+          {result ? (
+            <div className="space-y-2 rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {messages.inspector.openClawManagement.resultTitle}
+                  </div>
+                  <div className="text-sm font-semibold text-foreground">
+                    {messages.inspector.openClawManagement.actions?.[result.action] || result.action}
+                  </div>
+                </div>
+                <Badge variant={outcomeBadge.variant} className={`px-2 py-0.5 text-[11px] leading-5 ${outcomeBadge.className}`}>
+                  {messages.inspector.openClawManagement.outcomes[outcome]}
+                </Badge>
+              </div>
+              <div className="grid gap-2 text-[12px] leading-5 text-foreground">
+                <div>
+                  <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {messages.inspector.openClawManagement.labels.command}
+                  </div>
+                  <div className="font-mono text-[12px] text-foreground">{result.command?.display || ""}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {messages.inspector.openClawManagement.labels.health}
+                  </div>
+                  <div className="font-mono text-[12px] text-foreground">
+                    {messages.inspector.openClawManagement.healthStatuses?.[result.healthCheck?.status] || result.healthCheck?.status || messages.inspector.openClawManagement.healthStatuses.unknown}
+                    {result.healthCheck?.url ? ` · ${result.healthCheck.url}` : ""}
+                  </div>
+                </div>
+                {Array.isArray(result.guidance) && result.guidance.length ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawManagement.labels.guidance}
+                    </div>
+                    <div className="space-y-1 text-[12px] leading-5 text-foreground">
+                      {result.guidance.map((item, index) => (
+                        <div key={`${item}-${index}`}>• {item}</div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {result.commandResult?.stdout ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawManagement.labels.stdout}
+                    </div>
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-5 text-foreground">{result.commandResult.stdout}</pre>
+                  </div>
+                ) : null}
+                {result.commandResult?.stderr ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawManagement.labels.stderr}
+                    </div>
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-5 text-foreground">{result.commandResult.stderr}</pre>
+                  </div>
+                ) : null}
+                {!result.ok && result.error ? (
+                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] leading-5 text-destructive">
+                    {result.error}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {actionIntent ? (
+            <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-[12px] leading-5 text-muted-foreground">
+              {messages.inspector.openClawManagement.pendingConfirmation(messages.inspector.openClawManagement.actions?.[actionIntent.key] || actionIntent.label)}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OpenClawConfigPanel({
+  busy = false,
+  error = "",
+  loading = false,
+  messages,
+  onChange,
+  onOpenPreview,
+  onChangeRemoteAuthorization,
+  onOpenRemoteGuide,
+  onRevealInFileManager,
+  onReload,
+  onSubmit,
+  remoteAuthorization = null,
+  remoteGuard = null,
+  result = null,
+  state = null,
+  values = {},
+  showTitle = true,
+}) {
+  const fieldMeta = getOpenClawConfigFieldMeta(messages, state);
+  const outcome = getOpenClawConfigOutcome(result);
+  const outcomeBadge = getOpenClawConfigOutcomeBadgeProps(outcome);
+  const initialValues = buildOpenClawConfigFormValues(state);
+  const modelOptions = Array.isArray(state?.modelOptions) ? state.modelOptions : [];
+  const hasPendingChanges = fieldMeta.some((field) => {
+    const nextValue = values?.[field.key];
+    const initialValue = initialValues?.[field.key];
+    return nextValue !== initialValue;
+  });
+  const remoteConfigFlow = Boolean(remoteGuard?.blocked);
+  const remoteAuthorized = Boolean(remoteAuthorization?.confirmed);
+
+  return (
+    <div className={showTitle ? "grid gap-2" : "grid"}>
+      {showTitle ? (
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          {messages.inspector.openClawConfig.title}
+        </div>
+      ) : null}
+      <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <CardContent className="space-y-3 px-3.5 py-3">
+          <div className="text-[12px] leading-5 text-muted-foreground">
+            {messages.inspector.openClawConfig.description}
+          </div>
+          <OpenClawRemoteNotice messages={messages} onOpenGuide={onOpenRemoteGuide} remoteGuard={remoteGuard} />
+          {remoteConfigFlow ? (
+            <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+              <div className="text-sm font-semibold text-foreground">{messages.inspector.openClawConfig.remote.title}</div>
+              <div className="mt-1 text-[12px] leading-5 text-muted-foreground">{messages.inspector.openClawConfig.remote.description}</div>
+              <label className="mt-3 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0 rounded border border-border/70"
+                  checked={remoteAuthorized}
+                  aria-label={messages.inspector.openClawConfig.remote.confirm}
+                  disabled={loading || busy}
+                  onChange={(event) => onChangeRemoteAuthorization?.("confirmed", event.target.checked)}
+                />
+                <span className="min-w-0 text-[12px] leading-5 text-foreground">{messages.inspector.openClawConfig.remote.confirm}</span>
+              </label>
+              <div className="mt-3 grid gap-1.5">
+                <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  {messages.inspector.openClawConfig.remote.noteLabel}
+                </div>
+                <input
+                  type="text"
+                  aria-label={messages.inspector.openClawConfig.remote.noteLabel}
+                  className="h-9 w-full rounded-xl border border-border/70 bg-background px-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40"
+                  disabled={loading || busy}
+                  placeholder={messages.inspector.openClawConfig.remote.notePlaceholder}
+                  value={String(remoteAuthorization?.note || "")}
+                  onChange={(event) => onChangeRemoteAuthorization?.("note", event.target.value)}
+                />
+              </div>
+              <div className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                {messages.inspector.openClawConfig.remote.restartNotice}
+              </div>
+            </div>
+          ) : null}
+          {state?.validation ? (
+            <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
+              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                {messages.inspector.openClawConfig.labels.validation}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <Badge variant={state.validation.ok ? "success" : "default"} className="px-2 py-0.5 text-[11px] leading-5">
+                  {state.validation.ok ? messages.inspector.openClawConfig.validation.valid : messages.inspector.openClawConfig.validation.invalid}
+                </Badge>
+                {state.configPath ? (
+                  <div className="min-w-0 overflow-hidden">
+                    {!state.remoteTarget && isAbsoluteFileSystemPath(state.configPath) ? (
+                      <FileLink
+                        item={{ path: state.configPath, fullPath: state.configPath, kind: "文件" }}
+                        compact
+                        currentWorkspaceRoot=""
+                        label={compactHomePath(state.configPath)}
+                        onOpenPreview={onOpenPreview}
+                        onRevealInFileManager={(targetItem) => {
+                          onRevealInFileManager?.(targetItem).catch(() => {});
+                        }}
+                      />
+                    ) : (
+                      <div className="break-all font-mono text-[12px] text-foreground">{state.configPath}</div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          <div className="grid gap-3">
+            {fieldMeta.map((field) => {
+              const fieldValue = values?.[field.key];
+              return (
+                <div key={field.key} className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-foreground">{field.label}</div>
+                      <div className="text-[12px] leading-5 text-muted-foreground">{field.description}</div>
+                    </div>
+                    {field.restartRequired ? (
+                      <Badge variant="secondary" className="whitespace-nowrap px-2 py-0.5 text-[10px] leading-5">
+                        {messages.inspector.openClawConfig.restartBadge}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="mt-3">
+                    {field.type === "boolean" ? (
+                      <label className="flex items-center justify-between gap-3">
+                        <span className="text-[12px] text-foreground">
+                          {getOpenClawConfigFieldValueLabel(field.key, fieldValue, messages)}
+                        </span>
+                        <Switch
+                          checked={Boolean(fieldValue)}
+                          aria-label={field.label}
+                          disabled={loading || busy}
+                          onCheckedChange={(checked) => onChange?.(field.key, checked)}
+                        />
+                      </label>
+                    ) : field.type === "enum" ? (
+                      <div className="relative">
+                        <select
+                          aria-label={field.label}
+                          className="h-9 w-full appearance-none rounded-xl border border-border/70 bg-background pl-3 pr-10 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40"
+                          disabled={loading || busy}
+                          value={String(fieldValue || "")}
+                          onChange={(event) => onChange?.(field.key, event.target.value)}
+                        >
+                          {field.options.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground" aria-hidden="true">
+                          <ChevronDown className="h-4 w-4" />
+                        </span>
+                      </div>
+                    ) : field.key === "modelPrimary" || field.key === "agentModel" ? (
+                      <div className="relative">
+                        <select
+                          aria-label={field.label}
+                          className="h-9 w-full appearance-none rounded-xl border border-border/70 bg-background pl-3 pr-10 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40"
+                          disabled={loading || busy}
+                          value={String(fieldValue ?? "")}
+                          onChange={(event) => onChange?.(field.key, event.target.value)}
+                        >
+                          <option value="">{messages.inspector.openClawConfig.emptyValue}</option>
+                          {modelOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground" aria-hidden="true">
+                          <ChevronDown className="h-4 w-4" />
+                        </span>
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        aria-label={field.label}
+                        className="h-9 w-full rounded-xl border border-border/70 bg-background px-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40"
+                        disabled={loading || busy}
+                        placeholder={
+                          field.key === "agentModel"
+                            ? messages.inspector.openClawConfig.fields.agentModel.placeholder
+                            : messages.inspector.openClawConfig.fields.modelPrimary.placeholder
+                        }
+                        value={String(fieldValue ?? "")}
+                        onChange={(event) => onChange?.(field.key, event.target.value)}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={loading || busy}
+              variant="ghost"
+              aria-label={messages.inspector.openClawConfig.reload}
+              className="h-8 rounded-full px-3"
+              onClick={() => onReload?.()}
+            >
+              {loading ? messages.inspector.openClawConfig.reloading : messages.inspector.openClawConfig.reload}
+            </Button>
+            <div className="ml-auto flex flex-wrap justify-end gap-2">
+              {!remoteConfigFlow ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={loading || busy || !hasPendingChanges}
+                  className="h-8 rounded-full px-3"
+                  onClick={() => onSubmit?.(false)}
+                >
+                  {busy ? messages.inspector.openClawConfig.applying : messages.inspector.openClawConfig.apply}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                disabled={loading || busy || !hasPendingChanges || (remoteConfigFlow && !remoteAuthorized)}
+                className="h-8 rounded-full px-3"
+                onClick={() => onSubmit?.(true)}
+              >
+                {busy
+                  ? messages.inspector.openClawConfig.applying
+                  : (remoteConfigFlow ? messages.inspector.openClawConfig.applyRemote : messages.inspector.openClawConfig.applyAndRestart)}
+              </Button>
+            </div>
+          </div>
+          {error ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] leading-5 text-destructive">
+              {error}
+            </div>
+          ) : null}
+          {result ? (
+            <div className="space-y-2 rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {messages.inspector.openClawConfig.resultTitle}
+                  </div>
+                  <div className="text-sm font-semibold text-foreground">
+                    {result.noChanges ? messages.inspector.openClawConfig.noChanges : messages.inspector.openClawConfig.appliedChanges}
+                  </div>
+                </div>
+                <Badge variant={outcomeBadge.variant} className={`px-2 py-0.5 text-[11px] leading-5 ${outcomeBadge.className}`}>
+                  {messages.inspector.openClawConfig.outcomes[outcome]}
+                </Badge>
+              </div>
+              <div className="grid gap-2 text-[12px] leading-5 text-foreground">
+                {result.validation ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawConfig.labels.validation}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">
+                      {result.validation.ok ? messages.inspector.openClawConfig.validation.valid : messages.inspector.openClawConfig.validation.invalid}
+                    </div>
+                  </div>
+                ) : null}
+                {result.healthCheck ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawConfig.labels.health}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">
+                      {messages.inspector.openClawConfig.healthStatuses?.[result.healthCheck.status] || result.healthCheck.status}
+                      {result.healthCheck?.url ? ` · ${result.healthCheck.url}` : ""}
+                    </div>
+                  </div>
+                ) : null}
+                {result.backupPath ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawConfig.labels.backup}
+                    </div>
+                    <div className="min-w-0 overflow-hidden">
+                      <FileLink
+                        item={{ path: result.backupPath, fullPath: result.backupPath, kind: "文件" }}
+                        compact
+                        currentWorkspaceRoot=""
+                        label={compactHomePath(result.backupPath)}
+                        onOpenPreview={onOpenPreview}
+                        onRevealInFileManager={(targetItem) => {
+                          onRevealInFileManager?.(targetItem).catch(() => {});
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {!result.backupPath && result.backupReference?.label ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawConfig.labels.rollbackPoint}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">{result.backupReference.label}</div>
+                  </div>
+                ) : null}
+                {Array.isArray(result.changedFields) && result.changedFields.length ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawConfig.labels.changedFields}
+                    </div>
+                    <div className="space-y-2">
+                      {result.changedFields.map((field) => {
+                        const meta = fieldMeta.find((item) => item.key === field.key);
+                        return (
+                          <div key={field.key} className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+                            <div className="text-[12px] font-medium text-foreground">{meta?.label || field.key}</div>
+                            <div className="grid gap-1 text-[11px] leading-5 text-muted-foreground">
+                              <div>
+                                {messages.inspector.openClawConfig.labels.before}: {getOpenClawConfigFieldValueLabel(field.key, field.before, messages)}
+                              </div>
+                              <div>
+                                {messages.inspector.openClawConfig.labels.after}: {getOpenClawConfigFieldValueLabel(field.key, field.after, messages)}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OpenClawUpdatePanel({
+  busy = false,
+  error = "",
+  loading = false,
+  messages,
+  onOpenRemoteGuide,
+  onOpenTroubleshooting,
+  onReload,
+  onRunUpdate,
+  remoteGuard = null,
+  result = null,
+  state = null,
+  showTitle = true,
+}) {
+  const outcome = result ? getOpenClawUpdateOutcome(result) : "";
+  const outcomeBadge = getOpenClawUpdateOutcomeBadgeProps(outcome);
+  const installed = Boolean(state?.installed);
+  const availability = state?.availability;
+  const shouldShowRunAction = Boolean(state) && (!installed || Boolean(availability?.available));
+  const previewActions = Array.isArray(state?.preview?.actions) ? state.preview.actions : [];
+  const runButtonLabel = installed ? messages.inspector.openClawUpdate.runUpdate : messages.inspector.openClawUpdate.runInstall;
+  const runningLabel = installed ? messages.inspector.openClawUpdate.running : messages.inspector.openClawUpdate.installing;
+  const troubleshootingEntries = buildOpenClawUpdateTroubleshootingEntries(result, messages);
+
+  return (
+    <div className={showTitle ? "grid gap-2" : "grid"}>
+      {showTitle ? (
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          {messages.inspector.openClawUpdate.title}
+        </div>
+      ) : null}
+      <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <CardContent className="space-y-3 px-3.5 py-3">
+          <div className="text-[12px] leading-5 text-muted-foreground">
+            {messages.inspector.openClawUpdate.description}
+          </div>
+          <OpenClawRemoteNotice messages={messages} onOpenGuide={onOpenRemoteGuide} remoteGuard={remoteGuard} />
+          {state ? (
+            installed ? (
+              <div className="grid gap-2 rounded-2xl border border-border/70 bg-background/80 px-3 py-3 text-[12px] leading-5 text-foreground">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={availability?.available ? "secondary" : "success"} className="px-2 py-0.5 text-[11px] leading-5">
+                    {availability?.available ? messages.inspector.openClawUpdate.statuses.updateAvailable : messages.inspector.openClawUpdate.statuses.upToDate}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {messages.inspector.openClawUpdate.labels.currentVersion}: {state.currentVersion || messages.inspector.openClawUpdate.emptyValue}
+                  </span>
+                  {state.targetVersion ? (
+                    <span className="text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.targetVersion}: {state.targetVersion}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid gap-1 text-muted-foreground">
+                  <div>{messages.inspector.openClawUpdate.labels.installKind}: {state.update?.installKind || messages.inspector.openClawUpdate.emptyValue}</div>
+                  <div>{messages.inspector.openClawUpdate.labels.channel}: {state.channel?.label || state.channel?.value || messages.inspector.openClawUpdate.emptyValue}</div>
+                  <div>{messages.inspector.openClawUpdate.labels.packageManager}: {state.update?.packageManager || messages.inspector.openClawUpdate.emptyValue}</div>
+                </div>
+                {previewActions.length ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.preview}
+                    </div>
+                    <div className="space-y-1 text-[12px] leading-5 text-foreground">
+                      {previewActions.map((item, index) => (
+                        <div key={`${item}-${index}`}>• {item}</div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid gap-2 rounded-2xl border border-border/70 bg-background/80 px-3 py-3 text-[12px] leading-5 text-foreground">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="default" className="px-2 py-0.5 text-[11px] leading-5">
+                    {messages.inspector.openClawUpdate.statuses.notInstalled}
+                  </Badge>
+                </div>
+                <div className="text-muted-foreground">{messages.inspector.openClawUpdate.notInstalledDescription}</div>
+                {state.installGuidance?.docsUrl ? (
+                  <a
+                    href={state.installGuidance.docsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex w-fit items-center gap-1 text-[12px] font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    <SquareArrowOutUpRight className="h-3.5 w-3.5" />
+                    {messages.inspector.openClawUpdate.installDocs}
+                  </a>
+                ) : null}
+                {state.installGuidance?.command ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.installCommand}
+                    </div>
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-5 text-foreground">{state.installGuidance.command}</pre>
+                  </div>
+                ) : null}
+              </div>
+            )
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={loading || busy || remoteGuard?.blocked}
+              aria-label={messages.inspector.openClawUpdate.reload}
+              className="h-8 rounded-full px-3"
+              onClick={() => onReload?.()}
+            >
+              {loading ? messages.inspector.openClawUpdate.reloading : messages.inspector.openClawUpdate.reload}
+            </Button>
+            {shouldShowRunAction ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={loading || busy || remoteGuard?.blocked}
+                className="h-8 rounded-full px-3"
+                onClick={() => onRunUpdate?.()}
+              >
+                {busy ? runningLabel : runButtonLabel}
+              </Button>
+            ) : null}
+          </div>
+          {error ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] leading-5 text-destructive">
+              {error}
+            </div>
+          ) : null}
+          {result ? (
+            <div className="space-y-2 rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-foreground">
+                  {messages.inspector.openClawUpdate.resultTitle}
+                </div>
+                <Badge variant={outcomeBadge.variant} className={`px-2 py-0.5 text-[11px] leading-5 ${outcomeBadge.className}`}>
+                  {messages.inspector.openClawUpdate.outcomes[outcome || "warning"]}
+                </Badge>
+              </div>
+              <div className="grid gap-2 text-[12px] leading-5 text-foreground">
+                {result.commandResult?.command?.display ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.command}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">{result.commandResult.command.display}</div>
+                  </div>
+                ) : null}
+                {result.result?.targetVersion ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.targetVersion}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">{result.result.targetVersion}</div>
+                  </div>
+                ) : null}
+                {result.healthCheck ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.health}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">
+                      {messages.inspector.openClawUpdate.healthStatuses?.[result.healthCheck.status] || result.healthCheck.status}
+                      {result.healthCheck?.url ? ` · ${result.healthCheck.url}` : ""}
+                    </div>
+                  </div>
+                ) : null}
+                {typeof result.commandResult?.exitCode === "number" ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.exitCode}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">{result.commandResult.exitCode}</div>
+                  </div>
+                ) : null}
+                {typeof result.commandResult?.timedOut === "boolean" ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.timedOut}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">
+                      {result.commandResult.timedOut ? messages.inspector.openClawUpdate.flags.yes : messages.inspector.openClawUpdate.flags.no}
+                    </div>
+                  </div>
+                ) : null}
+                {result.commandResult?.stdout ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.stdout}
+                    </div>
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-5 text-foreground">{result.commandResult.stdout}</pre>
+                  </div>
+                ) : null}
+                {result.commandResult?.stderr ? (
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.stderr}
+                    </div>
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 font-mono text-[11px] leading-5 text-foreground">{result.commandResult.stderr}</pre>
+                  </div>
+                ) : null}
+                {troubleshootingEntries.length ? (
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {messages.inspector.openClawUpdate.labels.troubleshooting}
+                    </div>
+                    <div className="space-y-2">
+                      {troubleshootingEntries.map((entry) => (
+                        <div key={entry.key} className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+                          <div className="text-[12px] font-medium text-foreground">{entry.title}</div>
+                          <div className="mt-1 text-[11px] leading-5 text-muted-foreground">{entry.summary}</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {entry.docs.map((doc) => (
+                              <a
+                                key={doc.key}
+                                href={doc.href}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition hover:border-border hover:bg-accent/20"
+                              >
+                                <SquareArrowOutUpRight className="h-3.5 w-3.5" />
+                                {doc.label}
+                              </a>
+                            ))}
+                            {entry.canPreview ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 rounded-full px-2.5 text-[11px]"
+                                onClick={() => onOpenTroubleshooting?.(entry)}
+                              >
+                                <ScrollText className="mr-1 h-3.5 w-3.5" />
+                                {messages.inspector.openClawUpdate.guidance.viewFix}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OpenClawUpdateTroubleshootingDialog({ entry = null, messages, onClose }) {
+  if (!entry) {
+    return null;
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-background/42 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed inset-0 z-[41] flex items-center justify-center px-4">
+        <Card
+          role="dialog"
+          aria-modal="true"
+          aria-label={entry.title}
+          className="flex w-full max-w-2xl max-h-[min(80vh,48rem)] min-h-0 flex-col overflow-hidden rounded-[1.5rem] border-border/70 shadow-[0_18px_55px_rgba(15,23,42,0.18)]"
+        >
+          <CardHeader className="space-y-2 border-b border-border/70 px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <CardTitle className="text-base leading-6">{entry.title}</CardTitle>
+                <CardDescription className="mt-1 text-sm leading-6">{entry.summary}</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={messages.inspector.openClawUpdate.guidance.closeFix}
+                className="h-8 w-8 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="min-h-0 flex-1 overflow-auto px-5 py-4">
+            <div className="space-y-4">
+              {entry.steps.length ? (
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {messages.inspector.openClawUpdate.guidance.solutionTitle}
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {entry.steps.map((step, index) => (
+                      <div key={`${entry.key}-step-${index}`} className="flex gap-2 text-sm leading-6 text-foreground">
+                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground">{index + 1}</span>
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {entry.commands.length ? (
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {messages.inspector.openClawUpdate.guidance.commandsTitle}
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {entry.commands.map((command, index) => (
+                      <pre key={`${entry.key}-command-${index}`} className="overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-5 text-foreground">{command}</pre>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function formatOperationTimestamp(timestamp = 0) {
+  const numericTimestamp = Number(timestamp || 0);
+  if (!numericTimestamp) {
+    return "";
+  }
+
+  try {
+    return new Date(numericTimestamp).toLocaleString();
+  } catch {
+    return "";
+  }
+}
+
+function OpenClawOperationHistoryPanel({
+  entries = [],
+  error = "",
+  loading = false,
+  messages,
+  onOpenGuide,
+  onRequestRollback,
+  onReload,
+  rollbackBusy = false,
+  remoteGuard = null,
+  showTitle = true,
+}) {
+  return (
+    <div className={showTitle ? "grid gap-2" : "grid"}>
+      {showTitle ? (
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          {messages.inspector.remoteOperations.historyTitle}
+        </div>
+      ) : null}
+      <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <CardContent className="space-y-3 px-3.5 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[12px] leading-5 text-muted-foreground">
+              {messages.inspector.remoteOperations.historyDescription}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={loading}
+              aria-label={messages.inspector.remoteOperations.reloadHistory}
+              className="h-8 rounded-full px-3"
+              onClick={() => onReload?.()}
+            >
+              {loading ? messages.inspector.remoteOperations.reloadingHistory : messages.inspector.remoteOperations.reloadHistory}
+            </Button>
+          </div>
+          {remoteGuard?.blocked ? (
+            <div className="flex justify-start">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 rounded-full px-2.5 text-[11px]"
+                onClick={() => onOpenGuide?.()}
+              >
+                <ScrollText className="mr-1 h-3.5 w-3.5" />
+                {messages.inspector.remoteOperations.openGuide}
+              </Button>
+            </div>
+          ) : null}
+          {error ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] leading-5 text-destructive">
+              {error}
+            </div>
+          ) : null}
+          {entries.length ? (
+            <div className="space-y-2">
+              {entries.map((entry) => (
+                <div key={entry.id} className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-foreground">{`${entry.scope}.${entry.action}`}</div>
+                      <div className="text-[11px] leading-5 text-muted-foreground">{formatOperationTimestamp(entry.finishedAt || entry.startedAt)}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={entry.outcome === "success" ? "success" : entry.outcome === "warning" ? "secondary" : "default"} className="px-2 py-0.5 text-[10px] leading-5">
+                        {messages.inspector.remoteOperations.outcomes?.[entry.outcome] || entry.outcome}
+                      </Badge>
+                      <Badge variant="outline" className="px-2 py-0.5 text-[10px] leading-5">
+                        {messages.inspector.remoteOperations.targets?.[entry.target] || entry.target}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="mt-2 grid gap-1 text-[11px] leading-5 text-muted-foreground">
+                    {entry.blocked ? <div>{messages.inspector.remoteOperations.blockedBadge}</div> : null}
+                    {entry.summary ? <div>{entry.summary}</div> : null}
+                    {entry.error ? <div>{entry.error}</div> : null}
+                    {entry.backupPath ? <div>{messages.inspector.remoteOperations.backupLabel}: {compactHomePath(entry.backupPath)}</div> : null}
+                    {entry.backupLabel ? <div>{messages.inspector.remoteOperations.rollbackPointLabel}: {entry.backupLabel}</div> : null}
+                    {entry.rolledBack ? <div>{messages.inspector.remoteOperations.rollbackLabel}</div> : null}
+                  </div>
+                  {entry.backupId && !entry.rolledBack ? (
+                    <div className="mt-2 flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={rollbackBusy}
+                        className="h-7 rounded-full px-2.5 text-[11px]"
+                        onClick={() => onRequestRollback?.(entry)}
+                      >
+                        {rollbackBusy ? messages.inspector.remoteOperations.restoringAction : messages.inspector.remoteOperations.restoreAction}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3 text-[12px] leading-5 text-muted-foreground">
+              {messages.inspector.remoteOperations.emptyHistory}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OpenClawRemoteRecoveryDialog({ messages, onClose, open = false }) {
+  if (!open) {
+    return null;
+  }
+
+  const docs = [
+    { key: "install", href: OFFICIAL_OPENCLAW_DOC_URLS.install, label: messages.inspector.remoteOperations.docs.install },
+    { key: "doctor", href: OFFICIAL_OPENCLAW_DOC_URLS.doctor, label: messages.inspector.remoteOperations.docs.doctor },
+    { key: "troubleshooting", href: OFFICIAL_OPENCLAW_DOC_URLS.troubleshooting, label: messages.inspector.remoteOperations.docs.troubleshooting },
+  ];
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-background/42 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed inset-0 z-[41] flex items-center justify-center px-4">
+        <Card
+          role="dialog"
+          aria-modal="true"
+          aria-label={messages.inspector.remoteOperations.guideTitle}
+          className="flex w-full max-w-2xl max-h-[min(80vh,48rem)] min-h-0 flex-col overflow-hidden rounded-[1.5rem] border-border/70 shadow-[0_18px_55px_rgba(15,23,42,0.18)]"
+        >
+          <CardHeader className="space-y-2 border-b border-border/70 px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <CardTitle className="text-base leading-6">{messages.inspector.remoteOperations.guideTitle}</CardTitle>
+                <CardDescription className="mt-1 text-sm leading-6">{messages.inspector.remoteOperations.guideSummary}</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={messages.inspector.remoteOperations.closeGuide}
+                className="h-8 w-8 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="min-h-0 flex-1 overflow-auto px-5 py-4">
+            <div className="space-y-4">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  {messages.inspector.remoteOperations.solutionTitle}
+                </div>
+                <div className="mt-2 space-y-2">
+                  {messages.inspector.remoteOperations.guideSteps.map((step, index) => (
+                    <div key={`remote-guide-step-${index}`} className="flex gap-2 text-sm leading-6 text-foreground">
+                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground">{index + 1}</span>
+                      <span>{step}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  {messages.inspector.remoteOperations.docsTitle}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {docs.map((doc) => (
+                    <a
+                      key={doc.key}
+                      href={doc.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition hover:border-border hover:bg-accent/20"
+                    >
+                      <SquareArrowOutUpRight className="h-3.5 w-3.5" />
+                      {doc.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function OpenClawRollbackConfirmDialog({
+  authorization = null,
+  busy = false,
+  entry = null,
+  messages,
+  onCancel,
+  onChange,
+  onConfirm,
+}) {
+  if (!entry) {
+    return null;
+  }
+
+  const label = entry.backupLabel || entry.backupId || messages.inspector.remoteOperations.rollbackPointLabel;
+  const targetLabel = messages.inspector.remoteOperations.targets?.[entry.target] || entry.target || "";
+  const dialogTitle = typeof messages.inspector.remoteOperations.restoreDialogTitle === "function"
+    ? messages.inspector.remoteOperations.restoreDialogTitle(targetLabel)
+    : messages.inspector.remoteOperations.restoreDialogTitle;
+  const dialogDescription = typeof messages.inspector.remoteOperations.restoreDialogDescription === "function"
+    ? messages.inspector.remoteOperations.restoreDialogDescription(label, targetLabel)
+    : messages.inspector.remoteOperations.restoreDialogDescription;
+  const dialogConfirm = typeof messages.inspector.remoteOperations.restoreDialogConfirm === "function"
+    ? messages.inspector.remoteOperations.restoreDialogConfirm(targetLabel)
+    : messages.inspector.remoteOperations.restoreDialogConfirm;
+  const dialogNotePlaceholder = typeof messages.inspector.remoteOperations.restoreDialogNotePlaceholder === "function"
+    ? messages.inspector.remoteOperations.restoreDialogNotePlaceholder(targetLabel)
+    : messages.inspector.remoteOperations.restoreDialogNotePlaceholder;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-background/42 backdrop-blur-[1px]" onClick={() => !busy && onCancel()} />
+      <div className="fixed inset-0 z-[41] flex items-center justify-center px-4">
+        <Card
+          role="alertdialog"
+          aria-modal="true"
+          aria-label={dialogTitle}
+          className="w-full max-w-md rounded-[1.5rem] border-border/70 shadow-[0_18px_55px_rgba(15,23,42,0.18)]"
+        >
+          <CardHeader className="space-y-2 border-b border-border/70 px-5 py-4">
+            <CardTitle className="text-base">{dialogTitle}</CardTitle>
+            <CardDescription className="text-sm leading-6">
+              {dialogDescription}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 px-5 py-4">
+            <label className="flex items-start gap-3 rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+              <input
+                type="checkbox"
+                checked={Boolean(authorization?.confirmed)}
+                aria-label={dialogConfirm}
+                disabled={busy}
+                className="mt-1 h-4 w-4 shrink-0 rounded border border-border/70 accent-primary"
+                onChange={(event) => onChange?.("confirmed", event.target.checked)}
+              />
+              <span className="text-sm leading-6 text-foreground">{dialogConfirm}</span>
+            </label>
+            <div className="grid gap-1.5">
+              <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                {messages.inspector.remoteOperations.restoreDialogNoteLabel}
+              </label>
+              <input
+                type="text"
+                aria-label={messages.inspector.remoteOperations.restoreDialogNoteLabel}
+                className="h-9 w-full rounded-xl border border-border/70 bg-background px-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40"
+                disabled={busy}
+                placeholder={dialogNotePlaceholder}
+                value={String(authorization?.note || "")}
+                onChange={(event) => onChange?.("note", event.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onCancel}>
+                {messages.inspector.remoteOperations.restoreDialogCancel}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy || !authorization?.confirmed}
+                onClick={onConfirm}
+              >
+                {busy ? messages.inspector.remoteOperations.restoreDialogRunning : messages.inspector.remoteOperations.restoreDialogRun}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function OpenClawManagementConfirmDialog({ action, busy = false, messages, onCancel, onConfirm }) {
+  if (!action) {
+    return null;
+  }
+
+  const actionLabel = messages.inspector.openClawManagement.actions?.[action.key] || action.label;
+  const dialogTitle = messages.inspector.openClawManagement.confirmation.title(actionLabel);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-background/42 backdrop-blur-[1px]" onClick={() => !busy && onCancel()} />
+      <div className="fixed inset-0 z-[41] flex items-center justify-center px-4">
+        <Card
+          role="alertdialog"
+          aria-modal="true"
+          aria-label={dialogTitle}
+          className="w-full max-w-md rounded-[1.5rem] border-border/70 shadow-[0_18px_55px_rgba(15,23,42,0.18)]"
+        >
+          <CardHeader className="space-y-2 border-b border-border/70 px-5 py-4">
+            <CardTitle className="text-base">{dialogTitle}</CardTitle>
+            <CardDescription className="text-sm leading-6">
+              {messages.inspector.openClawManagement.confirmation.description(actionLabel)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-end gap-2 px-5 py-4">
+            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onCancel}>
+              {messages.inspector.openClawManagement.confirmation.cancel}
+            </Button>
+            <Button type="button" size="sm" disabled={busy} onClick={onConfirm}>
+              {busy ? messages.inspector.openClawManagement.confirmation.confirming : messages.inspector.openClawManagement.confirmation.confirm}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function EnvironmentSectionCard({ children, count = 0, defaultOpen = false, label, messages }) {
+  const [collapsed, setCollapsed] = useState(!defaultOpen);
+  const shouldShowCount = Number.isFinite(count) && count > 0;
+
+  return (
+    <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="px-3.5 py-2.5">
+        <button
+          type="button"
+          className={cn(
+            "grid min-h-9 w-full items-center gap-2 text-left",
+            shouldShowCount ? "grid-cols-[1rem_minmax(0,1fr)_auto]" : "grid-cols-[1rem_minmax(0,1fr)]",
+          )}
+          aria-expanded={!collapsed}
+          aria-label={`${label} ${collapsed ? messages.inspector.timeline.expand : messages.inspector.timeline.collapse}`}
+          onClick={() => {
+            setCollapsed((current) => !current);
+          }}
+        >
+          <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", collapsed ? "-rotate-90" : "rotate-0")} />
+          <div className="min-w-0 text-[13px] font-semibold leading-5 text-foreground">{label}</div>
+          {shouldShowCount ? (
+            <Badge variant="secondary" className="h-6 min-w-6 justify-center rounded-full border border-border/70 bg-background px-1.5 py-0 text-[10px] font-medium text-foreground">
+              {count}
+            </Badge>
+          ) : null}
+        </button>
+      </div>
+      {!collapsed ? <CardContent className="space-y-2 border-t border-border/60 px-3.5 pb-3 pt-2.5">{children}</CardContent> : null}
+    </Card>
+  );
+}
+
+function FileLink({ item, compact = false, currentWorkspaceRoot = "", label, onOpenPreview, onOpenContextMenu, onRevealInFileManager }) {
+  const isDirectory = item.kind === "目录";
+  const canPreview = Boolean((item.fullPath || item.path) && !isDirectory);
+  const canReveal = Boolean((item.fullPath || item.path) && isDirectory && typeof onRevealInFileManager === "function");
+  const canOpen = canPreview || canReveal;
   const displayPath = label || formatDisplayPath(item, currentWorkspaceRoot);
 
   return (
     <button
       type="button"
       onContextMenu={(event) => {
-        if (!canOpen) {
+        if (!canPreview) {
           return;
         }
         event.preventDefault();
         onOpenContextMenu?.(event, item);
       }}
       onClick={() => {
-        if (canOpen) {
+        if (canPreview) {
           onOpenPreview?.(item);
+        } else if (canReveal) {
+          onRevealInFileManager?.(item);
         }
       }}
       className={cn(
@@ -270,12 +1882,16 @@ function FileLink({ item, compact = false, currentWorkspaceRoot = "", label, onO
     >
       <div
         className={cn(
-          "file-link break-all font-mono transition-colors",
+          "flex items-center gap-1.5 font-mono",
           compact ? "text-[11px] leading-[1.35]" : "text-sm",
-          canOpen ? "" : "no-underline",
         )}
       >
-        {displayPath}
+        {isDirectory ? (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/80" aria-hidden="true">
+            <FolderOpen data-testid="file-link-directory-icon" className="h-3.5 w-3.5" />
+          </span>
+        ) : null}
+        <span className={cn("file-link min-w-0 flex-1 break-all transition-colors", canOpen ? "" : "no-underline")}>{displayPath}</span>
       </div>
     </button>
   );
@@ -1401,8 +3017,10 @@ function TabCountBadge({ count, active = false }) {
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none",
-        active ? "bg-black/14 text-white" : "bg-muted text-muted-foreground",
+        "inline-flex min-w-5 items-center justify-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none transition-colors",
+        active
+          ? "border-white/12 bg-black/14 text-white"
+          : "border-[var(--inspector-tab-count-border)] bg-[var(--inspector-tab-count-bg)] text-[var(--inspector-tab-count-fg)]",
       )}
     >
       {count}
@@ -1802,29 +3420,203 @@ function TimelineTab({ currentWorkspaceRoot = "", items, messages, onOpenPreview
   );
 }
 
-function EnvironmentTab({ items = [], messages, summary = "" }) {
+function EnvironmentTab({
+  configEditor = null,
+  history = null,
+  items = [],
+  management = null,
+  messages,
+  onOpenPreview,
+  onOpenRemoteGuide,
+  onRevealInFileManager,
+  updateFlow = null,
+}) {
   if (!items.length) {
     return <PanelEmpty text={messages.inspector.empty.noEnvironment} />;
   }
 
+  const { sections: openClawDiagnostics, remainingItems } = collectOpenClawDiagnostics(items);
+  const groupedEnvironmentItems = collectEnvironmentGroups(remainingItems, messages);
+  const remoteGuard = buildOpenClawRemoteGuard(items, messages);
+
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="min-w-0">
-      <div className="min-w-0 max-w-full space-y-2 overflow-hidden py-1 pr-4">
-        <InspectorHint text={summary || messages.inspector.empty.environment} />
-        {items.map((item, index) => (
-          <div
-            key={`${item.label}-${index}`}
-            className="w-full min-w-0 max-w-full border-b border-border/55 pb-3 last:border-b-0 last:pb-0"
+      <div className="min-w-0 max-w-full space-y-3 overflow-hidden py-1 pr-4">
+        <InspectorHint text={messages.inspector.empty.environment} />
+        {configEditor?.enabled ? (
+          <EnvironmentSectionCard
+            label={messages.inspector.openClawConfig.title}
+            messages={messages}
           >
-            <div className="min-w-0 space-y-1 overflow-hidden">
-              <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                {item.label}
-              </div>
-              <div className="w-full min-w-0 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-[13px] text-foreground">
-                {item.value}
-              </div>
-            </div>
+            <OpenClawConfigPanel
+              busy={configEditor.busy}
+              error={configEditor.error}
+              loading={configEditor.loading}
+              messages={messages}
+              onChange={configEditor.onChange}
+              onChangeRemoteAuthorization={configEditor.onChangeRemoteAuthorization}
+              onOpenPreview={onOpenPreview}
+              onOpenRemoteGuide={onOpenRemoteGuide}
+              onReload={configEditor.onReload}
+              onRevealInFileManager={onRevealInFileManager}
+              onSubmit={configEditor.onSubmit}
+              remoteAuthorization={configEditor.remoteAuthorization}
+              remoteGuard={remoteGuard}
+              result={configEditor.result}
+              showTitle={false}
+              state={configEditor.state}
+              values={configEditor.values}
+            />
+          </EnvironmentSectionCard>
+        ) : null}
+        {updateFlow?.enabled ? (
+          <EnvironmentSectionCard
+            label={messages.inspector.openClawUpdate.title}
+            messages={messages}
+          >
+            <OpenClawUpdatePanel
+              busy={updateFlow.busy}
+              error={updateFlow.error}
+              loading={updateFlow.loading}
+              messages={messages}
+              onOpenRemoteGuide={onOpenRemoteGuide}
+              onOpenTroubleshooting={updateFlow.onOpenTroubleshooting}
+              onReload={updateFlow.onReload}
+              onRunUpdate={updateFlow.onRunUpdate}
+              remoteGuard={remoteGuard}
+              result={updateFlow.result}
+              showTitle={false}
+              state={updateFlow.state}
+            />
+          </EnvironmentSectionCard>
+        ) : null}
+        {management?.enabled ? (
+          <EnvironmentSectionCard
+            label={messages.inspector.openClawManagement.title}
+            messages={messages}
+          >
+            <OpenClawManagementPanel
+              actionIntent={management.actionIntent}
+              busyActionKey={management.busyActionKey}
+              messages={messages}
+              onOpenRemoteGuide={onOpenRemoteGuide}
+              onRefresh={management.onRefresh}
+              onRequestAction={management.onRequestAction}
+              remoteGuard={remoteGuard}
+              refreshing={management.refreshing}
+              result={management.result}
+              showTitle={false}
+            />
+          </EnvironmentSectionCard>
+        ) : null}
+        {history?.enabled ? (
+          <EnvironmentSectionCard
+            count={Array.isArray(history.entries) ? history.entries.length : 0}
+            label={messages.inspector.remoteOperations.historyTitle}
+            messages={messages}
+          >
+            <OpenClawOperationHistoryPanel
+              entries={history.entries}
+              error={history.error}
+              loading={history.loading}
+              messages={messages}
+              onOpenGuide={onOpenRemoteGuide}
+              onRequestRollback={history.onRequestRollback}
+              onReload={history.onReload}
+              rollbackBusy={history.rollbackBusy}
+              remoteGuard={remoteGuard}
+              showTitle={false}
+            />
+          </EnvironmentSectionCard>
+        ) : null}
+        {openClawDiagnostics.length ? (
+          <div className="grid gap-3">
+            {openClawDiagnostics.map((section) => (
+              <EnvironmentSectionCard
+                key={section.key}
+                count={section.items.length}
+                label={messages.inspector.openClawDiagnostics.sections?.[section.key] || section.key}
+                messages={messages}
+              >
+                  {section.items.map((item, index) => {
+                    const badgeProps = getOpenClawDiagnosticBadgeProps(item.value);
+                    return (
+                      <div
+                        key={`${item.label}-${index}`}
+                        className="grid gap-0.5 overflow-hidden border-b border-border/55 pb-2 last:border-b-0 last:pb-0"
+                      >
+                        <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                          {localizeOpenClawDiagnosticLabel(item.label, messages)}
+                        </div>
+                        {shouldRenderOpenClawDiagnosticBadge(item.label) ? (
+                          <div>
+                            <Badge variant={badgeProps.variant} className={`px-2 py-0.5 text-[11px] leading-5 ${badgeProps.className}`}>
+                              {localizeOpenClawDiagnosticValue(item.value, messages)}
+                            </Badge>
+                          </div>
+                        ) : shouldRenderEnvironmentPathLink(item) ? (
+                          <div className="min-w-0 overflow-hidden">
+                            <FileLink
+                              item={buildEnvironmentPathItem(item)}
+                              compact
+                              currentWorkspaceRoot=""
+                              label={localizeOpenClawDiagnosticValue(item.value, messages)}
+                              onOpenPreview={onOpenPreview}
+                              onRevealInFileManager={(targetItem) => {
+                                onRevealInFileManager?.(targetItem).catch(() => {});
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-full min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all [overflow-wrap:anywhere] [word-break:break-word] font-mono text-[12px] leading-5 text-foreground">
+                            {localizeOpenClawDiagnosticValue(item.value, messages)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </EnvironmentSectionCard>
+            ))}
           </div>
+        ) : null}
+        {groupedEnvironmentItems.map((group) => (
+          <EnvironmentSectionCard
+            key={group.key}
+            count={group.items.length}
+            label={group.label}
+            messages={messages}
+          >
+            {group.items.map((item, index) => (
+              <div
+                key={`${item.label}-${index}`}
+                className="w-full min-w-0 max-w-full overflow-hidden border-b border-border/55 pb-2 last:border-b-0 last:pb-0"
+              >
+                <div className="min-w-0 space-y-0.5 overflow-hidden">
+                  <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {localizeEnvironmentItemLabel(item.label, messages)}
+                  </div>
+                  {shouldRenderEnvironmentPathLink(item) ? (
+                    <div className="min-w-0 overflow-hidden">
+                      <FileLink
+                        item={buildEnvironmentPathItem(item)}
+                        compact
+                        currentWorkspaceRoot=""
+                        label={localizeEnvironmentItemValue(item.value, messages)}
+                        onOpenPreview={onOpenPreview}
+                        onRevealInFileManager={(targetItem) => {
+                          onRevealInFileManager?.(targetItem).catch(() => {});
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all [overflow-wrap:anywhere] [word-break:break-word] font-mono text-[12px] leading-5 text-foreground">
+                      {localizeEnvironmentItemValue(item.value, messages)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </EnvironmentSectionCard>
         ))}
       </div>
     </ScrollArea>
@@ -1840,6 +3632,8 @@ export function InspectorPanel({
   currentWorkspaceRoot = "",
   files,
   onSelectArtifact,
+  onRefreshEnvironment,
+  onSyncCurrentSessionModel,
   peeks,
   resolvedTheme = "light",
   runtimeFallbackReason = "",
@@ -1856,6 +3650,7 @@ export function InspectorPanel({
   const [tooltipTabKey, setTooltipTabKey] = useState("");
   const [compactSheetOpen, setCompactSheetOpen] = useState(false);
   const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
+  const resolvedActiveTab = inspectorTabKeys.includes(activeTab) ? activeTab : "files";
   const workspaceFiles = peeks?.workspace?.entries || [];
   const workspaceCount = Number(peeks?.workspace?.totalCount);
   const workspaceLoaded = Array.isArray(peeks?.workspace?.entries);
@@ -1888,17 +3683,83 @@ export function InspectorPanel({
         }]
       : []),
   ];
+  const handleRevealInFileManager = useCallback(async (item) => {
+    const targetPath = resolveItemPath(item);
+    if (!targetPath) {
+      return;
+    }
+
+    const response = await apiFetch("/api/file-manager/reveal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: targetPath }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || "Reveal in file manager failed");
+    }
+  }, []);
   const environmentSection = {
     summary: peeks?.environment?.summary || messages.inspector.empty.environment,
     items: [...runtimeEnvironmentItems, ...(peeks?.environment?.items || [])],
   };
+  const hasOpenClawDiagnostics = environmentSection.items.some((item) => isOpenClawDiagnosticItem(item));
+  const {
+    openClawActionBusyKey,
+    openClawActionIntent,
+    openClawActionResult,
+    openClawConfigBusy,
+    openClawConfigError,
+    openClawConfigLoading,
+    openClawConfigRemoteAuthorization,
+    openClawConfigResult,
+    openClawConfigState,
+    openClawConfigValues,
+    openClawEnvironmentRefreshing,
+    openClawHistoryEntries,
+    openClawHistoryError,
+    openClawHistoryLoading,
+    openClawRemoteGuideOpen,
+    openClawRollbackAuthorization,
+    openClawRollbackIntent,
+    openClawUpdateBusy,
+    openClawUpdateError,
+    openClawUpdateHelpEntry,
+    openClawUpdateLoading,
+    openClawUpdateResult,
+    openClawUpdateState,
+    setOpenClawActionIntent,
+    setOpenClawRemoteGuideOpen,
+    setOpenClawRollbackAuthorization,
+    setOpenClawRollbackIntent,
+    setOpenClawUpdateHelpEntry,
+    handleChangeOpenClawConfigRemoteAuthorization,
+    handleChangeOpenClawConfigValue,
+    handleChangeOpenClawRollbackAuthorization,
+    handleLoadOpenClawConfig,
+    handleLoadOpenClawHistory,
+    handleLoadOpenClawUpdate,
+    handleRefreshEnvironment,
+    handleRequestOpenClawAction,
+    handleRunOpenClawAction,
+    handleRunOpenClawUpdate,
+    handleSubmitOpenClawConfig,
+    handleSubmitOpenClawRollback,
+  } = useOpenClawInspector({
+    activeTab,
+    currentAgentId,
+    environmentItems: environmentSection.items,
+    hasOpenClawDiagnostics,
+    messages,
+    onRefreshEnvironment,
+    onSyncCurrentSessionModel,
+  });
   const tabDefinitions = [
     { key: "files", icon: FolderOpen, label: messages.inspector.tabs.files, count: files.length },
     { key: "artifacts", icon: FileText, label: messages.inspector.tabs.artifacts },
     { key: "timeline", icon: Hammer, label: messages.inspector.tabs.timeline },
     { key: "environment", icon: Monitor, label: messages.inspector.tabs.environment },
   ];
-  const resolvedActiveTab = inspectorTabKeys.includes(activeTab) ? activeTab : "files";
 
   useEffect(() => {
     if (activeTab && !inspectorTabKeys.includes(activeTab)) {
@@ -2011,9 +3872,57 @@ export function InspectorPanel({
   );
   const environmentTabContent = (
     <EnvironmentTab
+      updateFlow={{
+        enabled: true,
+        busy: openClawUpdateBusy,
+        error: openClawUpdateError,
+        loading: openClawUpdateLoading,
+        onOpenTroubleshooting: setOpenClawUpdateHelpEntry,
+        onReload: handleLoadOpenClawUpdate,
+        onRunUpdate: handleRunOpenClawUpdate,
+        result: openClawUpdateResult,
+        state: openClawUpdateState,
+      }}
+      history={{
+        enabled: true,
+        entries: openClawHistoryEntries,
+        error: openClawHistoryError,
+        loading: openClawHistoryLoading,
+        onRequestRollback: (entry) => {
+          setOpenClawRollbackIntent(entry || null);
+          setOpenClawRollbackAuthorization({ confirmed: false, note: "" });
+        },
+        onReload: handleLoadOpenClawHistory,
+        rollbackBusy: openClawConfigBusy,
+      }}
+      configEditor={{
+        enabled: hasOpenClawDiagnostics,
+        busy: openClawConfigBusy,
+        error: openClawConfigError,
+        loading: openClawConfigLoading,
+        onChange: handleChangeOpenClawConfigValue,
+        onChangeRemoteAuthorization: handleChangeOpenClawConfigRemoteAuthorization,
+        onReload: handleLoadOpenClawConfig,
+        onSubmit: handleSubmitOpenClawConfig,
+        remoteAuthorization: openClawConfigRemoteAuthorization,
+        result: openClawConfigResult,
+        state: openClawConfigState,
+        values: openClawConfigValues,
+      }}
       items={environmentSection.items}
+      management={{
+        enabled: hasOpenClawDiagnostics,
+        actionIntent: openClawActionIntent,
+        busyActionKey: openClawActionBusyKey,
+        onRefresh: handleRefreshEnvironment,
+        onRequestAction: handleRequestOpenClawAction,
+        refreshing: openClawEnvironmentRefreshing,
+        result: openClawActionResult,
+      }}
       messages={messages}
-      summary={environmentSection.summary}
+      onOpenPreview={handleOpenPreview}
+      onOpenRemoteGuide={() => setOpenClawRemoteGuideOpen(true)}
+      onRevealInFileManager={handleRevealInFileManager}
     />
   );
   const tabContentByKey = {
@@ -2136,6 +4045,42 @@ export function InspectorPanel({
             <LazyContextPreviewDialog open={contextPreviewOpen} onClose={() => setContextPreviewOpen(false)} sessionUser={currentSessionUser} />
           </Suspense>
         ) : null}
+        <OpenClawUpdateTroubleshootingDialog
+          entry={openClawUpdateHelpEntry}
+          messages={messages}
+          onClose={() => setOpenClawUpdateHelpEntry(null)}
+        />
+        <OpenClawRemoteRecoveryDialog
+          messages={messages}
+          onClose={() => setOpenClawRemoteGuideOpen(false)}
+          open={openClawRemoteGuideOpen}
+        />
+        <OpenClawRollbackConfirmDialog
+          authorization={openClawRollbackAuthorization}
+          busy={openClawConfigBusy}
+          entry={openClawRollbackIntent}
+          messages={messages}
+          onCancel={() => {
+            setOpenClawRollbackIntent(null);
+            setOpenClawRollbackAuthorization({ confirmed: false, note: "" });
+          }}
+          onChange={handleChangeOpenClawRollbackAuthorization}
+          onConfirm={() => {
+            void handleSubmitOpenClawRollback();
+          }}
+        />
+        <OpenClawManagementConfirmDialog
+          action={openClawActionIntent}
+          busy={Boolean(openClawActionBusyKey)}
+          messages={messages}
+          onCancel={() => setOpenClawActionIntent(null)}
+          onConfirm={() => {
+            if (!openClawActionIntent?.key) {
+              return;
+            }
+            void handleRunOpenClawAction(openClawActionIntent.key);
+          }}
+        />
       </>
     );
   }
@@ -2257,6 +4202,42 @@ export function InspectorPanel({
           <LazyImagePreviewOverlay image={imagePreview} onClose={closeImagePreview} />
         </Suspense>
       ) : null}
+      <OpenClawUpdateTroubleshootingDialog
+        entry={openClawUpdateHelpEntry}
+        messages={messages}
+        onClose={() => setOpenClawUpdateHelpEntry(null)}
+      />
+      <OpenClawRemoteRecoveryDialog
+        messages={messages}
+        onClose={() => setOpenClawRemoteGuideOpen(false)}
+        open={openClawRemoteGuideOpen}
+      />
+      <OpenClawRollbackConfirmDialog
+        authorization={openClawRollbackAuthorization}
+        busy={openClawConfigBusy}
+        entry={openClawRollbackIntent}
+        messages={messages}
+        onCancel={() => {
+          setOpenClawRollbackIntent(null);
+          setOpenClawRollbackAuthorization({ confirmed: false, note: "" });
+        }}
+        onChange={handleChangeOpenClawRollbackAuthorization}
+        onConfirm={() => {
+          void handleSubmitOpenClawRollback();
+        }}
+      />
+      <OpenClawManagementConfirmDialog
+        action={openClawActionIntent}
+        busy={Boolean(openClawActionBusyKey)}
+        messages={messages}
+        onCancel={() => setOpenClawActionIntent(null)}
+        onConfirm={() => {
+          if (!openClawActionIntent?.key) {
+            return;
+          }
+          void handleRunOpenClawAction(openClawActionIntent.key);
+        }}
+      />
       {contextPreviewOpen ? (
         <Suspense fallback={null}>
           <LazyContextPreviewDialog open={contextPreviewOpen} onClose={() => setContextPreviewOpen(false)} sessionUser={currentSessionUser} />

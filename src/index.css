@@ -25,9 +25,16 @@
   --file-link-hover: #1849a9;
   --badge-success-bg: #e7f6ef;
   --badge-success-fg: #0f6b49;
+  --inspector-tab-count-bg: color-mix(in oklab, var(--card) 92%, var(--foreground) 8%);
+  --inspector-tab-count-fg: color-mix(in oklab, var(--foreground) 74%, var(--muted-foreground) 26%);
+  --inspector-tab-count-border: color-mix(in oklab, var(--border) 88%, var(--foreground) 12%);
   --scrollbar-track: color-mix(in oklab, var(--background) 92%, var(--border));
   --scrollbar-thumb: color-mix(in oklab, var(--border) 82%, var(--foreground) 8%);
   --scrollbar-thumb-hover: color-mix(in oklab, var(--muted-foreground) 52%, var(--border));
+  --cc-focus-highlight-outline: rgba(234, 120, 32, 0.92);
+  --cc-focus-highlight-ring: rgba(234, 120, 32, 0.28);
+  --cc-focus-highlight-shadow: rgba(234, 120, 32, 0.16);
+  --cc-focus-highlight-shadow-soft: rgba(234, 120, 32, 0.12);
 }
 
 .dark {
@@ -53,9 +60,16 @@
   --file-link-hover: #a7d6ff;
   --badge-success-bg: rgb(52 211 153 / 0.2);
   --badge-success-fg: #86efac;
+  --inspector-tab-count-bg: color-mix(in oklab, var(--muted) 84%, white 16%);
+  --inspector-tab-count-fg: color-mix(in oklab, var(--foreground) 88%, white 12%);
+  --inspector-tab-count-border: color-mix(in oklab, var(--border) 74%, white 26%);
   --scrollbar-track: color-mix(in oklab, var(--background) 86%, black 14%);
   --scrollbar-thumb: color-mix(in oklab, var(--muted-foreground) 42%, var(--background));
   --scrollbar-thumb-hover: color-mix(in oklab, var(--foreground) 36%, var(--background));
+  --cc-focus-highlight-outline: rgba(255, 171, 82, 0.98);
+  --cc-focus-highlight-ring: rgba(255, 171, 82, 0.34);
+  --cc-focus-highlight-shadow: rgba(255, 171, 82, 0.2);
+  --cc-focus-highlight-shadow-soft: rgba(255, 171, 82, 0.14);
 }
 
 @theme inline {
@@ -210,23 +224,23 @@
   @keyframes cc-focus-highlight-pulse {
     0% {
       box-shadow:
-        0 0 0 0 rgba(22, 119, 235, 0.34),
-        0 0 0 0 rgba(22, 119, 235, 0.12);
-      outline-color: rgba(22, 119, 235, 0.9);
+        0 0 0 0 var(--cc-focus-highlight-ring),
+        0 0 0 0 var(--cc-focus-highlight-shadow-soft);
+      outline-color: var(--cc-focus-highlight-outline);
     }
 
     45% {
       box-shadow:
-        0 0 0 4px rgba(22, 119, 235, 0.26),
-        0 10px 30px 0 rgba(22, 119, 235, 0.16);
-      outline-color: rgba(22, 119, 235, 0.96);
+        0 0 0 4px var(--cc-focus-highlight-ring),
+        0 10px 30px 0 var(--cc-focus-highlight-shadow);
+      outline-color: var(--cc-focus-highlight-outline);
     }
 
     100% {
       box-shadow:
-        0 0 0 6px rgba(22, 119, 235, 0),
-        0 14px 34px 0 rgba(22, 119, 235, 0);
-      outline-color: rgba(22, 119, 235, 0.28);
+        0 0 0 6px rgb(from var(--cc-focus-highlight-ring) r g b / 0),
+        0 14px 34px 0 rgb(from var(--cc-focus-highlight-shadow) r g b / 0);
+      outline-color: rgb(from var(--cc-focus-highlight-outline) r g b / 0.28);
     }
   }
 
@@ -383,7 +397,7 @@
   .cc-focus-highlight,
   .cc-focus-highlight[class] {
     position: relative;
-    outline: 2px solid rgba(22, 119, 235, 0.92);
+    outline: 2px solid var(--cc-focus-highlight-outline);
     outline-offset: 2px;
     animation: cc-focus-highlight-pulse 1.1s cubic-bezier(0.22, 1, 0.36, 1) 1;
     will-change: box-shadow, outline-color;

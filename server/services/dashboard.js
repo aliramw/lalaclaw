@@ -5,6 +5,7 @@ const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_WORKSPACE_FILE_LIMIT = 200;
+const DEFAULT_FRONTEND_URL = 'http://127.0.0.1:5173';
 const LALACLAW_VERSION = (() => {
   try {
     const packageJsonPath = path.resolve(__dirname, '..', '..', 'package.json');
@@ -226,6 +227,42 @@ function directoryHasVisibleChildren(targetPath) {
   }
 }
 
+function pathExists(targetPath) {
+  try {
+    return Boolean(targetPath) && fs.existsSync(targetPath);
+  } catch {
+    return false;
+  }
+}
+
+function directoryExists(targetPath) {
+  try {
+    return Boolean(targetPath) && fs.statSync(targetPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function fileExists(targetPath) {
+  try {
+    return Boolean(targetPath) && fs.statSync(targetPath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function buildEnvironmentItem(label, value, {
+  previewable = false,
+  revealable = false,
+} = {}) {
+  return {
+    label,
+    value,
+    ...(previewable ? { previewable: true } : {}),
+    ...(revealable ? { revealable: true } : {}),
+  };
+}
+
 function defaultListWorkspaceFiles(rootDir, {
   limit = DEFAULT_WORKSPACE_FILE_LIMIT,
 } = {}) {
@@ -367,6 +404,7 @@ function createDashboardService({
   getLocalSessionConversation,
   getTranscriptEntriesForSession,
   getTranscriptPath,
+  getOpenClawOperationSummary,
   getRuntimeHubDebugInfo,
   invokeOpenClawTool,
   countWorkspaceFiles = defaultCountWorkspaceFiles,
@@ -512,27 +550,101 @@ function createDashboardService({
       liveConfig?.gateway?.version ||
       sessionVersion ||
       '';
+    const localConfigPath = String(config.localConfigPath || '').trim();
+    const logsDir = String(config.logsDir || '').trim();
+    const gatewayLogPath = logsDir ? path.join(logsDir, 'gateway.log') : '';
+    const supervisorLogPath = logsDir ? path.join(logsDir, 'supervisor.log') : '';
+    const configExists = pathExists(localConfigPath);
+    const workspaceExists = directoryExists(workspaceRoot);
+    const logsAvailable = directoryExists(logsDir) || pathExists(gatewayLogPath) || pathExists(supervisorLogPath);
+    const liveGatewayDetected =
+      config.mode === 'openclaw'
+      && Boolean(
+        parsedStatus?.sessionKey
+        || parsedStatus?.runtimeDisplay
+        || parsedStatus?.time
+        || (liveConfig && liveConfig !== config.localConfig),
+      );
+    const gatewayStatus = config.mode === 'openclaw' ? (liveGatewayDetected ? 'ok' : 'unreachable') : 'mock';
+    const doctorConfig = configExists ? 'ok' : 'missing';
+    const doctorWorkspace = workspaceExists ? 'ok' : 'missing';
+    const doctorGateway = gatewayStatus;
+    const doctorLogs = logsAvailable ? 'ok' : 'missing';
+    const openClawOperationSummary =
+      typeof getOpenClawOperationSummary === 'function'
+        ? getOpenClawOperationSummary()
+        : { count: 0, lastEntry: null };
+    const doctorSummary =
+      config.mode !== 'openclaw'
+        ? 'mock'
+        : [doctorConfig, doctorWorkspace, doctorGateway, doctorLogs].every((status) => status === 'ok')
+          ? 'healthy'
+          : 'attention';
+    let gatewayHealthUrl = '';
+
+    if (config.baseUrl) {
+      try {
+        gatewayHealthUrl = new URL('/healthz', config.baseUrl).toString();
+      } catch {
+        gatewayHealthUrl = '';
+      }
+    }
+
+    const diagnosticsItems = [
+      buildEnvironmentItem('openclaw.version', openClawVersion || 'unknown'),
+      buildEnvironmentItem('openclaw.runtime.profile', config.mode || 'unknown'),
+      buildEnvironmentItem('openclaw.config.path', localConfigPath || '', { previewable: fileExists(localConfigPath) }),
+      buildEnvironmentItem('openclaw.config.status', doctorConfig),
+      buildEnvironmentItem('openclaw.workspace.root', workspaceRoot || '', { revealable: directoryExists(workspaceRoot) }),
+      buildEnvironmentItem('openclaw.workspace.status', doctorWorkspace),
+      buildEnvironmentItem('openclaw.gateway.status', gatewayStatus),
+      buildEnvironmentItem('openclaw.gateway.baseUrl', config.baseUrl || ''),
+      buildEnvironmentItem('openclaw.gateway.healthUrl', gatewayHealthUrl),
+      buildEnvironmentItem('openclaw.doctor.summary', doctorSummary),
+      buildEnvironmentItem('openclaw.doctor.config', doctorConfig),
+      buildEnvironmentItem('openclaw.doctor.workspace', doctorWorkspace),
+      buildEnvironmentItem('openclaw.doctor.gateway', doctorGateway),
+      buildEnvironmentItem('openclaw.doctor.logs', doctorLogs),
+      buildEnvironmentItem('openclaw.logs.dir', logsDir || '', { revealable: directoryExists(logsDir) }),
+      buildEnvironmentItem('openclaw.logs.gatewayPath', gatewayLogPath, { previewable: fileExists(gatewayLogPath) }),
+      buildEnvironmentItem('openclaw.logs.supervisorPath', supervisorLogPath, { previewable: fileExists(supervisorLogPath) }),
+      buildEnvironmentItem('openclaw.remote.target', config.remoteOpenClawTarget ? 'remote' : 'local'),
+      buildEnvironmentItem('openclaw.remote.writeAccess', config.remoteOpenClawTarget ? 'blocked' : 'local'),
+      buildEnvironmentItem('openclaw.remote.auditCount', String(openClawOperationSummary.count || 0)),
+      buildEnvironmentItem('openclaw.remote.lastAction', openClawOperationSummary.lastEntry?.action || ''),
+      buildEnvironmentItem('openclaw.remote.lastOutcome', openClawOperationSummary.lastEntry?.outcome || ''),
+      buildEnvironmentItem('openclaw.remote.lastRollback', openClawOperationSummary.lastEntry?.rolledBack ? 'restored' : ''),
+    ];
+    diagnosticsItems.forEach((item) => {
+      if (item.value) {
+        items.push(item);
+      }
+    });
     const sessionItems = [
-      { label: 'LALACLAW.VERSION', value: lalaclawVersion },
-      { label: 'OPENCLAW.VERSION', value: openClawVersion },
-      { label: 'session.mode', value: config.mode },
-      { label: 'session.agent', value: agentId },
-      { label: 'session.sessionKey', value: sessionKey || parsedStatus?.sessionKey || '' },
-      { label: 'session.workspaceRoot', value: workspaceRoot },
-      { label: 'session.selectedModel', value: selectedModel },
-      { label: 'session.resolvedModel', value: latestModel || parsedStatus?.modelDisplay || '' },
-      { label: 'session.auth', value: parsedStatus?.authDisplay || '' },
-      { label: 'session.runtime', value: parsedStatus?.runtimeDisplay || '' },
-      { label: 'session.thinkMode', value: parsedStatus?.thinkMode || thinkMode || '' },
-      { label: 'session.fastMode', value: fastMode ? 'on' : 'off' },
-      { label: 'session.context', value: parsedStatus?.contextDisplay || '' },
-      { label: 'session.queue', value: parsedStatus?.queueDisplay || '' },
-      { label: 'session.time', value: parsedStatus?.time || '' },
-      { label: 'gateway.baseUrl', value: config.baseUrl || '' },
-      { label: 'gateway.port', value: String(config.gatewayPort || '') },
-      { label: 'gateway.healthPort', value: String(config.healthPort || '') },
-      { label: 'gateway.apiPath', value: config.apiPath || '' },
-      { label: 'gateway.apiStyle', value: config.apiStyle || '' },
+      buildEnvironmentItem('LALACLAW.VERSION', lalaclawVersion),
+      buildEnvironmentItem('LALACLAW.FRONTEND_URL', DEFAULT_FRONTEND_URL),
+      buildEnvironmentItem('LALACLAW.SERVER_URL', HOST && PORT ? `http://${HOST}:${PORT}` : ''),
+      buildEnvironmentItem('LALACLAW.ACCESS_MODE', config.accessMode || 'off'),
+      buildEnvironmentItem('LALACLAW.GATEWAY_AUTH', config.apiKey ? 'token' : 'none'),
+      buildEnvironmentItem('OPENCLAW.VERSION', openClawVersion),
+      buildEnvironmentItem('session.mode', config.mode),
+      buildEnvironmentItem('session.agent', agentId),
+      buildEnvironmentItem('session.sessionKey', sessionKey || parsedStatus?.sessionKey || ''),
+      buildEnvironmentItem('session.workspaceRoot', workspaceRoot, { revealable: directoryExists(workspaceRoot) }),
+      buildEnvironmentItem('session.selectedModel', selectedModel),
+      buildEnvironmentItem('session.resolvedModel', latestModel || parsedStatus?.modelDisplay || ''),
+      buildEnvironmentItem('session.auth', parsedStatus?.authDisplay || ''),
+      buildEnvironmentItem('session.runtime', parsedStatus?.runtimeDisplay || ''),
+      buildEnvironmentItem('session.thinkMode', parsedStatus?.thinkMode || thinkMode || ''),
+      buildEnvironmentItem('session.fastMode', fastMode ? 'on' : 'off'),
+      buildEnvironmentItem('session.context', parsedStatus?.contextDisplay || ''),
+      buildEnvironmentItem('session.queue', parsedStatus?.queueDisplay || ''),
+      buildEnvironmentItem('session.time', parsedStatus?.time || ''),
+      buildEnvironmentItem('gateway.baseUrl', config.baseUrl || ''),
+      buildEnvironmentItem('gateway.port', String(config.gatewayPort || '')),
+      buildEnvironmentItem('gateway.healthPort', String(config.healthPort || '')),
+      buildEnvironmentItem('gateway.apiPath', config.apiPath || ''),
+      buildEnvironmentItem('gateway.apiStyle', config.apiStyle || ''),
     ];
 
     sessionItems.forEach((item) => {
@@ -551,7 +663,7 @@ function createDashboardService({
     );
 
     return {
-      summary: '这里汇总当前会话与 Gateway 提供的环境信息。',
+      summary: '',
       items,
     };
   }

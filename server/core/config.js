@@ -1,5 +1,7 @@
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { isRemoteOpenClawTarget } = require('../services/openclaw-operations');
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
@@ -29,7 +31,7 @@ function resolveDefaultConfigDir() {
     return path.join(HOME_DIR, '.config', 'lalaclaw');
   }
 
-  return PROJECT_ROOT;
+  return path.join(os.tmpdir(), 'lalaclaw');
 }
 
 function resolveServerConfigFile() {
@@ -39,6 +41,10 @@ function resolveServerConfigFile() {
   }
 
   return path.join(resolveDefaultConfigDir(), '.env.local');
+}
+
+function resolveLalaclawStateDir() {
+  return resolveDefaultConfigDir();
 }
 
 function readJsonIfExists(filePath) {
@@ -258,6 +264,7 @@ function collectAllowedSubagents(localConfig, agentId) {
 
 function buildRuntimeConfig() {
   const localConfig = readJsonIfExists(LOCAL_OPENCLAW_CONFIG);
+  const stateDir = resolveLalaclawStateDir();
   const forceMockMode = ['1', 'true', 'yes', 'on'].includes(String(process.env.COMMANDCENTER_FORCE_MOCK || '').trim().toLowerCase());
   const localGatewayPort = Number(localConfig?.gateway?.port || 18789);
   const localToken = localConfig?.gateway?.auth?.token || '';
@@ -277,7 +284,7 @@ function buildRuntimeConfig() {
   const availableAgents = collectAvailableAgents(localConfig, [agentId]);
   const availableSkills = collectAvailableSkills(localConfig, agentId);
 
-  return {
+  const runtimeConfig = {
     mode: baseUrl ? 'openclaw' : 'mock',
     model: envModel || defaultModel || 'openclaw',
     agentId,
@@ -288,6 +295,9 @@ function buildRuntimeConfig() {
     localDetected: !forceMockMode && Boolean(localToken),
     forceMockMode,
     localConfig,
+    localConfigPath: LOCAL_OPENCLAW_CONFIG,
+    openclawDir: LOCAL_OPENCLAW_DIR,
+    openclawBin: OPENCLAW_BIN,
     gatewayPort: localGatewayPort,
     browserControlPort: localGatewayPort + 2,
     healthPort: localGatewayPort + 3,
@@ -302,7 +312,12 @@ function buildRuntimeConfig() {
     accessCookieName: process.env.COMMANDCENTER_ACCESS_COOKIE_NAME || '',
     accessSessionTtlMs: Number(process.env.COMMANDCENTER_ACCESS_SESSION_TTL_MS || 0),
     accessConfigFile: resolveServerConfigFile(),
+    stateDir,
   };
+
+  runtimeConfig.remoteOpenClawTarget = isRemoteOpenClawTarget(runtimeConfig);
+
+  return runtimeConfig;
 }
 
 module.exports = {
@@ -321,6 +336,7 @@ module.exports = {
   fileExists,
   readJsonIfExists,
   readTextIfExists,
+  resolveLalaclawStateDir,
   resolveAgentModel,
   resolveCanonicalModelId,
 };

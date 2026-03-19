@@ -18,13 +18,21 @@ In practice:
 
 The same agent can have multiple session users, which is how the app creates fresh contexts without changing the agent identity.
 
-## Agent Session Tabs
+## Agent and IM Tabs
 
-Frontend chat tabs are organized by agent:
+Frontend chat tabs are organized around the real session identity, not only the visible label:
 
 - The default main tab is `agent:main`
-- Each opened agent tab keeps its own messages, drafts, scroll state, and some tab-level session metadata
+- Additional agent tabs usually reuse the same `agentId` concept but get their own `sessionUser`
+- IM conversations can also open as tabs directly from the switcher, for example DingTalk, Feishu, or WeCom threads
+- Each opened tab keeps its own messages, drafts, scroll state, and some tab-level session metadata
 - Closing a tab hides it from the current UI instead of deleting the underlying session history
+
+In practice, that means:
+
+- Two tabs can point at the same agent but different `sessionUser` values
+- IM tabs still resolve to an `agentId + sessionUser` pair under the hood
+- Already-open agent tabs and already-open IM channels are excluded from the switcher menu
 
 ## Session-Level Settings
 

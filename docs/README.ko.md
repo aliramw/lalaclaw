@@ -22,6 +22,7 @@
 - 상단 바에서 Agent, 모델, fast mode, think mode, context, queue, theme, locale를 제어합니다
 - 메인 채팅 영역에서 프롬프트 입력, 첨부, 스트리밍 응답, 세션 초기화를 수행합니다
 - Inspector에서 timeline, files, artifacts, snapshots, runtime activity를 확인할 수 있습니다
+- Inspector 안의 Environment 영역에서 OpenClaw 진단, 관리 작업, 안전한 설정 편집, 그리고 파일/디렉터리별 서로 다른 열기 동작을 확인할 수 있습니다
 - 런타임은 기본적으로 `mock` 모드를 지원하며 필요할 때 실제 OpenClaw gateway로 전환할 수 있습니다
 
 더 긴 소개는 [ko/showcase.md](./ko/showcase.md) 에 있습니다.
@@ -125,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-특정 버전, 예를 들어 `2026.3.19-2` 로 바꾸려면:
+특정 버전, 예를 들어 `2026.3.20-1` 로 바꾸려면:
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -142,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-특정 버전, 예를 들어 `2026.3.19-2` 로 바꾸려면:
+특정 버전, 예를 들어 `2026.3.20-1` 로 바꾸려면:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +194,7 @@ PR을 열기 전에:
 LalaClaw는 npm 호환 달력 버저닝을 사용합니다.
 
 - 버전이 바뀌면 [CHANGELOG.md](../CHANGELOG.md) 를 업데이트하세요
-- 같은 날 여러 번 릴리스하면 `YYYY.M.D-N` 형식을 사용하세요. 예: `2026.3.19-2`
+- 같은 날 여러 번 릴리스하면 `YYYY.M.D-N` 형식을 사용하세요. 예: `2026.3.20-1`
 - 호환성에 영향이 있는 변경은 릴리스 노트와 마이그레이션 문서에 명확히 적어 주세요
 - 개발할 때는 [`.nvmrc`](../.nvmrc) 의 Node.js `22` 를 권장합니다. 배포된 npm 패키지는 `^20.19.0 || ^22.12.0 || >=24.0.0` 를 지원합니다
 

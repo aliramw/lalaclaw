@@ -165,6 +165,35 @@ describe("createOpenClawClient", () => {
     }
   });
 
+  it("prefers full gateway JSON payloads over scalar fragments in bannered CLI output", async () => {
+    const payload = {
+      path: "/Users/example/.openclaw/openclaw.json",
+      parsed: {
+        models: {
+          providers: {
+            openrouter: {
+              models: [
+                {
+                  id: "openai/gpt-5.4",
+                  input: ["text", "image"],
+                },
+              ],
+            },
+          },
+        },
+      },
+      valid: true,
+    };
+    const execFileAsync = vi.fn().mockResolvedValue({
+      stdout: `[wecom] v1.0.13 loaded\n${JSON.stringify(payload, null, 2)}`,
+    });
+
+    const client = createClient({ execFileAsync });
+    const result = await client.callOpenClawGateway("config.get", {}, 15_000);
+
+    expect(result).toEqual(payload);
+  });
+
   it("dispatches fast text-only conversations through the direct HTTP API", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -329,7 +358,7 @@ describe("createOpenClawClient", () => {
       stop() {}
 
       async request(method, params) {
-        expect(method).toBe("chat.send");
+        expect(method).toBe("agent");
         expect(params).toMatchObject({
           sessionKey: `agent:main:openai-user:${rawSessionUser}`,
           message: "继续",
@@ -524,7 +553,7 @@ describe("createOpenClawClient", () => {
       stop() {}
 
       async request(method, params) {
-        expect(method).toBe("chat.send");
+        expect(method).toBe("agent");
         expect(params).toMatchObject({
           sessionKey: `agent:main:openai-user:${rawSessionUser}`,
           deliver: true,

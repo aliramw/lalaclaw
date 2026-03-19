@@ -4,71 +4,59 @@
 
 # Inspecteur, aperçu de fichiers et traçage
 
-L'inspecteur de droite est l'une des surfaces les plus importantes de LalaClaw. Il rassemble la trace d'exécution, l'activité fichiers, les résumés et les données d'environnement d'une session.
+L'inspecteur de droite est l'une des surfaces centrales de LalaClaw. Il regroupe maintenant les informations de session en quatre onglets : `Files`, `Artifacts`, `Timeline` et `Environment`.
 
-## Journal d'execution
+## Files
 
-Le `Journal d'exécution` affiche, par exécution :
+L'onglet `Files` a deux surfaces :
 
-- Le titre et l'heure
-- Le résumé du prompt
-- La liste des appels d'outils
-- L'entrée, la sortie et l'état de chaque outil
-- Les changements de fichiers associés
-- Les snapshots correspondants
+- `Session Files` : les fichiers touchés dans la conversation en cours, regroupés en `Created`, `Modified` et `Viewed`
+- `Workspace Files` : un arbre enraciné dans le workspace courant
 
-## Fichiers
+Comportements notables :
 
-Le panneau `Fichiers` classe l'activité en :
+- L'arbre du workspace charge un niveau de dossier à la fois
+- Les badges de compteur restent visibles même quand une section est repliée
+- Les sections `Session Files` vides restent masquées
+- Les filtres acceptent le texte brut et des motifs glob simples
 
-- Créés
-- Modifiés
-- Consultés
+Interactions :
 
-Actions :
+- Cliquer sur un fichier ouvre l'aperçu
+- Le clic droit copie le chemin absolu
+- Le clic droit sur un dossier du workspace recharge seulement ce niveau
 
-- Cliquer pour ouvrir l'aperçu
-- Clic droit pour copier le chemin absolu
+## Artifacts
 
-## Résumés
+`Artifacts` liste les résumés de réponses assistant pour la session courante.
 
-Le panneau `Résumés` liste les résumés des réponses assistant de la session et permet de revenir rapidement au bon message de la discussion.
+- Un clic renvoie vers le message correspondant
+- Cela aide à naviguer dans les longues conversations
+- `View Context` permet d'inspecter le contexte de session envoyé au modèle
 
-## Environnement
+## Timeline
 
-Le panneau `Environnement` agrège :
+`Timeline` regroupe les enregistrements par exécution :
 
-- Le mode courant `mock` ou `openclaw`
-- L'agent, le modèle, la session et le workspace
-- L'URL de la gateway, les ports, le chemin API et le style API
-- Les états de contexte, file d'attente, runtime et auth
+- Titre et heure
+- Résumé du prompt et résultat
+- Entrées, sorties et état des outils
+- Changements de fichiers associés
+- Relations de collaboration pour le travail délégué
 
-## Collaboration
+## Environment
 
-`Collaboration` montre les relations et tâches dérivées :
+`Environment` agrège les détails runtime comme :
 
-- `dispatching`
-- `running`
-- `established`
-- `completed`
-- `failed`
+- Un résumé `diagnostic OpenClaw` en tête, regroupé par `Vue d'ensemble`, `Connectivité`, `Doctor` et `Logs`
+- La version OpenClaw, le profil runtime, le chemin de configuration, la racine du workspace, l'état du gateway, l'URL de santé et les points d'entrée des logs
+- Le transport runtime, l'état du socket runtime, les tentatives de reconnexion et la raison du fallback
+- Des groupes techniques inférieurs pour le contexte de session, la synchronisation temps réel, la configuration du gateway, l'application et les autres champs
 
-## Aperçu
+Comportements notables :
 
-`Aperçu` offre quatre vues en lecture seule :
-
-- Aperçu de l'espace de travail
-- Aperçu du terminal
-- Aperçu du navigateur
-- Aperçu de l'environnement
-
-## Capacités d'aperçu de fichiers
-
-L'aperçu prend en charge :
-
-- Le surlignage syntaxique pour texte, JSON et Markdown
-- Le rendu séparé du front matter Markdown
-- Le zoom et la rotation d'image
-- L'aperçu intégré de vidéo, audio et PDF
-- L'ouverture dans VS Code
-- La révélation dans le gestionnaire de fichiers du système
+- Les champs déjà remontés dans le résumé supérieur sont retirés des groupes techniques inférieurs pour éviter les doublons
+- Les valeurs longues comme les clés de session JSON se replient dans le conteneur au lieu de déborder horizontalement
+- Les chemins absolus vérifiés, comme les logs ou fichiers de configuration, ouvrent l'aperçu partagé au clic
+- Les chemins de répertoire, comme le dossier des logs ou le répertoire de travail de l'Agent de la session courante, n'ouvrent pas d'aperçu inline et vont directement vers le gestionnaire de fichiers du système
+- L'onglet Environment combine désormais les diagnostics OpenClaw, les actions de gestion, les outils de configuration et les détails runtime dans une seule vue

@@ -22,6 +22,7 @@
 - 頂部概覽列：Agent、模型、快速模式、思考模式、上下文、佇列、主題和語言控制
 - 主對話區：提示詞輸入、附件處理、串流回覆和重設工作階段
 - 右側檢查器：時間線、檔案、產物、快照與執行時活動
+- 檢查器中的 Environment 區：OpenClaw 診斷、管理動作、安全配置編輯，以及檔案/目錄路徑不同的開啟行為
 - 執行循環：預設支援 `mock` 模式，也可以切換到真實 OpenClaw gateway
 
 更完整的展示見 [zh-hk/showcase.md](./zh-hk/showcase.md)。
@@ -125,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切換到某個指定版本，例如 `2026.3.19-2`：
+如果你想切換到某個指定版本，例如 `2026.3.20-1`：
 
 ```bash
-npm install -g lalaclaw@2026.3.19-2
+npm install -g lalaclaw@2026.3.20-1
 lalaclaw init
 ```
 
@@ -142,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切換到某個指定版本，例如 `2026.3.19-2`：
+如果你想切換到某個指定版本，例如 `2026.3.20-1`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.19-2
+git checkout 2026.3.20-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -193,7 +194,7 @@ npm run lalaclaw:start
 LalaClaw 使用 npm 相容的日曆版本格式。
 
 - 每次專案版本變化時更新 [CHANGELOG.md](../CHANGELOG.md)
-- 同一天的多次發佈使用 `YYYY.M.D-N`，例如 `2026.3.19-2`，不要使用 `YYYY.M.D.N`
+- 同一天的多次發佈使用 `YYYY.M.D-N`，例如 `2026.3.20-1`，不要使用 `YYYY.M.D.N`
 - 破壞性變更應在 release notes 與遷移文件中明確標註
 - 開發時建議使用 [`.nvmrc`](../.nvmrc) 中的 Node.js `22`；已發佈的 npm 套件支援 `^20.19.0 || ^22.12.0 || >=24.0.0`
 

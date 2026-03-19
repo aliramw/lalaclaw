@@ -4,44 +4,53 @@
 
 # Vue d'ensemble de l'interface
 
-L'écran principal de LalaClaw se compose de trois parties : un en-tête de contrôle de session, un espace de chat et un inspecteur à droite.
+L'écran principal de LalaClaw se comprend comme trois zones : un en-tête de contrôle de session, l'espace de chat et l'inspecteur à droite.
 
 ## En-tête et contrôles de session
 
 La zone supérieure inclut :
 
-- La sélection du modèle courant
-- L'affichage de l'usage du contexte
-- Le basculement du mode rapide
+- Le changement de modèle depuis la liste disponible
+- L'affichage de l'usage actuel du contexte par rapport au maximum
+- Un basculement du mode rapide
 - Le choix du mode de réflexion parmi `off / minimal / low / medium / high / xhigh / adaptive`
-- Le changement de langue
+- Le changement de langue pour `中文 / 繁體中文（香港） / English / 日本語 / 한국어 / Français / Español / Português / Deutsch / Bahasa Melayu / தமிழ்`
 - Le changement de thème `system / light / dark`
-- L'aide des raccourcis clavier
+- L'aide des raccourcis clavier en haut à droite
 - Le homard cliquable en haut à gauche, documenté dans [Clin d'oeil visuel](./documentation-easter-egg.md)
 
 ## Espace de chat
 
 Le panneau principal contient :
 
-- Une barre d'onglets de session
+- Une barre d'onglets pour les sessions d'agent et les conversations IM, plus une entrée de switcher pour ouvrir un autre agent ou un autre fil IM
 - Un en-tête avec l'agent courant, l'état d'activité, la taille de police et l'action de nouvelle session
-- Une zone de conversation pour les messages, les réponses en flux et les aperçus de pièces jointes
-- Un composer prenant en charge le texte, les mentions `@`, les pièces jointes et l'arrêt d'une réponse en cours
+- Une zone de conversation pour les messages utilisateur, les réponses assistant, le streaming et les aperçus de pièces jointes
+- Un composer qui prend en charge le texte, les mentions `@`, les pièces jointes et l'arrêt d'une réponse active
+
+Comportements visibles :
+
+- Les messages utilisateur sont alignés à droite et les messages assistant à gauche
+- Pendant une réponse en cours, un thinking placeholder temporaire apparaît d'abord
+- Les longues réponses Markdown peuvent générer un plan pour sauter entre les titres
+- Si vous n'êtes pas tout en bas, un bouton permet de revenir au plus récent
 
 ## Inspecteur à droite
 
-L'inspecteur expose six surfaces principales :
+L'inspecteur est maintenant organisé en quatre surfaces principales :
 
-- `Journal d'exécution`
-- `Fichiers`
-- `Résumés`
-- `Environnement`
-- `Collaboration`
-- `Aperçu`
+- `Files`
+- `Artifacts`
+- `Timeline`
+- `Environment`
 
-Il est synchronisé avec la session de chat : activité fichiers, appels d'outils, résumés et snapshots d'environnement y apparaissent.
+Il reste couplé à la session active et rassemble l'activité fichiers, les résumés, les enregistrements d'exécution et les métadonnées runtime de cette même session.
 
-## Où aller ensuite
+## Onglets multi-sessions
 
-- Pour l'envoi, les pièces jointes, les files d'attente et les commandes : [Discussion, pièces jointes et commandes](./documentation-chat.md)
-- Pour le détail de l'inspecteur : [Inspecteur, aperçu de fichiers et traçage](./documentation-inspector.md)
+Les onglets suivent quelques règles simples :
+
+- Chaque onglet est identifié par la session réelle sous-jacente, c'est-à-dire `agentId + sessionUser`
+- Le switcher peut ouvrir des sessions d'agent et des conversations IM comme DingTalk, Feishu ou WeCom
+- Fermer un onglet le masque seulement dans la vue courante ; l'état réel de la session n'est pas supprimé
+- Les onglets d'agent déjà ouverts et les canaux IM déjà ouverts sont exclus du switcher

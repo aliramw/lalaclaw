@@ -563,6 +563,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
   const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
   const runtimeRequestByTabIdRef = useRef({});
+  const backgroundRuntimeAbortByTabIdRef = useRef({});
   const pendingSendPreparationByTabRef = useRef({});
   const sessionStateRef = useRef({
     sessionUser: initialActiveMeta.sessionUser,
@@ -1467,14 +1468,37 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         return;
       }
 
+      if (backgroundRuntimeAbortByTabIdRef.current[tabId]) {
+        return;
+      }
+
+      const requestVersion = (runtimeRequestByTabIdRef.current[tabId] || 0) + 1;
+      runtimeRequestByTabIdRef.current = {
+        ...runtimeRequestByTabIdRef.current,
+        [tabId]: requestVersion,
+      };
+      const controller = new AbortController();
+      backgroundRuntimeAbortByTabIdRef.current = {
+        ...backgroundRuntimeAbortByTabIdRef.current,
+        [tabId]: controller,
+      };
+
       try {
         const params = new URLSearchParams({
           sessionUser: runtimeSessionUser || sessionUser,
           agentId,
         });
-        const response = await apiFetch(`/api/runtime?${params.toString()}`);
+        const response = await apiFetch(`/api/runtime?${params.toString()}`, {
+          signal: controller.signal,
+        });
         const payload = await response.json();
-        if (!response.ok || !payload.ok || cancelled) {
+        if (
+          !response.ok
+          || !payload.ok
+          || cancelled
+          || controller.signal.aborted
+          || runtimeRequestByTabIdRef.current[tabId] !== requestVersion
+        ) {
           return;
         }
 
@@ -1570,8 +1594,17 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         }
 
         setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching");
-      } catch {
+      } catch (error) {
+        if (controller.signal.aborted || error?.name === "AbortError") {
+          return;
+        }
         // Keep background sync best-effort so a stale DingTalk tab never interrupts the active session.
+      } finally {
+        if (backgroundRuntimeAbortByTabIdRef.current[tabId] === controller) {
+          const nextAbortControllers = { ...backgroundRuntimeAbortByTabIdRef.current };
+          delete nextAbortControllers[tabId];
+          backgroundRuntimeAbortByTabIdRef.current = nextAbortControllers;
+        }
       }
     };
 
@@ -1587,6 +1620,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      for (const controller of Object.values(backgroundRuntimeAbortByTabIdRef.current)) {
+        controller?.abort?.();
+      }
+      backgroundRuntimeAbortByTabIdRef.current = {};
     };
   }, [
     activeChatTabId,
@@ -2082,6 +2119,14 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     }
   };
 
+  const handleSyncCurrentSessionModel = useCallback(async (nextModel) => {
+    const normalizedModel = String(nextModel || "").trim();
+    if (!normalizedModel || normalizedModel === String(sessionStateRef.current.model || model || "").trim()) {
+      return null;
+    }
+    return await applySessionUpdate({ model: normalizedModel });
+  }, [applySessionUpdate, model]);
+
   const handleModelChange = async (nextModel) => {
     if (!nextModel || nextModel === model) return;
 
@@ -2092,7 +2137,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         type: "success",
         message: i18n.common.modelSwitchSucceeded(nextModel),
       });
-    } catch {
+    } catch (error) {
       await loadRuntime(sessionStateRef.current.sessionUser, {
         agentId: sessionStateRef.current.agentId,
       }).catch(() => {
@@ -2100,7 +2145,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       });
       setModelSwitchNotice({
         type: "error",
-        message: i18n.common.modelSwitchFailed(nextModel),
+        message: i18n.common.modelSwitchFailed(nextModel, error?.message || ""),
       });
     } finally {
       setSwitchingModelOverlay(null);
@@ -2622,6 +2667,11 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       })),
     [activeChatTabId, busyByTabId, chatTabs, intlLocale, messagesByTabId, session.status, unreadCountByTabId],
   );
+  const handleRefreshEnvironment = useCallback(async () => {
+    await loadRuntime(sessionStateRef.current.sessionUser, {
+      agentId: sessionStateRef.current.agentId || session.agentId || "main",
+    });
+  }, [loadRuntime, session.agentId]);
   return {
     activeChatTabId,
     activeQueuedMessages,
@@ -2648,10 +2698,12 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     handleCloseChatTab,
     handleOpenImSession,
     handleReorderChatTabs,
+    handleRefreshEnvironment,
     handleSearchSessions,
     handleFastModeChange,
     handleInspectorPanelWidthChange,
     handleModelChange,
+    handleSyncCurrentSessionModel,
     handlePromptChange,
     handlePromptKeyDown,
     handleClearQueuedMessages,
