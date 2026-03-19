@@ -41,6 +41,20 @@ const WALKER_TURN_STEP_DEGREES = 6;
 const OCTOPUS_BREATH_SCALE = 0.1;
 const OCTOPUS_WIDTH_SQUASH_SCALE = 0.1;
 const OCTOPUS_BREATH_CYCLE_MS = 1500;
+const IM_PLATFORM_LOGOS = {
+  "dingtalk-connector": {
+    imageClassName: "h-full w-full",
+    src: "/im-logo-dingtalk.svg",
+  },
+  feishu: {
+    imageClassName: "h-full w-full",
+    src: "/im-logo-feishu.svg",
+  },
+  wecom: {
+    imageClassName: "h-full w-full",
+    src: "/im-logo-wecom.svg",
+  },
+};
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -1661,6 +1675,25 @@ function LobsterBrand({ compact = false, subtitle }) {
   );
 }
 
+function ImPlatformLogo({ channel }) {
+  const brand = IM_PLATFORM_LOGOS[channel];
+
+  if (!brand) {
+    return null;
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "flex h-5 w-5 shrink-0 items-center justify-center self-center overflow-hidden rounded-[6px]",
+      )}
+    >
+      <img alt="" aria-hidden="true" className={cn("h-full w-full object-contain", brand.imageClassName)} src={brand.src} />
+    </span>
+  );
+}
+
 export function SessionOverview({
   accessLoggingOut = false,
   accessMode = "off",
@@ -1748,22 +1781,16 @@ export function SessionOverview({
     [
       {
         channel: "dingtalk-connector",
-        colorClassName: "bg-[#1677ff]",
-        icon: "钉",
         label: dingTalkLabel,
         type: "dingtalk",
       },
       {
         channel: "feishu",
-        colorClassName: "bg-[#3370ff]",
-        icon: "飞",
         label: feishuLabel,
         type: "feishu",
       },
       {
         channel: "wecom",
-        colorClassName: "bg-[#1aad19]",
-        icon: "企",
         label: wecomLabel,
         type: "wecom",
       },
@@ -1969,15 +1996,7 @@ export function SessionOverview({
                     {availableImMenuItems.map((item) => (
                       <DropdownMenuItem key={item.channel} onSelect={() => handleImMenuSelect(item.channel, suppressTooltip)}>
                         <div className="flex items-center gap-2 leading-none">
-                          <div
-                            aria-hidden="true"
-                            className={cn(
-                              "flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-[4px] text-[10px] font-semibold leading-none text-white",
-                              item.colorClassName,
-                            )}
-                          >
-                            {item.icon}
-                          </div>
+                          <ImPlatformLogo channel={item.channel} />
                           <span className="self-center leading-none">{item.label}</span>
                         </div>
                       </DropdownMenuItem>

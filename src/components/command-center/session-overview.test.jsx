@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionOverview } from "@/components/command-center/session-overview";
@@ -174,13 +174,13 @@ describe("SessionOverview", () => {
     await user.click(trigger);
     expect(screen.getByText("Agent 对话")).toBeInTheDocument();
     expect(screen.getByText("IM 对话")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
+    const dingTalkItem = screen.getByRole("menuitem", { name: "钉钉" });
     const feishuItem = screen.getByRole("menuitem", { name: "飞书" });
-    expect(screen.getByRole("menuitem", { name: "企微" })).toBeInTheDocument();
+    const wecomItem = screen.getByRole("menuitem", { name: "企微" });
+    expect(dingTalkItem.querySelector('img[src="/im-logo-dingtalk.svg"]')).not.toBeNull();
     expect(feishuItem).toHaveClass("cursor-pointer");
-    const feishuIcon = within(feishuItem).getByText("飞");
-    expect(feishuIcon).toHaveClass("self-center");
-    expect(feishuIcon).toHaveClass("bg-[#3370ff]");
+    expect(feishuItem.querySelector('img[src="/im-logo-feishu.svg"]')).not.toBeNull();
+    expect(wecomItem.querySelector('img[src="/im-logo-wecom.svg"]')).not.toBeNull();
     await user.click(feishuItem);
 
     await waitFor(() => {
