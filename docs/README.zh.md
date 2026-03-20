@@ -126,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.20-2`：
+如果你想切换到某个指定发布版本，比如 `2026.3.20-3`：
 
 ```bash
-npm install -g lalaclaw@2026.3.20-2
+npm install -g lalaclaw@2026.3.20-3
 lalaclaw init
 ```
 
@@ -143,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.20-2`：
+如果你想切换到某个指定发布版本，比如 `2026.3.20-3`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.20-2
+git checkout 2026.3.20-3
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -195,7 +195,7 @@ npm run lalaclaw:start
 LalaClaw 使用 npm 兼容的日历版本格式。
 
 - 每次项目版本变化时更新 [CHANGELOG.md](../CHANGELOG.md)
-- 同一天的多次发布使用 `YYYY.M.D-N`，例如 `2026.3.20-2`，不要使用 `YYYY.M.D.N`
+- 同一天的多次发布使用 `YYYY.M.D-N`，例如 `2026.3.20-3`，不要使用 `YYYY.M.D.N`
 - 破坏性变更应在 release notes 和迁移文档里明确标注
 - 开发时推荐使用 [`.nvmrc`](../.nvmrc) 中的 Node.js `22`；已发布的 npm 包支持 `^20.19.0 || ^22.12.0 || >=24.0.0`
 

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026.3.20-3]
+
+### Changed
+
+- Published a follow-up release so the new in-app LalaClaw self-update flow can be verified end-to-end against a real npm `stable` promotion from `2026.3.20-2`
+- Updated README and localized quick-start / README version examples to `2026.3.20-3`
+
 ## [2026.3.20-2]
 
 ### Added

@@ -126,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.20-2`:
+Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.20-3`:
 
 ```bash
-npm install -g lalaclaw@2026.3.20-2
+npm install -g lalaclaw@2026.3.20-3
 lalaclaw init
 ```
 
@@ -143,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.20-2`:
+Wenn du eine bestimmte Version installieren willst, zum Beispiel `2026.3.20-3`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.20-2
+git checkout 2026.3.20-3
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -194,7 +194,7 @@ Die vollstaendige Checkliste steht in [CONTRIBUTING.md](../CONTRIBUTING.md).
 LalaClaw verwendet npm-kompatible Kalenderversionen.
 
 - Aktualisiere [CHANGELOG.md](../CHANGELOG.md) bei jeder Versionsaenderung
-- Fuer mehrere Releases am selben Tag nutze `YYYY.M.D-N`, zum Beispiel `2026.3.20-2`
+- Fuer mehrere Releases am selben Tag nutze `YYYY.M.D-N`, zum Beispiel `2026.3.20-3`
 - Inkompatible Aenderungen sollten in Release-Notizen und Migrationsdoku klar genannt werden
 - Fuer die Entwicklung wird Node.js `22` gemaess [`.nvmrc`](../.nvmrc) empfohlen. Das veroeffentlichte npm-Paket unterstuetzt `^20.19.0 || ^22.12.0 || >=24.0.0`
 
