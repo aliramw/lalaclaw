@@ -15,7 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn, formatShortcutForPlatform, isApplePlatform } from "@/lib/utils";
 import { chooseCollisionRerouteTarget, findNearbyCollisionPairs } from "@/components/command-center/lobster-collision";
 import { SelectionMenu } from "@/components/command-center/selection-menu";
-import { lobsterWalkTuning, sampleLobsterCompanionCount, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
+import { lobsterWalkTuning, sampleLobsterCompanionCount, samplePufferPitchDegrees, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { useI18n } from "@/lib/i18n";
 import { getImSessionDisplayName, resolveImSessionType } from "@/features/session/im-session";
@@ -23,10 +23,17 @@ import { getImSessionDisplayName, resolveImSessionType } from "@/features/sessio
 const thinkModeOptions = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
 const LOBSTER_WALK_MARGIN = 32;
 const LOBSTER_SPEED_PX_PER_SECOND = 150;
+const AQUATIC_SPEED_PX_PER_SECOND = LOBSTER_SPEED_PX_PER_SECOND * lobsterWalkTuning.aquaticSpeedMultiplier;
 const LOBSTER_MIN_DURATION_MS = 5000;
 const LOBSTER_MAX_DURATION_MS = 15000;
-const CRAB_SPAWN_PROBABILITY = 0.05;
-const OCTOPUS_SPAWN_PROBABILITY = 0.01;
+const CRAB_SPAWN_PROBABILITY = lobsterWalkTuning.crabSpawnProbability;
+const OCTOPUS_SPAWN_PROBABILITY = lobsterWalkTuning.octopusSpawnProbability;
+const PUFFER_SPAWN_PROBABILITY = lobsterWalkTuning.pufferSpawnProbability;
+const FISH_SPAWN_PROBABILITY = lobsterWalkTuning.fishSpawnProbability;
+const TROPICAL_FISH_SPAWN_PROBABILITY = lobsterWalkTuning.tropicalFishSpawnProbability;
+const PUFFER_MAX_PITCH_DEGREES = lobsterWalkTuning.pufferMaxPitchDegrees;
+const PUFFER_EDGE_RESPONSE_THRESHOLD_PX = LOBSTER_WALK_MARGIN;
+const PUFFER_MIN_EDGE_REROUTE_PITCH_DEGREES = 4;
 const LOBSTER_OFFSCREEN_PADDING = 56;
 const LOBSTER_COLLISION_DISTANCE_PX = 54;
 const LOBSTER_REROUTE_COOLDOWN_MS = lobsterWalkTuning.rerouteCooldownMs;
@@ -120,6 +127,80 @@ function getWalkerForwardVector(species, motionAngle = 0) {
     x: Math.cos(radians),
     y: Math.sin(radians),
   };
+}
+
+function isAquaticWalkerSpecies(species = "") {
+  return species === "puffer" || species === "fish" || species === "tropical-fish";
+}
+
+export function getPufferEdgeResponse({
+  currentLeft = 0,
+  currentTop = 0,
+  dx = 0,
+  dy = 0,
+  height = 0,
+  threshold = PUFFER_EDGE_RESPONSE_THRESHOLD_PX,
+  viewportHeight = 0,
+  viewportWidth = 0,
+  width = 0,
+} = {}) {
+  const safeThreshold = Math.max(0, Number(threshold || 0));
+  const movingLeft = Number(dx || 0) < -0.01;
+  const movingRight = Number(dx || 0) > 0.01;
+  const movingUp = Number(dy || 0) < -0.01;
+  const movingDown = Number(dy || 0) > 0.01;
+
+  if (movingLeft && currentLeft <= safeThreshold) {
+    return { edge: "left", type: "horizontal-flip" };
+  }
+
+  if (movingRight && currentLeft + width >= viewportWidth - safeThreshold) {
+    return { edge: "right", type: "horizontal-flip" };
+  }
+
+  if (movingUp && currentTop <= safeThreshold) {
+    return { edge: "top", type: "vertical-reroute" };
+  }
+
+  if (movingDown && currentTop + height >= viewportHeight - safeThreshold) {
+    return { edge: "bottom", type: "vertical-reroute" };
+  }
+
+  return null;
+}
+
+export function resolvePufferPitchForVerticalEdge(edge, randomValue = Math.random()) {
+  const sampledPitch = Math.max(
+    Math.abs(samplePufferPitchDegrees(randomValue)),
+    PUFFER_MIN_EDGE_REROUTE_PITCH_DEGREES,
+  );
+
+  if (edge === "top") {
+    return sampledPitch;
+  }
+
+  if (edge === "bottom") {
+    return -sampledPitch;
+  }
+
+  return samplePufferPitchDegrees(randomValue);
+}
+
+export function resolveWalkerEndAtAfterReroute({
+  currentEndAt = 0,
+  fallbackDurationMs = 0,
+  fallbackStartedAt = 0,
+} = {}) {
+  if (Number.isFinite(currentEndAt) && currentEndAt > 0) {
+    return currentEndAt;
+  }
+
+  return fallbackStartedAt + Math.max(0, Number(fallbackDurationMs || 0));
+}
+
+export function resolveAquaticWalkDurationMs(totalLengthPx = 0) {
+  const normalizedLength = Math.max(0, Number(totalLengthPx || 0));
+  return (normalizedLength / AQUATIC_SPEED_PX_PER_SECOND) * 1000;
 }
 
 function chaikinSmooth(points, iterations = 3) {
@@ -703,6 +784,43 @@ function buildOctopusWalkPath(originRect, startPoint, avoidPoints = [], targetDu
   };
 }
 
+function pickPufferStartPoint(originRect, mirrored = false, pitchDegrees = 0) {
+  const bounds = createViewportBounds(originRect);
+  const viewportWidth = window.innerWidth;
+  const startX = mirrored ? -originRect.width - LOBSTER_OFFSCREEN_PADDING : viewportWidth + LOBSTER_OFFSCREEN_PADDING;
+  const endX = mirrored ? viewportWidth + LOBSTER_OFFSCREEN_PADDING : -originRect.width - LOBSTER_OFFSCREEN_PADDING;
+  const horizontalDistance = Math.abs(endX - startX);
+  const verticalOffset = Math.tan((clamp(pitchDegrees, -PUFFER_MAX_PITCH_DEGREES, PUFFER_MAX_PITCH_DEGREES) * Math.PI) / 180) * horizontalDistance;
+  const minStartY = Math.min(Math.max(bounds.minTop - Math.min(0, verticalOffset), bounds.minTop), bounds.maxTop);
+  const maxStartY = Math.max(Math.min(bounds.maxTop - Math.max(0, verticalOffset), bounds.maxTop), minStartY);
+
+  return {
+    x: startX,
+    y: randomBetween(minStartY, maxStartY),
+  };
+}
+
+function buildPufferWalkPath(originRect, startPoint, mirrored = false, pitchDegrees = samplePufferPitchDegrees()) {
+  const bounds = createViewportBounds(originRect);
+  const viewportWidth = window.innerWidth;
+  const normalizedPitch = clamp(pitchDegrees, -PUFFER_MAX_PITCH_DEGREES, PUFFER_MAX_PITCH_DEGREES);
+  const endX = mirrored ? viewportWidth + LOBSTER_OFFSCREEN_PADDING : -originRect.width - LOBSTER_OFFSCREEN_PADDING;
+  const horizontalDistance = Math.abs(endX - startPoint.x);
+  const verticalOffset = Math.tan((normalizedPitch * Math.PI) / 180) * horizontalDistance;
+  const endPoint = {
+    x: endX,
+    y: clamp(startPoint.y + verticalOffset, bounds.minTop, bounds.maxTop),
+  };
+  const samples = buildSamplesFromAbsolutePoints([startPoint, endPoint], startPoint);
+  const totalLength = samples.at(-1)?.length || 0;
+
+  return {
+    durationMs: resolveAquaticWalkDurationMs(totalLength),
+    samples,
+    totalLength,
+  };
+}
+
 function getPointAtDistance(samples, targetDistance) {
   if (!samples.length) {
     return { dx: 0, dy: -1, x: 0, y: 0 };
@@ -757,6 +875,22 @@ function getWalkerTransform(point, walker) {
     };
   }
 
+  if (isAquaticWalkerSpecies(walker?.species)) {
+    const dx = Math.abs(point.dx) > 0.01 ? point.dx : (walker.mirrored ? 1 : -1);
+    const dy = Math.abs(point.dy) > 0.01 ? point.dy : 0;
+    const targetPitch = clamp(
+      Math.atan2(dy, Math.max(Math.abs(dx), 0.01)) * (180 / Math.PI),
+      -PUFFER_MAX_PITCH_DEGREES,
+      PUFFER_MAX_PITCH_DEGREES,
+    );
+    const motionAngle = stepAngleDegrees(walker.motionAngle, targetPitch);
+    walker.motionAngle = motionAngle;
+    return {
+      emojiTransform: walker.mirrored ? "scaleX(-1)" : "",
+      motionRotation: motionAngle,
+    };
+  }
+
   const dx = Math.abs(point.dx) > 0.01 ? point.dx : Math.cos((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
   const dy = Math.abs(point.dy) > 0.01 ? point.dy : Math.sin((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
   const targetAngle = Math.atan2(dy || -1, dx || 0) * (180 / Math.PI) + 90;
@@ -774,6 +908,8 @@ function interpolateLobsterFrame(progress, walkPath, walker) {
   const transform = getWalkerTransform(point, walker);
 
   return {
+    dx: point.dx,
+    dy: point.dy,
     emojiTransform: transform.emojiTransform,
     rotation: transform.motionRotation,
     x: point.x,
@@ -842,6 +978,54 @@ function createCrabWalker(originRect, avoidPoints = []) {
 
 function createOctopusWalker(originRect, avoidPoints = []) {
   return createEdgeWalker(originRect, avoidPoints, "🐙", "companion-octopus", "octopus");
+}
+
+function createAquaticWalker(originRect, avoidPoints = [], emoji = "🐡", idPrefix = "companion-puffer", species = "puffer") {
+  const mirrored = Math.random() < 0.5;
+  const pitchDegrees = samplePufferPitchDegrees();
+  const minimumClearance = Math.max(originRect.width, originRect.height) * 1.25;
+  let startPoint = pickPufferStartPoint(originRect, mirrored, pitchDegrees);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (isSeparatedFromPoints(startPoint, avoidPoints, minimumClearance)) {
+      break;
+    }
+    startPoint = pickPufferStartPoint(originRect, mirrored, pitchDegrees);
+  }
+
+  const path = buildPufferWalkPath(originRect, startPoint, mirrored, pitchDegrees);
+  const fontSize = sampleCompanionFontSize();
+
+  return {
+    animationStartedAt: 0,
+    breathTimeMs: 0,
+    emoji,
+    fontSize,
+    height: originRect.height,
+    id: createWalkerId(idPrefix),
+    left: startPoint.x,
+    mirrored,
+    motionAngle: pitchDegrees,
+    path,
+    species,
+    startedAt: 0,
+    top: startPoint.y,
+    totalDurationMs: path.durationMs,
+    type: "companion",
+    width: originRect.width,
+  };
+}
+
+function createPufferWalker(originRect, avoidPoints = []) {
+  return createAquaticWalker(originRect, avoidPoints, "🐡", "companion-puffer", "puffer");
+}
+
+function createFishWalker(originRect, avoidPoints = []) {
+  return createAquaticWalker(originRect, avoidPoints, "🐟", "companion-fish", "fish");
+}
+
+function createTropicalFishWalker(originRect, avoidPoints = []) {
+  return createAquaticWalker(originRect, avoidPoints, "🐠", "companion-tropical-fish", "tropical-fish");
 }
 
 function splitModeLabel(rawLabel = "") {
@@ -1446,7 +1630,16 @@ function LobsterBrand({ compact = false, subtitle }) {
       return undefined;
     }
 
-    const rerouteWalker = (walker, currentLeft, currentTop, currentRotation, currentEmojiTransform, avoidPoints, now) => {
+    const rerouteWalker = (
+      walker,
+      currentLeft,
+      currentTop,
+      currentRotation,
+      currentEmojiTransform,
+      avoidPoints,
+      now,
+      { pufferPitchOverride = null, togglePufferMirror = false } = {},
+    ) => {
       const currentRect = {
         height: walker.height,
         left: currentLeft,
@@ -1455,18 +1648,34 @@ function LobsterBrand({ compact = false, subtitle }) {
       };
       const startPoint = { x: currentLeft, y: currentTop };
       const remainingDurationMs = Math.max(180, walker.endAt - now);
+      const nextPufferMirrored = togglePufferMirror ? !walker.mirrored : walker.mirrored;
+      const nextPufferPitch = Number.isFinite(pufferPitchOverride)
+        ? pufferPitchOverride
+        : togglePufferMirror
+          ? samplePufferPitchDegrees()
+          : currentRotation;
       const nextPath = walker.type === "primary"
         ? buildPrimaryLobsterWalkPath(currentRect, startPoint, walker.homePoint, avoidPoints, remainingDurationMs, currentRotation)
         : walker.species === "octopus"
           ? buildOctopusWalkPath(currentRect, startPoint, avoidPoints, remainingDurationMs)
+          : isAquaticWalkerSpecies(walker.species)
+            ? buildPufferWalkPath(currentRect, startPoint, nextPufferMirrored, nextPufferPitch)
           : buildCompanionLobsterWalkPath(currentRect, startPoint, avoidPoints, remainingDurationMs, walker.species, currentRotation);
 
       walker.left = currentLeft;
-      walker.motionAngle = currentRotation;
+      walker.motionAngle = isAquaticWalkerSpecies(walker.species) ? nextPufferPitch : currentRotation;
       walker.path = nextPath;
       walker.startedAt = now;
       walker.top = currentTop;
+      walker.endAt = resolveWalkerEndAtAfterReroute({
+        currentEndAt: walker.endAt,
+        fallbackDurationMs: nextPath.durationMs,
+        fallbackStartedAt: now,
+      });
       walker.lastRerouteAt = now;
+      if (isAquaticWalkerSpecies(walker.species)) {
+        walker.mirrored = nextPufferMirrored;
+      }
 
       const containerNode = walkerContainerRefs.current[walker.id];
       if (containerNode) {
@@ -1515,6 +1724,42 @@ function LobsterBrand({ compact = false, subtitle }) {
 
         const currentLeft = walker.left + frame.x;
         const currentTop = walker.top + frame.y;
+        const pufferEdgeResponse = isAquaticWalkerSpecies(walker.species)
+          ? getPufferEdgeResponse({
+              currentLeft,
+              currentTop,
+              dx: frame.dx,
+              dy: frame.dy,
+              height: walker.height,
+              viewportHeight: window.innerHeight,
+              viewportWidth: window.innerWidth,
+              width: walker.width,
+            })
+          : null;
+
+        if (pufferEdgeResponse?.type === "horizontal-flip") {
+          rerouteWalker(
+            walker,
+            currentLeft,
+            currentTop,
+            frame.rotation,
+            frame.emojiTransform,
+            positions.map((entry) => ({ x: entry.currentLeft, y: entry.currentTop })),
+            now,
+            { pufferPitchOverride: frame.rotation, togglePufferMirror: true },
+          );
+        } else if (pufferEdgeResponse?.type === "vertical-reroute") {
+          rerouteWalker(
+            walker,
+            currentLeft,
+            currentTop,
+            frame.rotation,
+            frame.emojiTransform,
+            positions.map((entry) => ({ x: entry.currentLeft, y: entry.currentTop })),
+            now,
+            { pufferPitchOverride: resolvePufferPitchForVerticalEdge(pufferEdgeResponse.edge) },
+          );
+        }
         visibleWalkers.push(walker);
         positions.push({
           centerX: currentLeft + (walker.width / 2),
@@ -1627,6 +1872,27 @@ function LobsterBrand({ compact = false, subtitle }) {
 
     if (Math.random() <= OCTOPUS_SPAWN_PROBABILITY) {
       walkers.push(createOctopusWalker(
+        anchorRect,
+        walkers.map((walker) => ({ x: walker.left, y: walker.top })),
+      ));
+    }
+
+    if (Math.random() <= PUFFER_SPAWN_PROBABILITY) {
+      walkers.push(createPufferWalker(
+        anchorRect,
+        walkers.map((walker) => ({ x: walker.left, y: walker.top })),
+      ));
+    }
+
+    if (Math.random() <= FISH_SPAWN_PROBABILITY) {
+      walkers.push(createFishWalker(
+        anchorRect,
+        walkers.map((walker) => ({ x: walker.left, y: walker.top })),
+      ));
+    }
+
+    if (Math.random() <= TROPICAL_FISH_SPAWN_PROBABILITY) {
+      walkers.push(createTropicalFishWalker(
         anchorRect,
         walkers.map((walker) => ({ x: walker.left, y: walker.top })),
       ));
