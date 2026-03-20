@@ -39,6 +39,11 @@
     "start": "node server.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "test:e2e:ui": "playwright test --ui",
+    "test:openclaw:onboarding:smoke": "node ./scripts/openclaw-onboarding-smoke.cjs",
     "test:watch": "vitest"
   },
   "repository": {
@@ -83,6 +88,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

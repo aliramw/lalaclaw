@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SessionOverview } from "@/components/command-center/session-overview";
-import { lobsterWalkTuning, sampleLobsterCompanionCount, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
+import { getPufferEdgeResponse, resolveAquaticWalkDurationMs, resolvePufferPitchForVerticalEdge, resolveWalkerEndAtAfterReroute, SessionOverview } from "@/components/command-center/session-overview";
+import { lobsterWalkTuning, sampleLobsterCompanionCount, samplePufferPitchDegrees, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
@@ -961,6 +961,13 @@ describe("SessionOverview", () => {
       companionSpawnProbability: 0.5,
       companionMinCount: 1,
       companionMaxCount: 10,
+      crabSpawnProbability: 0.05,
+      octopusSpawnProbability: 0.01,
+      pufferSpawnProbability: 0.03,
+      fishSpawnProbability: 0.08,
+      tropicalFishSpawnProbability: 0.02,
+      pufferMaxPitchDegrees: 20,
+      aquaticSpeedMultiplier: 0.5,
       rerouteCooldownMs: 900,
       primaryFontSizePx: 48,
     });
@@ -972,5 +979,102 @@ describe("SessionOverview", () => {
     expect(sampleLobsterCompanionCount(0)).toBe(1);
     expect(sampleLobsterCompanionCount(0.42)).toBe(5);
     expect(sampleLobsterCompanionCount(0.9999)).toBe(10);
+    expect(samplePufferPitchDegrees(0)).toBe(-20);
+    expect(samplePufferPitchDegrees(0.5)).toBe(0);
+    expect(samplePufferPitchDegrees(0.9999)).toBeCloseTo(19.996, 3);
+  });
+
+  it("flips the puffer immediately when it approaches the left or right edge", () => {
+    expect(getPufferEdgeResponse({
+      currentLeft: 18,
+      currentTop: 160,
+      dx: -2,
+      dy: 0,
+      height: 48,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+      width: 48,
+    })).toEqual({ edge: "left", type: "horizontal-flip" });
+
+    expect(getPufferEdgeResponse({
+      currentLeft: 1238,
+      currentTop: 160,
+      dx: 2,
+      dy: 0,
+      height: 48,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+      width: 48,
+    })).toEqual({ edge: "right", type: "horizontal-flip" });
+  });
+
+  it("reroutes the puffer immediately when it approaches the top or bottom edge", () => {
+    expect(getPufferEdgeResponse({
+      currentLeft: 260,
+      currentTop: 12,
+      dx: -2,
+      dy: -0.7,
+      height: 48,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+      width: 48,
+    })).toEqual({ edge: "top", type: "vertical-reroute" });
+
+    expect(getPufferEdgeResponse({
+      currentLeft: 260,
+      currentTop: 666,
+      dx: 2,
+      dy: 0.7,
+      height: 48,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+      width: 48,
+    })).toEqual({ edge: "bottom", type: "vertical-reroute" });
+
+    expect(getPufferEdgeResponse({
+      currentLeft: 260,
+      currentTop: 80,
+      dx: 2,
+      dy: -0.7,
+      height: 48,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+      width: 48,
+    })).toBeNull();
+  });
+
+  it("forces rerouted puffer pitches away from the vertical screen edges", () => {
+    expect(resolvePufferPitchForVerticalEdge("top", 0.5)).toBeGreaterThanOrEqual(4);
+    expect(resolvePufferPitchForVerticalEdge("bottom", 0.5)).toBeLessThanOrEqual(-4);
+    expect(resolvePufferPitchForVerticalEdge("top", 0.49)).toBeGreaterThanOrEqual(4);
+    expect(resolvePufferPitchForVerticalEdge("bottom", 0.51)).toBeLessThanOrEqual(-4);
+  });
+
+  it("keeps a rerouted walker's original end time instead of extending it", () => {
+    expect(resolveWalkerEndAtAfterReroute({
+      currentEndAt: 2400,
+      fallbackDurationMs: 1600,
+      fallbackStartedAt: 1200,
+    })).toBe(2400);
+
+    expect(resolveWalkerEndAtAfterReroute({
+      currentEndAt: 0,
+      fallbackDurationMs: 1600,
+      fallbackStartedAt: 1200,
+    })).toBe(2800);
+  });
+
+  it("slows aquatic walker durations to half the default lobster speed", () => {
+    expect(resolveAquaticWalkDurationMs(0)).toBe(0);
+    expect(resolveAquaticWalkDurationMs(150)).toBe(2000);
+    expect(resolveAquaticWalkDurationMs(300)).toBe(4000);
+  });
+
+  it("keeps the aquatic spawn probabilities distinct", () => {
+    expect(lobsterWalkTuning.pufferSpawnProbability).toBe(0.03);
+    expect(lobsterWalkTuning.fishSpawnProbability).toBe(0.08);
+    expect(lobsterWalkTuning.tropicalFishSpawnProbability).toBe(0.02);
+    expect(lobsterWalkTuning.fishSpawnProbability).toBeGreaterThan(lobsterWalkTuning.pufferSpawnProbability);
+    expect(lobsterWalkTuning.pufferSpawnProbability).toBeGreaterThan(lobsterWalkTuning.tropicalFishSpawnProbability);
   });
 });

@@ -8,6 +8,8 @@ dist/
 .env.*.local
 coverage/
 .vite/
+playwright-report/
+test-results/
 *.log
 npm-debug.log*
 yarn-debug.log*

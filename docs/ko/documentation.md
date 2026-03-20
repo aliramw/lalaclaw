@@ -16,4 +16,5 @@
 - [키보드 단축키](./documentation-shortcuts.md)
 - [로컬 저장과 복구](./documentation-persistence.md)
 - [API 및 문제 해결](./documentation-api-troubleshooting.md)
+- [브라우저 E2E 테스트](./testing-e2e.md)
 - [이스터에그](./documentation-easter-egg.md)

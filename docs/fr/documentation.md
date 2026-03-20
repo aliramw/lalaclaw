@@ -16,6 +16,7 @@ Auteur : Marila Wang
 - [Raccourcis clavier](./documentation-shortcuts.md)
 - [Persistance locale et reprise](./documentation-persistence.md)
 - [API et dépannage](./documentation-api-troubleshooting.md)
+- [Tests E2E navigateur](./testing-e2e.md)
 - [Clin d'oeil visuel](./documentation-easter-egg.md)
 
 ## Ordre de lecture conseillé

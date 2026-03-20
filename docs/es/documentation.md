@@ -16,6 +16,7 @@ Autor: Marila Wang
 - [Atajos de teclado](./documentation-shortcuts.md)
 - [Persistencia local y recuperacion](./documentation-persistence.md)
 - [API y solucion de problemas](./documentation-api-troubleshooting.md)
+- [Pruebas E2E de navegador](./testing-e2e.md)
 - [Detalle visual](./documentation-easter-egg.md)
 
 ## Lectura recomendada

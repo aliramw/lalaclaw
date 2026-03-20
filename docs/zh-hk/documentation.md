@@ -16,4 +16,5 @@
 - [鍵盤快捷鍵](./documentation-shortcuts.md)
 - [本地持久化與恢復](./documentation-persistence.md)
 - [API 與疑難排解](./documentation-api-troubleshooting.md)
+- [瀏覽器 E2E 測試](./testing-e2e.md)
 - [彩蛋](./documentation-easter-egg.md)

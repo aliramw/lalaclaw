@@ -176,6 +176,9 @@ npm run lalaclaw:start
 - `npm run doctor -- --json` prints the same diagnosis as machine-readable JSON with `summary.status` and `summary.exitCode`
 - `lalaclaw access token` prints the current browser access token from local config, and `lalaclaw access token --rotate` generates a new one
 - `npm run lalaclaw:init` writes a local `.env.local` bootstrap file
+- `npm run test:openclaw:onboarding:smoke` runs an isolated temp-`HOME` smoke for `install-state -> onboarding -> ready -> support-options recheck`
+  Set `LALACLAW_ONBOARDING_SMOKE_OUTPUT_FILE` to persist the JSON report, or pass `--json` to keep stdout machine-only.
+  The main CI workflow also runs this smoke in a dedicated `openclaw-onboarding-smoke` job and uploads the JSON report as an artifact for review.
 - `lalaclaw -h` / `lalaclaw --help` prints CLI help, and `lalaclaw -v` / `lalaclaw --version` prints the current CLI version
 - `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
 - `npm run lalaclaw:start` starts the built app after running doctor preflight checks and verifying `dist/`

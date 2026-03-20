@@ -16,6 +16,7 @@
 - [快捷键说明](./documentation-shortcuts.md)
 - [本地持久化与恢复](./documentation-persistence.md)
 - [API 与排障](./documentation-api-troubleshooting.md)
+- [浏览器 E2E 测试](./testing-e2e.md)
 - [彩蛋](./documentation-easter-egg.md)
 
 ## 推荐阅读顺序

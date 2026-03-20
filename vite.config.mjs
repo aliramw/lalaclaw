@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
@@ -89,6 +90,11 @@ export default defineConfig({
     },
   },
   test: {
+    exclude: [
+      ...configDefaults.exclude,
+      "tests/e2e/**",
+      "playwright.config.js",
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

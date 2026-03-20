@@ -16,6 +16,7 @@ Pengarang: Marila Wang
 - [Pintasan papan kekunci](./documentation-shortcuts.md)
 - [Persistensi tempatan dan pemulihan](./documentation-persistence.md)
 - [API dan penyelesaian masalah](./documentation-api-troubleshooting.md)
+- [Ujian E2E pelayar](./testing-e2e.md)
 - [Telur paskah](./documentation-easter-egg.md)
 
 ## Cadangan Bacaan

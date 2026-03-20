@@ -16,6 +16,7 @@
 - [விசைப்பலகை குறுக்கு வழிகள்](./documentation-shortcuts.md)
 - [உள்ளூர் நிலைபேர் மற்றும் மீட்பு](./documentation-persistence.md)
 - [API மற்றும் சிக்கல் தீர்வு](./documentation-api-troubleshooting.md)
+- [உலாவி E2E சோதனை](./testing-e2e.md)
 - [மறைச்சிறப்பு](./documentation-easter-egg.md)
 
 ## பரிந்துரைக்கப்படும் வாசிப்பு வரிசை

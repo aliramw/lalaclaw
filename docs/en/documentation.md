@@ -39,6 +39,7 @@ Author: Marila Wang
 - [Architecture Overview](./architecture.md)
 - [Product Showcase](./showcase.md)
 - [Refactor Roadmap](./refactor-roadmap.md)
+- [Browser E2E Testing](./testing-e2e.md)
 
 ## Quick Links
 

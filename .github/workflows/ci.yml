@@ -39,3 +39,67 @@ jobs:
 
       - name: Build app
         run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npm run test:e2e:install
+
+      - name: Run browser e2e
+        run: npm run test:e2e
+
+  openclaw-onboarding-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install OpenClaw
+        run: |
+          curl -fsSL https://openclaw.ai/install.sh | bash
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+
+      - name: Verify OpenClaw CLI
+        run: |
+          export PATH="$HOME/.npm-global/bin:$PATH"
+          openclaw --version
+
+      - name: Run OpenClaw onboarding smoke
+        env:
+          LALACLAW_ONBOARDING_SMOKE_OUTPUT_FILE: ${{ runner.temp }}/openclaw-onboarding-smoke.json
+        run: |
+          export PATH="$HOME/.npm-global/bin:$PATH"
+          npm run test:openclaw:onboarding:smoke -- --json
+
+      - name: Upload OpenClaw onboarding smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openclaw-onboarding-smoke-report
+          path: ${{ runner.temp }}/openclaw-onboarding-smoke.json
+          if-no-files-found: warn

@@ -20,6 +20,7 @@ Use these guides as the main repository entry points:
 - [README.ms.md](./README.ms.md) for the Malay repository overview and installation guide
 - [README.ta.md](./README.ta.md) for the Tamil repository overview and installation guide
 - [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution workflow and PR expectations
+- Browser end-to-end testing guidance in [English](./en/testing-e2e.md), [中文](./zh/testing-e2e.md), [繁體中文（香港）](./zh-hk/testing-e2e.md), [日本語](./ja/testing-e2e.md), [한국어](./ko/testing-e2e.md), [Français](./fr/testing-e2e.md), [Español](./es/testing-e2e.md), [Português](./pt/testing-e2e.md), [Deutsch](./de/testing-e2e.md), [Bahasa Melayu](./ms/testing-e2e.md), and [தமிழ்](./ta/testing-e2e.md)
 - [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) for community behavior expectations
 - [CHANGELOG.md](../CHANGELOG.md) for release notes and version history
 - [SECURITY.md](../SECURITY.md) for security reporting guidance

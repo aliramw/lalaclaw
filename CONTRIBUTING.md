@@ -22,6 +22,33 @@ npm run build
 
 Run `npm run test:coverage` when you are making broader release-facing, cross-cutting, or high-risk changes and want a wider regression signal.
 
+For browser-level end-to-end coverage, install the Playwright browser once and then run:
+
+```bash
+npm run test:e2e:install
+npm run test:e2e
+```
+
+Use `npm run test:e2e:headed` when you want to watch the browser locally.
+
+The browser e2e scope, stability rules, and authoring guidelines live in [docs/en/testing-e2e.md](./docs/en/testing-e2e.md).
+
+For OpenClaw onboarding changes, run the isolated smoke once before you merge:
+
+```bash
+npm run test:openclaw:onboarding:smoke
+```
+
+That smoke launches a temporary backend with an isolated `HOME`, drives `GET /api/openclaw/onboarding`, `POST /api/openclaw/onboarding`, and `GET /api/openclaw/onboarding?refreshCapabilities=1`, and then tears the temporary state back down. Set `LALACLAW_ONBOARDING_SMOKE_KEEP_TMP=1` if you want to inspect the generated temp directory after the run.
+
+For CI or scripted validation, you can also set:
+
+- `LALACLAW_ONBOARDING_SMOKE_OUTPUT_FILE=/abs/path/report.json` to persist the JSON result
+- `GITHUB_STEP_SUMMARY` to let the smoke append a short markdown summary in GitHub Actions
+- `npm run test:openclaw:onboarding:smoke -- --json` to keep stdout as JSON-only output
+
+The main GitHub Actions workflow runs this smoke in a dedicated `openclaw-onboarding-smoke` job. That job uploads the JSON report as an artifact even when the smoke fails, so reviewers can inspect the onboarding state transition, capability detection source, and backend logs without rerunning locally.
+
 For the standard development workflow, run:
 
 ```bash

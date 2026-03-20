@@ -16,6 +16,7 @@ Autor: Marila Wang
 - [Tastenkürzel](./documentation-shortcuts.md)
 - [Lokale Persistenz und Wiederherstellung](./documentation-persistence.md)
 - [API und Fehlerbehebung](./documentation-api-troubleshooting.md)
+- [Browser-E2E-Tests](./testing-e2e.md)
 - [Überraschungseffekt](./documentation-easter-egg.md)
 
 ## Empfohlene Lesereihenfolge

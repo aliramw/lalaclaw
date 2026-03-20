@@ -16,6 +16,7 @@
 - [キーボードショートカット](./documentation-shortcuts.md)
 - [ローカル保存と復元](./documentation-persistence.md)
 - [API とトラブルシューティング](./documentation-api-troubleshooting.md)
+- [ブラウザ E2E テスト](./testing-e2e.md)
 - [イースターエッグ](./documentation-easter-egg.md)
 
 ## 推奨読書順
