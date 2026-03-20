@@ -447,6 +447,7 @@ function AppContent() {
     handlePromptChange,
     handlePromptKeyDown,
     handleClearQueuedMessages,
+    handleEditQueuedMessage,
     handleRemoveAttachment,
     handleRemoveQueuedMessage,
     handleReset,
@@ -986,6 +987,7 @@ function AppContent() {
                 onPromptChange={handlePromptChange}
                 onPromptKeyDown={handlePromptKeyDown}
                 onClearQueuedMessages={handleClearQueuedMessages}
+                onEditQueuedMessage={handleEditQueuedMessage}
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onReset={() => handleReset().catch(() => {})}
                 onSend={handleSend}

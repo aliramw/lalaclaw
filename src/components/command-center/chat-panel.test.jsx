@@ -50,6 +50,54 @@ function MentionHarness({
   );
 }
 
+function QueuedMessagesHarness({
+  initialPrompt = "",
+  initialQueuedMessages = [],
+}) {
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [queuedMessages, setQueuedMessages] = useState(initialQueuedMessages);
+
+  const handleRemoveQueuedMessage = (entryId) => {
+    setQueuedMessages((current) => current.filter((item) => item.id !== entryId));
+  };
+
+  const handleEditQueuedMessage = (entryId) => {
+    let nextPrompt = null;
+
+    setQueuedMessages((current) => {
+      const entry = current.find((item) => item.id === entryId);
+      nextPrompt = entry ? String(entry.content || "") : null;
+      return current.filter((item) => item.id !== entryId);
+    });
+
+    if (nextPrompt !== null) {
+      setPrompt(nextPrompt);
+    }
+  };
+
+  return (
+    <TooltipProvider>
+      <ChatPanel
+        busy={false}
+        formatTime={() => "10:00:00"}
+        messageViewportRef={null}
+        messages={[]}
+        onClearQueuedMessages={() => setQueuedMessages([])}
+        onEditQueuedMessage={handleEditQueuedMessage}
+        onPromptChange={setPrompt}
+        onPromptKeyDown={() => {}}
+        onRemoveQueuedMessage={handleRemoveQueuedMessage}
+        onReset={() => {}}
+        onSend={() => {}}
+        prompt={prompt}
+        promptRef={null}
+        queuedMessages={queuedMessages}
+        session={createSession()}
+      />
+    </TooltipProvider>
+  );
+}
+
 describe("ChatPanel", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -202,6 +250,65 @@ describe("ChatPanel", () => {
     expect(onPromptChange).toHaveBeenCalled();
     expect(onReset).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the queued strip above the composer with compact edit and delete actions", () => {
+    render(
+      <QueuedMessagesHarness
+        initialQueuedMessages={[
+          { id: "queued-1", content: "第一个待发送草稿" },
+        ]}
+      />,
+    );
+
+    const panel = screen.getByTestId("queued-messages-panel");
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    expect(panel.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(panel).getByText("当前回复结束后将按顺序发送")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "修改第 1 条待发送消息" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "删除第 1 条待发送消息" })).toBeInTheDocument();
+  });
+
+  it("moves a queued message back into the composer when edit is pressed", async () => {
+    render(
+      <QueuedMessagesHarness
+        initialQueuedMessages={[
+          { id: "queued-edit-1", content: "把这条待发送拿回来改一下" },
+        ]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "修改第 1 条待发送消息" }));
+
+    expect(textarea).toHaveValue("把这条待发送拿回来改一下");
+    await waitFor(() => {
+      expect(textarea).toHaveFocus();
+    });
+    expect(screen.queryByTestId("queued-messages-panel")).not.toBeInTheDocument();
+  });
+
+  it("removes a queued message when the trash icon is pressed", async () => {
+    render(
+      <QueuedMessagesHarness
+        initialQueuedMessages={[
+          { id: "queued-remove-1", content: "先删除这条" },
+          { id: "queued-remove-2", content: "保留这条" },
+        ]}
+      />,
+    );
+
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "删除第 1 条待发送消息" }));
+
+    const panel = screen.getByTestId("queued-messages-panel");
+    expect(within(panel).queryByText("先删除这条")).not.toBeInTheDocument();
+    expect(within(panel).getByText("保留这条")).toBeInTheDocument();
+    expect(within(panel).getByText("待发送 1")).toBeInTheDocument();
   });
 
   it("suppresses suffix-style IME replay text right after send", () => {

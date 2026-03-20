@@ -39,6 +39,8 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - The assistant bubble trailing waiting dots should stay inline after the generated text, visually following the final text run instead of sitting in a detached card corner.
 - Streaming assistant bubbles should show a trailing three-dot waiting indicator at the end of the card content until the turn settles. Use this as the inline progress affordance instead of an extra `Generating` label near the timestamp.
 - Small muted subtitles in cards, sheets, and section headers must keep enough line-height and vertical breathing room to avoid clipping Latin descenders such as `g`, `p`, and `y`.
+- Queued outgoing messages belong directly above the chat composer instead of above the scrollable transcript. The queue should use a compact strip layout with capped height, one-row items by default, and per-item pencil/trash actions for edit and delete.
+- The LalaClaw lobster easter egg may include `🐡`, `🐟`, and `🐠` aquatic companions with distinct spawn rates: `🐡` at `3%`, `🐟` at `8%`, and `🐠` at `2%`. Their routes should be near-horizontal straight lines with at most `20deg` vertical pitch, and their travel speed should stay at `50%` of the default lobster-walk speed so they visibly drift more slowly than the other companions. They should not perform extra random horizontal flips mid-route. When one approaches the left or right viewport edge in its current travel direction, it should flip horizontally immediately; when it approaches the top or bottom viewport edge, it should immediately reroute onto a new near-horizontal line that heads back away from that vertical edge. Their total on-screen lifetime should still follow the same appearance-duration rule as the other easter-egg walkers instead of extending themselves after each reroute.
 
 ## Section Containers
 
@@ -111,11 +113,14 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - When the recommended fix is longer than a short inline note, open it in a dedicated preview-style dialog instead of expanding the main card into a long wall of text.
 - Large environment subpanels such as install/update, config, and management should use a slightly larger gap between sibling sections than between each section title and its card body.
 - Top-level environment tools such as `OpenClaw config`, `OpenClaw management`, `OpenClaw install/update`, and `OpenClaw operation history` should use the same collapsible section pattern as lower-level diagnostic groups instead of staying permanently expanded.
+- If OpenClaw is installed but its first-run onboarding is still incomplete, the environment tab must surface an `OpenClaw onboarding` / `OpenClaw 初始化` section before structured config editing. Do not imply that the install step alone made the local runtime usable.
+- While onboarding is incomplete, prefer the onboarding section over the structured config section. The environment IA should guide operators through `install -> onboarding -> config/manage`, not expose advanced config first.
 
 ## Preview Overlays
 
 - File preview overlays with a secondary sidebar must keep the main preview column shrinkable with `min-w-0`-style constraints so long single-line content scrolls inside the preview surface instead of pushing the sidebar out of view.
 - In split preview overlays, the main preview column should also use a `basis-0`-style flex basis and full-width content wrappers so wide markdown tables, code blocks, or front matter sections cannot force the overall layout past the right edge.
+- When a preview includes the files sidebar, prefer an explicit two-column grid such as `minmax(0, 1fr) + fixed sidebar width` over loose flex sizing. The sidebar may never be visually overlapped or pushed out by markdown, code, front matter, or table content.
 - Code-like previews in light mode should use a true light syntax surface and token palette; avoid embedding a dark code block inside an otherwise light preview shell unless the user explicitly asks for it.
 
 ## Feedback Loop

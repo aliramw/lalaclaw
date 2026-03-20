@@ -248,6 +248,74 @@ describe("useChatController", () => {
     expect(result.current.activeQueuedMessages).toHaveLength(2);
   });
 
+  it("restores a queued entry for editing and preserves its attachments", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = {
+      current: [
+        { id: "msg-user-edit-1", role: "user", content: "排队草稿", timestamp: 2700 },
+        { id: "msg-keep", role: "assistant", content: "保留消息", timestamp: 2701 },
+      ],
+    };
+
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+    });
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: true,
+        i18n: createI18n(),
+        getMessagesForTab: () => messagesRef.current,
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    await act(async () => {
+      result.current.setQueuedMessages([
+        {
+          id: "queued-edit-1",
+          key: "command-center:main",
+          content: "排队草稿",
+          attachments: [{ id: "attachment-1", name: "notes.md" }],
+          timestamp: 2700,
+          userMessageId: "msg-user-edit-1",
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "gpt-5",
+          fastMode: false,
+          tabId: "agent:main",
+        },
+      ]);
+    });
+
+    let restoredEntry = null;
+    await act(async () => {
+      restoredEntry = result.current.editQueuedEntry("queued-edit-1");
+    });
+
+    expect(restoredEntry).toMatchObject({
+      id: "queued-edit-1",
+      content: "排队草稿",
+      attachments: [{ id: "attachment-1", name: "notes.md" }],
+    });
+    expect(result.current.activeQueuedMessages).toEqual([]);
+    expect(messagesRef.current).toEqual([
+      { id: "msg-keep", role: "assistant", content: "保留消息", timestamp: 2701 },
+    ]);
+  });
+
   it("includes the current user label in /api/chat requests", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();

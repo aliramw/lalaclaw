@@ -1093,6 +1093,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     activeQueuedMessages,
     clearQueuedEntries,
     composerAttachments,
+    editQueuedEntry,
     enqueueOrRunEntry,
     handleAddAttachments,
     handleRemoveAttachment,
@@ -2228,6 +2229,20 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const handleSend = sendCurrentPrompt;
   const handleRemoveQueuedMessage = removeQueuedEntry;
   const handleClearQueuedMessages = clearQueuedEntries;
+  const handleEditQueuedMessage = useCallback((entryId) => {
+    const restoredEntry = editQueuedEntry(entryId);
+    if (!restoredEntry) {
+      return false;
+    }
+
+    setPromptHistoryNavigation(null);
+    setComposerAttachments(Array.isArray(restoredEntry.attachments) ? restoredEntry.attachments : []);
+    setPromptForConversation(String(restoredEntry.content || ""), activeConversationKey, {
+      flushDrafts: true,
+      syncVisible: true,
+    });
+    return true;
+  }, [activeConversationKey, editQueuedEntry, setComposerAttachments, setPromptForConversation, setPromptHistoryNavigation]);
 
   const handleReset = async () => {
     const currentSessionUser = String(sessionStateRef.current.sessionUser || "").trim();
@@ -3053,6 +3068,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     handlePromptChange,
     handlePromptKeyDown,
     handleClearQueuedMessages,
+    handleEditQueuedMessage,
     handleRemoveAttachment,
     handleRemoveQueuedMessage,
     handleReset,

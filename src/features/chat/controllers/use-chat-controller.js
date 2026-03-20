@@ -1007,15 +1007,15 @@ export function useChatController({
     lastAcceptedEntryByTabRef.current = nextAcceptedEntries;
   }, [resolvedActiveTabId]);
 
-  const removeQueuedEntry = useCallback((entryId) => {
+  const consumeQueuedEntry = useCallback((entryId) => {
     const normalizedEntryId = String(entryId || "").trim();
     if (!normalizedEntryId) {
-      return false;
+      return null;
     }
 
     const queuedEntry = queuedMessages.find((item) => String(item?.id || "").trim() === normalizedEntryId);
     if (!queuedEntry) {
-      return false;
+      return null;
     }
 
     const targetTabId = queuedEntry.tabId || resolvedActiveTabId;
@@ -1027,8 +1027,12 @@ export function useChatController({
       tabId: targetTabId,
       nextMessages,
     });
-    return true;
+    return queuedEntry;
   }, [clearLastAcceptedEntryForTab, getMessagesForTab, persistOptimisticChatState, queuedMessages, resolvedActiveTabId, setMessagesForTab]);
+
+  const removeQueuedEntry = useCallback((entryId) => Boolean(consumeQueuedEntry(entryId)), [consumeQueuedEntry]);
+
+  const editQueuedEntry = useCallback((entryId) => consumeQueuedEntry(entryId), [consumeQueuedEntry]);
 
   const clearQueuedEntries = useCallback((tabId = resolvedActiveTabId) => {
     const targetTabId = String(tabId || resolvedActiveTabId || "").trim();
@@ -1133,6 +1137,7 @@ export function useChatController({
     composerAttachments,
     enqueueOrRunEntry,
     clearQueuedEntries,
+    editQueuedEntry,
     handleAddAttachments,
     handleRemoveAttachment,
     handleStop,

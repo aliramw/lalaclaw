@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Paperclip, RotateCcw, Send, Square, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui/badge";
@@ -1509,7 +1509,7 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
   );
 }
 
-function QueuedMessages({ items, onClearAll, onRemoveItem, textClassName }) {
+function QueuedMessages({ items, onClearAll, onEditItem, onRemoveItem, textClassName }) {
   const { messages } = useI18n();
 
   if (!items.length) {
@@ -1517,44 +1517,76 @@ function QueuedMessages({ items, onClearAll, onRemoveItem, textClassName }) {
   }
 
   return (
-    <div className="border-b border-border/70 bg-muted/20 px-3 py-2">
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <div className="flex min-w-0 items-center gap-2">
-          <Badge variant="default" className="h-5 px-1.5 py-0 text-[10px]">
+    <div data-testid="queued-messages-panel" className="rounded-xl border border-border/70 bg-background/85 px-2.5 py-2 shadow-xs">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+          <Badge variant="default" className="h-5 shrink-0 px-1.5 py-0 text-[10px]">
             {messages.chat.queuedCount(items.length)}
           </Badge>
-          <span>{messages.chat.queuedHint}</span>
+          <span className="truncate">{messages.chat.queuedHint}</span>
         </div>
         {onClearAll ? (
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center rounded-sm px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            aria-label={messages.chat.clearQueuedMessages}
-            onClick={() => onClearAll()}
-          >
-            {messages.chat.clearQueuedMessages}
-          </button>
-        ) : null}
-      </div>
-      <div className="grid gap-1.5">
-        {items.map((item, index) => (
-          <div key={item.id} className={cn("flex items-start gap-2 rounded-md border border-border/70 bg-background/80 px-2.5 py-1.5", textClassName)}>
-            <div className="min-w-0 flex-1">
-              <span className="mr-2 text-[10px] text-muted-foreground">#{index + 1}</span>
-              <span className="line-clamp-2 whitespace-pre-wrap">{item.content}</span>
-            </div>
-            {onRemoveItem ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
               <button
                 type="button"
-                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                aria-label={messages.chat.removeQueuedMessage(index + 1)}
-                onClick={() => onRemoveItem(item.id)}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={messages.chat.clearQueuedMessages}
+                onClick={() => onClearAll()}
               >
-                <X className="h-3.5 w-3.5" />
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
-            ) : null}
-          </div>
-        ))}
+            </TooltipTrigger>
+            <TooltipContent side="top">{messages.chat.clearQueuedMessages}</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
+      <div className="cc-scroll-region grid max-h-32 gap-1 overflow-y-auto pr-0.5">
+        {items.map((item, index) => {
+          const contentText = String(item?.content || "");
+          const displayText = contentText.trim() || (item?.attachments?.length ? messages.chat.queuedAttachmentOnly : "");
+
+          return (
+            <div key={item.id} className="flex items-center gap-2 rounded-lg border border-border/65 bg-muted/25 px-2 py-1.5">
+              <span className="shrink-0 text-[10px] font-medium text-muted-foreground/90">#{index + 1}</span>
+              <span className={cn("min-w-0 flex-1 truncate text-foreground/95", textClassName)} title={displayText || contentText}>
+                {displayText}
+              </span>
+              <div className="flex shrink-0 items-center gap-0.5">
+                {onEditItem ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        aria-label={messages.chat.editQueuedMessage(index + 1)}
+                        onClick={() => onEditItem(item)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{messages.chat.editQueuedMessage(index + 1)}</TooltipContent>
+                  </Tooltip>
+                ) : null}
+                {onRemoveItem ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        aria-label={messages.chat.removeQueuedMessage(index + 1)}
+                        onClick={() => onRemoveItem(item.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{messages.chat.removeQueuedMessage(index + 1)}</TooltipContent>
+                  </Tooltip>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2280,6 +2312,7 @@ export function ChatPanel({
   onComposerSendModeToggle,
   onReorderChatTab,
   onRemoveAttachment,
+  onEditQueuedMessage,
   onPromptChange,
   onPromptKeyDown,
   onClearQueuedMessages,
@@ -2535,6 +2568,44 @@ export function ChatPanel({
     onSend?.();
     clearComposerInput();
   }, [armComposerCompositionGuard, clearComposerInput, onSend]);
+  const focusComposerAtEnd = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const node = composerTextareaRef.current;
+      if (!node) {
+        return;
+      }
+      node.focus();
+      const selectionEnd = node.value.length;
+      node.setSelectionRange?.(selectionEnd, selectionEnd);
+    });
+  }, []);
+  const handleEditQueuedMessage = useCallback((item) => {
+    if (!item) {
+      return;
+    }
+
+    const nextPrompt = String(item.content || "");
+    disarmComposerCompositionGuard();
+    const handled = typeof onEditQueuedMessage === "function"
+      ? onEditQueuedMessage(item.id)
+      : (() => {
+      onPromptChange(nextPrompt);
+      onRemoveQueuedMessage?.(item.id);
+      return true;
+    })();
+
+    if (handled === false) {
+      return;
+    }
+
+    setComposerPrompt(nextPrompt);
+    setAgentMention(null);
+    setManualMention(null);
+    setMentionAnchor("composer");
+    setHighlightedAgentIndex(0);
+
+    focusComposerAtEnd();
+  }, [disarmComposerCompositionGuard, focusComposerAtEnd, onEditQueuedMessage, onPromptChange, onRemoveQueuedMessage]);
   const setComposerTextareaNode = useCallback((node) => {
     composerTextareaRef.current = node;
     if (typeof promptRef === "function") {
@@ -3647,13 +3718,7 @@ export function ChatPanel({
 
             {sessionOverview ? <div className="mt-2">{sessionOverview}</div> : null}
           </div>
-          <CardContent className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] p-0">
-            <QueuedMessages
-              items={queuedMessages || []}
-              onClearAll={onClearQueuedMessages}
-              onRemoveItem={onRemoveQueuedMessage}
-              textClassName={fontSizeStyles.queued}
-            />
+          <CardContent className="grid min-h-0 grid-rows-[minmax(0,1fr)] p-0">
             <div className="relative min-h-0">
               <ScrollArea
                 className="h-full"
@@ -3699,76 +3764,83 @@ export function ChatPanel({
                 event.target.value = "";
               }}
             />
+            <QueuedMessages
+              items={queuedMessages || []}
+              onClearAll={onClearQueuedMessages}
+              onEditItem={handleEditQueuedMessage}
+              onRemoveItem={onRemoveQueuedMessage}
+              textClassName={fontSizeStyles.queued}
+            />
             <div className="relative">
-            {activeMention && mentionOptions.length && mentionAnchor === "composer" ? (
-              <div ref={mentionMenuRef} data-testid="mention-menu-composer" className="absolute bottom-full left-0 z-20 mb-2 w-[min(28rem,calc(100vw-4rem))]">
-                <div className="max-h-[31rem] overflow-y-auto rounded-xl border border-border/70 bg-background/95 p-2 pr-3 shadow-lg backdrop-blur cc-scroll-region">
-                  {filteredMentionAgents.length ? (
-                    <>
-                      <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-muted-foreground">{i18n.chat.mentionAgents}</div>
-                      <div className="grid gap-0.5">
-                        {filteredMentionAgents.map((agent) => {
-                          const optionIndex = mentionOptions.findIndex((option) => option.id === `agent:${agent}`);
-                          return (
-                            <button
-                              key={agent}
-                              type="button"
-                              className={cn(
-                                "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
-                                optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
-                              )}
-                              onMouseDown={(event) => handleMentionPointerSelect(event, agent)}
-                              onClick={(event) => handleMentionClick(event, agent)}
-                            >
-                              <span className="font-medium">{agent}</span>
-                              <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionAgentType}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : null}
-                  {filteredMentionSkills.length ? (
-                    <>
-                      <div className={cn("px-1 text-[10px] font-semibold uppercase text-muted-foreground", filteredMentionAgents.length ? "mb-1 mt-2" : "mb-1")}>
-                        {i18n.chat.mentionSkills}
-                      </div>
-                      <div className="grid gap-0.5">
-                        {filteredMentionSkills.map((skill) => {
-                          const optionIndex = mentionOptions.findIndex((option) => option.id === `skill:${skill.name}`);
-                          return (
-                            <button
-                              key={skill.name}
-                              type="button"
-                              className={cn(
-                                "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
-                                optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
-                              )}
-                              onMouseDown={(event) => handleMentionPointerSelect(event, skill.name)}
-                              onClick={(event) => handleMentionClick(event, skill.name)}
-                            >
-                              <div className="min-w-0">
-                                <div className="truncate font-medium">{skill.name}</div>
-                                {skill.ownerAgentId ? <div className="truncate text-[11px] text-muted-foreground">{skill.ownerAgentId}</div> : null}
-                              </div>
-                              <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionSkillType}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : null}
+              {activeMention && mentionOptions.length && mentionAnchor === "composer" ? (
+                <div ref={mentionMenuRef} data-testid="mention-menu-composer" className="absolute bottom-full left-0 z-20 mb-2 w-[min(28rem,calc(100vw-4rem))]">
+                  <div className="max-h-[31rem] overflow-y-auto rounded-xl border border-border/70 bg-background/95 p-2 pr-3 shadow-lg backdrop-blur cc-scroll-region">
+                    {filteredMentionAgents.length ? (
+                      <>
+                        <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-muted-foreground">{i18n.chat.mentionAgents}</div>
+                        <div className="grid gap-0.5">
+                          {filteredMentionAgents.map((agent) => {
+                            const optionIndex = mentionOptions.findIndex((option) => option.id === `agent:${agent}`);
+                            return (
+                              <button
+                                key={agent}
+                                type="button"
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
+                                  optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
+                                )}
+                                onMouseDown={(event) => handleMentionPointerSelect(event, agent)}
+                                onClick={(event) => handleMentionClick(event, agent)}
+                              >
+                                <span className="font-medium">{agent}</span>
+                                <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionAgentType}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : null}
+                    {filteredMentionSkills.length ? (
+                      <>
+                        <div className={cn("px-1 text-[10px] font-semibold uppercase text-muted-foreground", filteredMentionAgents.length ? "mb-1 mt-2" : "mb-1")}>
+                          {i18n.chat.mentionSkills}
+                        </div>
+                        <div className="grid gap-0.5">
+                          {filteredMentionSkills.map((skill) => {
+                            const optionIndex = mentionOptions.findIndex((option) => option.id === `skill:${skill.name}`);
+                            return (
+                              <button
+                                key={skill.name}
+                                type="button"
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
+                                  optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
+                                )}
+                                onMouseDown={(event) => handleMentionPointerSelect(event, skill.name)}
+                                onClick={(event) => handleMentionClick(event, skill.name)}
+                              >
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium">{skill.name}</div>
+                                  {skill.ownerAgentId ? <div className="truncate text-[11px] text-muted-foreground">{skill.ownerAgentId}</div> : null}
+                                </div>
+                                <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionSkillType}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-            <div
-              className={cn(
-                "overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
-                resolvedTheme === "dark"
-                  ? "border-[#4d88c7] ring-2 ring-[#4d88c7]/20 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
-                  : "border-[#1677eb] ring-2 ring-[#1677eb]/35 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
-              )}
-            >
+              ) : null}
+              <div
+                className={cn(
+                  "overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
+                  resolvedTheme === "dark"
+                    ? "border-[#4d88c7] ring-2 ring-[#4d88c7]/20 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
+                    : "border-[#1677eb] ring-2 ring-[#1677eb]/35 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
+                )}
+              >
               {composerAttachments?.length ? (
                 <>
                   <ComposerAttachments
