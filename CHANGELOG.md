@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Added an in-app OpenClaw onboarding flow that keeps newly installed OpenClaw instances in an explicit initialization state until onboarding completes, with support for official `quickstart`, `advanced`, and `manual` flows
+- Added capability-aware OpenClaw onboarding forms, support-option recheck controls, recent support-detection result reporting, and an isolated onboarding smoke command plus CI job/artifact for end-to-end validation
+
+### Changed
+
+- Expanded the Inspector environment panel so the LalaClaw section surfaces clearer runtime context such as frontend/backend addresses and onboarding support metadata instead of only showing sparse version details
+- Refined OpenClaw environment copy across locales, including clearer naming for gateway/runtime states and the support-option recheck workflow
+
+### Fixed
+
+- Fixed several Inspector environment regressions around initialization ordering, missing locale metadata, and action visibility while onboarding state is still loading
+- Fixed chat follow-bottom recovery so manual return-to-bottom and refresh restoration resume sticky bottom behavior during ongoing assistant generation
+- Fixed the test baseline so `npm test` excludes Playwright e2e files from Vitest and the current session overview assertions match the shipped runtime tuning fields
+
 ## [2026.3.20-3]
 
 ### Changed
