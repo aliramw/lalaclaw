@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2026.3.21-1]
 
 ### Added
 
@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Expanded the Inspector environment panel so the LalaClaw section surfaces clearer runtime context such as frontend/backend addresses and onboarding support metadata instead of only showing sparse version details
 - Refined OpenClaw environment copy across locales, including clearer naming for gateway/runtime states and the support-option recheck workflow
+- Updated README and localized quick-start / README version examples to `2026.3.21-1`
 
 ### Fixed
 

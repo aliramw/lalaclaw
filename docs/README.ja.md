@@ -126,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-特定バージョン、たとえば `2026.3.20-3` に切り替える場合:
+特定バージョン、たとえば `2026.3.21-1` に切り替える場合:
 
 ```bash
-npm install -g lalaclaw@2026.3.20-3
+npm install -g lalaclaw@2026.3.21-1
 lalaclaw init
 ```
 
@@ -143,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-特定バージョン、たとえば `2026.3.20-3` に切り替える場合:
+特定バージョン、たとえば `2026.3.21-1` に切り替える場合:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.20-3
+git checkout 2026.3.21-1
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -194,7 +194,7 @@ PR を開く前に:
 LalaClaw は npm 互換のカレンダーバージョニングを使います。
 
 - バージョン変更時は [CHANGELOG.md](../CHANGELOG.md) を更新します
-- 同日の複数リリースは `YYYY.M.D-N` 形式を使います。例: `2026.3.20-3`
+- 同日の複数リリースは `YYYY.M.D-N` 形式を使います。例: `2026.3.21-1`
 - 破壊的変更はリリースノートと移行向けドキュメントで明示してください
 - 開発時は [`.nvmrc`](../.nvmrc) の Node.js `22` を推奨します。公開済み npm パッケージは `^20.19.0 || ^22.12.0 || >=24.0.0` をサポートします
 
