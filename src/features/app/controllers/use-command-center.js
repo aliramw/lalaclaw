@@ -45,6 +45,7 @@ import {
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
 import { apiFetch } from "@/lib/api-client";
+import { pushCcDebugEvent } from "@/lib/cc-debug-events";
 import { useI18n } from "@/lib/i18n";
 
 function areJsonEqual(left, right) {
@@ -61,6 +62,21 @@ function areJsonEqual(left, right) {
 
 export function shouldReuseTabState(previous, next) {
   return areJsonEqual(previous, next);
+}
+
+export function areEquivalentChatScrollState(previous, next) {
+  if (previous === next) {
+    return true;
+  }
+  if (!previous || !next) {
+    return false;
+  }
+
+  return Number(previous.scrollTop || 0) === Number(next.scrollTop || 0)
+    && Boolean(previous.atBottom) === Boolean(next.atBottom)
+    && String(previous.anchorNodeId || "") === String(next.anchorNodeId || "")
+    && String(previous.anchorMessageId || "") === String(next.anchorMessageId || "")
+    && Number(previous.anchorOffset || 0) === Number(next.anchorOffset || 0);
 }
 
 function createTabMeta(tab, overrides = {}) {
@@ -128,6 +144,11 @@ function hashSessionUser(value = "") {
   }
   return Math.abs(hash).toString(36) || "session";
 }
+
+const chatScrollPersistenceDebounceMs = 180;
+const chatScrollBottomThresholdPx = 48;
+const viewportAnchorProbeInsetPx = 24;
+const viewportAnchorProbeTopOffsetPx = 8;
 
 export function buildChatTabTitle(agentId = "main", sessionUser = "", options = {}) {
   const normalizedAgentId = String(agentId || "main").trim() || "main";
@@ -208,14 +229,27 @@ export function isChatTabBusy({
   sessionStatus = "",
   busyByTabId = {},
   messagesByTabId = {},
+  pendingChatTurns = {},
 } = {}) {
-  if (Boolean(busyByTabId?.[tabId]) || hasActiveAssistantReply(messagesByTabId?.[tabId] || [])) {
+  const normalizedTabId = String(tabId || "").trim();
+  const hasPendingTurn = Object.values(pendingChatTurns || {}).some((entry) => String(entry?.tabId || "").trim() === normalizedTabId);
+  if (hasPendingTurn) {
     return true;
   }
 
-  return tabId === activeChatTabId
+  if (hasActiveAssistantReply(messagesByTabId?.[tabId] || [])) {
+    return true;
+  }
+
+  if (
+    tabId === activeChatTabId
     && isImSessionUser(sessionUser)
-    && ["running", "dispatching"].includes(normalizeStatusKey(sessionStatus));
+    && ["running", "dispatching"].includes(normalizeStatusKey(sessionStatus))
+  ) {
+    return true;
+  }
+
+  return Boolean(busyByTabId?.[tabId]);
 }
 
 function normalizeRuntimeIdentityValue(value = "") {
@@ -319,24 +353,126 @@ function buildInitialMessagesByTabId(stored, activeChatTabId) {
   };
 }
 
-function resolveViewportAnchorNode(viewport, selector, viewportRect) {
+function resolveViewportAnchorCandidateFromPoint(viewport, selector, viewportRect) {
   if (!viewport || !selector) {
     return null;
   }
 
-  const candidates = [...viewport.querySelectorAll(selector)];
-  const visibleCandidates = candidates
-    .map((node) => ({ node, rect: node.getBoundingClientRect() }))
-    .filter(({ rect }) => rect.bottom > viewportRect.top + 1 && rect.top < viewportRect.bottom - 1)
-    .sort((left, right) => {
-      const topDelta = Math.abs(left.rect.top - viewportRect.top) - Math.abs(right.rect.top - viewportRect.top);
-      if (topDelta !== 0) {
-        return topDelta;
-      }
-      return left.rect.top - right.rect.top;
-    });
+  const ownerDocument = viewport.ownerDocument || document;
+  const elementsFromPoint = ownerDocument?.elementsFromPoint?.bind(ownerDocument);
+  if (typeof elementsFromPoint !== "function") {
+    return null;
+  }
 
-  return visibleCandidates[0]?.node || null;
+  const viewportTop = Number(viewportRect?.top) || 0;
+  const viewportLeft = Number(viewportRect?.left) || 0;
+  const viewportRight = Number.isFinite(Number(viewportRect?.right))
+    ? Number(viewportRect.right)
+    : viewportLeft + (Number(viewportRect?.width) || 0);
+  const viewportBottom = Number.isFinite(Number(viewportRect?.bottom))
+    ? Number(viewportRect.bottom)
+    : viewportTop + (Number(viewportRect?.height) || 0);
+  const viewportWidth = Math.max(0, viewportRight - viewportLeft);
+  const probeInset = Math.min(viewportAnchorProbeInsetPx, viewportWidth / 2 || 0);
+  const probeY = Math.max(
+    viewportTop + 1,
+    Math.min(viewportBottom - 2, viewportTop + viewportAnchorProbeTopOffsetPx),
+  );
+  const probeXs = [...new Set(
+    [
+      viewportLeft + viewportWidth / 2,
+      viewportLeft + probeInset,
+      viewportRight - probeInset,
+    ]
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value)),
+  )];
+
+  for (const probeX of probeXs) {
+    const stack = elementsFromPoint(probeX, probeY) || [];
+    for (const node of stack) {
+      if (!(node instanceof ownerDocument.defaultView.Element) || !viewport.contains(node)) {
+        continue;
+      }
+
+      const match = node.matches?.(selector) ? node : node.closest?.(selector);
+      if (!match || !viewport.contains(match)) {
+        continue;
+      }
+
+      const rect = match.getBoundingClientRect();
+      if (rect.bottom <= viewportTop + 1 || rect.top >= viewportBottom - 1) {
+        continue;
+      }
+
+      return { node: match, rect };
+    }
+  }
+
+  return null;
+}
+
+export function resolveViewportAnchorCandidate(viewport, selector, viewportRect) {
+  if (!viewport || !selector) {
+    return null;
+  }
+
+  const probedCandidate = resolveViewportAnchorCandidateFromPoint(viewport, selector, viewportRect);
+  if (probedCandidate) {
+    return probedCandidate;
+  }
+
+  const viewportTop = Number(viewportRect?.top) || 0;
+  const viewportBottom = Number.isFinite(Number(viewportRect?.bottom))
+    ? Number(viewportRect.bottom)
+    : viewportTop + (Number(viewportRect?.height) || 0);
+
+  for (const node of viewport.querySelectorAll(selector)) {
+    const rect = node.getBoundingClientRect();
+    if (rect.bottom <= viewportTop + 1) {
+      continue;
+    }
+    if (rect.top >= viewportBottom - 1) {
+      break;
+    }
+    return { node, rect };
+  }
+
+  return null;
+}
+
+export function buildChatScrollStateSnapshot({ viewport = null, scrollTop = 0 } = {}) {
+  const normalizedTop = Math.max(0, Math.round(Number(scrollTop) || 0));
+  const distanceFromBottom = viewport
+    ? Math.max(0, viewport.scrollHeight - normalizedTop - viewport.clientHeight)
+    : 0;
+  const atBottom = distanceFromBottom <= chatScrollBottomThresholdPx;
+  const nextState = {
+    scrollTop: normalizedTop,
+    ...(atBottom ? { atBottom: true } : {}),
+  };
+
+  if (!viewport || atBottom) {
+    return nextState;
+  }
+
+  const viewportRect = viewport.getBoundingClientRect?.() || { top: 0, left: 0, width: 0, height: 0 };
+  const viewportTop = Number(viewportRect.top) || 0;
+  const blockAnchorCandidate = resolveViewportAnchorCandidate(viewport, "[data-scroll-anchor-id]", viewportRect);
+  const messageAnchorCandidate = resolveViewportAnchorCandidate(viewport, "[data-message-id]", viewportRect);
+  const anchorNodeId = String(blockAnchorCandidate?.node?.getAttribute?.("data-scroll-anchor-id") || "").trim();
+  const anchorMessageId = String(messageAnchorCandidate?.node?.getAttribute?.("data-message-id") || "").trim();
+  const anchorBasisCandidate = blockAnchorCandidate || messageAnchorCandidate;
+  const anchorOffset = anchorBasisCandidate
+    ? Math.round((anchorBasisCandidate.rect?.top || 0) - viewportTop)
+    : 0;
+
+  return {
+    ...nextState,
+    ...(anchorNodeId ? { anchorNodeId } : {}),
+    ...(anchorMessageId ? { anchorMessageId, anchorOffset } : {}),
+    ...(anchorNodeId ? { anchorOffset } : {}),
+  };
 }
 
 export function getLatestUserMessageKey(messages = []) {
@@ -440,7 +576,34 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     [initialActiveChatTabId, stored],
   );
   const storedPendingChatTurns = useMemo(
-    () => pruneCompletedPendingChatTurns(rawStoredPendingChatTurns, initialMessagesByTabId, initialTabMetaById),
+    () => {
+      const pruned = pruneCompletedPendingChatTurns(rawStoredPendingChatTurns, initialMessagesByTabId, initialTabMetaById);
+      const tabIdByConversationKey = Object.fromEntries(
+        Object.entries(initialTabMetaById || {}).map(([tabId, meta]) => [
+          createConversationKey(meta?.sessionUser || defaultSessionUser, meta?.agentId || "main"),
+          {
+            tabId,
+            agentId: meta?.agentId || "main",
+            sessionUser: meta?.sessionUser || defaultSessionUser,
+          },
+        ]),
+      );
+
+      return Object.fromEntries(
+        Object.entries(pruned || {}).map(([conversationKey, entry]) => {
+          const fallbackIdentity = tabIdByConversationKey[conversationKey] || null;
+          return [
+            conversationKey,
+            {
+              ...entry,
+              ...(fallbackIdentity?.tabId && !String(entry?.tabId || "").trim() ? { tabId: fallbackIdentity.tabId } : {}),
+              ...(fallbackIdentity?.agentId && !String(entry?.agentId || "").trim() ? { agentId: fallbackIdentity.agentId } : {}),
+              ...(fallbackIdentity?.sessionUser && !String(entry?.sessionUser || "").trim() ? { sessionUser: fallbackIdentity.sessionUser } : {}),
+            },
+          ];
+        }),
+      );
+    },
     [initialMessagesByTabId, initialTabMetaById, rawStoredPendingChatTurns],
   );
   const initialHydratedMessagesByTabId = useMemo(
@@ -458,7 +621,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
               baseMessages,
               pendingEntry,
               i18n.chat.thinkingPlaceholder,
-              [],
+              baseMessages,
             ),
           ];
         }),
@@ -488,11 +651,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           const meta = initialTabMetaById[tab.id] || createTabMeta(tab);
           const conversationKey = createConversationKey(meta.sessionUser, meta.agentId);
           const pendingEntry = storedPendingChatTurns[conversationKey];
-          const localMessages = initialHydratedMessagesByTabId[tab.id] || [];
-          return [tab.id, Boolean(pendingEntry) && !hasAuthoritativePendingAssistantReply(localMessages, pendingEntry)];
+          return [tab.id, Boolean(pendingEntry)];
         }),
       ),
-    [initialChatTabs, initialHydratedMessagesByTabId, initialTabMetaById, storedPendingChatTurns],
+    [initialChatTabs, initialTabMetaById, storedPendingChatTurns],
   );
   const initialSettledMessageKeysByTabId = useMemo(
     () =>
@@ -515,7 +677,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const [runtimeCacheByTabId, setRuntimeCacheByTabId] = useState({});
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
   const [promptDraftsByConversation, setPromptDraftsByConversation] = useState(storedPromptDrafts);
-  const [pendingChatTurns, setPendingChatTurns] = useState(storedPendingChatTurns);
+  const [pendingChatTurns, setPendingChatTurnsState] = useState(storedPendingChatTurns);
   const [switchingAgentOverlay, setSwitchingAgentOverlay] = useState(null);
   const [switchingModelOverlay, setSwitchingModelOverlay] = useState(null);
   const [modelSwitchNotice, setModelSwitchNotice] = useState(null);
@@ -577,8 +739,19 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     agentId: initialActiveMeta.agentId,
   });
   const chatScrollTopByConversationRef = useRef(storedChatScrollTops);
+  const chatScrollPersistenceTimerRef = useRef(0);
   const [restoredChatScrollRevision, setRestoredChatScrollRevision] = useState(0);
   const localizedFormatTime = useMemo(() => (timestamp) => formatTime(timestamp, intlLocale), [intlLocale]);
+  const setPendingChatTurns = useCallback((value) => {
+    setPendingChatTurnsState((current) => {
+      const next = typeof value === "function" ? value(current) : value;
+      pendingChatTurnsRef.current = next;
+      pushCcDebugEvent("command-center.pending", {
+        keys: Object.keys(next || {}),
+      });
+      return current === next ? current : next;
+    });
+  }, []);
 
   const persistOptimisticChatState = useCallback(({
     clearPendingKey = "",
@@ -663,6 +836,19 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       persistedAt: Date.now(),
     });
   }, []);
+
+  const flushPersistedChatScrollTops = useCallback(() => {
+    window.clearTimeout(chatScrollPersistenceTimerRef.current);
+    chatScrollPersistenceTimerRef.current = 0;
+    persistChatScrollTops(chatScrollTopByConversationRef.current);
+  }, []);
+
+  const schedulePersistedChatScrollTops = useCallback(() => {
+    window.clearTimeout(chatScrollPersistenceTimerRef.current);
+    chatScrollPersistenceTimerRef.current = window.setTimeout(() => {
+      flushPersistedChatScrollTops();
+    }, chatScrollPersistenceDebounceMs);
+  }, [flushPersistedChatScrollTops]);
 
   const activeChatTab = useMemo(() => {
     if (activeChatTabId) {
@@ -759,6 +945,12 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       if (previous === next) {
         return current;
       }
+
+      pushCcDebugEvent("command-center.busy", {
+        tabId,
+        previous,
+        next,
+      });
 
       const updated = {
         ...current,
@@ -1059,38 +1251,15 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
 
   const persistConversationScrollTop = useCallback((conversationKey, scrollTop) => {
     const normalizedKey = String(conversationKey || "").trim();
-    const normalizedTop = Math.max(0, Math.round(Number(scrollTop) || 0));
     if (!normalizedKey) {
       return;
     }
 
     const viewport = messageViewportRef.current;
-    const viewportRect = viewport?.getBoundingClientRect?.() || { top: 0, left: 0, width: 0, height: 0 };
-    const viewportTop = viewportRect.top || 0;
-    const blockAnchorNode = viewport
-      ? resolveViewportAnchorNode(viewport, "[data-scroll-anchor-id]", viewportRect)
-      : null;
-    const messageAnchorNode = viewport
-      ? resolveViewportAnchorNode(viewport, "[data-message-id]", viewportRect)
-      : null;
-    const anchorNodeId = String(blockAnchorNode?.getAttribute?.("data-scroll-anchor-id") || "").trim();
-    const anchorMessageId = String(messageAnchorNode?.getAttribute?.("data-message-id") || "").trim();
-    const anchorBasisNode = blockAnchorNode || messageAnchorNode;
-    const anchorOffset = anchorBasisNode ? Math.round(anchorBasisNode.getBoundingClientRect().top - viewportTop) : 0;
-    const distanceFromBottom = viewport
-      ? Math.max(0, viewport.scrollHeight - normalizedTop - viewport.clientHeight)
-      : 0;
-    const atBottom = distanceFromBottom <= 48;
-    const nextState = {
-      scrollTop: normalizedTop,
-      ...(atBottom ? { atBottom: true } : {}),
-      ...(anchorNodeId ? { anchorNodeId } : {}),
-      ...(anchorMessageId ? { anchorMessageId, anchorOffset } : {}),
-      ...(anchorNodeId ? { anchorOffset } : {}),
-    };
+    const nextState = buildChatScrollStateSnapshot({ viewport, scrollTop });
 
     const current = chatScrollTopByConversationRef.current;
-    if (JSON.stringify(current[normalizedKey] || null) === JSON.stringify(nextState)) {
+    if (areEquivalentChatScrollState(current[normalizedKey] || null, nextState)) {
       return;
     }
 
@@ -1099,8 +1268,8 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       [normalizedKey]: nextState,
     };
     chatScrollTopByConversationRef.current = next;
-    persistChatScrollTops(next);
-  }, []);
+    schedulePersistedChatScrollTops();
+  }, [schedulePersistedChatScrollTops]);
 
   const flushVisibleConversationScrollTop = useCallback(() => {
     const viewport = messageViewportRef.current;
@@ -1322,7 +1491,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       return;
     }
 
-    if (activePendingChat && hasAuthoritativePendingAssistantReply(messages, activePendingChat)) {
+    if (!activePendingWasRestored && activePendingChat && hasAuthoritativePendingAssistantReply(messages, activePendingChat)) {
       setPendingChatTurns((current) => {
         if (!current[activeConversationKey]) {
           return current;
@@ -1338,7 +1507,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     if (!activePendingChat && !messages.some((message) => message?.pending || message?.streaming) && busyByTabIdRef.current[activeChatTab.id]) {
       setBusyForTab(activeChatTab.id, false);
     }
-  }, [activeChatTab, activeConversationKey, activePendingChat, messages, setBusyForTab, setPendingChatTurns]);
+  }, [activeChatTab, activeConversationKey, activePendingChat, activePendingWasRestored, messages, setBusyForTab, setPendingChatTurns]);
 
   useEffect(() => {
     if (!activeChatTab) {
@@ -1510,6 +1679,17 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           || snapshotSession.fastMode === "开启"
           || snapshotSession.fastMode === true
           || payload.fastMode === true;
+        const shouldApplySnapshot = shouldApplyRuntimeSnapshotToTab({
+          currentAgentId: resolveAgentIdFromTabId(tabId) || tab?.agentId || agentId,
+          currentSessionUser: tab?.sessionUser || sessionUser,
+          requestedAgentId: agentId,
+          requestedSessionUser: sessionUser,
+          resolvedSessionUser,
+        });
+
+        if (!shouldApplySnapshot) {
+          return;
+        }
 
         setRuntimeCacheByTabId((current) => {
           const previous = current[tabId] || {};
@@ -1593,7 +1773,17 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           });
         }
 
-        setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching");
+        const currentMessages = messagesByTabIdRef.current[tabId] || [];
+        const nextConversationKey = createConversationKey(
+          resolvedSessionUser || sessionUser,
+          snapshotSession.agentId || agentId,
+        );
+        const hasTrackedPendingTurn = Boolean(
+          pendingChatTurnsRef.current[nextConversationKey]
+          || derivePendingEntryFromLocalMessages(currentMessages),
+        );
+        const hasLocalActiveAssistantReply = currentMessages.some((message) => message?.role === "assistant" && (message?.pending || message?.streaming));
+        setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching" || hasTrackedPendingTurn || hasLocalActiveAssistantReply);
       } catch (error) {
         if (controller.signal.aborted || error?.name === "AbortError") {
           return;
@@ -2010,18 +2200,30 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     const flushConversationScrollTop = () => {
       const viewport = messageViewportRef.current;
       if (!viewport) {
+        flushPersistedChatScrollTops();
         return;
       }
 
       persistConversationScrollTop(activeConversationKey, viewport.scrollTop);
+      flushPersistedChatScrollTops();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushConversationScrollTop();
+      }
     };
 
     window.addEventListener("pagehide", flushConversationScrollTop);
+    window.addEventListener("beforeunload", flushConversationScrollTop);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       flushConversationScrollTop();
       window.removeEventListener("pagehide", flushConversationScrollTop);
+      window.removeEventListener("beforeunload", flushConversationScrollTop);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [activeConversationKey, persistConversationScrollTop]);
+  }, [activeConversationKey, flushPersistedChatScrollTops, persistConversationScrollTop]);
 
   const handleSend = sendCurrentPrompt;
   const handleRemoveQueuedMessage = removeQueuedEntry;
@@ -2036,6 +2238,44 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     const nextModel = sessionStateRef.current.model;
     const previousConversationKey = createConversationKey(currentSessionUser, nextAgentId);
     const activeTabId = activeChatTabIdRef.current;
+    const nextActiveTabId = activeTabId && isImSessionUser(currentSessionUser)
+      ? createSessionScopedTabId(nextAgentId, nextSessionUser)
+      : activeTabId;
+    const nextChatTabs = activeTabId
+      ? chatTabsRef.current.map((tab) => (
+          tab.id === activeTabId
+            ? { ...tab, id: nextActiveTabId || tab.id, sessionUser: nextSessionUser }
+            : tab
+        ))
+      : chatTabsRef.current;
+    const previousTabMeta = activeTabId
+      ? (tabMetaByIdRef.current[activeTabId] || createTabMeta(chatTabsRef.current.find((tab) => tab.id === activeTabId) || {
+          id: nextActiveTabId || activeTabId,
+          agentId: nextAgentId,
+          sessionUser: nextSessionUser,
+        }))
+      : null;
+    const nextTabMetaById = activeTabId && nextActiveTabId
+      ? {
+          ...Object.fromEntries(
+            Object.entries(tabMetaByIdRef.current).filter(([tabId]) => tabId !== activeTabId),
+          ),
+          [nextActiveTabId]: {
+            ...previousTabMeta,
+            agentId: nextAgentId,
+            sessionUser: nextSessionUser,
+            model: nextModel,
+          },
+        }
+      : tabMetaByIdRef.current;
+    const nextMessagesByTabId = nextActiveTabId
+      ? {
+          ...Object.fromEntries(
+            Object.entries(messagesByTabIdRef.current).filter(([tabId]) => tabId !== activeTabId),
+          ),
+          [nextActiveTabId]: [],
+        }
+      : messagesByTabIdRef.current;
 
     setMessagesSynced([]);
     setQueuedMessages((current) => current.filter((item) => item.tabId !== activeChatTabIdRef.current));
@@ -2049,7 +2289,79 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       return next;
     });
     clearSnapshotData();
-    if (activeTabId) {
+    if (activeTabId && nextActiveTabId && nextActiveTabId !== activeTabId) {
+      setChatTabs((current) => {
+        const updated = current.map((tab) => (
+          tab.id === activeTabId
+            ? { ...tab, id: nextActiveTabId, sessionUser: nextSessionUser }
+            : tab
+        ));
+        chatTabsRef.current = updated;
+        return updated;
+      });
+      setTabMetaById((current) => {
+        const next = {
+          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
+          [nextActiveTabId]: {
+            ...(current[activeTabId] || previousTabMeta || {}),
+            agentId: nextAgentId,
+            sessionUser: nextSessionUser,
+            model: nextModel,
+          },
+        };
+        tabMetaByIdRef.current = next;
+        return next;
+      });
+      setMessagesByTabId((current) => {
+        const next = {
+          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
+          [nextActiveTabId]: [],
+        };
+        messagesByTabIdRef.current = next;
+        return next;
+      });
+      setSessionByTabId((current) => {
+        const currentSession = current[activeTabId];
+        const next = {
+          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
+          [nextActiveTabId]: currentSession
+            ? {
+                ...currentSession,
+                agentId: nextAgentId,
+                selectedAgentId: nextAgentId,
+                sessionUser: nextSessionUser,
+                model: nextModel || currentSession.model,
+                selectedModel: nextModel || currentSession.selectedModel,
+              }
+            : createSessionForTab(i18n, { id: nextActiveTabId, agentId: nextAgentId, sessionUser: nextSessionUser }, {
+                agentId: nextAgentId,
+                sessionUser: nextSessionUser,
+                model: nextModel,
+                fastMode: Boolean(sessionStateRef.current.fastMode),
+                thinkMode: sessionStateRef.current.thinkMode || "off",
+              }),
+        };
+        sessionByTabIdRef.current = next;
+        return next;
+      });
+      setBusyByTabId((current) => {
+        const next = {
+          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
+          [nextActiveTabId]: false,
+        };
+        busyByTabIdRef.current = next;
+        return next;
+      });
+      setRuntimeCacheByTabId((current) => {
+        const next = { ...current };
+        delete next[activeTabId];
+        delete next[nextActiveTabId];
+        runtimeCacheByTabIdRef.current = next;
+        return next;
+      });
+      activeChatTabIdRef.current = nextActiveTabId;
+      setActiveChatTabId(nextActiveTabId);
+    } else if (activeTabId) {
       setRuntimeCacheByTabId((current) => {
         if (!current[activeTabId]) {
           return current;
@@ -2066,7 +2378,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       agentId: nextAgentId,
       model: nextModel,
     };
-    if (activeTabId) {
+    if (activeTabId && nextActiveTabId === activeTabId) {
       updateTabIdentity(activeTabId, { sessionUser: nextSessionUser });
       updateTabMeta(activeTabId, {
         agentId: nextAgentId,
@@ -2100,6 +2412,27 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     );
     setPromptForConversation("");
     focusPrompt();
+    persistUiStateSnapshot({
+      activeChatTabId: nextActiveTabId || "",
+      activeTab: activeTabRef.current,
+      agentId: nextAgentId,
+      chatFontSize: chatFontSizeRef.current,
+      chatTabs: nextChatTabs,
+      composerSendMode: composerSendModeRef.current,
+      dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
+      fastMode: Boolean(sessionStateRef.current.fastMode),
+      inspectorPanelWidth: inspectorPanelWidthRef.current,
+      messages: nextActiveTabId ? [] : messagesRef.current,
+      messagesByTabId: nextMessagesByTabId,
+      model: nextModel,
+      pendingChatTurns: Object.fromEntries(
+        Object.entries(pendingChatTurnsRef.current || {}).filter(([key]) => key !== previousConversationKey),
+      ),
+      promptDraftsByConversation: promptDraftsByConversationRef.current,
+      sessionUser: nextSessionUser,
+      tabMetaById: nextTabMetaById,
+      thinkMode: sessionStateRef.current.thinkMode || "off",
+    });
     await loadRuntime(nextSessionUser, {
       agentId: nextAgentId,
     }).catch(() => {});
@@ -2662,10 +2995,23 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
           sessionStatus: session.status,
           busyByTabId,
           messagesByTabId,
+          pendingChatTurns,
         }),
         unreadCount: Number(unreadCountByTabId[tab.id] || 0),
       })),
-    [activeChatTabId, busyByTabId, chatTabs, intlLocale, messagesByTabId, session.status, unreadCountByTabId],
+    [activeChatTabId, busyByTabId, chatTabs, intlLocale, messagesByTabId, pendingChatTurns, session.status, unreadCountByTabId],
+  );
+  const activeUiBusy = useMemo(
+    () => isChatTabBusy({
+      tabId: activeChatTabId,
+      sessionUser: activeChatTab?.sessionUser,
+      activeChatTabId,
+      sessionStatus: session.status,
+      busyByTabId,
+      messagesByTabId,
+      pendingChatTurns,
+    }),
+    [activeChatTab?.sessionUser, activeChatTabId, busyByTabId, messagesByTabId, pendingChatTurns, session.status],
   );
   const handleRefreshEnvironment = useCallback(async () => {
     await loadRuntime(sessionStateRef.current.sessionUser, {
@@ -2680,7 +3026,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     artifacts,
     availableAgents,
     availableModels,
-    busy,
+    busy: activeUiBusy,
     chatFontSize: activeChatFontSize,
     chatTabs: visibleChatTabs,
     composerSendMode,

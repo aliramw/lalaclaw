@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 
@@ -13,7 +13,7 @@ export function useFilePreview() {
   const [imagePreview, setImagePreview] = useState(null);
   const previewRequestRef = useRef(0);
 
-  const resolvePreviewErrorMessage = (payload = {}, fallbackMessage = "") => {
+  const resolvePreviewErrorMessage = useCallback((payload = {}, fallbackMessage = "") => {
     if (payload?.errorCode === "office_preview_requires_libreoffice") {
       return payload.installCommand
         ? messages.inspector.previewErrors.officeRequiresLibreOfficeWithCommand(payload.installCommand)
@@ -33,9 +33,9 @@ export function useFilePreview() {
     }
 
     return fallbackMessage || payload?.error || messages.inspector.previewErrors.loadFailed;
-  };
+  }, [messages]);
 
-  const openImagePreview = (image) => {
+  const openImagePreview = useCallback((image) => {
     const src = String(
       image?.src
       || image?.previewUrl
@@ -53,9 +53,9 @@ export function useFilePreview() {
       path: image?.path || image?.fullPath || image?.localPath || "",
       fileManagerLabel: image?.fileManagerLabel || "Folder",
     });
-  };
+  }, []);
 
-  const handleOpenPreview = async (item, options = {}) => {
+  const handleOpenPreview = useCallback(async (item, options = {}) => {
     const targetPath = String(item?.fullPath || item?.path || "").trim();
     if (!targetPath) {
       return;
@@ -112,14 +112,17 @@ export function useFilePreview() {
         error: error.message || messages.inspector.previewErrors.loadFailed,
       });
     }
-  };
+  }, [messages.inspector.previewErrors.loadFailed, openImagePreview, resolvePreviewErrorMessage]);
+
+  const closeFilePreview = useCallback(() => setFilePreview(null), []);
+  const closeImagePreview = useCallback(() => setImagePreview(null), []);
 
   return {
     filePreview,
     imagePreview,
     handleOpenPreview,
     openImagePreview,
-    closeFilePreview: () => setFilePreview(null),
-    closeImagePreview: () => setImagePreview(null),
+    closeFilePreview,
+    closeImagePreview,
   };
 }

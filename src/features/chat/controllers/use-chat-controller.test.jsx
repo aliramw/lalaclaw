@@ -153,14 +153,7 @@ describe("useChatController", () => {
 
     expect(result.current.activeQueuedMessages).toHaveLength(1);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(appliedMessageSnapshots[0]).toEqual([
-      {
-        id: "msg-user-100-localsend",
-        role: "user",
-        content: "请继续",
-        timestamp: 100,
-      },
-    ]);
+    expect(appliedMessageSnapshots).toEqual([]);
 
     rerender({ busy: false });
 
@@ -194,7 +187,7 @@ describe("useChatController", () => {
     expect(applySnapshot).not.toHaveBeenCalled();
   });
 
-  it("keeps queued normal prompts out of pending placeholder state until they start", async () => {
+  it("keeps queued normal prompts out of the conversation until they start", async () => {
     const setBusy = vi.fn();
     const appliedMessageSnapshots = [];
     const setMessagesSynced = vi.fn();
@@ -249,30 +242,7 @@ describe("useChatController", () => {
       });
     });
 
-    expect(appliedMessageSnapshots).toEqual([
-      [
-        {
-          id: "msg-user-busy-1",
-          role: "user",
-          content: "第一条",
-          timestamp: 2500,
-        },
-      ],
-      [
-        {
-          id: "msg-user-busy-1",
-          role: "user",
-          content: "第一条",
-          timestamp: 2500,
-        },
-        {
-          id: "msg-user-busy-2",
-          role: "user",
-          content: "第二条",
-          timestamp: 2600,
-        },
-      ],
-    ]);
+    expect(appliedMessageSnapshots).toEqual([]);
     expect(appliedMessageSnapshots.some((snapshot) => snapshot.some((message) => message?.pending))).toBe(false);
     expect(setPendingChatTurns).not.toHaveBeenCalled();
     expect(result.current.activeQueuedMessages).toHaveLength(2);
@@ -652,6 +622,483 @@ describe("useChatController", () => {
     });
   });
 
+  it("queues a different prompt behind the in-flight turn even before busy state rerenders", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const appliedMessageSnapshots = [];
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = { current: [] };
+    let resolveFetch;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = () =>
+            resolve(
+              mockJsonResponse({
+                ok: true,
+                assistantMessageId: "msg-assistant-race-queue-1",
+                outputText: "第一条已完成",
+                metadata: { status: "已完成 / 标准" },
+                sessionPatch: {
+                  agentId: "main",
+                  sessionUser: "command-center",
+                  selectedModel: "gpt-5",
+                  thinkMode: "off",
+                },
+              }),
+            );
+        }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        messagesRef,
+        setBusy,
+        setMessagesForTab: (_tabId, value) => {
+          messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+          appliedMessageSnapshots.push(messagesRef.current);
+        },
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    const firstEntry = {
+      id: "entry-race-queue-1",
+      key: "command-center:main",
+      content: "第一条",
+      attachments: [],
+      timestamp: 1000,
+      userMessageId: "msg-user-race-queue-1",
+      agentId: "main",
+      sessionUser: "command-center",
+      model: "gpt-5",
+      fastMode: false,
+    };
+
+    const secondEntry = {
+      ...firstEntry,
+      id: "entry-race-queue-2",
+      content: "第二条",
+      timestamp: 1100,
+      userMessageId: "msg-user-race-queue-2",
+    };
+
+    let firstPromise;
+    let secondPromise;
+    await act(async () => {
+      firstPromise = result.current.enqueueOrRunEntry(firstEntry);
+      secondPromise = result.current.enqueueOrRunEntry(secondEntry);
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.activeQueuedMessages).toHaveLength(1);
+    expect(result.current.activeQueuedMessages[0]?.content).toBe("第二条");
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
+      {
+        id: "msg-user-race-queue-1",
+        role: "user",
+        content: "第一条",
+        timestamp: 1000,
+      },
+      {
+        id: expect.stringMatching(/^msg-assistant-pending-/),
+        role: "assistant",
+        content: "正在思考…",
+        timestamp: expect.any(Number),
+        pending: true,
+      },
+    ]);
+    expect(messagesRef.current.some((message) => message?.content === "第二条")).toBe(false);
+
+    await act(async () => {
+      resolveFetch();
+      await firstPromise;
+      await secondPromise;
+    });
+  });
+
+  it("flushes the next queued turn after the direct-send dispatching lock is released", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = { current: [] };
+
+    let resolveFirstFetch;
+    const firstFetchPromise = new Promise((resolve) => {
+      resolveFirstFetch = () =>
+        resolve(
+          mockJsonResponse({
+            ok: true,
+            assistantMessageId: "msg-assistant-dispatch-release-1",
+            outputText: "第一条完成",
+            metadata: { status: "已完成 / 标准" },
+            sessionPatch: {
+              agentId: "main",
+              sessionUser: "command-center",
+              selectedModel: "gpt-5",
+              thinkMode: "off",
+            },
+          }),
+        );
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => firstFetchPromise)
+      .mockImplementationOnce(() =>
+        mockJsonResponse({
+          ok: true,
+          assistantMessageId: "msg-assistant-dispatch-release-2",
+          outputText: "第二条完成",
+          metadata: { status: "已完成 / 标准" },
+          sessionPatch: {
+            agentId: "main",
+            sessionUser: "command-center",
+            selectedModel: "gpt-5",
+            thinkMode: "off",
+          },
+        }),
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(
+      ({ busy }) =>
+        useChatController({
+          activeChatTabId: "agent:main",
+          activeConversationKey: "command-center:main",
+          busy,
+          i18n: createI18n(),
+          messagesRef,
+          setBusy,
+          setMessagesForTab: (_tabId, value) => {
+            messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+          },
+          setMessagesSynced,
+          setPendingChatTurns,
+          setSession,
+          applySnapshot,
+        }),
+      { initialProps: { busy: false } },
+    );
+
+    const firstEntry = {
+      id: "entry-dispatch-release-1",
+      key: "command-center:main",
+      content: "1",
+      attachments: [],
+      timestamp: 1000,
+      userMessageId: "msg-user-dispatch-release-1",
+      agentId: "main",
+      sessionUser: "command-center",
+      model: "gpt-5",
+      fastMode: false,
+    };
+
+    const secondEntry = {
+      ...firstEntry,
+      id: "entry-dispatch-release-2",
+      content: "2",
+      timestamp: 1100,
+      userMessageId: "msg-user-dispatch-release-2",
+    };
+
+    let firstPromise;
+    await act(async () => {
+      firstPromise = result.current.enqueueOrRunEntry(firstEntry);
+      await Promise.resolve();
+      await result.current.enqueueOrRunEntry(secondEntry);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.activeQueuedMessages).toHaveLength(1);
+
+    rerender({ busy: true });
+
+    await act(async () => {
+      resolveFirstFetch();
+      await firstPromise;
+    });
+
+    rerender({ busy: false });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('"content":"2"');
+    expect(messagesRef.current.some((message) => message?.content === "2" && message?.role === "user")).toBe(true);
+  });
+
+  it("reuses the trailing assistant slot instead of appending a second assistant when runtime already replaced the pending placeholder", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = {
+      current: [
+        { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 1050, pending: true },
+      ],
+    };
+
+    const appliedMessageSnapshots = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+      appliedMessageSnapshots.push(messagesRef.current);
+    });
+
+    vi.stubGlobal("fetch", vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        conversation: [
+          { role: "user", content: "1", timestamp: 1000 },
+          { role: "assistant", content: "收到。", timestamp: 1100 },
+        ],
+        outputText: "收到。",
+        assistantMessageId: "msg-assistant-pending-1",
+        metadata: { status: "已完成 / 标准" },
+        session: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    ));
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        isTabActive: () => true,
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry({
+        id: "entry-authoritative-conversation-1",
+        key: "command-center:main",
+        content: "1",
+        attachments: [],
+        timestamp: 1000,
+        userMessageId: "msg-user-1",
+        assistantMessageId: "msg-assistant-pending-1",
+        pendingTimestamp: 1050,
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-5",
+        fastMode: false,
+      });
+    });
+
+    expect(applySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation: [
+          { role: "user", content: "1", timestamp: 1000 },
+          { role: "assistant", content: "收到。", timestamp: 1100 },
+        ],
+      }),
+      { syncConversation: true },
+    );
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+    ]);
+  });
+
+  it("does not let the chat response snapshot hide the current user when its conversation is still assistant-only", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = {
+      current: [
+        { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 1050, pending: true },
+      ],
+    };
+
+    const appliedMessageSnapshots = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+      appliedMessageSnapshots.push(messagesRef.current);
+    });
+
+    vi.stubGlobal("fetch", vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        conversation: [
+          { role: "assistant", content: "收到。", timestamp: 1100 },
+        ],
+        outputText: "收到。",
+        assistantMessageId: "msg-assistant-pending-1",
+        metadata: { status: "已完成 / 标准" },
+        session: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    ));
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        isTabActive: () => true,
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry({
+        id: "entry-response-assistant-only",
+        key: "command-center:main",
+        content: "1",
+        attachments: [],
+        timestamp: 1000,
+        userMessageId: "msg-user-1",
+        assistantMessageId: "msg-assistant-pending-1",
+        pendingTimestamp: 1050,
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-5",
+        fastMode: false,
+      });
+    });
+
+    expect(applySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation: [
+          { role: "assistant", content: "收到。", timestamp: 1100 },
+        ],
+      }),
+      { syncConversation: false },
+    );
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+    ]);
+  });
+
+  it("restores the current user before final assistant replacement when runtime has temporarily collapsed the view to assistant-only", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = {
+      current: [
+        { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 1050, pending: true },
+      ],
+    };
+
+    const appliedMessageSnapshots = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+      appliedMessageSnapshots.push(messagesRef.current);
+
+      if (appliedMessageSnapshots.length === 1) {
+        messagesRef.current = [
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到", timestamp: 1050, streaming: true },
+        ];
+      }
+    });
+
+    vi.stubGlobal("fetch", vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        conversation: [
+          { role: "assistant", content: "收到。", timestamp: 1100 },
+        ],
+        outputText: "收到。",
+        assistantMessageId: "msg-assistant-pending-1",
+        metadata: { status: "已完成 / 标准" },
+        session: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    ));
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        isTabActive: () => true,
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry({
+        id: "entry-final-restores-user",
+        key: "command-center:main",
+        content: "1",
+        attachments: [],
+        timestamp: 1000,
+        userMessageId: "msg-user-1",
+        assistantMessageId: "msg-assistant-pending-1",
+        pendingTimestamp: 1050,
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-5",
+        fastMode: false,
+      });
+    });
+
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+    ]);
+  });
+
   it("does not queue a duplicate prompt again while the tab is already busy", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();
@@ -918,14 +1365,7 @@ describe("useChatController", () => {
       });
     });
 
-    expect(appliedMessageSnapshots[0]).toEqual([
-      {
-        id: "msg-user-slash-busy-1",
-        role: "user",
-        content: "/new",
-        timestamp: 2500,
-      },
-    ]);
+    expect(appliedMessageSnapshots).toEqual([]);
     expect(result.current.activeQueuedMessages).toHaveLength(1);
   });
 

@@ -51,6 +51,18 @@ describe("AccessGate", () => {
     expect(screen.queryByRole("heading", { name: "Private workspace" })).not.toBeInTheDocument();
   });
 
+  it("shows inline loading status while checking the current access state", () => {
+    global.fetch.mockImplementation(
+      () =>
+        new Promise(() => {}),
+    );
+
+    renderAccessGate();
+
+    expect(screen.getByTestId("access-gate-loading-state")).toBeInTheDocument();
+    expect(screen.getByTestId("access-gate-loading-state").querySelector("svg")).toBeInTheDocument();
+  });
+
   it("shows the token form and unlocks after a successful login", async () => {
     window.localStorage.setItem(localeStorageKey, "en");
     const fetchMock = global.fetch;

@@ -75,6 +75,34 @@ describe("SessionOverview", () => {
     expect(onFastModeChange).toHaveBeenCalledWith(false);
   });
 
+  it("renders a context usage ring that matches the current context color", () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            resolvedTheme="light"
+            session={createSession({ contextUsed: 1200, contextMax: 16000 })}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const ring = screen.getByTestId("context-usage-ring");
+    expect(ring).toBeInTheDocument();
+    expect(ring).toHaveStyle({ color: "#0f9f6e" });
+  });
+
   it("shows empty model selection state", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 
@@ -101,6 +129,92 @@ describe("SessionOverview", () => {
     await user.click(screen.getByLabelText("切换模型"));
 
     expect(screen.getByText("暂无可选模型")).toBeInTheDocument();
+  });
+
+  it("aligns the model menu to the left edge when the trigger is near the left side", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw", "openrouter/auto"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const trigger = screen.getByLabelText("切换模型");
+    const triggerWrapper = trigger.parentElement;
+    expect(triggerWrapper).not.toBeNull();
+    triggerWrapper.getBoundingClientRect = vi.fn(() => ({
+      bottom: 100,
+      height: 56,
+      left: 40,
+      right: 260,
+      top: 44,
+      width: 220,
+      x: 40,
+      y: 44,
+      toJSON: () => ({}),
+    }));
+
+    const user = userEvent.setup();
+    await user.click(trigger);
+
+    expect(screen.getByRole("menu")).toHaveAttribute("data-align-strategy", "start");
+  });
+
+  it("aligns the model menu to the right edge when the trigger is near the right side", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw", "openrouter/auto"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const trigger = screen.getByLabelText("切换模型");
+    const triggerWrapper = trigger.parentElement;
+    expect(triggerWrapper).not.toBeNull();
+    triggerWrapper.getBoundingClientRect = vi.fn(() => ({
+      bottom: 100,
+      height: 56,
+      left: 980,
+      right: 1200,
+      top: 44,
+      width: 220,
+      x: 980,
+      y: 44,
+      toJSON: () => ({}),
+    }));
+
+    const user = userEvent.setup();
+    await user.click(trigger);
+
+    expect(screen.getByRole("menu")).toHaveAttribute("data-align-strategy", "end");
   });
 
   it("shows a logout button in token access mode and calls the logout handler", async () => {

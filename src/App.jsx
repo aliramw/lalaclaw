@@ -38,7 +38,6 @@ function getRelationshipDisplay(relationship, messages) {
   };
 }
 
-
 function isSameCompletedAtMap(current = {}, next = {}) {
   const currentKeys = Object.keys(current);
   const nextKeys = Object.keys(next);
@@ -652,10 +651,10 @@ function AppContent() {
   );
   const splitLayoutStyle = useMemo(
     () => (isWideLayout
-      ? {
+        ? {
           gridTemplateColumns: `minmax(0, 1fr) ${dragHandleWidth}px ${resolvedInspectorPanelWidth}px`,
         }
-      : {
+        : {
           gridTemplateColumns: `minmax(0, 1fr) ${compactInspectorPanelWidth}px`,
         }),
     [compactInspectorPanelWidth, isWideLayout, resolvedInspectorPanelWidth],

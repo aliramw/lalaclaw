@@ -35,7 +35,7 @@ const userBubbleClassName = "ring-0";
 const assistantBubbleClassName = "";
 const artifactFocusScrollDurationMs = 320;
 const focusHighlightDurationMs = 1400;
-const messageOutlineViewportBottomGapPx = 20;
+const messageOutlineViewportBottomGapPx = 12;
 const messageOutlineMinHeightPx = 96;
 const chatTabsScrollStepPx = 220;
 const chatTabDragActivationDistancePx = 4;
@@ -43,6 +43,7 @@ const chatTabReorderSnapThresholdPx = 12;
 const chatTabShortcutBandHeightPx = 14;
 const chatTabBodyHeightPx = 36;
 const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx;
+const streamingTailIndicatorClearDelayMs = 420;
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -664,6 +665,7 @@ function MessageMeta({
   formatTime,
   onJumpPreviousUserMessage,
   pending,
+  streaming,
   sticky,
   compact,
   timestamp,
@@ -692,6 +694,20 @@ function MessageMeta({
       {pending ? null : <CopyMessageButton content={content} />}
       {onJumpPreviousUserMessage ? <PreviousUserMessageButton onClick={onJumpPreviousUserMessage} /> : null}
     </div>
+  );
+}
+
+function StreamingTailDots() {
+  return (
+    <span
+      aria-hidden="true"
+      data-streaming-tail-dots="true"
+      className="cc-streaming-tail-dots ml-1.5 inline-flex items-center gap-1 align-middle text-foreground/70"
+    >
+      <span className="cc-streaming-tail-dot" />
+      <span className="cc-streaming-tail-dot cc-streaming-tail-dot-2" />
+      <span className="cc-streaming-tail-dot cc-streaming-tail-dot-3" />
+    </span>
   );
 }
 
@@ -782,7 +798,7 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
   return (
     <aside ref={outlineRef} className="flex max-h-[calc(100vh-6rem)] w-40 shrink-0 self-start flex-col overflow-hidden rounded-[5px] border border-border/70 bg-muted/20 p-2">
       <div className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{messages.chat.outline}</div>
-      <div data-message-outline-scroll-area className="min-h-0 overflow-y-auto pr-1">
+      <div data-message-outline-scroll-area className="cc-scroll-region min-h-0 overflow-x-hidden overflow-y-auto pr-1">
         <div className="grid gap-px">
         {items.map((item) => (
           <button
@@ -848,6 +864,41 @@ function areMessageAttachmentsEqual(left = [], right = []) {
   });
 }
 
+function areMessageBubblePropsEqual(previous, next) {
+  if (previous === next) {
+    return true;
+  }
+
+  return previous.agentLabel === next.agentLabel
+    && previous.animateViewportScroll === next.animateViewportScroll
+    && previous.bubbleAnchorRef === next.bubbleAnchorRef
+    && previous.files === next.files
+    && previous.formatTime === next.formatTime
+    && previous.handleOpenFilePreview === next.handleOpenFilePreview
+    && previous.handleOpenImagePreview === next.handleOpenImagePreview
+    && previous.isHighlighted === next.isHighlighted
+    && previous.isLatestAssistant === next.isLatestAssistant
+    && previous.isStreamingAssistant === next.isStreamingAssistant
+    && previous.showStreamingTail === next.showStreamingTail
+    && previous.markUserScrollTakeover === next.markUserScrollTakeover
+    && previous.messageId === next.messageId
+    && previous.messageViewportRef === next.messageViewportRef
+    && previous.onJumpPreviousMessage === next.onJumpPreviousMessage
+    && previous.previousMessageId === next.previousMessageId
+    && previous.resolvedTheme === next.resolvedTheme
+    && previous.sessionUser === next.sessionUser
+    && previous.staleWarning === next.staleWarning
+    && previous.chatFontSize === next.chatFontSize
+    && previous.userLabel === next.userLabel
+    && previous.message?.role === next.message?.role
+    && previous.message?.content === next.message?.content
+    && previous.message?.timestamp === next.message?.timestamp
+    && Boolean(previous.message?.pending) === Boolean(next.message?.pending)
+    && Boolean(previous.message?.streaming) === Boolean(next.message?.streaming)
+    && String(previous.message?.tokenBadge || "") === String(next.message?.tokenBadge || "")
+    && areMessageAttachmentsEqual(previous.message?.attachments || [], next.message?.attachments || []);
+}
+
 const MessageBubble = memo(function MessageBubble({
   agentLabel,
   animateViewportScroll,
@@ -859,6 +910,7 @@ const MessageBubble = memo(function MessageBubble({
   isHighlighted,
   isLatestAssistant,
   isStreamingAssistant,
+  showStreamingTail,
   markUserScrollTakeover,
   message,
   messageId,
@@ -885,15 +937,16 @@ const MessageBubble = memo(function MessageBubble({
     [message.content, message.role, sessionUser],
   );
   const supportsBubbleTopJump = !messageHasVisualMedia(message);
+  const assistantTurnInProgress = !isUser && !isPending && (isStreamingAssistant || showStreamingTail);
   const useCompactAssistantBubble = useMemo(
-    () => !isUser && !isPending && shouldUseCompactAssistantBubble(renderedContent),
-    [isPending, isUser, renderedContent],
+    () => !isUser && !isPending && !assistantTurnInProgress && shouldUseCompactAssistantBubble(renderedContent),
+    [assistantTurnInProgress, isPending, isUser, renderedContent],
   );
   const visualLineCount = estimateVisualLineCount(renderedContent);
   const compactMeta = visualLineCount <= 1;
   const outlineItems = useMemo(
-    () => (!isUser && !isPending && !isStreamingAssistant ? extractHeadingOutline(renderedContent) : []),
-    [isPending, isStreamingAssistant, isUser, renderedContent],
+    () => (!isUser && !isPending && !assistantTurnInProgress ? extractHeadingOutline(renderedContent) : []),
+    [assistantTurnInProgress, isPending, isUser, renderedContent],
   );
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
@@ -901,7 +954,7 @@ const MessageBubble = memo(function MessageBubble({
   const userBubbleWidthClassName = "w-fit min-w-[3.75rem] max-w-[min(86vw,40rem)]";
   const compactAssistantWidthClassName = "inline-block max-w-[min(80vw,42rem)] shrink-0";
   const longAssistantWidthClassName = "w-[700px] max-w-[calc(100vw-12rem)] shrink-0";
-  const streamingAssistantBubbleClassName = isStreamingAssistant ? "cc-streaming-bubble motion-reduce:animate-none" : "";
+  const streamingAssistantBubbleClassName = assistantTurnInProgress ? "cc-streaming-bubble transition-none motion-reduce:animate-none" : "";
   const focusBubbleClassName = isHighlighted ? "cc-focus-highlight" : "";
   const messageBubbleAttributes = {
     "data-message-anchor": isLatestAssistant ? "latest-assistant" : undefined,
@@ -1077,6 +1130,7 @@ const MessageBubble = memo(function MessageBubble({
                 formatTime={formatTime}
                 onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
                 pending={false}
+                streaming={false}
                 compact
                 textClassName={fontSizeStyles.meta}
                 timestamp={message.timestamp}
@@ -1200,6 +1254,7 @@ const MessageBubble = memo(function MessageBubble({
                   onOpenImagePreview={handleOpenImagePreview}
                   className={fontSizeStyles.markdown}
                 />
+                {showStreamingTail ? <StreamingTailDots /> : null}
                 </CardContent>
               </Card>
               </div>
@@ -1209,6 +1264,7 @@ const MessageBubble = memo(function MessageBubble({
                   content={renderedContent}
                   formatTime={formatTime}
                   onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
+                  streaming={isStreamingAssistant}
                   textClassName={fontSizeStyles.meta}
                   timestamp={message.timestamp}
                 />
@@ -1226,6 +1282,7 @@ const MessageBubble = memo(function MessageBubble({
                 content={renderedContent}
                 formatTime={formatTime}
                 onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
+                streaming={isStreamingAssistant}
                 sticky
                 textClassName={fontSizeStyles.meta}
                 timestamp={message.timestamp}
@@ -1274,6 +1331,7 @@ const MessageBubble = memo(function MessageBubble({
                   onOpenImagePreview={handleOpenImagePreview}
                   className={fontSizeStyles.compactMarkdown}
                 />
+                {showStreamingTail ? <StreamingTailDots /> : null}
               </CardContent>
             </Card>
             </div>
@@ -1283,6 +1341,7 @@ const MessageBubble = memo(function MessageBubble({
               formatTime={formatTime}
               onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
               compact={compactMeta}
+              streaming={isStreamingAssistant}
               textClassName={fontSizeStyles.meta}
               timestamp={message.timestamp}
             />
@@ -1333,6 +1392,7 @@ const MessageBubble = memo(function MessageBubble({
                 onOpenImagePreview={handleOpenImagePreview}
                 className={fontSizeStyles.markdown}
               />
+              {showStreamingTail ? <StreamingTailDots /> : null}
             </CardContent>
           </Card>
           </div>
@@ -1341,6 +1401,7 @@ const MessageBubble = memo(function MessageBubble({
             content={renderedContent}
             formatTime={formatTime}
             onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
+            streaming={isStreamingAssistant}
             sticky
             textClassName={fontSizeStyles.meta}
             timestamp={message.timestamp}
@@ -1354,6 +1415,7 @@ const MessageBubble = memo(function MessageBubble({
     && prevProps.isHighlighted === nextProps.isHighlighted
     && prevProps.isLatestAssistant === nextProps.isLatestAssistant
     && prevProps.isStreamingAssistant === nextProps.isStreamingAssistant
+    && prevProps.showStreamingTail === nextProps.showStreamingTail
     && prevProps.markUserScrollTakeover === nextProps.markUserScrollTakeover
     && prevProps.formatTime === nextProps.formatTime
     && prevProps.messageId === nextProps.messageId
@@ -1371,7 +1433,7 @@ const MessageBubble = memo(function MessageBubble({
     && prevProps.message?.tokenBadge === nextProps.message?.tokenBadge
     && areMessageAttachmentsEqual(prevProps.message?.attachments || [], nextProps.message?.attachments || [])
     && prevProps.staleWarning === nextProps.staleWarning;
-});
+}, areMessageBubblePropsEqual);
 
 function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSendMode, resolvedTheme = "dark", session }) {
   const { messages } = useI18n();
@@ -1851,6 +1913,48 @@ export function ChatTabsStrip({
   };
 
   const scrollButtonClassName = "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground/85 transition hover:border-foreground/25 hover:bg-accent/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:border-border/45 disabled:bg-muted/28 disabled:text-muted-foreground/45 disabled:opacity-100";
+  const handlePrimaryPress = (event) => {
+    const button = typeof event.button === "number" ? event.button : 0;
+    return button === 0;
+  };
+  const handleTabActivatePointerDown = (event, tabId, active) => {
+    if (!handlePrimaryPress(event) || active) {
+      return;
+    }
+    onActivate?.(tabId);
+  };
+  const handleTabActivateClick = (event, tabId, active) => {
+    if (event.detail !== 0 || active) {
+      return;
+    }
+    onActivate?.(tabId);
+  };
+  const handleTabClosePointerDown = (event, tabId) => {
+    event.stopPropagation();
+    if (!handlePrimaryPress(event)) {
+      return;
+    }
+    onClose?.(tabId);
+  };
+  const handleTabCloseClick = (event, tabId) => {
+    event.stopPropagation();
+    if (event.detail !== 0) {
+      return;
+    }
+    onClose?.(tabId);
+  };
+  const handleScrollPointerDown = (event, direction) => {
+    if (!handlePrimaryPress(event)) {
+      return;
+    }
+    scrollTabsBy(direction);
+  };
+  const handleScrollClick = (event, direction) => {
+    if (event.detail !== 0) {
+      return;
+    }
+    scrollTabsBy(direction);
+  };
 
   return (
     <div className={cn("flex h-full min-w-0 min-h-[54px] items-center gap-1 pt-0 pb-0", className)}>
@@ -1863,7 +1967,8 @@ export function ChatTabsStrip({
               className={scrollButtonClassName}
               aria-label={messages.chat.scrollTabsLeft}
               disabled={!tabScrollState.canScrollLeft}
-              onClick={() => scrollTabsBy(-1)}
+              onPointerDown={(event) => handleScrollPointerDown(event, -1)}
+              onClick={(event) => handleScrollClick(event, -1)}
             >
               <ChevronLeft className="h-3 w-3" />
             </button>
@@ -1940,16 +2045,13 @@ export function ChatTabsStrip({
 	                              "absolute left-[0.8125rem] top-0 z-10 inline-flex min-w-3 -translate-x-1/2 items-center justify-center px-0.5 text-[12px] font-bold leading-none tabular-nums",
 	                              item.active ? "text-primary/22" : "text-muted-foreground/22",
 	                            )}
-	                            onMouseDown={(event) => {
+	                            onPointerDown={(event) => {
 	                              event.stopPropagation();
-	                              if (event.button !== 0 || item.active) {
-	                                return;
-	                              }
-	                              onActivate?.(item.id);
+	                              handleTabActivatePointerDown(event, item.id, item.active);
 	                            }}
 	                            onClick={(event) => {
 	                              event.stopPropagation();
-	                              onActivate?.(item.id);
+	                              handleTabActivateClick(event, item.id, item.active);
 	                            }}
 	                          >
 	                            {shortcutNumber}
@@ -1974,15 +2076,19 @@ export function ChatTabsStrip({
 	                        type="button"
 	                        draggable={false}
 	                        className="relative inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-sm outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-                        onClick={() => {
+                        onPointerDown={(event) => {
                           if (suppressTabClickRef.current) {
                             suppressTabClickRef.current = false;
                             return;
                           }
-                          if (item.active) {
+                          handleTabActivatePointerDown(event, item.id, item.active);
+                        }}
+                        onClick={(event) => {
+                          if (suppressTabClickRef.current) {
+                            suppressTabClickRef.current = false;
                             return;
                           }
-                          onActivate?.(item.id);
+                          handleTabActivateClick(event, item.id, item.active);
                         }}
                       >
                         <span
@@ -2025,10 +2131,8 @@ export function ChatTabsStrip({
                                     ? "text-white/90 hover:bg-white/14 hover:text-white"
                                     : "text-foreground/80 hover:bg-accent/60 hover:text-foreground",
                                 )}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onClose?.(item.id);
-                                }}
+                                onPointerDown={(event) => handleTabClosePointerDown(event, item.id)}
+                                onClick={(event) => handleTabCloseClick(event, item.id)}
                                 aria-label={messages.chat.closeTabAriaLabel(tabTitle)}
                               >
                                 <X className="h-3.5 w-3.5" />
@@ -2143,7 +2247,8 @@ export function ChatTabsStrip({
               className={scrollButtonClassName}
               aria-label={messages.chat.scrollTabsRight}
               disabled={!tabScrollState.canScrollRight}
-              onClick={() => scrollTabsBy(1)}
+              onPointerDown={(event) => handleScrollPointerDown(event, 1)}
+              onClick={(event) => handleScrollClick(event, 1)}
             >
               <ChevronRight className="h-3 w-3" />
             </button>
@@ -2216,9 +2321,11 @@ export function ChatPanel({
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
   const [composerPrompt, setComposerPrompt] = useState(prompt);
+  const [latchedStreamingTailMessageId, setLatchedStreamingTailMessageId] = useState("");
   const mentionMenuRef = useRef(null);
   const latestAssistantBubbleRef = useRef(null);
   const bottomSentinelRef = useRef(null);
+  const streamingTailIndicatorClearTimeoutRef = useRef(0);
   const fontSizeStyles = resolveChatFontSizeStyles(chatFontSize);
   const mentionOptionStateClassName = resolvedTheme === "dark" ? "bg-[#373737] text-foreground" : "bg-[#e5e5e5] text-foreground";
   const mentionOptionHoverClassName = resolvedTheme === "dark" ? "text-foreground hover:bg-[#373737]/85" : "text-foreground hover:bg-[#e5e5e5]/85";
@@ -2231,6 +2338,8 @@ export function ChatPanel({
   const autoScrollSuppressedRef = useRef(false);
   const manualScrollLockRef = useRef(false);
   const persistentManualScrollLockRef = useRef(false);
+  const pendingAutoFollowResumeOnBottomRef = useRef(false);
+  const manualScrollLockMovedAwayFromBottomRef = useRef(false);
   const pointerScrollIntentRef = useRef(false);
   const scrollModeRef = useRef("follow-bottom");
   const programmaticScrollRef = useRef(false);
@@ -2247,7 +2356,7 @@ export function ChatPanel({
   const previousConversationKeyRef = useRef("");
   const previousLatestMessageCardKeyRef = useRef("");
   const previousLatestUserMessageKeyRef = useRef("");
-  const pinTopAllowedForTurnRef = useRef(true);
+  const pinTopAllowedForTurnRef = useRef(false);
   const currentAgentName = session.agentId || agentLabel || "main";
   const currentConversationTitle = buildCurrentConversationTitle(currentAgentName, session.sessionUser, i18n.chat.title, intlLocale);
   const promptPlaceholder = useMemo(() => {
@@ -2326,6 +2435,16 @@ export function ChatPanel({
 
     return null;
   }, [latestAssistantMessageId, messages]);
+  const latestAssistantCanShowStreamingTail = useMemo(
+    () => Boolean(
+      latestAssistantMessageId
+        && latestAssistantMessage?.role === "assistant"
+        && !latestAssistantMessage?.pending
+        && String(latestAssistantMessage?.content || "").trim()
+        && (showBusyBadge || hasActiveAssistantReply),
+    ),
+    [hasActiveAssistantReply, latestAssistantMessage, latestAssistantMessageId, showBusyBadge],
+  );
   const latestAssistantRenderKey = useMemo(
     () =>
       latestAssistantMessage
@@ -2338,6 +2457,30 @@ export function ChatPanel({
         : "",
     [latestAssistantMessage],
   );
+
+  useEffect(() => {
+    window.clearTimeout(streamingTailIndicatorClearTimeoutRef.current);
+
+    if (latestAssistantCanShowStreamingTail && latestAssistantMessageId) {
+      setLatchedStreamingTailMessageId((current) => (
+        current === latestAssistantMessageId ? current : latestAssistantMessageId
+      ));
+      return () => {
+        window.clearTimeout(streamingTailIndicatorClearTimeoutRef.current);
+      };
+    }
+
+    if (latchedStreamingTailMessageId) {
+      streamingTailIndicatorClearTimeoutRef.current = window.setTimeout(() => {
+        setLatchedStreamingTailMessageId("");
+        streamingTailIndicatorClearTimeoutRef.current = 0;
+      }, streamingTailIndicatorClearDelayMs);
+    }
+
+    return () => {
+      window.clearTimeout(streamingTailIndicatorClearTimeoutRef.current);
+    };
+  }, [latchedStreamingTailMessageId, latestAssistantCanShowStreamingTail, latestAssistantMessageId]);
   const disarmComposerCompositionGuard = useCallback(() => {
     ignoreNextComposerCompositionCommitRef.current = false;
     composerCompositionGuardArmedAtRef.current = 0;
@@ -2604,22 +2747,39 @@ export function ChatPanel({
     suppressRestoredBottomButtonRef.current = false;
     suppressedBottomButtonAssistantKeyRef.current = "";
     if (force || !programmaticScrollRef.current) {
+      const previousScrollMode = scrollModeRef.current;
+      const latestBubble = latestAssistantBubbleRef.current;
+      const viewport = resolvedMessageViewport;
+      const currentTurnCanResumeBottomFollow = !latestBubble
+        || !viewport
+        || latestBubble.getBoundingClientRect().height <= viewport.clientHeight;
+      const wasManualLocked =
+        manualScrollLockRef.current
+        || persistentManualScrollLockRef.current
+        || pendingAutoFollowResumeOnBottomRef.current;
       pinTopAllowedForTurnRef.current = false;
       autoScrollSuppressedRef.current = true;
       scrollModeRef.current = "manual";
       if (lockAutoFollow) {
         manualScrollLockRef.current = true;
         persistentManualScrollLockRef.current = true;
+        pendingAutoFollowResumeOnBottomRef.current =
+          previousScrollMode !== "pin-top" && currentTurnCanResumeBottomFollow;
+        if (!wasManualLocked) {
+          manualScrollLockMovedAwayFromBottomRef.current = false;
+        }
       }
       if (restoredScrollKey) {
         restoredScrollKeyRef.current = `${restoredScrollKey}:${restoredScrollRevision}`;
       }
     }
-  }, [cancelAnimatedViewportScroll, restoredScrollKey, restoredScrollRevision]);
+  }, [cancelAnimatedViewportScroll, resolvedMessageViewport, restoredScrollKey, restoredScrollRevision]);
 
   const resumeAutomaticLatestReplyFollow = useCallback((nextMode = "follow-bottom") => {
     manualScrollLockRef.current = false;
     persistentManualScrollLockRef.current = false;
+    pendingAutoFollowResumeOnBottomRef.current = false;
+    manualScrollLockMovedAwayFromBottomRef.current = false;
     autoScrollSuppressedRef.current = false;
     scrollModeRef.current = nextMode;
     suppressRestoredBottomButtonRef.current = false;
@@ -2628,8 +2788,15 @@ export function ChatPanel({
 
   const updateViewportBottomState = useCallback((isNearBottom, { markManual = false, viewport } = {}) => {
     const resolvedViewport = viewport || resolvedMessageViewport;
+    const latestBubble = latestAssistantBubbleRef.current;
+    const currentTurnCanResumeBottomFollow = !latestBubble
+      || !resolvedViewport
+      || latestBubble.getBoundingClientRect().height <= resolvedViewport.clientHeight;
     wasNearBottomRef.current = isNearBottom;
     if (markManual) {
+      if (!programmaticScrollRef.current) {
+        pinTopAllowedForTurnRef.current = false;
+      }
       suppressRestoredBottomButtonRef.current = false;
       suppressedBottomButtonAssistantKeyRef.current = "";
     }
@@ -2638,20 +2805,38 @@ export function ChatPanel({
       if (manualScrollLockRef.current && programmaticScrollRef.current) {
         return;
       }
-      if (persistentManualScrollLockRef.current) {
+
+      if (
+        currentTurnCanResumeBottomFollow
+        && (
+          (pendingAutoFollowResumeOnBottomRef.current && manualScrollLockMovedAwayFromBottomRef.current)
+          || ((manualScrollLockRef.current || persistentManualScrollLockRef.current) && !programmaticScrollRef.current)
+        )
+      ) {
+        pendingAutoFollowResumeOnBottomRef.current = false;
+        persistentManualScrollLockRef.current = false;
+        manualScrollLockRef.current = false;
+        manualScrollLockMovedAwayFromBottomRef.current = false;
+        autoScrollSuppressedRef.current = false;
+        scrollModeRef.current = "follow-bottom";
+      } else if (persistentManualScrollLockRef.current) {
         autoScrollSuppressedRef.current = true;
         scrollModeRef.current = "manual";
       } else {
-        persistentManualScrollLockRef.current = false;
         manualScrollLockRef.current = false;
         autoScrollSuppressedRef.current = false;
-        if (scrollModeRef.current === "manual") {
+        if (scrollModeRef.current === "manual" || scrollModeRef.current === "pin-top") {
           scrollModeRef.current = "follow-bottom";
         }
       }
-    } else if (markManual && !programmaticScrollRef.current) {
-      autoScrollSuppressedRef.current = true;
-      scrollModeRef.current = "manual";
+    } else {
+      if ((manualScrollLockRef.current || persistentManualScrollLockRef.current) && !programmaticScrollRef.current) {
+        manualScrollLockMovedAwayFromBottomRef.current = true;
+      }
+      if (markManual && !programmaticScrollRef.current) {
+        autoScrollSuppressedRef.current = true;
+        scrollModeRef.current = "manual";
+      }
     }
 
     const maxTop = resolvedViewport
@@ -2775,8 +2960,11 @@ export function ChatPanel({
       previousConversationKeyRef.current = visibleConversationKey;
       previousLatestMessageCardKeyRef.current = latestMessageCardKey;
       previousLatestUserMessageKeyRef.current = latestUserMessageKey;
+      pinTopAllowedForTurnRef.current = false;
       manualScrollLockRef.current = false;
       persistentManualScrollLockRef.current = false;
+      pendingAutoFollowResumeOnBottomRef.current = false;
+      manualScrollLockMovedAwayFromBottomRef.current = false;
       autoScrollSuppressedRef.current = false;
       scrollModeRef.current = "follow-bottom";
       wasNearBottomRef.current = true;
@@ -2876,6 +3064,9 @@ export function ChatPanel({
       const resolvedTop = Math.max(0, Math.min(nextTop, maxTop));
       latestViewport.scrollTop = resolvedTop;
       const isNearBottom = maxTop - resolvedTop <= 48;
+      if (restoreToBottom) {
+        pinTopAllowedForTurnRef.current = false;
+      }
       wasNearBottomRef.current = isNearBottom;
       autoScrollSuppressedRef.current = restoreToBottom ? false : !isNearBottom;
       scrollModeRef.current = restoreToBottom
@@ -3025,7 +3216,13 @@ export function ChatPanel({
       });
     };
 
+    let manualIntentTimeoutId = 0;
     const markManualTakeover = () => {
+      pointerScrollIntentRef.current = true;
+      window.clearTimeout(manualIntentTimeoutId);
+      manualIntentTimeoutId = window.setTimeout(() => {
+        pointerScrollIntentRef.current = false;
+      }, 180);
       markUserScrollTakeover({ lockAutoFollow: true });
     };
     const handlePointerDown = () => {
@@ -3045,6 +3242,10 @@ export function ChatPanel({
         scheduleBottomStateRefresh();
       }, delay),
     );
+    const handleViewportScroll = () => updateWasNearBottom(pointerScrollIntentRef.current);
+    viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
+    removeViewportScrollListener = () => viewport.removeEventListener("scroll", handleViewportScroll);
+
     if (IntersectionObserverCtor && sentinel) {
       bottomObserver = new IntersectionObserverCtor(
         (entries) => {
@@ -3061,10 +3262,6 @@ export function ChatPanel({
         },
       );
       bottomObserver.observe(sentinel);
-    } else {
-      const handleViewportScroll = () => updateWasNearBottom(pointerScrollIntentRef.current);
-      viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
-      removeViewportScrollListener = () => viewport.removeEventListener("scroll", handleViewportScroll);
     }
     if (ResizeObserverCtor) {
       resizeObserver = new ResizeObserverCtor(() => {
@@ -3095,6 +3292,7 @@ export function ChatPanel({
     window.addEventListener("pointercancel", clearPointerIntent, { passive: true });
     return () => {
       delayedRefreshIds.forEach((timerId) => window.clearTimeout(timerId));
+      window.clearTimeout(manualIntentTimeoutId);
       window.cancelAnimationFrame(resizeFrameId);
       resizeObserver?.disconnect?.();
       bottomObserver?.disconnect?.();
@@ -3119,6 +3317,7 @@ export function ChatPanel({
       || !latestMessageIsAssistant
       || latestAssistantIsCompactIntro
       || manualScrollLockRef.current
+      || (persistentManualScrollLockRef.current && !pendingAutoFollowResumeOnBottomRef.current)
       || autoScrollSuppressedRef.current
     ) {
       if (latestAssistantIsCompactIntro) {
@@ -3261,9 +3460,10 @@ export function ChatPanel({
       return;
     }
 
+    pinTopAllowedForTurnRef.current = false;
     resumeAutomaticLatestReplyFollow("force-bottom");
     const top = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    scrollViewport(viewport, top, "smooth");
+    animateViewportScroll(viewport, top, artifactFocusScrollDurationMs);
     wasNearBottomRef.current = true;
     setShowLatestReplyButton(false);
   };
@@ -3306,6 +3506,14 @@ export function ChatPanel({
           && message.streaming
           && String(message.content || "").trim(),
       );
+      const showStreamingTail = Boolean(
+        message.role === "assistant"
+          && !message.pending
+          && isLatestAssistant
+          && latchedStreamingTailMessageId
+          && latchedStreamingTailMessageId === messageId
+          && String(message.content || "").trim(),
+      );
 
       if (message.role === "user") {
         lastUserMessageId = messageId;
@@ -3323,6 +3531,7 @@ export function ChatPanel({
           isHighlighted={highlightedMessageId === messageId}
           isLatestAssistant={isLatestAssistant}
           isStreamingAssistant={isStreamingAssistant}
+          showStreamingTail={showStreamingTail}
           markUserScrollTakeover={markUserScrollTakeover}
           key={messageId}
           message={message}
@@ -3356,6 +3565,7 @@ export function ChatPanel({
     messages,
     messageViewportRef,
     openImagePreview,
+    latchedStreamingTailMessageId,
     resolvedTheme,
     session?.sessionUser,
     userLabel,
@@ -3392,61 +3602,63 @@ export function ChatPanel({
         ) : null}
         <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
           <div className="relative border-b border-border/70 bg-card/80 px-3 pt-2 pb-2 backdrop-blur">
-            <div className="flex min-w-0 items-center gap-2 pr-28">
-              <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant={isStaleRunning ? "outline" : showBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
-                    {isStaleRunning ? i18n.chat.agentStaleRunning : showBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>{isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : showBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
-              </Tooltip>
-            </div>
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant={isStaleRunning ? "outline" : showBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
+                      {isStaleRunning ? i18n.chat.agentStaleRunning : showBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>{isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : showBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
+                </Tooltip>
+              </div>
 
-            <div className="absolute right-3 top-2 z-10 flex shrink-0 items-center gap-2">
-              <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1 py-1">
-                {chatFontSizeOptions.map((item) => {
-                  const active = item.value === chatFontSize;
-                  return (
-                    <Tooltip key={item.value}>
-                      <TooltipTrigger asChild>
-                        <button
+              <div className="flex shrink-0 items-center gap-1.5 self-start">
+                <div className="flex items-center gap-0.5 rounded-md border border-border/70 bg-background/70 px-1 py-0.5">
+                  {chatFontSizeOptions.map((item) => {
+                    const active = item.value === chatFontSize;
+                    return (
+                      <Tooltip key={item.value}>
+                        <TooltipTrigger asChild>
+                          <button
                           type="button"
                           className={cn(
-                            "inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                            active && "bg-muted text-foreground",
-                          )}
-                          aria-label={i18n.chat.fontSizeOptionTooltip(item.label)}
-                          disabled={interactionLocked}
-                          onClick={() => onChatFontSizeChange?.(item.value)}
-                        >
-                          <span className={cn("font-semibold leading-none", item.glyphClassName)}>A</span>
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>{i18n.chat.fontSizeOptionTooltip(item.label)}</TooltipContent>
-                    </Tooltip>
-                  );
-                })}
+                              "inline-flex h-[1.375rem] w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                              active && "bg-muted text-foreground",
+                            )}
+                            aria-label={i18n.chat.fontSizeOptionTooltip(item.label)}
+                            disabled={interactionLocked}
+                            onClick={() => onChatFontSizeChange?.(item.value)}
+                          >
+                            <span className={cn("font-semibold leading-none", item.glyphClassName)}>A</span>
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>{i18n.chat.fontSizeOptionTooltip(item.label)}</TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleResetWithConfirm}
+                      className="h-6 w-6 rounded-md text-muted-foreground/70 hover:text-foreground"
+                      aria-label={i18n.chat.resetConversation}
+                      disabled={interactionLocked || !openClawConnected}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="px-2.5 py-2 text-left">
+                    <div className="text-xs font-medium leading-4">{formatShortcutForPlatform(i18n.chat.resetConversationHotkey)}</div>
+                    <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{i18n.chat.resetConversationTooltipHint}</div>
+                  </TooltipContent>
+                </Tooltip>
               </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleResetWithConfirm}
-                    className="h-7 w-7 rounded-md text-muted-foreground/70 hover:text-foreground"
-                    aria-label={i18n.chat.resetConversation}
-                    disabled={interactionLocked || !openClawConnected}
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="px-2.5 py-2 text-left">
-                  <div className="text-xs font-medium leading-4">{formatShortcutForPlatform(i18n.chat.resetConversationHotkey)}</div>
-                  <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{i18n.chat.resetConversationTooltipHint}</div>
-                </TooltipContent>
-              </Tooltip>
             </div>
 
             {sessionOverview ? <div className="mt-2">{sessionOverview}</div> : null}

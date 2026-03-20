@@ -1,6 +1,6 @@
 # Frontend Visual Spec
 
-Last updated: 2026-03-19
+Last updated: 2026-03-20
 
 ## Purpose
 
@@ -23,6 +23,20 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - In stacked inspector sections, the gap between a section title and its own card should be tighter than the gap to the previous sibling section. Never let a title visually read as attached to the card above it.
 - Form controls inside inspector cards should not rely on browser-default select arrows. Use a consistent custom arrow placement so dropdown affordances align with the input shell and right padding.
 - Checkbox controls inside inspector forms should align to the vertical center of their text label. Do not use ad-hoc top margins to visually fake alignment.
+- Dropdown and popover menus must keep a visible safe margin from the viewport edge. Do not let menu surfaces visually stick to the window boundary when collision handling repositions them.
+- Dropdown menus triggered from summary cards or compact controls should align to the trigger edge that faces the nearest viewport side: use left-edge alignment for left-side triggers and right-edge alignment for right-side triggers.
+- In chat panel headers, compact utility groups such as font-size toggles must keep a low visual height. When horizontal space gets tight, prefer shrinking the control group's own height and padding before letting it collide with the summary card row below.
+- For streaming assistant replies, keep exactly one stable in-progress treatment across the chat surface. Do not show competing labels such as a separate `Generating` badge in message meta when the tab badge and top session badge already communicate the running state.
+- While an assistant reply is still streaming, the chat header status and the chat-tab busy dot must stay continuously in the busy state for the whole turn instead of blinking per token or intermediate snapshot.
+- The header busy badge, the chat-tab busy dot, and the assistant bubble trailing waiting dots must all derive from the same tracked in-flight turn state rather than from transient token-level `streaming` or `session.status` pulses.
+- The assistant bubble trailing waiting dots should stay latched through short reconciliation gaps instead of disappearing on each intermediate card refresh or token-state pulse.
+- If the page refreshes while an assistant turn is still in progress, the restored conversation must continue to show the same in-flight state immediately after hydration: header busy badge, chat-tab busy dot, and assistant trailing waiting dots all remain visible until the recovered turn actually stabilizes and finishes.
+- While the latest assistant turn is still in progress, its card must stay on a stable single layout branch and must not switch between compact/full/outline variants during intermediate reconciliation.
+- The assistant trailing waiting dots should use a subtle small-dot treatment rather than large loading chips, while remaining continuously visible for the whole in-flight turn.
+- The assistant bubble trailing waiting dots should render as plain filled dots only. Do not add outlines, borders, or glow/shadow treatment around the three-dot indicator.
+- The assistant bubble trailing waiting dots should stay inline after the generated text, visually following the final text run instead of sitting in a detached card corner.
+- Streaming assistant bubbles should show a trailing three-dot waiting indicator at the end of the card content until the turn settles. Use this as the inline progress affordance instead of an extra `Generating` label near the timestamp.
+- Small muted subtitles in cards, sheets, and section headers must keep enough line-height and vertical breathing room to avoid clipping Latin descenders such as `g`, `p`, and `y`.
 
 ## Section Containers
 
@@ -34,6 +48,7 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Count badges inside segmented inspector tabs must keep a distinct pill background and outline even when the tab is not selected; the inactive badge cannot blend into the tab list surface in either light or dark theme.
 - Expanded sections may add a top divider between header and content, but collapsed and expanded states should keep a stable outer shape.
 - For inspector-style collapsible lists, header and content padding should stay compact enough that many sections can be scanned without excessive vertical scrolling.
+- In the files inspector, the `Workspace files` group should be collapsed by default while the current-session file group may stay expanded. Workspace inventory is secondary context and should not push active session changes below the fold on first render.
 
 ## Naming And Information Architecture
 
@@ -74,6 +89,12 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
   - log entry points
 - Lower-level groups should avoid repeating obvious summary rows like `gateway.baseUrl` or `session.mode` if those are already promoted into the diagnostic summary.
 - The `LalaClaw` metadata group should include at least the app version, current server URL, host, port, and active access/auth mode so operators can confirm the local control-plane endpoint at a glance.
+- When a newer stable LalaClaw release is available, the `Environment` tab must show a small red-dot attention marker before the user opens the tab.
+- Opening the `Environment` tab while a newer stable LalaClaw release is available must auto-expand the top-level `LalaClaw` section so the version row, target stable version, and immediate update action are visible without extra clicks.
+- The `LalaClaw` section should show stable-status badges inline with version values instead of burying the stable signal in secondary copy.
+- When a newer stable LalaClaw release is available, show the `Update available` state as plain inline text without badge chrome or accent coloring, and place the immediate update action directly after that status text.
+- The adjacent LalaClaw immediate update action must reuse the same filled blue treatment as the chat composer send button instead of inheriting the generic primary button theme, so the two primary send/update actions stay visually consistent across light and dark themes.
+- Do not repeat extra helper copy such as `A newer stable version is available` when the green inline status and adjacent action already communicate the update affordance.
 - Long values such as JSON session keys, file paths, and runtime identifiers must wrap inside the container boundary; do not allow value text to visually spill past the right edge.
 - If an environment value is an absolute file path that points to a file-like value, render it as a clickable preview link instead of inert monospace text.
 - If an environment value represents a directory such as `*.dir` or `*.root`, render it as a folder entry with a folder icon and make the click action open that directory in the system file manager instead of opening inline preview.
@@ -81,6 +102,7 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Missing files should stay plain text instead of rendering as broken preview links. Only render preview actions for confirmed existing files.
 - Directory icons in environment path rows should sit outside the colored link text, use a muted gray tone, and be vertically centered against the path label.
 - Environment diagnostics labels should use the newer user-facing names now exposed in the UI, including `OpenClaw Doctor` and `Current session agent workspace directory`, instead of older generic names such as `Doctor` or `Workspace root`.
+- In environment and diagnostics lists, hovering a config-item label row should reveal a compact copy action aligned to that row. The icon should stay visually quiet by default, match the label-row height instead of inflating it, and copy the item's value rather than its label.
 - In install/update panels, hide the primary update action when the system is already up to date. Keep the status badge and refresh action, but do not show a no-op primary button.
 - Install/update failure states must expose the underlying command diagnostics clearly, including `stderr`, timeout state, and exit code when available.
 - Install/update failure cards should map known failure shapes to actionable guidance. Prefer linking to the relevant official OpenClaw docs and keep the inline summary short.
@@ -91,6 +113,7 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 ## Preview Overlays
 
 - File preview overlays with a secondary sidebar must keep the main preview column shrinkable with `min-w-0`-style constraints so long single-line content scrolls inside the preview surface instead of pushing the sidebar out of view.
+- In split preview overlays, the main preview column should also use a `basis-0`-style flex basis and full-width content wrappers so wide markdown tables, code blocks, or front matter sections cannot force the overall layout past the right edge.
 - Code-like previews in light mode should use a true light syntax surface and token palette; avoid embedding a dark code block inside an otherwise light preview shell unless the user explicitly asks for it.
 
 ## Feedback Loop

@@ -42,6 +42,23 @@ If you want to force local development into `mock` mode, use:
 export COMMANDCENTER_FORCE_MOCK=1
 ```
 
+If you want to demo the in-app LalaClaw self-update flow repeatedly from a source checkout without restarting the backend, use the dev-only mock route:
+
+```bash
+curl http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
+curl -X POST http://127.0.0.1:3000/api/dev/lalaclaw/update-mock \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"stableVersion":"2026.3.21-1"}'
+curl -X DELETE http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
+```
+
+Notes:
+
+- This route is available only from a source checkout in development, not from packaged installs.
+- `GET` returns the current dev mock state.
+- `POST` enables the mock and sets the stable version shown by `/api/lalaclaw/update`.
+- `DELETE` disables the mock and clears the previous demo update job state.
+
 If your change depends on built output, run `npm run build` and verify against `npm run lalaclaw:start` or `npm start`.
 
 If you are preparing a release or changing packaging behavior, do not stop at validating the source checkout. Also validate the actual npm artifact with `npm pack`, install that tarball in a clean temporary directory, and verify one real installed startup path before publishing.
@@ -106,6 +123,10 @@ If you are preparing a release or changing packaging behavior, do not stop at va
 - Use npm-compatible calendar versions. For multiple releases on the same day, use `YYYY.M.D-N` such as `2026.3.17-2`, not `YYYY.M.D.N`.
 - Breaking changes should be called out explicitly in release notes and migration-facing docs.
 - The repository currently targets Node.js `22` via [`.nvmrc`](./.nvmrc).
+- The in-app LalaClaw self-update flow reads the npm `stable` dist-tag first and falls back to `latest` only when `stable` is missing.
+- For every release, ask the maintainer explicitly whether the new version should be promoted to `stable`. Do not assume every published version becomes `stable`.
+- If the maintainer has not confirmed `stable`, prefer publishing to a non-`stable` tag such as `next`, then promote later with `npm dist-tag add lalaclaw@<version> stable` only after approval.
+- To move `stable` away from a version, either point `stable` back to an older version with `npm dist-tag add lalaclaw@<older-version> stable`, or remove it entirely with `npm dist-tag rm lalaclaw stable` when that fallback behavior is intentionally desired.
 
 ## Release Artifact Checklist
 

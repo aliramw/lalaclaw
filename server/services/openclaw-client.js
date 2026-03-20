@@ -540,6 +540,16 @@ function createOpenClawClient({
     }
   }
 
+  function isResetDingTalkSessionUser(sessionUser = '') {
+    const parsed = parseDingTalkSessionUser(sessionUser);
+    if (!parsed) {
+      return false;
+    }
+
+    const peerId = parsed?.peerid || parsed?.peerId || parsed?.groupid || parsed?.groupId || parsed?.conversationid || parsed?.conversationId || '';
+    return /:reset:[^:]+$/i.test(String(peerId || '').trim());
+  }
+
   function normalizeFeishuAccountId(value = '') {
     return String(value || '').trim() || 'default';
   }
@@ -641,6 +651,9 @@ function createOpenClawClient({
 
     const parsedSessionUser = parseDingTalkSessionUser(trimmedSessionUser);
     if (parsedSessionUser) {
+      if (isResetDingTalkSessionUser(trimmedSessionUser)) {
+        return null;
+      }
       const chatType = parsedSessionUser?.chattype || parsedSessionUser?.chatType || '';
       const peerId = parsedSessionUser?.peerid || parsedSessionUser?.peerId || parsedSessionUser?.groupid || parsedSessionUser?.groupId || parsedSessionUser?.conversationid || parsedSessionUser?.conversationId || '';
       return createDingTalkDeliveryRoute({
@@ -1467,6 +1480,9 @@ function createOpenClawClient({
   }
 
   async function dispatchOpenClaw(messages, fastMode, sessionUser = 'command-center', options = {}) {
+    if (isResetDingTalkSessionUser(sessionUser)) {
+      return await callOpenClawSession(messages, sessionUser);
+    }
     if (!resolveSessionDeliveryRoute(sessionUser) && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
       return await callOpenClaw(messages, fastMode, sessionUser, options);
     }
@@ -1474,6 +1490,9 @@ function createOpenClawClient({
   }
 
   async function dispatchOpenClawStream(messages, fastMode, sessionUser = 'command-center', options = {}) {
+    if (isResetDingTalkSessionUser(sessionUser)) {
+      return await callOpenClawSessionStream(messages, sessionUser, 30000, options);
+    }
     if (!resolveSessionDeliveryRoute(sessionUser) && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
       return await callOpenClawStream(messages, fastMode, sessionUser, options);
     }

@@ -51,6 +51,8 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleAccessState,
     handleAccessToken,
     handleFileManagerReveal,
+    handleLalaClawUpdateDev,
+    handleLalaClawUpdate,
     handleOpenClawConfig,
     handleOpenClawHistory,
     handleOpenClawManagement,
@@ -169,6 +171,16 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/openclaw/update') {
       runRouteHandler(handleOpenClawUpdate, req, res);
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/lalaclaw/update') {
+      runRouteHandler(handleLalaClawUpdate, req, res);
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE') && url.pathname === '/api/dev/lalaclaw/update-mock') {
+      runRouteHandler(handleLalaClawUpdateDev, req, res);
       return;
     }
 

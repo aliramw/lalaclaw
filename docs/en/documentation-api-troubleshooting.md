@@ -178,6 +178,8 @@ Common causes:
 Important note:
 
 - Both `file-preview` and `file-manager/reveal` require absolute paths
+- In the `Environment` tab, absolute file paths open preview, but directory paths intentionally skip preview and open the platform file manager instead
+- If you expected inline preview for a log directory or workspace root, that is working as designed
 
 ### Why is attachment content truncated?
 
@@ -196,6 +198,23 @@ That is part of the pending-turn recovery flow:
 - Once the runtime snapshot arrives with the final reply, it replaces that placeholder
 
 In most cases, that is normal recovery behavior rather than an error.
+
+### Why is an Environment action disabled even though I can see the target?
+
+Common reason:
+
+- The app can read a remote OpenClaw target, but the current operation is intentionally limited to local-safe flows
+
+What to check:
+
+- Whether `OPENCLAW_BASE_URL` points to a non-loopback host
+- Whether the `Environment` panel labels the target as remote
+- Whether the blocked action is a local-only mutation such as install, update, config apply, or gateway management
+
+Expected behavior:
+
+- Read-only diagnostics can stay available for both local and remote targets
+- Higher-risk mutations stay disabled until the dedicated remote-operations flow is available
 
 ## For Deeper Structure Notes
 

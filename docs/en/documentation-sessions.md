@@ -73,6 +73,7 @@ Characteristics:
 
 - The full UI remains usable without a live gateway
 - Chat, inspector, files, and environment panels all produce demo-friendly mock data
+- The `Environment` tab still keeps the same structural sections, but diagnostics, management actions, and config tools stay in a mock-safe state
 - It is ideal for local development, UI integration, and automated tests
 
 ## `openclaw` Mode
@@ -87,6 +88,8 @@ Characteristics:
 - `/api/chat` sends real requests to the configured gateway
 - `/api/runtime` and the inspector read transcripts, session status, and browser-control information
 - Model and thinking mode changes can patch the remote session
+- The `Environment` tab becomes the primary place to inspect runtime transport, gateway health, OpenClaw diagnostics, and current-session workspace/config paths
+- When the target gateway is remote rather than local loopback, local-only install, update, and write operations are intentionally blocked in place
 
 ## Where Mentionable Agents and Skills Come From
 

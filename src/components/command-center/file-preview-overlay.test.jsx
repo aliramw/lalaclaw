@@ -69,6 +69,7 @@ function mockNavigatorPlatform(platform) {
 describe("FilePreviewOverlay", () => {
   afterEach(() => {
     window.localStorage.removeItem("file-preview-font-size");
+    window.localStorage.removeItem("file-preview-expanded");
     monacoEditorApis.length = 0;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -118,6 +119,85 @@ describe("FilePreviewOverlay", () => {
     await user.click(screen.getByLabelText(/Expand preview|铺满预览窗/));
 
     expect(screen.getByTitle("report.pdf")).toHaveClass("h-full");
+  });
+
+  it("shows a tooltip for the expand preview button", async () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "pdf",
+          name: "report.pdf",
+          path: "/Users/marila/projects/lalaclaw/report.pdf",
+          contentUrl: "/api/file-preview/content?path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Freport.pdf",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("button", { name: /Expand preview|铺满预览窗/ }));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/Expand preview|铺满预览窗/);
+  });
+
+  it("persists the expanded preview preference across reopen", async () => {
+    const preview = {
+      kind: "pdf",
+      name: "report.pdf",
+      path: "/Users/marila/projects/lalaclaw/report.pdf",
+      contentUrl: "/api/file-preview/content?path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Freport.pdf",
+    };
+    const user = userEvent.setup();
+
+    const { unmount } = renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={preview}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Expand preview|铺满预览窗/ }));
+    expect(window.localStorage.getItem("file-preview-expanded")).toBe("true");
+    expect(screen.getByTitle("report.pdf")).toHaveClass("h-full");
+
+    unmount();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={preview}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Restore preview|还原预览窗/ })).toBeInTheDocument();
+    expect(screen.getByTitle("report.pdf")).toHaveClass("h-full");
+  });
+
+  it("keeps padding around fullscreen code previews", async () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Expand preview|铺满预览窗/ }));
+
+    expect(screen.getByTestId("file-preview-code-block").parentElement).toHaveClass("h-full", "px-6", "py-5");
   });
 
   it("uses a dark shell for pdf previews in dark mode", () => {
@@ -203,6 +283,26 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByTestId("markdown-preview-content").firstChild).toHaveClass("text-[16px]", "leading-7", "[&_p]:!leading-7", "[&_ul]:!my-2.5");
   });
 
+  it("keeps markdown preview content constrained inside the main panel", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "wide.md",
+          path: "/Users/marila/projects/lalaclaw/wide.md",
+          content: "# Wide\n\n| A | B |\n| --- | --- |\n| very-long-content | another-very-long-content |",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const content = screen.getByTestId("markdown-preview-content");
+    expect(content).toHaveClass("min-w-0", "max-w-full", "overflow-x-auto");
+    expect(content.firstChild).toHaveClass("min-w-0", "max-w-full");
+  });
+
   it("shows the same persisted font size controls for text previews", async () => {
     window.localStorage.setItem("file-preview-font-size", "large");
 
@@ -249,7 +349,7 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByTestId("file-preview-files-sidebar")).toBeInTheDocument();
     expect(screen.getByTestId("file-preview-code-block")).toHaveClass("min-w-0", "max-w-full");
     expect(screen.getByTestId("file-preview-code-scroll")).toHaveClass("min-w-0", "max-w-full", "overflow-auto");
-    expect(document.querySelector(".token-line")).toHaveClass("w-fit", "min-w-full");
+    expect(document.querySelector(".token-line")).toHaveClass("block", "min-w-full");
   });
 
   it("uses a light code preview surface and syntax theme in light mode", () => {
@@ -544,9 +644,74 @@ describe("FilePreviewOverlay", () => {
     await user.clear(editor);
     await user.type(editor, "const after = true;");
     await user.click(screen.getByRole("button", { name: /Cancel|取消/ }));
+    await user.click(screen.getByRole("button", { name: /Discard edits|放弃修改/ }));
 
     expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
     expect(document.querySelector("pre")?.textContent).toContain("const before = true;");
+  });
+
+  it("asks for confirmation before canceling editing after the content was changed", async () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
+    await user.clear(editor);
+    await user.type(editor, "const after = true;");
+    await user.click(screen.getByRole("button", { name: /Cancel|取消/ }));
+
+    expect(screen.getByRole("alertdialog", { name: /Discard edits\?|确认放弃当前编辑？/ })).toBeInTheDocument();
+    expect(screen.getByTestId("file-preview-monaco-editor")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Discard edits|放弃修改/ }));
+
+    expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
+    expect(document.querySelector("pre")?.textContent).toContain("const before = true;");
+  });
+
+  it("asks for confirmation before closing the preview after the content was changed", async () => {
+    const onClose = vi.fn();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={onClose}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
+    await user.type(editor, "// changed");
+    await user.click(screen.getByRole("button", { name: /Close preview|关闭预览/ }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog", { name: /Discard edits and close preview\?|确认放弃当前编辑并关闭预览？/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Discard and close|放弃并关闭/ }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("keeps oversized text previews read-only to avoid saving truncated content", () => {

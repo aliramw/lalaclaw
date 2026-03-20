@@ -5,7 +5,7 @@ const unavailableGatewaySdk = async () => {
 };
 
 describe('createOpenClawClient', () => {
-  it('delivers DingTalk session messages through the agent gateway route', async () => {
+  it('keeps reset DingTalk sessions isolated from the delivery-routed gateway session', async () => {
     const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058:reset:1773319871765","sendername":"马锐拉"}';
     const gatewayCalls = [];
     const client = createOpenClawClient({
@@ -83,12 +83,12 @@ describe('createOpenClawClient', () => {
     expect(gatewayCalls[0].params).toEqual(
       expect.objectContaining({
         sessionKey: `agent:main:openai-user:${rawSessionUser}`,
-        deliver: true,
-        channel: 'dingtalk-connector',
-        to: 'user:398058',
-        accountId: '__default__',
       }),
     );
+    expect(gatewayCalls[0].params.deliver).not.toBe(true);
+    expect(gatewayCalls[0].params.channel).not.toBe('dingtalk-connector');
+    expect(gatewayCalls[0].params.to).toBeUndefined();
+    expect(gatewayCalls[0].params.accountId).toBeUndefined();
     expect(gatewayCalls[1]).toEqual(
       expect.objectContaining({
         method: 'agent.wait',

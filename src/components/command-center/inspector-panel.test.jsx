@@ -133,6 +133,22 @@ describe("InspectorPanel", () => {
           }),
         };
       }
+      if (url === "/api/lalaclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            currentVersion: "2026.3.20-1",
+            currentRelease: { version: "2026.3.20-1", stable: true },
+            targetRelease: { version: "2026.3.20-1", stable: true },
+            stableTag: "stable",
+            updateAvailable: false,
+            capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+            check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+            job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+          }),
+        };
+      }
       if (url === "/api/openclaw/history") {
         return {
           ok: true,
@@ -209,6 +225,21 @@ describe("InspectorPanel", () => {
     expect(screen.getByText("Ping timeout")).toBeInTheDocument();
     expect(screen.queryByText("gateway.baseUrl")).not.toBeInTheDocument();
     expect(screen.getByText("runtime.transport").closest('[role="tabpanel"]')).toHaveClass("min-w-0");
+  });
+
+  it("shows an environment item copy action on the label row", async () => {
+    renderWithTooltip(<TestHarness />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("tab", { name: "环境" }));
+    await ensureEnvironmentSectionExpanded(user, "实时同步");
+
+    const labelText = screen.getByText("runtime.fallbackReason");
+    const labelRow = labelText.parentElement;
+    expect(labelRow).not.toBeNull();
+
+    await user.hover(labelRow);
+    expect(within(labelRow).getByRole("button", { name: "复制代码" })).toBeInTheDocument();
   });
 
   it("keeps a visible background badge for inactive inspector tabs", () => {
@@ -352,54 +383,68 @@ describe("InspectorPanel", () => {
     await user.click(screen.getByRole("button", { name: /实时同步 收起详情/i }));
     expect(screen.queryByText("runtime.transport")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /实时同步 (?:查看|收起)详情/i }));
-    const syncSection = screen.getByRole("button", { name: /实时同步 收起详情/i }).closest(".rounded-2xl");
+    const syncSection = screen.getByRole("button", { name: /实时同步 收起详情/i }).closest("section");
     expect(syncSection).not.toBeNull();
     expect(within(syncSection).getAllByText("runtime.transport").length).toBeGreaterThan(0);
-    const longValueLabel = within(syncSection).getByText("runtimeHub.channel.key");
-    const longValueContainer = longValueLabel.parentElement?.querySelector(".font-mono");
+    const longValueRow = within(syncSection).getByText("runtimeHub.channel.key").closest(".group");
+    const longValueContainer = longValueRow?.querySelector(".font-mono");
     expect(longValueContainer).not.toBeNull();
     expect(longValueContainer?.className).toContain("overflow-hidden");
     expect(longValueContainer?.className).toContain("break-all");
   });
 
   it("opens a file preview when an environment value is an absolute file path", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input) => {
+    const fetchMock = vi.fn(async (input) => {
         const url = String(input);
-      if (url === "/api/openclaw/config") {
-        return {
-          ok: true,
-          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
-        };
-      }
-      if (url === "/api/openclaw/update") {
+        if (url === "/api/openclaw/config") {
+          return {
+            ok: true,
+            json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+          };
+        }
+        if (url === "/api/lalaclaw/update") {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              currentVersion: "2026.3.20-1",
+              currentRelease: { version: "2026.3.20-1", stable: true },
+              targetRelease: { version: "2026.3.20-1", stable: true },
+              stableTag: "stable",
+              updateAvailable: false,
+              capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+              check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+              job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+            }),
+          };
+        }
+        if (url === "/api/openclaw/update") {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              installed: true,
+              currentVersion: "2026.3.13",
+              targetVersion: "2026.3.13",
+              availability: { available: false },
+              update: { installKind: "package", packageManager: "pnpm" },
+              channel: { value: "stable", label: "stable (default)" },
+              preview: { actions: [] },
+            }),
+          };
+        }
         return {
           ok: true,
           json: async () => ({
-            ok: true,
-            installed: true,
-            currentVersion: "2026.3.13",
-            targetVersion: "2026.3.13",
-            availability: { available: false },
-            update: { installKind: "package", packageManager: "pnpm" },
-            channel: { value: "stable", label: "stable (default)" },
-            preview: { actions: [] },
-          }),
-        };
-      }
-      return {
-        ok: true,
-        json: async () => ({
-            ok: true,
-            kind: "text",
-            path: "/Users/marila/.openclaw/logs/gateway.log",
-            name: "gateway.log",
-            content: "gateway ready",
-          }),
-        };
-      }),
-    );
+              ok: true,
+              kind: "text",
+              path: "/Users/marila/.openclaw/logs/gateway.log",
+              name: "gateway.log",
+              content: "gateway ready",
+            }),
+          };
+        });
+    vi.stubGlobal("fetch", fetchMock);
 
     renderWithTooltip(
       <InspectorPanel
@@ -485,7 +530,6 @@ describe("InspectorPanel", () => {
         taskTimeline={[]}
       />,
     );
-
     const user = userEvent.setup();
     await ensureEnvironmentSectionExpanded(user, "日志");
     const directoryLink = screen.getByRole("button", { name: "/Users/marila/.openclaw/logs" });
@@ -527,7 +571,6 @@ describe("InspectorPanel", () => {
         taskTimeline={[]}
       />,
     );
-
     const user = userEvent.setup();
     await ensureEnvironmentSectionExpanded(user, "日志");
     expect(screen.queryByRole("button", { name: "/Users/marila/.openclaw/logs/supervisor.log" })).not.toBeInTheDocument();
@@ -1960,7 +2003,7 @@ describe("InspectorPanel", () => {
     expect(screen.getByRole("tab", { name: "文件" })).toHaveTextContent(/^文件$/);
   });
 
-  it("hides the session files section when there are no session files", () => {
+  it("hides the session files section when there are no session files", async () => {
     const [activeTab, setActiveTab] = ["files", () => {}];
 
     renderWithTooltip(
@@ -1991,6 +2034,7 @@ describe("InspectorPanel", () => {
     expect(screen.queryByRole("textbox", { name: "过滤本次会话文件" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /workspace 文件/ })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "过滤 workspace 文件" })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     expect(screen.getByText("package.json")).toBeInTheDocument();
   });
 
@@ -2366,10 +2410,10 @@ describe("InspectorPanel", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toHaveTextContent("42");
-    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toBeInTheDocument();
-    expect(screen.getByText("package.json")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "workspace 文件 查看详情" })).toHaveTextContent("42");
+    expect(screen.getByRole("button", { name: "workspace 文件 查看详情" })).toBeInTheDocument();
+    expect(screen.queryByText("package.json")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "src 查看详情" })).not.toBeInTheDocument();
   });
 
   it("renders workspace files as a collapsible tree", async () => {
@@ -2448,10 +2492,11 @@ describe("InspectorPanel", () => {
       />,
     );
 
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+
     expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
     expect(screen.getByText("package.json")).toBeInTheDocument();
-
-    const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "src 查看详情" }));
     expect(await screen.findByRole("button", { name: "components 查看详情" })).toBeInTheDocument();
@@ -2505,7 +2550,7 @@ describe("InspectorPanel", () => {
     expect(screen.getByRole("tablist")).toBeInTheDocument();
     expect(screen.getAllByRole("textbox")).toHaveLength(2);
     expect(screen.getByText("README.md")).toBeInTheDocument();
-    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /workspace/i })).toBeInTheDocument();
   });
 
   it("filters session files locally by text and glob patterns", async () => {
@@ -2543,7 +2588,7 @@ describe("InspectorPanel", () => {
     expect(screen.getByRole("button", { name: "清空本次会话文件过滤" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "docs 收起详情" })).toBeInTheDocument();
     expect(screen.getByText("guide.md")).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/workspace-tree"))).toHaveLength(0);
     await waitFor(() => {
       expect(screen.queryByText("package.json")).not.toBeInTheDocument();
       expect(screen.queryByText("test01.js")).not.toBeInTheDocument();
@@ -2568,7 +2613,7 @@ describe("InspectorPanel", () => {
     expect(screen.getByText("package.json")).toBeInTheDocument();
     expect(screen.getByText("test01.js")).toBeInTheDocument();
     expect(screen.getByText("testA.js")).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/workspace-tree"))).toHaveLength(0);
   });
 
   it("filters workspace files by text and glob patterns", async () => {
@@ -2688,6 +2733,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     await user.click(screen.getByRole("button", { name: "docs 查看详情" }));
     await user.click(screen.getByRole("button", { name: "tests 查看详情" }));
 
@@ -2777,6 +2823,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     const filterInput = screen.getByRole("textbox", { name: "过滤 workspace 文件" });
     expect(screen.queryByRole("button", { name: "清空 workspace 过滤" })).not.toBeInTheDocument();
 
@@ -2834,24 +2881,29 @@ describe("InspectorPanel", () => {
         taskTimeline={[]}
       />,
     );
+    fetchMock.mockClear();
 
     const filterInput = screen.getByRole("textbox", { name: "过滤 workspace 文件" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    });
     await act(async () => {
       fireEvent.change(filterInput, { target: { value: "lesson" } });
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/workspace-tree"))).toHaveLength(0);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(149);
     });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/workspace-tree"))).toHaveLength(0);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain("filter=lesson");
+    const workspaceCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/workspace-tree"));
+    expect(workspaceCalls).toHaveLength(1);
+    expect(workspaceCalls[0][0]).toContain("filter=lesson");
     expect(screen.getByText("lesson.md")).toBeInTheDocument();
   });
 
@@ -2888,6 +2940,7 @@ describe("InspectorPanel", () => {
       />,
     );
 
+    await userEvent.setup().click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     expect(await screen.findByText("package.json")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
   });
@@ -2944,6 +2997,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     await user.click(screen.getByRole("button", { name: "src 查看详情" }));
 
     expect(await screen.findByText("App.jsx")).toBeInTheDocument();
@@ -2982,6 +3036,95 @@ describe("InspectorPanel", () => {
     expect(screen.getByRole("button", { name: "src 收起详情" })).toBeInTheDocument();
   });
 
+  it("does not blank the workspace tree when a later snapshot temporarily omits workspace entries", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                { path: "/Users/marila/projects/lalaclaw/src/App.jsx", fullPath: "/Users/marila/projects/lalaclaw/src/App.jsx", kind: "文件" },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+    const initialPeeks = {
+      workspace: {
+        summary: "工作区摘要",
+        items: [],
+        entries: [{ path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true }],
+      },
+      terminal: null,
+      browser: null,
+      environment: null,
+    };
+
+    const { rerender } = renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={initialPeeks}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await user.click(screen.getByRole("button", { name: "src 查看详情" }));
+
+    expect(await screen.findByText("App.jsx")).toBeInTheDocument();
+
+    rerender(
+      <I18nProvider>
+        <TooltipProvider delayDuration={0}>
+          <InspectorPanel
+            activeTab={activeTab}
+            agents={[]}
+            artifacts={[]}
+            currentAgentId="main"
+            currentSessionUser="command-center"
+            currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+            files={[]}
+            peeks={{
+              workspace: {
+                summary: "工作区摘要",
+                items: [],
+              },
+              terminal: null,
+              browser: null,
+              environment: null,
+            }}
+            renderPeek={(_, fallback) => fallback}
+            setActiveTab={setActiveTab}
+            taskTimeline={[]}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("App.jsx")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "src 收起详情" })).toBeInTheDocument();
+  });
+
   it("shows empty workspace copy when no workspace files are available", async () => {
     const [activeTab, setActiveTab] = ["files", () => {}];
 
@@ -2999,6 +3142,7 @@ describe("InspectorPanel", () => {
       />,
     );
 
+    await userEvent.setup().click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     expect(screen.getByText("当前 workspace 中检测到的文件会显示在这里。")).toBeInTheDocument();
   });
 
@@ -3440,6 +3584,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     await user.pointer([
       {
         target: screen.getByRole("button", { name: "src 查看详情" }),
@@ -3510,6 +3655,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     await user.click(screen.getByRole("button", { name: "src 查看详情" }));
     expect(await screen.findByText("old.txt")).toBeInTheDocument();
 

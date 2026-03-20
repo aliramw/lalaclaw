@@ -872,6 +872,46 @@ function getContextUsageColor(contextUsed, contextMax, resolvedTheme) {
   return "#c4b5fd";
 }
 
+function getContextUsageRatio(contextUsed, contextMax) {
+  if (!Number.isFinite(contextUsed) || !Number.isFinite(contextMax) || contextMax <= 0) {
+    return 0;
+  }
+
+  return clamp(contextUsed / contextMax, 0, 1);
+}
+
+function ContextUsageRing({ color, ratio, resolvedTheme }) {
+  const normalizedRatio = clamp(ratio, 0, 1);
+  const radius = 6;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - normalizedRatio);
+  const trackColor = resolvedTheme === "light" ? "rgba(15, 23, 42, 0.12)" : "rgba(255, 255, 255, 0.18)";
+
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center"
+      data-testid="context-usage-ring"
+      style={{ color }}
+    >
+      <svg className="-rotate-90" viewBox="0 0 16 16" width="16" height="16">
+        <circle cx="8" cy="8" r={radius} fill="none" stroke={trackColor} strokeWidth="2" />
+        <circle
+          cx="8"
+          cy="8"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          strokeWidth="2"
+        />
+      </svg>
+    </span>
+  );
+}
+
 function BlockTooltipContent({ label, value }) {
   return (
     <TooltipContent side="bottom" className="px-2.5 py-2">
@@ -933,7 +973,7 @@ function SelectStatusPill({
       >
         <div className="min-w-0 flex-1">
           {hideLabel ? null : <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>}
-          <div className={cn("truncate font-semibold", compact ? "text-sm leading-none" : "text-sm", valueClassName)} style={valueStyle}>
+          <div className={cn("truncate font-normal", compact ? "text-sm leading-none" : "text-sm", valueClassName)} style={valueStyle}>
             {value}
           </div>
         </div>
@@ -958,7 +998,7 @@ function StatusPill({ label, value, valueNode, action, tooltipContent, valueClas
         >
           <div className="min-w-0 flex-1">
             <div className="text-[10px] font-medium uppercase text-muted-foreground">{label}</div>
-            <div className={cn("truncate text-sm font-semibold", valueClassName)} style={valueStyle}>
+            <div className={cn("truncate text-sm font-normal", valueClassName)} style={valueStyle}>
               {valueNode || value}
             </div>
           </div>
@@ -1771,7 +1811,10 @@ export function SessionOverview({
     }
     return `${normalized} (${messages.common.default})`;
   };
-  const contextUsageColor = getContextUsageColor(Number(session.contextUsed) || 0, Number(session.contextMax) || 0, resolvedTheme);
+  const normalizedContextUsed = Number(session.contextUsed) || 0;
+  const normalizedContextMax = Number(session.contextMax) || 0;
+  const contextUsageColor = getContextUsageColor(normalizedContextUsed, normalizedContextMax, resolvedTheme);
+  const contextUsageRatio = getContextUsageRatio(normalizedContextUsed, normalizedContextMax);
   const openSessionSearch = useCallback((channel, suppressTooltip) => {
     suppressTooltip?.();
     setSessionSearchChannel(channel);
@@ -1827,12 +1870,13 @@ export function SessionOverview({
           label={messages.sessionOverview.labels.context}
           value={`${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`}
           valueNode={(
-            <span>
+            <span className="inline-flex items-center gap-1.5">
               <span style={{ color: contextUsageColor }}>{formatCompactK(session.contextUsed)}</span>
               <span className={cn(isLightTheme ? "text-slate-900" : "text-foreground")}>
                 {" / "}
                 {formatCompactK(session.contextMax)}
               </span>
+              <ContextUsageRing color={contextUsageColor} ratio={contextUsageRatio} resolvedTheme={resolvedTheme} />
             </span>
           )}
           resolvedTheme={resolvedTheme}
@@ -1854,7 +1898,7 @@ export function SessionOverview({
               <div className="min-w-0">
                 <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.fastMode}</div>
                 <div
-                  className={cn("text-sm font-semibold", fastMode && "dark:text-emerald-400")}
+                  className={cn("text-sm font-normal", fastMode && "dark:text-emerald-400")}
                   style={fastMode && resolvedTheme === "light" ? { color: "#009559" } : undefined}
                 >
                   {fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off}

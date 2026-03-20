@@ -2,6 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppPersistence } from "@/features/app/storage";
 import { promptDraftStorageKey } from "@/features/app/storage/app-storage";
+import * as appStorage from "@/features/app/storage/app-storage";
 
 const attachmentStorageMocks = vi.hoisted(() => ({
   hydrateAttachmentStateByKeyFromStorage: vi.fn(),
@@ -264,6 +265,7 @@ describe("useAppPersistence", () => {
 
   it("debounces persistence while chat messages update rapidly", async () => {
     vi.useFakeTimers();
+    const sanitizeSpy = vi.spyOn(appStorage, "sanitizeMessagesForStorage");
     attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
       messagesByKey: {
         "agent:main": [{ role: "assistant", content: "最终输出", timestamp: 3 }],
@@ -282,6 +284,8 @@ describe("useAppPersistence", () => {
     expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
     attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockClear();
     expect(JSON.parse(window.localStorage.getItem(promptDraftStorageKey) || "{}")).toEqual({});
+    await Promise.resolve();
+    sanitizeSpy.mockClear();
 
     rerender(createProps({
       messages: [
@@ -309,12 +313,16 @@ describe("useAppPersistence", () => {
       },
     }));
 
+    sanitizeSpy.mockClear();
+
     await vi.advanceTimersByTimeAsync(449);
     expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).not.toHaveBeenCalled();
+    expect(sanitizeSpy).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
 
     expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
+    expect(sanitizeSpy).toHaveBeenCalled();
     expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledWith(
       {
         "agent:main": [

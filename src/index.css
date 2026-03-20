@@ -179,11 +179,46 @@
   }
 
   .cc-chat-tab-busy-dot {
-    animation: cc-thinking-breath 1.45s ease-in-out infinite;
+    animation: none !important;
     box-shadow:
       0 0 0 1.5px rgba(255, 255, 255, 0.95),
       0 0 0 4px rgba(16, 185, 129, 0.2);
     transform-origin: center;
+  }
+
+  .cc-streaming-tail-dots {
+    min-height: 0.72rem;
+    vertical-align: middle;
+  }
+
+  .cc-streaming-tail-dot {
+    width: 0.28rem;
+    height: 0.28rem;
+    border-radius: 999px;
+    background: currentColor;
+    animation: cc-streaming-tail-wave 1.05s ease-in-out infinite;
+    opacity: 0.62;
+  }
+
+  .cc-streaming-tail-dot-2 {
+    animation-delay: 0.12s;
+  }
+
+  .cc-streaming-tail-dot-3 {
+    animation-delay: 0.24s;
+  }
+
+  @keyframes cc-streaming-tail-wave {
+    0%,
+    100% {
+      transform: translateY(0) scale(0.9);
+      opacity: 0.56;
+    }
+
+    50% {
+      transform: translateY(-0.12rem) scale(1);
+      opacity: 1;
+    }
   }
 
   @keyframes cc-agent-switch-pulse {
@@ -390,8 +425,9 @@
     border-width: 1px !important;
     border-style: solid !important;
     border-color: var(--cc-streaming-border-rest) !important;
-    animation: cc-streaming-breath 1.95s ease-in-out infinite;
-    will-change: border-color;
+    animation: none !important;
+    transition: none !important;
+    will-change: auto;
   }
 
   .cc-focus-highlight,
@@ -489,8 +525,7 @@
   html[data-theme="light"] .cc-streaming-bubble[class],
   html[data-theme="dark"] .cc-streaming-bubble,
   html[data-theme="dark"] .cc-streaming-bubble[class] {
-    animation-duration: 1.55s;
-    animation-timing-function: ease-in-out;
+    animation: none !important;
   }
 
   html[data-theme="dark"] .cc-thinking-bubble,

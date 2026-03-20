@@ -160,6 +160,23 @@ npm run dev:all
 
 开发态下 `/api/*` 会通过 `vite.config.mjs` 代理到 `http://127.0.0.1:3000`。
 
+如果你想在源码开发态里反复演示 LalaClaw 应用内自更新链路，而不想每次都重启后端，可以使用 dev-only 调试入口：
+
+```bash
+curl http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
+curl -X POST http://127.0.0.1:3000/api/dev/lalaclaw/update-mock \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"stableVersion":"2026.3.21-1"}'
+curl -X DELETE http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
+```
+
+说明：
+
+- 这个入口只在 GitHub 源码仓库的开发态可用，发布包安装态不会开放。
+- `GET` 用于查看当前调试 mock 状态。
+- `POST` 会开启 mock，并把 `/api/lalaclaw/update` 里的最新 stable 版本改成你指定的版本号。
+- `DELETE` 会关闭 mock，并清掉上一轮演示残留的更新任务状态。
+
 ## 生产构建模式
 
 如果你要验证构建产物而不是开发联调：

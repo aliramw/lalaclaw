@@ -111,12 +111,12 @@ describe("mergePendingConversation", () => {
         "正在思考…",
         [
           { role: "user", content: "帮我分析", timestamp: 200 },
-          { role: "assistant", content: "先看看这个问题的根因", timestamp: 220, tokenBadge: "↑12" },
+          { role: "assistant", content: "先看看这个问题的根因", timestamp: 220, tokenBadge: "↑12", streaming: true },
         ],
       ),
     ).toEqual([
       { role: "user", content: "帮我分析", timestamp: 200 },
-      { role: "assistant", content: "先看看这个问题的根因", timestamp: 220, tokenBadge: "↑12" },
+      { role: "assistant", content: "先看看这个问题的根因", timestamp: 220, tokenBadge: "↑12", streaming: true },
     ]);
   });
 
@@ -255,6 +255,7 @@ describe("mergePendingConversation", () => {
         [],
       ),
     ).toEqual([
+      { role: "user", content: "给我看点新闻", timestamp: 200 },
       { role: "assistant", content: "先给你几条新闻", timestamp: 220 },
     ]);
   });
@@ -431,6 +432,41 @@ describe("mergePendingConversation", () => {
     });
   });
 
+  it("keeps restored pending turns when stored messages already contain the in-flight assistant with the same pending id", () => {
+    expect(
+      pruneCompletedPendingChatTurns(
+        {
+          "command-center-paint-1:paint": {
+            startedAt: 200,
+            pendingTimestamp: 220,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { role: "user", content: "hi", timestamp: 200 },
+          },
+        },
+        {
+          "agent:paint": [
+            { role: "user", content: "hi", timestamp: 200 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "先看一眼", timestamp: 220 },
+          ],
+        },
+        {
+          "agent:paint": {
+            agentId: "paint",
+            sessionUser: "command-center-paint-1",
+          },
+        },
+      ),
+    ).toEqual({
+      "command-center-paint-1:paint": {
+        startedAt: 200,
+        pendingTimestamp: 220,
+        assistantMessageId: "msg-assistant-pending-1",
+        userMessage: { role: "user", content: "hi", timestamp: 200 },
+      },
+    });
+  });
+
+
   it("treats a snapshot assistant without the local assistant id as authoritative once the final reply is present", () => {
     expect(
       hasAuthoritativePendingAssistantReply(
@@ -465,6 +501,23 @@ describe("mergePendingConversation", () => {
     ).toBe(false);
   });
 
+  it("does not treat a streaming assistant as the final reply while the turn is still in progress", () => {
+    expect(
+      hasAuthoritativePendingAssistantReply(
+        [
+          { role: "user", content: "hi", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到", timestamp: 120, streaming: true },
+        ],
+        {
+          startedAt: 105,
+          pendingTimestamp: 120,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { role: "user", content: "hi", timestamp: 100 },
+        },
+      ),
+    ).toBe(false);
+  });
+
   it("keeps settled duplicate turns when there is no pending replay context", () => {
     expect(
       mergePendingConversation(
@@ -483,6 +536,52 @@ describe("mergePendingConversation", () => {
       { role: "assistant", content: "第二版完整回答", timestamp: 120_000 },
       { role: "user", content: "详细说说", timestamp: 121_000 },
       { role: "assistant", content: "第二版完整回答", timestamp: 121_500 },
+    ]);
+  });
+
+  it("preserves the local pending user when the runtime snapshot briefly contains only the final assistant reply", () => {
+    expect(
+      mergePendingConversation(
+        [
+          { role: "assistant", content: "收到。", timestamp: 1_100 },
+        ],
+        {
+          startedAt: 1_000,
+          pendingTimestamp: 1_050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "1",
+            timestamp: 1_000,
+          },
+        },
+        "正在思考…",
+        [
+          { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 1_050, pending: true },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
+      { role: "assistant", content: "收到。", timestamp: 1_100 },
+    ]);
+  });
+
+  it("restores the trailing local user turn when a lagging snapshot only contains the matching assistant reply", () => {
+    expect(
+      mergeStaleLocalConversationTail(
+        [
+          { role: "assistant", content: "收到。", timestamp: 1_100 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
+          { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 1_050 },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
+      { role: "assistant", content: "收到。", timestamp: 1_100 },
     ]);
   });
 });
@@ -564,6 +663,35 @@ describe("mergeConversationIdentity", () => {
       ),
     ).toEqual([
       { id: "msg-assistant-100", role: "assistant", content: "结论：大概 3.68 万行。", timestamp: 1100, tokenBadge: "↑281 ↓252 R19.7k" },
+    ]);
+  });
+
+  it("preserves the local pending turn ids while a streaming snapshot is still growing", () => {
+    expect(
+      mergeConversationIdentity(
+        [
+          { role: "user", content: "继续", timestamp: 2_000 },
+          { role: "assistant", content: "收", timestamp: 2_100 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1_000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到更多内容", timestamp: 1_100, streaming: true },
+        ],
+        {
+          startedAt: 1_000,
+          pendingTimestamp: 1_100,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "继续",
+            timestamp: 1_000,
+          },
+        },
+      ),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "继续", timestamp: 1_000 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "收", timestamp: 1_100 },
     ]);
   });
 });

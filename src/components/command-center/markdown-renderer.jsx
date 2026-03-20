@@ -1,4 +1,4 @@
-import { Children, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Children, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
@@ -16,6 +16,7 @@ let remarkGfmLibraryPromise = null;
 let remarkMathLibraryPromise = null;
 let rehypeKatexLibraryPromise = null;
 let katexCssPromise = null;
+const streamingMarkdownImageNodeCache = new Map();
 
 function contentNeedsGfmPlugin(content = "") {
   const text = String(content || "");
@@ -559,7 +560,7 @@ function CodeBlock({ code, language, scrollAnchorId = "" }) {
       .join("-");
 
   return (
-    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 overflow-hidden rounded-[5px] border border-zinc-700 bg-zinc-900">
+    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 min-w-0 max-w-full overflow-hidden rounded-[5px] border border-zinc-700 bg-zinc-900">
       <div className="flex items-center justify-between border-b border-white/10 bg-zinc-800/90 px-2 py-1">
         <span className="text-[9px] font-medium tracking-[0.06em] text-zinc-100">
           {languageLabel}
@@ -568,7 +569,7 @@ function CodeBlock({ code, language, scrollAnchorId = "" }) {
       </div>
       <Highlight prism={Prism} theme={codeTheme} code={code} language={highlightedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
-          <pre className="overflow-x-auto px-0 py-1.5 text-[12px] leading-5 text-zinc-50">
+          <pre className="min-w-0 max-w-full overflow-x-auto px-0 py-1.5 text-[12px] leading-5 text-zinc-50">
             {tokens.map((line, lineIndex) => (
               <div
                 key={lineIndex}
@@ -781,11 +782,78 @@ function CodeRenderer({
 
 function TableRenderer({ children, scrollAnchorId = "" }) {
   return (
-    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 overflow-hidden rounded-[5px] border border-border bg-background">
-      <table className="my-0 w-full border-collapse">{children}</table>
+    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 min-w-0 max-w-full overflow-x-auto rounded-[5px] border border-border bg-background">
+      <table className="my-0 w-full min-w-0 border-collapse">{children}</table>
     </div>
   );
 }
+
+const MarkdownImage = memo(function MarkdownImage({
+  alt = "",
+  resolvedSrc = "",
+  resolvedPath = "",
+  scrollAnchorId = "",
+  streaming = false,
+  onOpenInlineImagePreview,
+}) {
+  const containerRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!streaming || !resolvedSrc || !containerRef.current || typeof document === "undefined") {
+      return undefined;
+    }
+
+    const cacheKey = `${resolvedSrc}::${alt || ""}`;
+    let imageNode = streamingMarkdownImageNodeCache.get(cacheKey);
+    if (!imageNode) {
+      imageNode = document.createElement("img");
+      imageNode.src = resolvedSrc;
+      imageNode.alt = alt || "";
+      imageNode.className = "block max-h-[28rem] w-auto max-w-full object-contain";
+      imageNode.loading = "eager";
+      imageNode.decoding = "async";
+      streamingMarkdownImageNodeCache.set(cacheKey, imageNode);
+    } else {
+      imageNode.alt = alt || "";
+      imageNode.className = "block max-h-[28rem] w-auto max-w-full object-contain";
+    }
+
+    containerRef.current.replaceChildren(imageNode);
+
+    return () => {
+      if (containerRef.current?.contains(imageNode)) {
+        containerRef.current.removeChild(imageNode);
+      }
+    };
+  }, [alt, resolvedSrc, streaming]);
+
+  return (
+    <button
+      type="button"
+      data-scroll-anchor-id={scrollAnchorId || undefined}
+      className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/40"
+      onClick={() => {
+        onOpenInlineImagePreview({
+          src: resolvedSrc,
+          alt: alt || "",
+          path: resolvedPath,
+        });
+      }}
+    >
+      {streaming ? (
+        <span ref={containerRef} className="block max-h-[28rem] w-fit max-w-full" />
+      ) : (
+        <img
+          src={resolvedSrc}
+          alt={alt || ""}
+          className="block max-h-[28rem] w-auto max-w-full object-contain"
+          loading="eager"
+          decoding="async"
+        />
+      )}
+    </button>
+  );
+});
 
 export default function MarkdownRenderer({
   content,
@@ -811,8 +879,10 @@ export default function MarkdownRenderer({
     () => extractHeadingOutline(normalizedContent),
     [normalizedContent],
   );
-  let headingRenderIndex = 0;
-  let blockRenderIndex = 0;
+  const headingRenderIndexRef = useRef(0);
+  const blockRenderIndexRef = useRef(0);
+  headingRenderIndexRef.current = 0;
+  blockRenderIndexRef.current = 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -881,9 +951,9 @@ export default function MarkdownRenderer({
     setPreviewImage(image);
   }, [onOpenImagePreview]);
 
-  const nextScrollAnchorId = () => `${headingScopeId}-block-${blockRenderIndex++}`;
+  const nextScrollAnchorId = useCallback(() => `${headingScopeId}-block-${blockRenderIndexRef.current++}`, [headingScopeId]);
 
-  const renderBlock = (Tag, classNameValue = "") => ({ children, className: blockClassName, ...props }) => (
+  const renderBlock = useCallback((Tag, classNameValue = "") => ({ children, className: blockClassName, ...props }) => (
     <Tag
       data-scroll-anchor-id={nextScrollAnchorId()}
       className={cn(classNameValue, blockClassName)}
@@ -891,9 +961,9 @@ export default function MarkdownRenderer({
     >
       {children}
     </Tag>
-  );
+  ), [nextScrollAnchorId]);
 
-  const renderList = (ordered = false) => ({ children, className: blockClassName, ...props }) => {
+  const renderList = useCallback((ordered = false) => ({ children, className: blockClassName, ...props }) => {
     const isTaskList = String(blockClassName || "").includes("contains-task-list");
     const Tag = ordered ? "ol" : "ul";
 
@@ -911,9 +981,9 @@ export default function MarkdownRenderer({
         {children}
       </Tag>
     );
-  };
+  }, [nextScrollAnchorId]);
 
-  const renderListItem = ({ children, className: blockClassName, ...props }) => {
+  const renderListItem = useCallback(({ children, className: blockClassName, ...props }) => {
     const isTaskItem = String(blockClassName || "").includes("task-list-item");
 
     return (
@@ -929,87 +999,113 @@ export default function MarkdownRenderer({
         {children}
       </li>
     );
-  };
+  }, [nextScrollAnchorId]);
 
-  const renderHeading = (Tag) => ({ children, ...props }) => {
-    const current = outlineItems[headingRenderIndex++];
+  const renderHeading = useCallback((Tag) => ({ children, ...props }) => {
+    const current = outlineItems[headingRenderIndexRef.current++];
     const anchorId = current?.id ? `${headingScopeId}-${current.id}` : undefined;
     return (
       <Tag id={anchorId} data-heading-anchor={anchorId} data-scroll-anchor-id={nextScrollAnchorId()} className="scroll-mt-3" {...props}>
         {children}
       </Tag>
     );
-  };
+  }, [headingScopeId, nextScrollAnchorId, outlineItems]);
+
+  const renderImage = useCallback(({ alt, src = "" }) => {
+    const resolvedSrc = resolveMarkdownImageSource(src, files);
+    const resolvedPath = resolveMarkdownImagePath(src, files);
+    return (
+        <MarkdownImage
+          alt={alt || ""}
+          resolvedSrc={resolvedSrc}
+          resolvedPath={resolvedPath}
+          scrollAnchorId={nextScrollAnchorId()}
+          streaming={streaming}
+          onOpenInlineImagePreview={handleOpenInlineImagePreview}
+        />
+      );
+  }, [files, handleOpenInlineImagePreview, nextScrollAnchorId, streaming]);
+
+  const paragraphRenderer = useMemo(() => renderBlock("p"), [renderBlock]);
+  const blockquoteRenderer = useMemo(() => renderBlock("blockquote"), [renderBlock]);
+  const orderedListRenderer = useMemo(() => renderList(true), [renderList]);
+  const unorderedListRenderer = useMemo(() => renderList(false), [renderList]);
+  const heading1Renderer = useMemo(() => renderHeading("h1"), [renderHeading]);
+  const heading2Renderer = useMemo(() => renderHeading("h2"), [renderHeading]);
+  const heading3Renderer = useMemo(() => renderHeading("h3"), [renderHeading]);
+  const heading4Renderer = useMemo(() => renderHeading("h4"), [renderHeading]);
+  const heading5Renderer = useMemo(() => renderHeading("h5"), [renderHeading]);
+  const heading6Renderer = useMemo(() => renderHeading("h6"), [renderHeading]);
+  const codeRenderer = useCallback((props) => (
+    <CodeRenderer
+      {...props}
+      files={files}
+      resolvedTheme={resolvedTheme}
+      streaming={streaming}
+      onOpenFilePreview={onOpenFilePreview}
+      onOpenImagePreview={handleOpenInlineImagePreview}
+      scrollAnchorId={nextScrollAnchorId()}
+    />
+  ), [files, handleOpenInlineImagePreview, nextScrollAnchorId, onOpenFilePreview, resolvedTheme, streaming]);
+  const linkRenderer = useCallback((props) => (
+    <LinkRenderer {...props} files={files} headingScopeId={headingScopeId} onOpenFilePreview={onOpenFilePreview} />
+  ), [files, headingScopeId, onOpenFilePreview]);
+  const tableRenderer = useCallback((props) => <TableRenderer {...props} scrollAnchorId={nextScrollAnchorId()} />, [nextScrollAnchorId]);
+  const inputRenderer = useCallback(({ className: inputClassName, type, ...props }) => (
+    <input
+      type={type}
+      className={cn(
+        type === "checkbox" ? "mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-primary" : "",
+        inputClassName,
+      )}
+      {...props}
+    />
+  ), []);
+
+  const markdownComponents = useMemo(() => ({
+    a: linkRenderer,
+    blockquote: blockquoteRenderer,
+    code: codeRenderer,
+    input: inputRenderer,
+    li: renderListItem,
+    ol: orderedListRenderer,
+    p: paragraphRenderer,
+    table: tableRenderer,
+    img: renderImage,
+    h1: heading1Renderer,
+    h2: heading2Renderer,
+    h3: heading3Renderer,
+    h4: heading4Renderer,
+    h5: heading5Renderer,
+    h6: heading6Renderer,
+    ul: unorderedListRenderer,
+  }), [
+    blockquoteRenderer,
+    codeRenderer,
+    heading1Renderer,
+    heading2Renderer,
+    heading3Renderer,
+    heading4Renderer,
+    heading5Renderer,
+    heading6Renderer,
+    inputRenderer,
+    linkRenderer,
+    orderedListRenderer,
+    paragraphRenderer,
+    renderImage,
+    renderListItem,
+    tableRenderer,
+    unorderedListRenderer,
+  ]);
 
   return (
     <>
-      <div className={cn(shellClassName, className)}>
+      <div className={cn("min-w-0 max-w-full", shellClassName, className)}>
         <ReactMarkdown
           remarkPlugins={pluginState.remarkPlugins}
           rehypePlugins={pluginState.rehypePlugins}
           urlTransform={markdownUrlTransform}
-          components={{
-            a: (props) => <LinkRenderer {...props} files={files} headingScopeId={headingScopeId} onOpenFilePreview={onOpenFilePreview} />,
-            blockquote: renderBlock("blockquote"),
-            code: (props) => (
-              <CodeRenderer
-                {...props}
-                files={files}
-                resolvedTheme={resolvedTheme}
-                streaming={streaming}
-                onOpenFilePreview={onOpenFilePreview}
-                onOpenImagePreview={handleOpenInlineImagePreview}
-                scrollAnchorId={nextScrollAnchorId()}
-              />
-            ),
-            input: ({ className: inputClassName, type, ...props }) => (
-              <input
-                type={type}
-                className={cn(
-                  type === "checkbox" ? "mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-primary" : "",
-                  inputClassName,
-                )}
-                {...props}
-              />
-            ),
-            li: renderListItem,
-            ol: renderList(true),
-            p: renderBlock("p"),
-            table: (props) => <TableRenderer {...props} scrollAnchorId={nextScrollAnchorId()} />,
-            img: ({ alt, src = "" }) => {
-              const resolvedSrc = resolveMarkdownImageSource(src, files);
-              const resolvedPath = resolveMarkdownImagePath(src, files);
-              return (
-                <button
-                  type="button"
-                  data-scroll-anchor-id={nextScrollAnchorId()}
-                  className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/40"
-                  onClick={() => {
-                    handleOpenInlineImagePreview({
-                      src: resolvedSrc,
-                      alt: alt || "",
-                      path: resolvedPath,
-                    });
-                  }}
-                >
-                  <img
-                    src={resolvedSrc}
-                    alt={alt || ""}
-                    className="block max-h-[28rem] w-auto max-w-full object-contain"
-                    loading="eager"
-                    decoding="async"
-                  />
-                </button>
-              );
-            },
-            h1: renderHeading("h1"),
-            h2: renderHeading("h2"),
-            h3: renderHeading("h3"),
-            h4: renderHeading("h4"),
-            h5: renderHeading("h5"),
-            h6: renderHeading("h6"),
-            ul: renderList(false),
-          }}
+          components={markdownComponents}
         >
           {normalizedContent}
         </ReactMarkdown>

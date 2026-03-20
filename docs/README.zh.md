@@ -187,6 +187,7 @@ npm run lalaclaw:start
 - 只有依赖 `dist/` 的构建产物时，才使用 `npm run lalaclaw:start` 或 `npm start`
 - 默认情况下，应用会自动探测本地 OpenClaw 网关
 - 如果你想稳定复现 UI 或前端问题，可以设置 `COMMANDCENTER_FORCE_MOCK=1` 强制 `mock` 模式
+- 如果你想在源码开发态里反复演示 LalaClaw 应用内自更新链路，可以调用 `POST /api/dev/lalaclaw/update-mock` 开启指定 stable 版本的 dev-only mock，演示完成后再用 `DELETE /api/dev/lalaclaw/update-mock` 关闭
 - 提交 PR 前，建议至少运行 `npm run lint`、`npm test` 和 `npm run build`
 
 ## 版本约定

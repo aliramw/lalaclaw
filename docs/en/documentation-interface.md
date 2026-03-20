@@ -46,6 +46,12 @@ The inspector exposes four main surfaces:
 
 It is tightly coupled to the chat session: file activity, reply summaries, execution records, and runtime metadata from the same session all appear here.
 
+Notable current behavior:
+
+- `Environment` is no longer just a passive metadata list; it now combines OpenClaw diagnostics, management actions, config tools, and current-session runtime details
+- Environment paths distinguish between previewable files and directories that should open in Finder, Explorer, or the system file manager
+- The most important operational checks such as gateway health, runtime transport, and `OpenClaw Doctor` status are intended to be inspectable without leaving this panel
+
 ## Layout and Sizing
 
 - The divider between chat and inspector is draggable

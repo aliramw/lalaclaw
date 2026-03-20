@@ -73,6 +73,7 @@
 
 - 即使没有真实网关，也能完整使用界面
 - 聊天、检查器、文件和环境面板都会返回演示用 mock 数据
+- `Environment` 仍会保留相同的结构分组，但诊断、管理动作和配置能力会停留在 mock-safe 状态
 - 很适合本地开发、UI 联调和自动化测试
 
 ## `openclaw` 模式
@@ -87,6 +88,8 @@
 - `/api/chat` 会把请求发往真实网关
 - `/api/runtime` 和检查器会读取 transcript、session 状态和浏览器控制信息
 - 切换模型和思考模式时可以 patch 远端 session
+- `Environment` 会成为查看 runtime transport、Gateway 健康状态、OpenClaw 诊断，以及当前会话工作区/配置路径的主入口
+- 当目标 Gateway 是远端而不是本机 loopback 时，本机专属的安装、更新和写操作会在原位禁用
 
 ## 可提及的智能体与技能来自哪里
 

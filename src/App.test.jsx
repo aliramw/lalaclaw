@@ -62,7 +62,7 @@ function mockJsonResponse(payload, ok = true, status = ok ? 200 : 500) {
 function stubFetchWithAccessState(fetchImpl) {
   vi.stubGlobal(
     "fetch",
-    vi.fn((input, init) => {
+    vi.fn(async (input, init) => {
       if (String(input) === "/api/auth/state") {
         return mockJsonResponse({
           ok: true,
@@ -70,7 +70,24 @@ function stubFetchWithAccessState(fetchImpl) {
           authenticated: true,
         });
       }
-      return fetchImpl(input, init);
+      try {
+        return await fetchImpl(input, init);
+      } catch (error) {
+        if (String(input) === "/api/lalaclaw/update") {
+          return mockJsonResponse({
+            ok: true,
+            currentVersion: "2026.3.20-1",
+            currentRelease: { version: "2026.3.20-1", stable: true },
+            targetRelease: { version: "2026.3.20-1", stable: true },
+            stableTag: "stable",
+            updateAvailable: false,
+            capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+            check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+            job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+          });
+        }
+        throw error;
+      }
     }),
   );
 }
@@ -303,6 +320,17 @@ class MockWebSocket {
   }
 
   send() {}
+
+  simulateOpen() {
+    this.readyState = MockWebSocket.OPEN;
+    this.onopen?.();
+  }
+
+  simulateMessage(payload) {
+    this.onmessage?.({
+      data: JSON.stringify(payload),
+    });
+  }
 
   close() {
     this.readyState = MockWebSocket.CLOSED;
@@ -627,6 +655,8 @@ describe("App", () => {
     expect(screen.getAllByText("正在思考…")).toHaveLength(1);
     expect(screen.getByText("待发送 2")).toBeInTheDocument();
     expect(screen.getByText("当前回复结束后将按顺序发送")).toBeInTheDocument();
+    expect(hasMessageText("乙", "user")).toBe(false);
+    expect(hasMessageText("丙", "user")).toBe(false);
     expect(chatBodies).toHaveLength(1);
 
     resolveFirstChat?.();
@@ -708,8 +738,8 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("待发送 2")).toBeInTheDocument();
-      expect(hasMessageText("乙", "user")).toBe(true);
-      expect(hasMessageText("丙", "user")).toBe(true);
+      expect(hasMessageText("乙", "user")).toBe(false);
+      expect(hasMessageText("丙", "user")).toBe(false);
     });
 
     await user.click(screen.getByRole("button", { name: "删除第 1 条待发送消息" }));
@@ -717,7 +747,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("待发送 1")).toBeInTheDocument();
       expect(hasMessageText("乙", "user")).toBe(false);
-      expect(hasMessageText("丙", "user")).toBe(true);
+      expect(hasMessageText("丙", "user")).toBe(false);
     });
 
     expect(chatBodies).toHaveLength(1);
@@ -800,8 +830,8 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("待发送 2")).toBeInTheDocument();
-      expect(hasMessageText("乙", "user")).toBe(true);
-      expect(hasMessageText("丙", "user")).toBe(true);
+      expect(hasMessageText("乙", "user")).toBe(false);
+      expect(hasMessageText("丙", "user")).toBe(false);
     });
 
     await user.click(screen.getByRole("button", { name: "清空待发送" }));
@@ -820,6 +850,219 @@ describe("App", () => {
     });
 
     expect(chatBodies).toHaveLength(1);
+  }, 10_000);
+
+  it("only moves queued turns into the conversation when each turn actually starts", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const firstTurn = createDeferred();
+    const secondTurn = createDeferred();
+    const thirdTurn = createDeferred();
+    let chatCallCount = 0;
+    const chatBodies = [];
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        chatCallCount += 1;
+
+        const resolveTurn = (label) =>
+          mockJsonResponse({
+            ...openClawSnapshot,
+            outputText: `已处理：${label}`,
+            metadata: { status: "已完成 / 标准" },
+          });
+
+        if (chatCallCount === 1) {
+          return firstTurn.promise.then(() => resolveTurn("甲"));
+        }
+        if (chatCallCount === 2) {
+          return secondTurn.promise.then(() => resolveTurn("乙"));
+        }
+        if (chatCallCount === 3) {
+          return thirdTurn.promise.then(() => resolveTurn("丙"));
+        }
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const composer = await screen.findByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+
+    await user.type(composer, "甲");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await user.type(composer, "乙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await user.type(composer, "丙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await waitFor(() => {
+      expect(hasMessageText("甲", "user")).toBe(true);
+      expect(hasMessageText("乙", "user")).toBe(false);
+      expect(hasMessageText("丙", "user")).toBe(false);
+      expect(screen.getByText("待发送 2")).toBeInTheDocument();
+      expect(chatBodies).toHaveLength(1);
+      expect(chatBodies[0]?.messages.at(-1)?.content).toBe("甲");
+    });
+
+    firstTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：甲")).toBeInTheDocument();
+      expect(hasMessageText("乙", "user")).toBe(true);
+      expect(hasMessageText("丙", "user")).toBe(false);
+      expect(screen.getByText("待发送 1")).toBeInTheDocument();
+      expect(chatBodies).toHaveLength(2);
+      expect(chatBodies[1]?.messages.at(-1)?.content).toBe("乙");
+    });
+
+    secondTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：乙")).toBeInTheDocument();
+      expect(hasMessageText("丙", "user")).toBe(true);
+      expect(screen.queryByText("待发送 1")).not.toBeInTheDocument();
+      expect(chatBodies).toHaveLength(3);
+      expect(chatBodies[2]?.messages.at(-1)?.content).toBe("丙");
+    });
+
+    thirdTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：丙")).toBeInTheDocument();
+    });
+  }, 10_000);
+
+  it("keeps queue progress stable when a lagging runtime conversation update arrives after the first reply", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const firstTurn = createDeferred();
+    const secondTurn = createDeferred();
+    const thirdTurn = createDeferred();
+    let chatCallCount = 0;
+    const chatBodies = [];
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        chatCallCount += 1;
+
+        const responseFor = (label, assistantId) =>
+          mockJsonResponse({
+            ...openClawSnapshot,
+            assistantMessageId: assistantId,
+            outputText: `已处理：${label}`,
+            metadata: { status: "已完成 / 标准" },
+          });
+
+        if (chatCallCount === 1) {
+          return firstTurn.promise.then(() => responseFor("甲", "msg-assistant-queue-stable-1"));
+        }
+        if (chatCallCount === 2) {
+          return secondTurn.promise.then(() => responseFor("乙", "msg-assistant-queue-stable-2"));
+        }
+        if (chatCallCount === 3) {
+          return thirdTurn.promise.then(() => responseFor("丙", "msg-assistant-queue-stable-3"));
+        }
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    MockWebSocket.instances[0].simulateOpen();
+
+    const user = userEvent.setup();
+    const composer = await screen.findByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+
+    await user.type(composer, "甲");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await user.type(composer, "乙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await user.type(composer, "丙");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+    await waitFor(() => {
+      expect(chatBodies).toHaveLength(1);
+      expect(screen.getByText("待发送 2")).toBeInTheDocument();
+    });
+
+    firstTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：甲")).toBeInTheDocument();
+      expect(screen.getAllByText("已处理：甲")).toHaveLength(1);
+      expect(hasMessageText("乙", "user")).toBe(true);
+      expect(hasMessageText("丙", "user")).toBe(false);
+      expect(chatBodies).toHaveLength(2);
+    });
+
+    MockWebSocket.instances[0].simulateMessage({
+      type: "conversation.sync",
+      conversation: [
+        { role: "user", content: "甲", timestamp: chatBodies[0]?.messages[0]?.content === "甲" ? chatBodies[0].messages[0].timestamp || 1 : 1 },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("已处理：甲")).toHaveLength(1);
+      expect(hasMessageText("乙", "user")).toBe(true);
+      expect(hasMessageText("丙", "user")).toBe(false);
+      expect(screen.getByText("待发送 1")).toBeInTheDocument();
+    });
+
+    secondTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：乙")).toBeInTheDocument();
+      expect(hasMessageText("丙", "user")).toBe(true);
+      expect(chatBodies).toHaveLength(3);
+    });
+
+    thirdTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("已处理：丙")).toBeInTheDocument();
+      expect(screen.queryByText("待发送 1")).not.toBeInTheDocument();
+    });
   }, 10_000);
 
   it("suppresses dispatching a rapid duplicate while the current reply is still pending", async () => {
@@ -2139,6 +2382,100 @@ describe("App", () => {
     expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
   });
 
+  it("keeps the restored refresh-in-progress turn marked busy when stored messages already contain a partial assistant reply", async () => {
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "第一段", timestamp: 101 },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "第一段", timestamp: 101 },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        _persistedAt: Date.now(),
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 100,
+            pendingTimestamp: 101,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: {
+              id: "msg-user-1",
+              role: "user",
+              content: "刷新后继续生成",
+              timestamp: 100,
+            },
+          },
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                status: "空闲",
+              },
+              conversation: [
+                { role: "user", content: "刷新后继续生成", timestamp: 100 },
+                { role: "assistant", content: "第一段", timestamp: 101 },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+      expect(screen.getByText("刷新后继续生成")).toBeInTheDocument();
+      expect(screen.getByText("第一段")).toBeInTheDocument();
+    });
+
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeTruthy();
+    expect(container.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
+  });
+
   it("does not duplicate the latest user message when restoring a pending turn", async () => {
     window.localStorage.setItem(
       pendingChatStorageKey,
@@ -2555,6 +2892,89 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("切换模型")).toHaveTextContent("openai-codex/gpt-5.4");
     });
+  });
+
+  it("shows an environment-tab alert and auto-expands the LalaClaw section when a new stable update is available", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot({
+          peeks: {
+            workspace: null,
+            terminal: null,
+            browser: null,
+            environment: {
+              summary: "这里汇总 OpenClaw 诊断、管理动作与当前会话环境信息，便于排查与检阅。",
+              items: [
+                { label: "LALACLAW.VERSION", value: "2026.3.20-1" },
+                { label: "LALACLAW.FRONTEND_URL", value: "http://127.0.0.1:5173" },
+                { label: "LALACLAW.SERVER_URL", value: "http://127.0.0.1:3000" },
+                { label: "LALACLAW.ACCESS_MODE", value: "off" },
+                { label: "LALACLAW.GATEWAY_AUTH", value: "none" },
+                { label: "openclaw.version", value: "1.2.3" },
+              ],
+            },
+          },
+        }));
+      }
+
+      if (url === "/api/lalaclaw/update" && (!init || init.method === "GET")) {
+        return mockJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.20-1",
+          currentRelease: { version: "2026.3.20-1", stable: true },
+          targetRelease: { version: "2026.3.21-1", stable: true },
+          stableTag: "stable",
+          updateAvailable: true,
+          capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+        });
+      }
+
+      if (url === "/api/openclaw/update") {
+        return mockJsonResponse({
+          ok: true,
+          installed: true,
+          currentVersion: "2026.3.19-2",
+          targetVersion: "2026.3.19-2",
+          availability: { available: false },
+        });
+      }
+
+      if (url === "/api/openclaw/history") {
+        return mockJsonResponse({ ok: true, entries: [] });
+      }
+
+      if (url.startsWith("/api/openclaw/config")) {
+        return mockJsonResponse({
+          ok: true,
+          baseHash: "hash",
+          fields: [],
+          validation: { ok: true, valid: true },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-tab-alert-environment")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("tab", { name: "环境" }));
+
+    expect(screen.getByRole("button", { name: "立即更新" })).toBeInTheDocument();
+    expect(screen.getByText("有可用更新")).toBeInTheDocument();
+    expect(screen.queryByText("当前有新的 stable 版本可更新。")).not.toBeInTheDocument();
+    expect(screen.getByText("2026.3.21-1")).toBeInTheDocument();
+    expect(screen.getAllByText("stable").length).toBeGreaterThan(0);
   });
 
   it("keeps prompt history isolated after resetting into a new session", async () => {
@@ -3189,6 +3609,93 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("main - 当前会话")).toBeInTheDocument();
       expect(viewport.scrollTop).toBe(storedMainScrollTop);
+    });
+  });
+
+  it("keeps a bottom-pinned conversation at the bottom after a refresh reload", async () => {
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            conversation: [
+              { role: "assistant", content: "main 回复一", timestamp: 1 },
+              { role: "assistant", content: "main 回复二", timestamp: 2 },
+            ],
+            session: {
+              ...createSnapshot().session,
+              agentId: "main",
+              selectedAgentId: "main",
+              availableAgents: ["main"],
+              sessionUser: "command-center",
+              sessionKey: "agent:main:openai-user:command-center",
+            },
+          }),
+        );
+      }
+
+      if (url === "/api/session" && init?.method === "POST") {
+        return mockJsonResponse(
+          createSnapshot({
+            conversation: [
+              { role: "assistant", content: "main 回复一", timestamp: 1 },
+              { role: "assistant", content: "main 回复二", timestamp: 2 },
+            ],
+            session: {
+              ...createSnapshot().session,
+              agentId: "main",
+              selectedAgentId: "main",
+              availableAgents: ["main"],
+              sessionUser: "command-center",
+              sessionKey: "agent:main:openai-user:command-center",
+            },
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    const firstRender = render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    const firstMainMessage = await screen.findByText("main 回复二");
+    const firstViewport = [...document.querySelectorAll("[data-radix-scroll-area-viewport]")]
+      .find((element) => element.contains(firstMainMessage));
+
+    expect(firstViewport).toBeTruthy();
+
+    Object.defineProperty(firstViewport, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(firstViewport, "scrollHeight", { configurable: true, writable: true, value: 1600 });
+    Object.defineProperty(firstViewport, "scrollTop", { configurable: true, writable: true, value: 1300 });
+
+    fireEvent(window, new Event("beforeunload"));
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(chatScrollStorageKey) || "{}")).toMatchObject({
+        "command-center:main": { scrollTop: 1300, atBottom: true },
+      });
+    });
+
+    firstRender.unmount();
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    const secondMainMessage = await screen.findByText("main 回复二");
+    const secondViewport = [...document.querySelectorAll("[data-radix-scroll-area-viewport]")]
+      .find((element) => element.contains(secondMainMessage));
+
+    expect(secondViewport).toBeTruthy();
+
+    Object.defineProperty(secondViewport, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(secondViewport, "scrollHeight", { configurable: true, writable: true, value: 1600 });
+    Object.defineProperty(secondViewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+
+    await waitFor(() => {
+      expect(secondViewport.scrollTop).toBe(1300);
     });
   });
 });

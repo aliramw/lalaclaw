@@ -3,6 +3,7 @@ import { FolderOpen, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, Rot
 import { Highlight, themes } from "prism-react-renderer";
 import { InspectorFilesPanel } from "@/components/command-center/inspector-files-panel";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,6 +18,7 @@ const filePreviewLightCodeTheme = themes.vsLight;
 const defaultSpreadsheetPreviewLimitRows = 200;
 const defaultSpreadsheetPreviewLimitColumns = 50;
 const filePreviewFontSizeStorageKey = "file-preview-font-size";
+const filePreviewExpandedStorageKey = "file-preview-expanded";
 const filePreviewFontSizeOptions = [
   { value: "small", glyphClassName: "text-[14px]" },
   { value: "medium", glyphClassName: "text-[18px]" },
@@ -171,6 +173,18 @@ function loadStoredFilePreviewFontSize() {
     return filePreviewFontSizeOptions.some((option) => option.value === value) ? value : "medium";
   } catch {
     return "medium";
+  }
+}
+
+function loadStoredFilePreviewExpanded() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(filePreviewExpandedStorageKey) === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -339,7 +353,7 @@ function FilePreviewCodeBlock({
               <div
                 key={lineIndex}
                 {...getLineProps({ line })}
-                className={cn("token-line w-fit min-w-full px-4 font-mono", isSubtle && "text-[12.5px]")}
+                className={cn("token-line block min-w-full px-4 font-mono", isSubtle && "text-[12.5px]")}
               >
                 {line.length ? line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />) : <span>&nbsp;</span>}
               </div>
@@ -938,17 +952,20 @@ export function FilePreviewOverlay({
 }) {
   const { messages } = useI18n();
   const applePlatform = isApplePlatform();
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => loadStoredFilePreviewExpanded());
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
   const [filePreviewFontSize, setFilePreviewFontSize] = useState(() => loadStoredFilePreviewFontSize());
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [editSessionDirty, setEditSessionDirty] = useState(false);
   const [editableContent, setEditableContent] = useState("");
   const [previewContentOverride, setPreviewContentOverride] = useState(null);
   const [saveError, setSaveError] = useState("");
   const [saveNotice, setSaveNotice] = useState(null);
+  const [pendingLeaveAction, setPendingLeaveAction] = useState("");
   const previewViewportRef = useRef(null);
   const pendingEditorScrollRatioRef = useRef(null);
+  const editSessionInitialContentRef = useRef("");
   const previewIdentity = `${preview?.path || preview?.item?.path || preview?.name || ""}:${preview?.kind || ""}`;
 
   useEffect(() => {
@@ -956,6 +973,12 @@ export function FilePreviewOverlay({
       window.localStorage.setItem(filePreviewFontSizeStorageKey, filePreviewFontSize);
     } catch {}
   }, [filePreviewFontSize]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(filePreviewExpandedStorageKey, String(isFullscreen));
+    } catch {}
+  }, [isFullscreen]);
 
   useEffect(() => {
     if (!preview) {
@@ -967,27 +990,29 @@ export function FilePreviewOverlay({
         return;
       }
       event.preventDefault();
+      if (isEditing && editSessionDirty) {
+        setPendingLeaveAction("close-preview");
+        return;
+      }
       onClose?.();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, preview]);
+  }, [editSessionDirty, isEditing, onClose, preview]);
 
   useEffect(() => {
     if (!preview) {
-      setIsFullscreen(false);
-    }
-  }, [preview]);
-
-  useEffect(() => {
-    if (!preview) {
+      setIsFullscreen(loadStoredFilePreviewExpanded());
       setIsEditing(false);
       setIsSaving(false);
       setEditableContent("");
       setPreviewContentOverride(null);
       setSaveError("");
       setSaveNotice(null);
+      setEditSessionDirty(false);
+      setPendingLeaveAction("");
+      editSessionInitialContentRef.current = "";
       pendingEditorScrollRatioRef.current = null;
       return;
     }
@@ -995,10 +1020,13 @@ export function FilePreviewOverlay({
     const shouldStartEditing = Boolean(preview.startInEditMode) && isEditablePreview(preview) && !preview.loading && !preview.error && !preview.truncated;
     setIsEditing(shouldStartEditing);
     setIsSaving(false);
-    setEditableContent(isEditablePreview(preview) ? String(preview.content || "") : "");
+    editSessionInitialContentRef.current = isEditablePreview(preview) ? String(preview.content || "") : "";
+    setEditableContent(editSessionInitialContentRef.current);
     setPreviewContentOverride(null);
     setSaveError("");
     setSaveNotice(null);
+    setEditSessionDirty(false);
+    setPendingLeaveAction("");
     pendingEditorScrollRatioRef.current = null;
   }, [preview, previewIdentity]);
 
@@ -1072,7 +1100,9 @@ export function FilePreviewOverlay({
       pendingEditorScrollRatioRef.current = null;
     }
 
+    editSessionInitialContentRef.current = effectivePreviewContent;
     setEditableContent(effectivePreviewContent);
+    setEditSessionDirty(false);
     setSaveError("");
     setSaveNotice(null);
     setIsEditing(true);
@@ -1082,8 +1112,35 @@ export function FilePreviewOverlay({
     setEditableContent(effectivePreviewContent);
     setSaveError("");
     setSaveNotice(null);
+    setEditSessionDirty(false);
+    setPendingLeaveAction("");
     setIsEditing(false);
   };
+
+  const handleRequestClose = useCallback(() => {
+    if (isEditing && editSessionDirty) {
+      setPendingLeaveAction("close-preview");
+      return;
+    }
+    onClose?.();
+  }, [editSessionDirty, isEditing, onClose]);
+
+  const handleRequestCancelEditing = useCallback(() => {
+    if (editSessionDirty) {
+      setPendingLeaveAction("cancel-edit");
+      return;
+    }
+    handleCancelEditing();
+  }, [editSessionDirty]);
+
+  const handleConfirmLeave = useCallback(() => {
+    if (pendingLeaveAction === "cancel-edit") {
+      handleCancelEditing();
+      return;
+    }
+    setPendingLeaveAction("");
+    onClose?.();
+  }, [onClose, pendingLeaveAction]);
 
   const handleSaveEditing = useCallback(async ({ stayInEditing = false } = {}) => {
     if (!canEditPreview || isSaving) {
@@ -1111,6 +1168,9 @@ export function FilePreviewOverlay({
       }
 
       setPreviewContentOverride(editableContent);
+      editSessionInitialContentRef.current = editableContent;
+      setEditSessionDirty(false);
+      setPendingLeaveAction("");
       setIsEditing(stayInEditing);
       setSaveNotice({
         id: Date.now(),
@@ -1130,6 +1190,13 @@ export function FilePreviewOverlay({
     messages.inspector.previewErrors.saveRequiresRestart,
     title,
   ]);
+
+  const handleChangeEditableContent = useCallback((nextValue) => {
+    if (!editSessionDirty && nextValue !== editSessionInitialContentRef.current) {
+      setEditSessionDirty(true);
+    }
+    setEditableContent(nextValue);
+  }, [editSessionDirty]);
 
   useEffect(() => {
     if (!preview || !isEditing || !canEditPreview) {
@@ -1187,7 +1254,7 @@ export function FilePreviewOverlay({
           kind={preview.kind}
           initialScrollRatio={pendingEditorScrollRatioRef.current}
           value={editableContent}
-          onChange={setEditableContent}
+          onChange={handleChangeEditableContent}
           resolvedTheme={resolvedTheme}
           fontSize={filePreviewFontSize}
           isDark={isDark}
@@ -1198,7 +1265,7 @@ export function FilePreviewOverlay({
   } else if (preview.kind === "markdown") {
     const { frontMatter, body: markdownBody } = splitMarkdownFrontMatter(effectivePreviewContent);
     body = (
-      <div className="mx-auto flex max-w-4xl flex-col gap-4">
+      <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-4">
         {frontMatter ? (
           <div className="space-y-2">
             <div className={cn("text-[11px] font-medium uppercase tracking-[0.08em]", isDark ? "text-zinc-400" : "text-slate-500")}>
@@ -1215,7 +1282,7 @@ export function FilePreviewOverlay({
           </div>
         ) : null}
         {markdownBody.trim() ? (
-          <div data-testid="markdown-preview-content">
+          <div data-testid="markdown-preview-content" className="min-w-0 max-w-full overflow-x-auto">
             <MarkdownContent
               content={markdownBody}
               files={files}
@@ -1280,18 +1347,23 @@ export function FilePreviewOverlay({
     || isEditing
     || preview.kind === "json"
     || (preview.kind === "text" && isCodeLikePreviewTarget(title, preview.kind));
+  const directBodyPaddingClassName = isFullscreen
+    ? (isPdfPreview ? "h-full p-0" : "h-full px-6 py-5")
+    : isEditing
+      ? "h-full p-0"
+      : "px-6 py-5";
   const mainBody = useDirectBodyLayout ? (
     <div
       className={cn(
         "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-        isFullscreen || isEditing ? "h-full p-0" : "px-6 py-5",
+        directBodyPaddingClassName,
       )}
     >
       {body}
     </div>
   ) : (
     <ScrollArea className="min-h-0 min-w-0 flex-1" viewportRef={previewViewportRef}>
-      <div className="min-h-full min-w-0 px-6 py-5">{body}</div>
+      <div className="min-h-full min-w-0 max-w-full overflow-x-hidden px-6 py-5">{body}</div>
       {preview.truncated ? (
         <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
           {messages.inspector.previewActions.truncatedPreview}
@@ -1300,8 +1372,16 @@ export function FilePreviewOverlay({
     </ScrollArea>
   );
 
+  const leaveDialogTitle = pendingLeaveAction === "cancel-edit"
+    ? messages.inspector.previewActions.unsavedChanges.cancelTitle
+    : messages.inspector.previewActions.unsavedChanges.closeTitle;
+  const leaveDialogConfirmLabel = pendingLeaveAction === "cancel-edit"
+    ? messages.inspector.previewActions.unsavedChanges.discardAndStopEditing
+    : messages.inspector.previewActions.unsavedChanges.discardAndClose;
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px]" onClick={onClose}>
+    <>
+      <div className="fixed inset-0 z-50 bg-black/58 backdrop-blur-[2px]" onClick={handleRequestClose}>
       {saveNotice?.message ? (
         <div className="pointer-events-none fixed inset-x-0 top-5 z-[130] flex justify-center px-4">
           <div
@@ -1328,19 +1408,24 @@ export function FilePreviewOverlay({
         >
           <div className={cn("flex items-start justify-between gap-4 border-b px-6 py-4", isDark ? "border-white/10" : "border-slate-200")}>
             <div className="flex min-w-0 items-start gap-3">
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition",
-                  isDark
-                    ? "border-white/8 text-zinc-400 hover:border-white/14 hover:bg-white/6 hover:text-zinc-200"
-                    : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800",
-                )}
-                aria-label={isFullscreen ? messages.inspector.previewActions.restore : messages.inspector.previewActions.maximize}
-                onClick={() => setIsFullscreen((current) => !current)}
-              >
-                {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition",
+                      isDark
+                        ? "border-white/8 text-zinc-400 hover:border-white/14 hover:bg-white/6 hover:text-zinc-200"
+                        : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800",
+                    )}
+                    aria-label={isFullscreen ? messages.inspector.previewActions.restore : messages.inspector.previewActions.maximize}
+                    onClick={() => setIsFullscreen((current) => !current)}
+                  >
+                    {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{isFullscreen ? messages.inspector.previewActions.restore : messages.inspector.previewActions.maximize}</TooltipContent>
+              </Tooltip>
               <div className="min-w-0">
                 <div className={cn("truncate text-sm font-semibold", isDark ? "text-white" : "text-slate-950")}>
                   {preview.name || preview.item?.name || messages.inspector.previewActions.previewTitle}
@@ -1390,7 +1475,7 @@ export function FilePreviewOverlay({
                       variant="outline"
                       size="sm"
                       className="h-8 px-3 text-xs"
-                      onClick={handleCancelEditing}
+                      onClick={handleRequestCancelEditing}
                       disabled={isSaving}
                     >
                       {messages.inspector.previewActions.cancelEdit}
@@ -1486,7 +1571,7 @@ export function FilePreviewOverlay({
                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
                 )}
                 aria-label={messages.common.closePreview}
-                onClick={onClose}
+                onClick={handleRequestClose}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1495,7 +1580,7 @@ export function FilePreviewOverlay({
           {showFilesSidebar ? (
             <div className="min-h-0 flex-1 overflow-hidden">
               <div className="flex h-full min-h-0 flex-col lg:flex-row">
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 min-w-0 basis-0 flex-1 flex-col overflow-hidden lg:max-w-[calc(100%-340px)]">
                   {mainBody}
                 </div>
                 <aside
@@ -1528,6 +1613,42 @@ export function FilePreviewOverlay({
           ) : mainBody}
         </div>
       </div>
-    </div>
+      </div>
+      {pendingLeaveAction ? (
+        <>
+          <div className="fixed inset-0 z-[140] bg-black/24" onClick={() => setPendingLeaveAction("")} />
+          <div className="fixed inset-0 z-[141] flex items-center justify-center px-4">
+            <Card
+              role="alertdialog"
+              aria-modal="true"
+              aria-label={leaveDialogTitle}
+              className={cn(
+                "w-full max-w-md rounded-[1.5rem] border shadow-[0_18px_55px_rgba(15,23,42,0.18)]",
+                isDark ? "border-white/10 bg-[#16181d]" : "border-slate-200 bg-white",
+              )}
+            >
+              <CardContent className="px-5 py-4">
+                <div className="space-y-2">
+                  <div className={cn("text-base font-semibold", isDark ? "text-white" : "text-slate-950")}>
+                    {leaveDialogTitle}
+                  </div>
+                  <div className={cn("text-sm leading-6", isDark ? "text-zinc-300" : "text-slate-600")}>
+                    {messages.inspector.previewActions.unsavedChanges.description}
+                  </div>
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPendingLeaveAction("")}>
+                    {messages.inspector.previewActions.unsavedChanges.keepEditing}
+                  </Button>
+                  <Button type="button" size="sm" onClick={handleConfirmLeave}>
+                    {leaveDialogConfirmLabel}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      ) : null}
+    </>
   );
 }

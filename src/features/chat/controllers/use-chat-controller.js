@@ -7,6 +7,7 @@ import {
 } from "@/features/chat/utils";
 import { getLocalizedStatusLabel } from "@/features/session/status-display";
 import { apiFetch } from "@/lib/api-client";
+import { pushCcDebugEvent, summarizeCcMessages } from "@/lib/cc-debug-events";
 
 const duplicateSendGuardWindowMs = 1500;
 
@@ -57,6 +58,27 @@ function hasVisibleAssistantContent(content = "") {
     .replace(/\s+/g, "");
 
   return normalized.length > 0;
+}
+
+function conversationIncludesUserTurn(conversation = [], entry = {}) {
+  const targetContent = String(entry?.content || "").trim();
+  const targetTimestamp = Number(entry?.timestamp || 0);
+  if (!targetContent || !Array.isArray(conversation)) {
+    return false;
+  }
+
+  return conversation.some((message) => {
+    if (message?.role !== "user") {
+      return false;
+    }
+
+    if (String(message.content || "").trim() !== targetContent) {
+      return false;
+    }
+
+    const timestamp = Number(message.timestamp || 0);
+    return !targetTimestamp || !timestamp || timestamp >= targetTimestamp;
+  });
 }
 
 function createUserMessage(entry = {}) {
@@ -183,8 +205,51 @@ function replacePendingAssistantMessage(current = [], pendingTimestamp, content,
     return next;
   }
 
+  const trailingAssistantIndex = [...next]
+    .map((item, index) => ({ item, index }))
+    .reverse()
+    .find(({ item }) => item?.role === "assistant")?.index ?? -1;
+  if (trailingAssistantIndex >= 0 && trailingAssistantIndex === next.length - 1) {
+    next[trailingAssistantIndex] = {
+      ...next[trailingAssistantIndex],
+      ...assistantMessage,
+    };
+    return next;
+  }
+
   next.push(assistantMessage);
   return next;
+}
+
+function replaceAssistantPreservingTurn(current = [], entry = {}, thinkingPlaceholder = "", content, tokenBadge = "", streaming = false, messageId = "") {
+  const userMessage = createUserMessage(entry);
+  const currentMessages = Array.isArray(current) ? [...current] : [];
+  const hasUserMessage = hasMessageId(currentMessages, userMessage.id);
+  let withUserTurn = currentMessages;
+
+  if (!hasUserMessage) {
+    const assistantIndex = currentMessages.findIndex((message) => message?.role === "assistant");
+    if (assistantIndex >= 0) {
+      withUserTurn = [...currentMessages];
+      withUserTurn.splice(assistantIndex, 0, userMessage);
+    } else {
+      withUserTurn = ensureOptimisticTurnMessages(
+        currentMessages,
+        entry,
+        thinkingPlaceholder,
+        { includePendingPlaceholder: false, includeUserMessage: true },
+      );
+    }
+  }
+
+  return replacePendingAssistantMessage(
+    withUserTurn,
+    entry.pendingTimestamp,
+    content,
+    tokenBadge,
+    streaming,
+    messageId,
+  );
 }
 
 async function consumeChatStream(response, { entry, pendingTimestamp, setMessagesForTab }) {
@@ -206,7 +271,15 @@ async function consumeChatStream(response, { entry, pendingTimestamp, setMessage
       return;
     }
     setMessagesForTab(entry.tabId, (current) =>
-      replacePendingAssistantMessage(current, pendingTimestamp, streamedText, tokenBadge, true, assistantMessageId),
+      replaceAssistantPreservingTurn(
+        current,
+        { ...entry, pendingTimestamp },
+        "",
+        streamedText,
+        tokenBadge,
+        true,
+        assistantMessageId,
+      ),
     );
   };
 
@@ -365,7 +438,9 @@ export function useChatController({
 }) {
   const [queuedMessages, setQueuedMessages] = useState([]);
   const [composerAttachments, setComposerAttachments] = useState([]);
+  const [dispatchReleaseTick, setDispatchReleaseTick] = useState(0);
   const lastAcceptedEntryByTabRef = useRef({});
+  const dispatchingTurnByTabRef = useRef({});
   const inFlightTurnsRef = useRef({});
   const navigationAwayRef = useRef(false);
   const stopRequestedByTabRef = useRef({});
@@ -498,9 +573,16 @@ export function useChatController({
     };
   }, []);
 
+
   const runChatTurn = useCallback(async (entry) => {
     const resolvedEntry = withOptimisticTurnIds(entry);
     const targetTabId = resolvedEntry.tabId || resolvedActiveTabId;
+    pushCcDebugEvent("chat.run.start", {
+      tabId: targetTabId,
+      entryId: resolvedEntry.id,
+      content: resolvedEntry.content,
+      queueLength: queuedMessages.length,
+    });
     const currentMessages = getMessagesForTab(targetTabId);
     const suppressPendingPlaceholder = shouldSuppressPendingPlaceholder(resolvedEntry);
     const pendingMessage = createPendingAssistantMessage(resolvedEntry, i18n.chat.thinkingPlaceholder);
@@ -591,6 +673,13 @@ export function useChatController({
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Request failed");
       }
+      pushCcDebugEvent("chat.run.response", {
+        tabId: targetTabId,
+        entryId: resolvedEntry.id,
+        hasConversation: Array.isArray(payload.conversation),
+        outputText: String(payload.outputText || "").slice(0, 120),
+        assistantMessageId: payload.assistantMessageId || pendingMessage.id,
+      });
 
       if (payload.resetSessionUser) {
         const nextSessionUser = payload.resetSessionUser;
@@ -647,16 +736,27 @@ export function useChatController({
         return;
       }
 
-      setMessagesForTab(targetTabId, (current) =>
-        replacePendingAssistantMessage(
+      setMessagesForTab(targetTabId, (current) => {
+        const nextMessages = replaceAssistantPreservingTurn(
           current,
-          pendingMessage.timestamp,
+          {
+            ...resolvedEntry,
+            pendingTimestamp: pendingMessage.timestamp,
+          },
+          i18n.chat.thinkingPlaceholder,
           payload.outputText,
           payload.tokenBadge,
           false,
           payload.assistantMessageId || pendingMessage.id,
-        ),
-      );
+        );
+        pushCcDebugEvent("chat.messages.replace-assistant", {
+          tabId: targetTabId,
+          entryId: resolvedEntry.id,
+          before: summarizeCcMessages(current),
+          after: summarizeCcMessages(nextMessages),
+        });
+        return nextMessages;
+      });
       const sessionPatch = payload.sessionSync || payload.sessionPatch || payload.session || {};
       updateTabSession(targetTabId, (current) => ({
         ...current,
@@ -672,9 +772,16 @@ export function useChatController({
       }));
 
       if (isTabActive(targetTabId) && payload.session) {
-        applySnapshot(payload, { syncConversation: Array.isArray(payload.conversation) });
+        const canSyncConversationFromPayload = Array.isArray(payload.conversation)
+          && conversationIncludesUserTurn(payload.conversation, resolvedEntry);
+        applySnapshot(payload, { syncConversation: canSyncConversationFromPayload });
       }
     } catch (error) {
+      pushCcDebugEvent("chat.run.error", {
+        tabId: targetTabId,
+        entryId: resolvedEntry.id,
+        message: String(error?.message || error || ""),
+      });
       if (navigationAwayRef.current) {
         return;
       }
@@ -684,9 +791,13 @@ export function useChatController({
         turnStopped = true;
         const stoppedContent = partialOutputText.trim() || i18n.chat.stoppedResponse;
         setMessagesForTab(targetTabId, (current) =>
-          replacePendingAssistantMessage(
+          replaceAssistantPreservingTurn(
             current,
-            pendingMessage.timestamp,
+            {
+              ...resolvedEntry,
+              pendingTimestamp: pendingMessage.timestamp,
+            },
+            i18n.chat.thinkingPlaceholder,
             stoppedContent,
             String(error?.tokenBadge || ""),
             false,
@@ -700,9 +811,13 @@ export function useChatController({
         ? partialOutputText
         : `${i18n.common.requestFailed}\n${error.message}`;
       setMessagesForTab(targetTabId, (current) =>
-        replacePendingAssistantMessage(
+        replaceAssistantPreservingTurn(
           current,
-          pendingMessage.timestamp,
+          {
+            ...resolvedEntry,
+            pendingTimestamp: pendingMessage.timestamp,
+          },
+          i18n.chat.thinkingPlaceholder,
           preservedContent,
           String(error?.tokenBadge || ""),
           false,
@@ -723,6 +838,10 @@ export function useChatController({
           stopRequestedByTabRef.current = nextStopRequested;
         }
         if (turnStopped) {
+          pushCcDebugEvent("chat.run.finalize.stopped", {
+            tabId: targetTabId,
+            entryId: resolvedEntry.id,
+          });
           const stoppedEntry = {
             ...nextPendingEntry,
             stopped: true,
@@ -739,6 +858,10 @@ export function useChatController({
             pendingEntry: stoppedEntry,
           });
         } else {
+          pushCcDebugEvent("chat.run.finalize.cleared", {
+            tabId: targetTabId,
+            entryId: resolvedEntry.id,
+          });
           setPendingChatTurns((current) => {
             if (!current[resolvedEntry.key]) {
               return current;
@@ -754,6 +877,11 @@ export function useChatController({
           });
         }
         setBusyForTab(targetTabId, false);
+        pushCcDebugEvent("chat.run.finalize.busy-false", {
+          tabId: targetTabId,
+          entryId: resolvedEntry.id,
+        });
+        setDispatchReleaseTick((current) => current + 1);
       }
     }
   }, [
@@ -763,6 +891,7 @@ export function useChatController({
     i18n,
     isTabActive,
     persistOptimisticChatState,
+    queuedMessages.length,
     resolvedActiveTabId,
     setBusyForTab,
     setMessagesForTab,
@@ -776,6 +905,9 @@ export function useChatController({
   useEffect(() => {
     const nextEntry = queuedMessages.find((item) => {
       const targetTabId = item.tabId || resolvedActiveTabId;
+      if (dispatchingTurnByTabRef.current[targetTabId] || inFlightTurnsRef.current[targetTabId]) {
+        return false;
+      }
       if (Object.prototype.hasOwnProperty.call(busyByTabId, targetTabId)) {
         return !busyByTabId[targetTabId];
       }
@@ -785,9 +917,15 @@ export function useChatController({
       return;
     }
 
+    pushCcDebugEvent("chat.queue.dequeue", {
+      tabId: nextEntry.tabId || resolvedActiveTabId,
+      entryId: nextEntry.id,
+      content: nextEntry.content,
+      queueLength: queuedMessages.length,
+    });
     setQueuedMessages((current) => current.filter((item) => item.id !== nextEntry.id));
     runChatTurn(nextEntry).catch(() => {});
-  }, [busy, busyByTabId, queuedMessages, resolvedActiveTabId, runChatTurn]);
+  }, [busy, busyByTabId, dispatchReleaseTick, queuedMessages, resolvedActiveTabId, runChatTurn]);
 
   const handleAddAttachments = async (fileList) => {
     const selectedFiles = Array.from(fileList || []).filter(Boolean);
@@ -928,8 +1066,13 @@ export function useChatController({
     const entryTimestamp = Number(resolvedEntry.timestamp || Date.now());
     const hasQueuedForTab = queuedMessages.some((item) => (item.tabId || targetTabId) === targetTabId);
     const isBusyForTarget = Object.prototype.hasOwnProperty.call(busyByTabId, targetTabId) ? busyByTabId[targetTabId] : busy;
+    const hasDispatchingTurnForTarget = Boolean(dispatchingTurnByTabRef.current[targetTabId]);
     const hasInFlightTurnForTarget = Boolean(inFlightTurnsRef.current[targetTabId]);
-    const shouldGuardRapidDuplicate = isBusyForTarget || hasQueuedForTab || hasInFlightTurnForTarget;
+    const shouldGuardRapidDuplicate =
+      isBusyForTarget
+      || hasQueuedForTab
+      || hasDispatchingTurnForTarget
+      || hasInFlightTurnForTarget;
     const isRapidDuplicate =
       lastAcceptedEntry
       && lastAcceptedEntry.fingerprint === fingerprint
@@ -955,24 +1098,34 @@ export function useChatController({
       },
     };
 
-    if (isBusyForTarget || hasQueuedForTab) {
-      const currentMessages = getMessagesForTab(targetTabId);
-      const queuedMessagesForTab = ensureOptimisticTurnMessages(
-        currentMessages,
-        resolvedEntry,
-        i18n.chat.thinkingPlaceholder,
-        { includePendingPlaceholder: false },
-      );
-      setMessagesForTab(targetTabId, queuedMessagesForTab);
-      persistOptimisticChatState({
+    if (isBusyForTarget || hasQueuedForTab || hasDispatchingTurnForTarget || hasInFlightTurnForTarget) {
+      pushCcDebugEvent("chat.queue.enqueue", {
         tabId: targetTabId,
-        nextMessages: queuedMessagesForTab,
+        entryId: resolvedEntry.id,
+        content: resolvedEntry.content,
+        isBusyForTarget,
+        hasQueuedForTab,
+        hasDispatchingTurnForTarget,
+        hasInFlightTurnForTarget,
       });
       setQueuedMessages((current) => [...current, resolvedEntry]);
       return;
     }
 
-    await runChatTurn(resolvedEntry);
+    dispatchingTurnByTabRef.current = {
+      ...dispatchingTurnByTabRef.current,
+      [targetTabId]: resolvedEntry.id || true,
+    };
+    try {
+      await runChatTurn(resolvedEntry);
+    } finally {
+      if (dispatchingTurnByTabRef.current[targetTabId] === (resolvedEntry.id || true)) {
+        const nextDispatchingTurns = { ...dispatchingTurnByTabRef.current };
+        delete nextDispatchingTurns[targetTabId];
+        dispatchingTurnByTabRef.current = nextDispatchingTurns;
+        setDispatchReleaseTick((current) => current + 1);
+      }
+    }
   };
 
   return {

@@ -381,6 +381,399 @@ describe("useRuntimeSnapshot", () => {
     ]);
   });
 
+  it("does not clear busy on session.sync idle while a local pending turn is still active", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "运行中",
+        },
+        conversation: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收", timestamp: 1050, streaming: true },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: {
+          key: "command-center:main",
+          startedAt: 1000,
+          pendingTimestamp: 1050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+        },
+        busy: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "收", timestamp: 1050, streaming: true },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 1000,
+            pendingTimestamp: 1050,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          },
+        },
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket.simulateOpen();
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "session.sync",
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          status: "空闲",
+        },
+      }),
+    });
+
+    expect(setBusy).toHaveBeenLastCalledWith(true);
+  });
+
+  it("does not settle a local streaming assistant when conversation.sync only carries a partial assistant snapshot", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "运行中",
+        },
+        conversation: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收", timestamp: 1050, streaming: true },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: {
+          key: "command-center:main",
+          startedAt: 1000,
+          pendingTimestamp: 1050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+        },
+        busy: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "收到更多", timestamp: 1050, streaming: true },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 1000,
+            pendingTimestamp: 1050,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          },
+        },
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket.simulateOpen();
+
+    setBusy.mockClear();
+    setMessagesSynced.mockClear();
+    setPendingChatTurns.mockClear();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "conversation.sync",
+        conversation: [
+          { role: "user", content: "继续", timestamp: 1000 },
+          { role: "assistant", content: "收到。", timestamp: 1060 },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(setBusy).toHaveBeenLastCalledWith(true);
+      expect(setMessagesSynced).toHaveBeenCalled();
+    });
+
+    expect(setPendingChatTurns).not.toHaveBeenCalled();
+    expect(setMessagesSynced).toHaveBeenLastCalledWith([
+      { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "收到更多", timestamp: 1050, streaming: true },
+    ]);
+  });
+
+  it("keeps a restored partial assistant busy after refresh until the runtime stream stabilizes", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "空闲",
+        },
+        conversation: [
+          { role: "user", content: "刷新后继续生成", timestamp: 100 },
+          { role: "assistant", content: "第一段", timestamp: 101 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+        },
+        busy: true,
+        recoveringPendingReply: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+            {
+              id: "msg-assistant-pending-1",
+              role: "assistant",
+              content: "第一段",
+              timestamp: 101,
+            },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 100,
+            pendingTimestamp: 101,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+          },
+        },
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    expect(setBusy).toHaveBeenLastCalledWith(true);
+    expect(setPendingChatTurns).not.toHaveBeenCalled();
+    expect(setMessagesSynced).toHaveBeenCalledWith([
+      { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+      {
+        id: "msg-assistant-pending-1",
+        role: "assistant",
+        content: "第一段",
+        timestamp: 101,
+      },
+    ]);
+  });
+
+  it("settles a restored streaming assistant after the runtime delivers a stable final snapshot", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "空闲",
+        },
+        conversation: [
+          { role: "user", content: "刷新后继续生成", timestamp: 100 },
+          { role: "assistant", content: "第一段", timestamp: 101 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+        },
+        busy: true,
+        recoveringPendingReply: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+            {
+              id: "msg-assistant-pending-1",
+              role: "assistant",
+              content: "第一段",
+              timestamp: 101,
+            },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 100,
+            pendingTimestamp: 101,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "刷新后继续生成", timestamp: 100 },
+          },
+        },
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket.simulateOpen();
+
+    setBusy.mockClear();
+    setPendingChatTurns.mockClear();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "conversation.sync",
+        conversation: [
+          { role: "user", content: "刷新后继续生成", timestamp: 100 },
+          { role: "assistant", content: "第一段，第二段", timestamp: 101 },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(setBusy).toHaveBeenLastCalledWith(true);
+    });
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "session.sync",
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          status: "空闲",
+        },
+      }),
+    });
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "conversation.sync",
+        conversation: [
+          { role: "user", content: "刷新后继续生成", timestamp: 100 },
+          { role: "assistant", content: "第一段，第二段", timestamp: 101 },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(setBusy).toHaveBeenLastCalledWith(false);
+      expect(setPendingChatTurns).toHaveBeenCalled();
+    });
+  });
+
   it("applies runtime snapshots that resolve an IM bootstrap session to the latest real session", async () => {
     const setBusy = vi.fn();
     const setFastMode = vi.fn();
@@ -959,13 +1352,15 @@ describe("useRuntimeSnapshot", () => {
 
     await waitFor(() => {
       expect(setMessagesSynced).toHaveBeenCalledWith([
+        { role: "user", content: "给我看点新闻", timestamp: 200 },
         { role: "assistant", content: "先给你几条新闻", timestamp: 220 },
       ]);
     });
 
-    expect(setBusy).not.toHaveBeenCalledWith(true);
-    expect(setSession).not.toHaveBeenCalledWith(expect.objectContaining({ status: "运行中" }));
+    expect(setBusy).toHaveBeenCalledWith(true);
+    expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "运行中" }));
     expect(setMessagesSynced).toHaveBeenCalledWith([
+      { role: "user", content: "给我看点新闻", timestamp: 200 },
       { role: "assistant", content: "先给你几条新闻", timestamp: 220 },
     ]);
   });
@@ -1046,6 +1441,228 @@ describe("useRuntimeSnapshot", () => {
 
     expect(setBusy).toHaveBeenCalledWith(true);
     expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "运行中" }));
+  });
+
+  it("keeps the local settled assistant reply and clears the pending turn when the snapshot still lags behind", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingChatTurns = {
+      "command-center:main": {
+        key: "command-center:main",
+        startedAt: 200,
+        pendingTimestamp: 220,
+        assistantMessageId: "msg-assistant-final-1",
+        userMessage: {
+          role: "user",
+          content: "新问题",
+          timestamp: 200,
+        },
+      },
+    };
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingChatTurns["command-center:main"],
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { role: "user", content: "旧问题", timestamp: 100 },
+            { role: "assistant", content: "旧回复", timestamp: 120 },
+            { role: "user", content: "新问题", timestamp: 200 },
+            { id: "msg-assistant-final-1", role: "assistant", content: "第一条已完成", timestamp: 220 },
+          ],
+        },
+        pendingChatTurns,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalledWith([
+        { role: "user", content: "旧问题", timestamp: 100 },
+        { role: "assistant", content: "旧回复", timestamp: 120 },
+        { role: "user", content: "新问题", timestamp: 200 },
+        { id: "msg-assistant-final-1", role: "assistant", content: "第一条已完成", timestamp: 220 },
+      ]);
+    });
+
+    expect(setBusy).toHaveBeenCalledWith(false);
+    expect(setPendingChatTurns).toHaveBeenCalled();
+  });
+
+  it("keeps the latest local user-assistant turn stable when a snapshot temporarily omits the user", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const localMessages = [
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+      { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 1100 },
+    ];
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: localMessages },
+        pendingChatTurns: {},
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    result.current.applySnapshot({
+      session: {
+        sessionUser: "command-center",
+        agentId: "main",
+        selectedModel: "gpt-5",
+        availableModels: ["gpt-5"],
+        availableAgents: ["main"],
+        status: "待命",
+      },
+      conversation: [{ role: "assistant", content: "收到。", timestamp: 1200 }],
+    });
+
+    expect(setMessagesSynced).toHaveBeenLastCalledWith([
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+      { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 1100 },
+    ]);
+  });
+
+  it("keeps the current user visible when the pending card disappears before the snapshot includes that user", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [{ role: "assistant", content: "收到。", timestamp: 1100 }],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingChatTurns = {
+      "command-center:main": {
+        key: "command-center:main",
+        startedAt: 1000,
+        pendingTimestamp: 1050,
+        assistantMessageId: "msg-assistant-pending-1",
+        userMessage: {
+          id: "msg-user-1",
+          role: "user",
+          content: "1",
+          timestamp: 1000,
+        },
+      },
+    };
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingChatTurns["command-center:main"],
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 1050, pending: true },
+          ],
+        },
+        pendingChatTurns,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalledWith([
+        { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+      ]);
+    });
   });
 
   it("preserves locally streamed assistant text while the runtime snapshot still lags behind", async () => {

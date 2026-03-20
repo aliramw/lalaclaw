@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { copyTextToClipboard } from "@/components/command-center/clipboard-utils";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
 import { buildOpenClawConfigFormValues, buildOpenClawRemoteGuard, useOpenClawInspector } from "@/features/app/controllers/use-openclaw-inspector";
@@ -406,6 +407,10 @@ function collectEnvironmentGroups(items = [], messages) {
     }));
 }
 
+function isLalaClawEnvironmentItem(item) {
+  return String(item?.label || "").startsWith("LALACLAW.");
+}
+
 function shouldRenderEnvironmentPathLink(item) {
   return Boolean(item?.previewable || item?.revealable);
 }
@@ -685,6 +690,163 @@ function OpenClawRemoteNotice({ messages, onOpenGuide, remoteGuard = null }) {
           {messages.inspector.remoteOperations.openGuide}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function getLalaClawUpdateBadgeVariant(state = null) {
+  const status = String(state?.job?.status || "").trim();
+  if (status === "failed") {
+    return "default";
+  }
+  if (status === "completed" || (!state?.updateAvailable && state?.check?.ok)) {
+    return "success";
+  }
+  return "secondary";
+}
+
+function LalaClawPanel({
+  busy = false,
+  error = "",
+  loading = false,
+  messages,
+  metadataItems = [],
+  onReload,
+  onRunUpdate,
+  showTitle = true,
+  state = null,
+}) {
+  const metadata = metadataItems.filter((item) => item?.value);
+  const badgeVariant = getLalaClawUpdateBadgeVariant(state);
+  const currentVersion = state?.currentRelease?.version || state?.currentVersion || messages.inspector.lalaclawUpdate.emptyValue;
+  const targetVersion = state?.targetRelease?.version || "";
+  const currentStable = Boolean(state?.currentRelease?.stable);
+  const targetStable = Boolean(state?.targetRelease?.stable);
+  const updateAvailable = Boolean(state?.updateAvailable);
+  const jobActive = Boolean(state?.job?.active);
+  const capabilitySupported = state?.capability?.updateSupported !== false;
+  const panelError = error || (state?.job?.status === "failed" ? state?.job?.error : "") || (!state?.check?.ok ? state?.check?.error : "");
+  const shouldShowRunAction = Boolean(updateAvailable) && capabilitySupported && !jobActive;
+  const statusLabel = jobActive
+    ? messages.inspector.lalaclawUpdate.statuses.updating
+    : updateAvailable
+      ? messages.inspector.lalaclawUpdate.statuses.updateAvailable
+      : messages.inspector.lalaclawUpdate.statuses.upToDate;
+
+  return (
+    <div className={showTitle ? "grid gap-2" : "grid"}>
+      {showTitle ? (
+        <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          {messages.inspector.lalaclawUpdate.title}
+        </div>
+      ) : null}
+      <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <CardContent className="space-y-3 px-3.5 py-3">
+          <div className="text-[12px] leading-5 text-muted-foreground">
+            {messages.inspector.lalaclawUpdate.description}
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  {messages.inspector.lalaclawUpdate.labels.currentVersion}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+                  <span>{currentVersion}</span>
+                  {currentStable ? (
+                    <Badge variant="secondary" className="px-2 py-0.5 text-[10px] leading-5">
+                      {messages.inspector.lalaclawUpdate.stableBadge}
+                    </Badge>
+                  ) : null}
+                </div>
+              </div>
+              {updateAvailable ? (
+                <div className="flex flex-wrap items-center justify-end gap-2 text-[12px] leading-5">
+                  <span className="font-medium text-foreground">
+                    {statusLabel}
+                  </span>
+                  {shouldShowRunAction ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={loading || busy}
+                      className="cc-send-button h-7 rounded-full px-2.5 text-[12px] shadow-none"
+                      onClick={() => onRunUpdate?.()}
+                    >
+                      {busy ? messages.inspector.lalaclawUpdate.running : messages.inspector.lalaclawUpdate.runUpdate}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <Badge variant={badgeVariant} className="px-2 py-0.5 text-[11px] leading-5">
+                  {statusLabel}
+                </Badge>
+              )}
+            </div>
+            {targetVersion ? (
+              <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+                <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  {messages.inspector.lalaclawUpdate.labels.targetVersion}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] font-medium text-foreground">
+                  <span>{targetVersion}</span>
+                  {targetStable ? (
+                    <Badge variant="secondary" className="px-2 py-0.5 text-[10px] leading-5">
+                      {messages.inspector.lalaclawUpdate.stableBadge}
+                    </Badge>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {metadata.length ? (
+              <div className="mt-3 grid gap-2 text-[12px] leading-5 text-foreground">
+                {metadata.map((item, index) => (
+                  <div key={`${item.label}-${index}`} className="grid gap-0.5">
+                    <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {localizeEnvironmentItemLabel(item.label, messages)}
+                    </div>
+                    <div className="font-mono text-[12px] text-foreground">
+                      {localizeEnvironmentItemValue(item.value, messages)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          {state?.capability?.reason ? (
+            <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-[12px] leading-5 text-muted-foreground">
+              {messages.inspector.lalaclawUpdate.errors[state.capability.reason] || messages.inspector.lalaclawUpdate.errors.requestFailed}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={loading || busy}
+              aria-label={messages.inspector.lalaclawUpdate.reload}
+              className="h-8 rounded-full px-3"
+              onClick={() => onReload?.()}
+            >
+              {loading ? messages.inspector.lalaclawUpdate.reloading : messages.inspector.lalaclawUpdate.reload}
+            </Button>
+          </div>
+          {panelError ? (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] leading-5 text-destructive">
+              {panelError}
+            </div>
+          ) : null}
+          {state?.job?.status === "failed" && state?.job?.commandResult?.stderr ? (
+            <div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                {messages.inspector.lalaclawUpdate.labels.stderr}
+              </div>
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-[11px] leading-5 text-foreground">{state.job.commandResult.stderr}</pre>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1815,13 +1977,19 @@ function OpenClawManagementConfirmDialog({ action, busy = false, messages, onCan
   );
 }
 
-function EnvironmentSectionCard({ children, count = 0, defaultOpen = false, label, messages }) {
+function EnvironmentSectionCard({ children, count = 0, defaultOpen = false, forceOpen = false, label, messages, wrapContent = true }) {
   const [collapsed, setCollapsed] = useState(!defaultOpen);
   const shouldShowCount = Number.isFinite(count) && count > 0;
 
+  useEffect(() => {
+    if (forceOpen) {
+      setCollapsed(false);
+    }
+  }, [forceOpen]);
+
   return (
-    <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="px-3.5 py-2.5">
+    <section className="space-y-1.5">
+      <div className="px-1 py-0.5">
         <button
           type="button"
           className={cn(
@@ -1843,8 +2011,18 @@ function EnvironmentSectionCard({ children, count = 0, defaultOpen = false, labe
           ) : null}
         </button>
       </div>
-      {!collapsed ? <CardContent className="space-y-2 border-t border-border/60 px-3.5 pb-3 pt-2.5">{children}</CardContent> : null}
-    </Card>
+      {!collapsed ? (
+        wrapContent ? (
+          <Card className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <CardContent className="space-y-2 px-3.5 py-3">
+              {children}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">{children}</div>
+        )
+      ) : null}
+    </section>
   );
 }
 
@@ -2675,13 +2853,17 @@ function FilesTab({
 
     if (!hasWorkspaceFilter) {
       const nextNodes = normalizeWorkspaceNodes(workspaceItems, currentWorkspaceRoot);
-      setWorkspaceNodes((current) => (workspaceLoaded ? mergeWorkspaceNodes(current, nextNodes) : nextNodes));
-      setWorkspaceState((current) => ({
-        ...current,
-        loaded: workspaceLoaded,
-        loading: false,
-        error: "",
-      }));
+      const hasFreshWorkspaceSnapshot = workspaceLoaded || nextNodes.length > 0;
+
+      if (hasFreshWorkspaceSnapshot) {
+        setWorkspaceNodes((current) => (workspaceLoaded ? mergeWorkspaceNodes(current, nextNodes) : nextNodes));
+        setWorkspaceState((current) => ({
+          ...current,
+          loaded: workspaceLoaded,
+          loading: false,
+          error: "",
+        }));
+      }
     }
   }, [currentWorkspaceRoot, hasWorkspaceFilter, workspaceItems, workspaceLoaded]);
 
@@ -2926,7 +3108,7 @@ function FilesTab({
 
           <FileGroupSection
             count={visibleWorkspaceCount}
-            defaultOpen
+            defaultOpen={false}
             label={messages.inspector.fileCollections.workspace}
             messages={messages}
             action={(
@@ -3088,7 +3270,7 @@ function CopyCodeButton({ content }) {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard?.writeText?.(String(content || ""));
+      await copyTextToClipboard(content);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {}
@@ -3102,6 +3284,30 @@ function CopyCodeButton({ content }) {
       aria-label={copied ? messages.markdown.copiedCode : messages.markdown.copyCode}
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+function HoverCopyValueButton({ content }) {
+  const { messages } = useI18n();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await copyTextToClipboard(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      aria-label={copied ? messages.markdown.copiedCode : messages.markdown.copyCode}
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
     </button>
   );
 }
@@ -3424,6 +3630,7 @@ function EnvironmentTab({
   configEditor = null,
   history = null,
   items = [],
+  lalaclawFlow = null,
   management = null,
   messages,
   onOpenPreview,
@@ -3436,17 +3643,43 @@ function EnvironmentTab({
   }
 
   const { sections: openClawDiagnostics, remainingItems } = collectOpenClawDiagnostics(items);
-  const groupedEnvironmentItems = collectEnvironmentGroups(remainingItems, messages);
+  const lalaclawItems = remainingItems.filter((item) => isLalaClawEnvironmentItem(item));
+  const groupedEnvironmentItems = collectEnvironmentGroups(
+    remainingItems.filter((item) => !isLalaClawEnvironmentItem(item)),
+    messages,
+  );
   const remoteGuard = buildOpenClawRemoteGuard(items, messages);
 
   return (
     <ScrollArea className="min-h-0 flex-1" viewportClassName="min-w-0">
-      <div className="min-w-0 max-w-full space-y-3 overflow-hidden py-1 pr-4">
+      <div className="min-w-0 max-w-full space-y-2 overflow-hidden py-1 pr-4">
         <InspectorHint text={messages.inspector.empty.environment} />
+        {lalaclawFlow?.enabled ? (
+          <EnvironmentSectionCard
+            defaultOpen={Boolean(lalaclawFlow.defaultOpen)}
+            forceOpen={Boolean(lalaclawFlow.forceOpen)}
+            label={messages.inspector.lalaclawUpdate.title}
+            messages={messages}
+            wrapContent={false}
+          >
+            <LalaClawPanel
+              busy={lalaclawFlow.busy}
+              error={lalaclawFlow.error}
+              loading={lalaclawFlow.loading}
+              messages={messages}
+              metadataItems={lalaclawItems}
+              onReload={lalaclawFlow.onReload}
+              onRunUpdate={lalaclawFlow.onRunUpdate}
+              showTitle={false}
+              state={lalaclawFlow.state}
+            />
+          </EnvironmentSectionCard>
+        ) : null}
         {configEditor?.enabled ? (
           <EnvironmentSectionCard
             label={messages.inspector.openClawConfig.title}
             messages={messages}
+            wrapContent={false}
           >
             <OpenClawConfigPanel
               busy={configEditor.busy}
@@ -3473,6 +3706,7 @@ function EnvironmentTab({
           <EnvironmentSectionCard
             label={messages.inspector.openClawUpdate.title}
             messages={messages}
+            wrapContent={false}
           >
             <OpenClawUpdatePanel
               busy={updateFlow.busy}
@@ -3494,6 +3728,7 @@ function EnvironmentTab({
           <EnvironmentSectionCard
             label={messages.inspector.openClawManagement.title}
             messages={messages}
+            wrapContent={false}
           >
             <OpenClawManagementPanel
               actionIntent={management.actionIntent}
@@ -3514,6 +3749,7 @@ function EnvironmentTab({
             count={Array.isArray(history.entries) ? history.entries.length : 0}
             label={messages.inspector.remoteOperations.historyTitle}
             messages={messages}
+            wrapContent={false}
           >
             <OpenClawOperationHistoryPanel
               entries={history.entries}
@@ -3530,7 +3766,7 @@ function EnvironmentTab({
           </EnvironmentSectionCard>
         ) : null}
         {openClawDiagnostics.length ? (
-          <div className="grid gap-3">
+          <div className="grid gap-2">
             {openClawDiagnostics.map((section) => (
               <EnvironmentSectionCard
                 key={section.key}
@@ -3543,10 +3779,13 @@ function EnvironmentTab({
                     return (
                       <div
                         key={`${item.label}-${index}`}
-                        className="grid gap-0.5 overflow-hidden border-b border-border/55 pb-2 last:border-b-0 last:pb-0"
+                        className="group grid gap-0.5 overflow-hidden border-b border-border/55 pb-2 last:border-b-0 last:pb-0"
                       >
-                        <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                          {localizeOpenClawDiagnosticLabel(item.label, messages)}
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                            {localizeOpenClawDiagnosticLabel(item.label, messages)}
+                          </div>
+                          <HoverCopyValueButton content={localizeOpenClawDiagnosticValue(item.value, messages)} />
                         </div>
                         {shouldRenderOpenClawDiagnosticBadge(item.label) ? (
                           <div>
@@ -3589,11 +3828,14 @@ function EnvironmentTab({
             {group.items.map((item, index) => (
               <div
                 key={`${item.label}-${index}`}
-                className="w-full min-w-0 max-w-full overflow-hidden border-b border-border/55 pb-2 last:border-b-0 last:pb-0"
+                className="group w-full min-w-0 max-w-full overflow-hidden border-b border-border/55 pb-2 last:border-b-0 last:pb-0"
               >
                 <div className="min-w-0 space-y-0.5 overflow-hidden">
-                  <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                    {localizeEnvironmentItemLabel(item.label, messages)}
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="w-full min-w-0 max-w-full whitespace-normal break-all [overflow-wrap:anywhere] text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {localizeEnvironmentItemLabel(item.label, messages)}
+                    </div>
+                    <HoverCopyValueButton content={localizeEnvironmentItemValue(item.value, messages)} />
                   </div>
                   {shouldRenderEnvironmentPathLink(item) ? (
                     <div className="min-w-0 overflow-hidden">
@@ -3708,6 +3950,12 @@ export function InspectorPanel({
     openClawActionBusyKey,
     openClawActionIntent,
     openClawActionResult,
+    handleLoadLalaClawUpdate,
+    handleRunLalaClawUpdate,
+    lalaclawUpdateBusy,
+    lalaclawUpdateError,
+    lalaclawUpdateLoading,
+    lalaclawUpdateState,
     openClawConfigBusy,
     openClawConfigError,
     openClawConfigLoading,
@@ -3758,7 +4006,7 @@ export function InspectorPanel({
     { key: "files", icon: FolderOpen, label: messages.inspector.tabs.files, count: files.length },
     { key: "artifacts", icon: FileText, label: messages.inspector.tabs.artifacts },
     { key: "timeline", icon: Hammer, label: messages.inspector.tabs.timeline },
-    { key: "environment", icon: Monitor, label: messages.inspector.tabs.environment },
+    { key: "environment", icon: Monitor, label: messages.inspector.tabs.environment, alertDot: Boolean(lalaclawUpdateState?.updateAvailable) },
   ];
 
   useEffect(() => {
@@ -3872,6 +4120,17 @@ export function InspectorPanel({
   );
   const environmentTabContent = (
     <EnvironmentTab
+      lalaclawFlow={{
+        enabled: true,
+        busy: lalaclawUpdateBusy || Boolean(lalaclawUpdateState?.job?.active),
+        defaultOpen: Boolean(lalaclawUpdateState?.updateAvailable),
+        error: lalaclawUpdateError,
+        forceOpen: resolvedActiveTab === "environment" && Boolean(lalaclawUpdateState?.updateAvailable),
+        loading: lalaclawUpdateLoading,
+        onReload: handleLoadLalaClawUpdate,
+        onRunUpdate: handleRunLalaClawUpdate,
+        state: lalaclawUpdateState,
+      }}
       updateFlow={{
         enabled: true,
         busy: openClawUpdateBusy,
@@ -3960,6 +4219,13 @@ export function InspectorPanel({
                     )}
                   >
                     <Icon className="h-4.5 w-4.5 shrink-0 stroke-[1.9]" />
+                    {tab.alertDot ? (
+                      <span
+                        data-testid={`inspector-tab-alert-${tab.key}`}
+                        aria-hidden="true"
+                        className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500"
+                      />
+                    ) : null}
                     {tab.count ? (
                       <span
                         className={cn(
@@ -3995,7 +4261,7 @@ export function InspectorPanel({
                 <CardHeader className="flex min-h-12 flex-row items-start justify-between gap-3 border-b border-border/70 bg-card/92 px-4 py-3 text-left backdrop-blur">
                   <div className="min-w-0 flex-1">
                     <CardTitle className="truncate text-sm leading-[1.15]">{activeCompactTab.label}</CardTitle>
-                    <CardDescription className="mt-1 line-clamp-2 text-[11px] leading-4">
+                    <CardDescription className="mt-1 line-clamp-2 text-[11px] leading-[1.35rem]">
                       {messages.inspector.subtitle}
                     </CardDescription>
                   </div>
@@ -4089,9 +4355,9 @@ export function InspectorPanel({
     <>
       <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         <CardHeader className="flex min-h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
-          <div className="flex min-w-0 flex-1 items-baseline justify-start gap-2 text-left">
+          <div className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left">
             <CardTitle className="truncate text-sm leading-[1.15]">{messages.inspector.title}</CardTitle>
-            <CardDescription className="truncate text-[11px] leading-4">{messages.inspector.subtitle}</CardDescription>
+            <CardDescription className="truncate text-[11px] leading-5">{messages.inspector.subtitle}</CardDescription>
           </div>
         </CardHeader>
 
@@ -4145,6 +4411,13 @@ export function InspectorPanel({
                     <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
                       <Icon className="h-3.5 w-3.5 shrink-0 stroke-[1.9]" />
                     </span>
+                    {tab.alertDot ? (
+                      <span
+                        data-testid={`inspector-tab-alert-${tab.key}`}
+                        aria-hidden="true"
+                        className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500"
+                      />
+                    ) : null}
                     {showTabLabels ? <span className="truncate">{tab.label}</span> : null}
                     {showCountBadge ? <TabCountBadge count={tab.count} active={resolvedActiveTab === tab.key} /> : null}
                     {!showTabLabels && tooltipTabKey === tab.key ? (

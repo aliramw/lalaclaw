@@ -130,7 +130,17 @@ export function useAppPersistence({
     const requestId = storageRequestRef.current + 1;
     storageRequestRef.current = requestId;
 
-    writeUiState(payload.fallbackStoragePayload);
+    const fallbackSerializedMessagesByTabId = Object.fromEntries(
+      Object.entries(payload.messagesByTabId || {}).map(([key, items]) => [key, sanitizeMessagesForStorage(items)]),
+    );
+    const fallbackStoragePayload = {
+      ...payload.nextStorageState,
+      promptDraftsByConversation: payload.promptDraftsByConversation,
+      messages: sanitizeMessagesForStorage(payload.messages),
+      messagesByTabId: fallbackSerializedMessagesByTabId,
+    };
+
+    writeUiState(fallbackStoragePayload);
     writePendingChatTurns(payload.pendingChatTurns, payload.persistedAt);
 
     if (skipAttachmentSerialization) {
@@ -158,7 +168,7 @@ export function useAppPersistence({
           return;
         }
 
-        writeUiState(payload.fallbackStoragePayload);
+        writeUiState(fallbackStoragePayload);
         writePendingChatTurns(payload.pendingChatTurns, payload.persistedAt);
       });
   }, [writePendingChatTurns, writeUiState]);
@@ -188,19 +198,9 @@ export function useAppPersistence({
       sessionUser: session.sessionUser,
       tabMetaById,
     };
-    const fallbackSerializedMessagesByTabId = Object.fromEntries(
-      Object.entries(messagesByTabId || {}).map(([key, items]) => [key, sanitizeMessagesForStorage(items)]),
-    );
-    const fallbackStoragePayload = {
-      ...nextStorageState,
-      promptDraftsByConversation,
-      messages: sanitizeMessagesForStorage(messages),
-      messagesByTabId: fallbackSerializedMessagesByTabId,
-    };
 
     pendingPersistenceRef.current = {
       activeChatTabId,
-      fallbackStoragePayload,
       messages,
       messagesByTabId,
       nextStorageState,

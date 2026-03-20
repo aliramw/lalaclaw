@@ -61,6 +61,10 @@ http://127.0.0.1:3000
 - 验证通过后再提交并推送到 `origin/main`。Only commit and push to `origin/main` after those checks pass.
 - 推送完成后再创建 Git tag 和 GitHub release。Create the Git tag and GitHub release only after the main branch has been pushed.
 - 最后发布 npm 包。Publish the npm package last.
+- 每次发布新版本时，必须单独询问维护者这次是否要给该版本打 `stable` dist-tag，不能默认自动打。For every new release, explicitly ask the maintainer whether this version should receive the `stable` dist-tag; never assume `stable` promotion automatically.
+- 如果维护者还没有明确确认，默认只发布版本本身，或先发布到非 `latest` / 非 `stable` 的 dist-tag（例如 `next`），不要擅自改动 `stable`。If the maintainer has not explicitly confirmed, publish the version itself only, or use a non-`latest` / non-`stable` dist-tag such as `next`; do not change `stable` on your own.
+- 如果维护者确认要打 `stable`，优先用 `npm dist-tag add lalaclaw@<version> stable` 提升一个“已经发布过”的版本，而不是为了改 tag 重发同版本。If the maintainer confirms `stable`, prefer promoting an already-published version with `npm dist-tag add lalaclaw@<version> stable` instead of republishing the same version only to change tags.
+- 如果维护者确认本次不应再保留某个版本的 `stable` 标记，可以用 `npm dist-tag add lalaclaw@<older-version> stable` 把 `stable` 挪回旧版本，或在确有需要时用 `npm dist-tag rm lalaclaw stable` 移除 `stable`。If the maintainer decides a version should no longer be `stable`, move `stable` back to an older version with `npm dist-tag add lalaclaw@<older-version> stable`, or remove the tag with `npm dist-tag rm lalaclaw stable` when that behavior is explicitly desired.
 
 ### 发布产物验收 / Release Artifact Validation
 
@@ -78,6 +82,7 @@ http://127.0.0.1:3000
   - 浏览器 console 没有新的 runtime / chunk 初始化错误
   - 如果本次改动涉及生产打包或懒加载分块，优先再检查一次 Network / console，确认没有循环 chunk 或缺失 chunk
 - 如果需要更稳的发布节奏，可先用非 `latest` dist-tag 做一次 registry 验证，通过后再切到正式标签。If needed, publish to a non-`latest` dist-tag first, verify from the registry, and only then promote it.
+- LalaClaw 应用内自更新优先读取 npm 的 `stable` dist-tag；如果 registry 上没有 `stable`，当前实现会回落到 `latest`。因此是否维护 `stable` 不是纯文档决策，而是会直接影响客户端看到的“可更新版本”。LalaClaw in-app self-update reads the npm `stable` dist-tag first; if `stable` is absent, the current implementation falls back to `latest`. That means `stable` maintenance directly affects which update version the client sees.
 
 ## WebSocket 第二阶段 / WebSocket Phase 2
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { KeyRound } from "lucide-react";
+import { KeyRound, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AccessGateContext } from "@/features/auth/access-context";
@@ -244,7 +244,12 @@ export function AccessGate({ children }) {
                   {messages.authGate.retry}
                 </Button>
               ) : (
-                <div className="h-12 rounded-2xl border border-dashed border-border/70 bg-background/70" aria-hidden="true" />
+                <div
+                  data-testid="access-gate-loading-state"
+                  className="flex h-12 items-center justify-center rounded-2xl bg-background/45 text-sm text-muted-foreground"
+                >
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                </div>
               )}
             </CardContent>
           </Card>

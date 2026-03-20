@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  areEquivalentChatScrollState,
+  buildChatScrollStateSnapshot,
   buildChatTabTitle,
   deriveUnreadTabState,
   getLatestSettledMessageKey,
@@ -8,6 +10,7 @@ import {
   hasActiveAssistantReply,
   isChatTabBusy,
   planSearchedSessionTabTarget,
+  resolveViewportAnchorCandidate,
   resolveImRuntimeSessionUser,
   shouldReuseTabState,
   shouldApplyRuntimeSnapshotToTab,
@@ -72,6 +75,174 @@ describe("shouldApplyRuntimeSnapshotToTab", () => {
         resolvedSessionUser: '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}',
       }),
     ).toBe(false);
+  });
+});
+
+describe("areEquivalentChatScrollState", () => {
+  it("treats structurally identical scroll snapshots as equal", () => {
+    expect(
+      areEquivalentChatScrollState(
+        {
+          scrollTop: 120,
+          atBottom: true,
+          anchorNodeId: "msg-1-block-3",
+          anchorMessageId: "msg-1",
+          anchorOffset: 16,
+        },
+        {
+          scrollTop: 120,
+          atBottom: true,
+          anchorNodeId: "msg-1-block-3",
+          anchorMessageId: "msg-1",
+          anchorOffset: 16,
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("detects meaningful scroll snapshot changes without stringifying", () => {
+    expect(
+      areEquivalentChatScrollState(
+        {
+          scrollTop: 120,
+          atBottom: false,
+          anchorNodeId: "msg-1-block-3",
+          anchorMessageId: "msg-1",
+          anchorOffset: 16,
+        },
+        {
+          scrollTop: 121,
+          atBottom: false,
+          anchorNodeId: "msg-1-block-3",
+          anchorMessageId: "msg-1",
+          anchorOffset: 16,
+        },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("resolveViewportAnchorCandidate", () => {
+  it("uses top-edge point probing before scanning the whole viewport", () => {
+    const anchorNode = document.createElement("div");
+    anchorNode.setAttribute("data-message-id", "msg-1");
+    anchorNode.getBoundingClientRect = () => ({
+      top: 24,
+      bottom: 64,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 40,
+      x: 0,
+      y: 24,
+      toJSON: () => ({}),
+    });
+
+    const childNode = document.createElement("span");
+    childNode.closest = () => anchorNode;
+
+    const viewport = document.createElement("div");
+    viewport.contains = (node) => node === childNode || node === anchorNode;
+    viewport.querySelectorAll = vi.fn(() => []);
+
+    document.elementsFromPoint = vi.fn(() => [childNode]);
+
+    const candidate = resolveViewportAnchorCandidate(
+      viewport,
+      "[data-message-id]",
+      { top: 0, left: 0, right: 300, bottom: 200, width: 300, height: 200 },
+    );
+
+    expect(candidate?.node).toBe(anchorNode);
+    expect(viewport.querySelectorAll).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the first visible node and stops scanning once the viewport has been reached", () => {
+    const hiddenNode = document.createElement("div");
+    hiddenNode.setAttribute("data-scroll-anchor-id", "hidden");
+    hiddenNode.getBoundingClientRect = vi.fn(() => ({
+      top: -80,
+      bottom: -20,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 60,
+      x: 0,
+      y: -80,
+      toJSON: () => ({}),
+    }));
+
+    const visibleNode = document.createElement("div");
+    visibleNode.setAttribute("data-scroll-anchor-id", "visible");
+    visibleNode.getBoundingClientRect = vi.fn(() => ({
+      top: 12,
+      bottom: 72,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 60,
+      x: 0,
+      y: 12,
+      toJSON: () => ({}),
+    }));
+
+    const lowerNode = document.createElement("div");
+    lowerNode.setAttribute("data-scroll-anchor-id", "lower");
+    lowerNode.getBoundingClientRect = vi.fn(() => ({
+      top: 120,
+      bottom: 180,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 60,
+      x: 0,
+      y: 120,
+      toJSON: () => ({}),
+    }));
+
+    const viewport = document.createElement("div");
+    viewport.querySelectorAll = vi.fn(() => [hiddenNode, visibleNode, lowerNode]);
+    document.elementsFromPoint = vi.fn(() => []);
+
+    const candidate = resolveViewportAnchorCandidate(
+      viewport,
+      "[data-scroll-anchor-id]",
+      { top: 0, left: 0, right: 300, bottom: 100, width: 300, height: 100 },
+    );
+
+    expect(candidate?.node).toBe(visibleNode);
+    expect(hiddenNode.getBoundingClientRect).toHaveBeenCalledTimes(1);
+    expect(visibleNode.getBoundingClientRect).toHaveBeenCalledTimes(1);
+    expect(lowerNode.getBoundingClientRect).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildChatScrollStateSnapshot", () => {
+  it("skips anchor discovery entirely while the viewport is already at the bottom", () => {
+    const viewport = document.createElement("div");
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 300 });
+    viewport.querySelectorAll = vi.fn(() => []);
+    viewport.getBoundingClientRect = vi.fn(() => ({
+      top: 0,
+      left: 0,
+      right: 300,
+      bottom: 300,
+      width: 300,
+      height: 300,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }));
+    document.elementsFromPoint = vi.fn(() => []);
+
+    expect(buildChatScrollStateSnapshot({ viewport, scrollTop: 900 })).toEqual({
+      scrollTop: 900,
+      atBottom: true,
+    });
+    expect(viewport.querySelectorAll).not.toHaveBeenCalled();
+    expect(viewport.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(document.elementsFromPoint).not.toHaveBeenCalled();
   });
 });
 
@@ -358,6 +529,34 @@ describe("isChatTabBusy", () => {
             { role: "user", content: "测试", timestamp: 1 },
             { role: "assistant", content: "收到。", timestamp: 2 },
           ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a tab busy while its pending turn is still tracked even if streaming markers momentarily disappear", () => {
+    expect(
+      isChatTabBusy({
+        tabId: "agent:main",
+        sessionUser: "command-center-main",
+        activeChatTabId: "agent:main",
+        sessionStatus: "待命",
+        busyByTabId: {},
+        messagesByTabId: {
+          "agent:main": [
+            { role: "user", content: "测试", timestamp: 1 },
+            { role: "assistant", content: "收", timestamp: 2 },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center-main:main": {
+            key: "command-center-main:main",
+            tabId: "agent:main",
+            startedAt: 1,
+            pendingTimestamp: 2,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "测试", timestamp: 1 },
+          },
         },
       }),
     ).toBe(true);

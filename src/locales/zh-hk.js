@@ -249,6 +249,19 @@ const zhHk = {
   },
   inspector: {
     ...zh.inspector,
+    lalaclawUpdate: {
+      ...zh.inspector.lalaclawUpdate,
+      description: "這裡可以檢查最新穩定版 LalaClaw，確認目前服務是否落後，並直接發起受支援的應用內更新流程。",
+      stableBadge: "穩定版",
+      labels: {
+        ...zh.inspector.lalaclawUpdate.labels,
+        targetVersion: "最新穩定版",
+      },
+      errors: {
+        ...zh.inspector.lalaclawUpdate.errors,
+        lalaclaw_update_check_failed: "目前無法檢查最新穩定版 LalaClaw。",
+      },
+    },
     title: "追蹤與觀察",
     subtitle: "目前工作階段的檔案、摘要、執行記錄與環境資訊",
     relationships: {

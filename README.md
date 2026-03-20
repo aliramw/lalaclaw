@@ -212,6 +212,7 @@ The full contribution checklist lives in [CONTRIBUTING.md](./CONTRIBUTING.md).
 - Use `npm run lalaclaw:start` or `npm start` only for built output that depends on `dist/`
 - By default, the app auto-detects a local OpenClaw gateway when available
 - To force `mock` mode for reproducible UI or frontend debugging, set `COMMANDCENTER_FORCE_MOCK=1`
+- For repeated source-checkout demos of the in-app LalaClaw self-update flow, use the dev-only route `POST /api/dev/lalaclaw/update-mock` with `{ "enabled": true, "stableVersion": "2026.3.21-1" }`, then disable it later with `DELETE /api/dev/lalaclaw/update-mock`
 - Before submitting a PR, report the exact validation you ran; if you only ran targeted tests or skipped checks, say why
 
 ## Versioning

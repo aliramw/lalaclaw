@@ -173,6 +173,23 @@ Development URLs:
 
 During development, `/api/*` requests are proxied by `vite.config.mjs` to `http://127.0.0.1:3000`.
 
+If you want to demo the in-app LalaClaw self-update flow repeatedly from a source checkout without restarting the backend, use the dev-only mock route:
+
+```bash
+curl http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
+curl -X POST http://127.0.0.1:3000/api/dev/lalaclaw/update-mock \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"stableVersion":"2026.3.21-1"}'
+curl -X DELETE http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
+```
+
+Notes:
+
+- This route is available only from a GitHub source checkout in development, not from packaged installs.
+- `GET` returns the current mock state.
+- `POST` enables the mock and changes the latest stable version returned by `/api/lalaclaw/update`.
+- `DELETE` disables the mock and clears the previous demo update job state.
+
 ## Production Build Mode
 
 If you want to verify the built app instead of the live development setup:

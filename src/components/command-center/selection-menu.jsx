@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useCallback, useMemo, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownIcon,
@@ -29,8 +29,10 @@ export function SelectionMenu({
   value,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [contentAlign, setContentAlign] = useState("end");
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [tooltipSuppressed, setTooltipSuppressed] = useState(false);
+  const triggerWrapperRef = useRef(null);
 
   const clearTooltipSuppression = useCallback(() => {
     setTooltipSuppressed(false);
@@ -46,6 +48,13 @@ export function SelectionMenu({
       setMenuOpen(false);
       return;
     }
+
+    if (nextOpen && typeof window !== "undefined") {
+      const triggerRect = triggerWrapperRef.current?.getBoundingClientRect?.();
+      const triggerCenterX = triggerRect ? triggerRect.left + (triggerRect.width / 2) : window.innerWidth / 2;
+      setContentAlign(triggerCenterX <= window.innerWidth / 2 ? "start" : "end");
+    }
+
     setMenuOpen(nextOpen);
     if (nextOpen) {
       suppressTooltip();
@@ -102,11 +111,15 @@ export function SelectionMenu({
     <DropdownMenu onOpenChange={handleMenuOpenChange}>
       <Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
         <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild disabled={disabled}>{triggerChild}</DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild disabled={disabled}>
+            <span ref={triggerWrapperRef} className="inline-flex max-w-full">
+              {triggerChild}
+            </span>
+          </DropdownMenuTrigger>
         </TooltipTrigger>
         {tooltipContent ? <TooltipContent side="bottom">{tooltipContent}</TooltipContent> : null}
       </Tooltip>
-      <DropdownMenuContent align="end" className={contentClassName}>
+      <DropdownMenuContent align={contentAlign} className={contentClassName} data-align-strategy={contentAlign}>
         <DropdownMenuLabel>{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {renderContent ? renderContent({ handleSelect, suppressTooltip }) : items.length ? (

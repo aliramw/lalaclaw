@@ -622,6 +622,17 @@ export function pruneCompletedPendingChatTurns(pendingChatTurns = {}, messagesBy
         return true;
       }
 
+      const pendingAssistantId = String(pendingEntry?.assistantMessageId || "").trim();
+      if (
+        pendingAssistantId
+        && localMessages.some((message) =>
+          message?.role === "assistant"
+          && String(message?.id || "").trim() === pendingAssistantId,
+        )
+      ) {
+        return true;
+      }
+
       return !hasAuthoritativePendingAssistantReply(localMessages, pendingEntry);
     }),
   );
@@ -718,7 +729,7 @@ function areEquivalentConversationMessages(snapshotMessage, localMessage) {
   return true;
 }
 
-export function mergeConversationIdentity(snapshotMessages = [], localMessages = []) {
+export function mergeConversationIdentity(snapshotMessages = [], localMessages = [], pendingEntry = null) {
   const nextMessages = snapshotMessages.map((message) => ({ ...message }));
   const usedLocalIndices = new Set();
 
@@ -742,6 +753,43 @@ export function mergeConversationIdentity(snapshotMessages = [], localMessages =
     usedLocalIndices.add(localIndex);
   });
 
+  if (pendingEntry) {
+    const localPendingUser = localMessages.find((message) => {
+      if (message?.role !== "user") {
+        return false;
+      }
+
+      const pendingUserId = String(pendingEntry?.userMessage?.id || "").trim();
+      if (pendingUserId && String(message?.id || "").trim() === pendingUserId) {
+        return true;
+      }
+
+      return String(message?.content || "") === String(pendingEntry?.userMessage?.content || "")
+        && Number(message?.timestamp || 0) === Number(pendingEntry?.userMessage?.timestamp || 0);
+    });
+    const snapshotPendingUserIndex = findPendingUserIndex(nextMessages, pendingEntry);
+    if (localPendingUser && snapshotPendingUserIndex >= 0) {
+      nextMessages[snapshotPendingUserIndex] = {
+        ...nextMessages[snapshotPendingUserIndex],
+        ...(localPendingUser.id ? { id: localPendingUser.id } : {}),
+        ...(Number.isFinite(Number(localPendingUser.timestamp)) ? { timestamp: localPendingUser.timestamp } : {}),
+      };
+    }
+
+    const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+    const localPendingAssistant = assistantMessageId
+      ? localMessages.find((message) => message?.role === "assistant" && String(message?.id || "").trim() === assistantMessageId)
+      : null;
+    const snapshotPendingAssistantIndex = findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
+    if (localPendingAssistant && snapshotPendingAssistantIndex >= 0) {
+      nextMessages[snapshotPendingAssistantIndex] = {
+        ...nextMessages[snapshotPendingAssistantIndex],
+        ...(localPendingAssistant.id ? { id: localPendingAssistant.id } : {}),
+        ...(Number.isFinite(Number(localPendingAssistant.timestamp)) ? { timestamp: localPendingAssistant.timestamp } : {}),
+      };
+    }
+  }
+
   return nextMessages;
 }
 
@@ -753,6 +801,30 @@ export function mergeStaleLocalConversationTail(snapshotMessages = [], localMess
 
   if (!nextMessages.length) {
     return collapseDuplicateConversationTurns(normalizedLocalMessages);
+  }
+
+  if (normalizedLocalMessages.length >= 2) {
+    const localAssistant = normalizedLocalMessages.at(-1);
+    const localUser = normalizedLocalMessages.at(-2);
+    const matchingAssistantIndex = nextMessages.findIndex((message) =>
+      message?.role === "assistant" && areEquivalentConversationMessages(message, localAssistant),
+    );
+
+    if (
+      localUser?.role === "user"
+      && localAssistant?.role === "assistant"
+      && matchingAssistantIndex >= 0
+    ) {
+      const hasMatchingUserBeforeAssistant = nextMessages
+        .slice(0, matchingAssistantIndex)
+        .some((message) => message?.role === "user" && String(message?.content || "") === String(localUser.content || ""));
+
+      if (!hasMatchingUserBeforeAssistant) {
+        const restoredTurn = [...nextMessages];
+        restoredTurn.splice(matchingAssistantIndex, 0, localUser);
+        return collapseDuplicateConversationTurns(restoredTurn);
+      }
+    }
   }
 
   if (normalizedLocalMessages.length <= nextMessages.length) {
@@ -843,6 +915,7 @@ function hasSnapshotAssistantReply(snapshotMessages = [], pendingEntry) {
       (message) =>
         message?.role === "assistant"
         && !message?.pending
+        && !message?.streaming
         && String(message?.id || "").trim() === assistantMessageId
         && Boolean(String(message.content || "").trim()),
     );
@@ -855,7 +928,12 @@ function hasSnapshotAssistantReply(snapshotMessages = [], pendingEntry) {
   const startedAt = Number(pendingEntry?.startedAt || 0);
 
   const matchesAssistant = (message) => {
-    if (message?.role !== "assistant" || message?.pending || String(message.content || "").trim() === "") {
+    if (
+      message?.role !== "assistant"
+      || message?.pending
+      || message?.streaming
+      || String(message.content || "").trim() === ""
+    ) {
       return false;
     }
 
@@ -1158,8 +1236,12 @@ export function mergePendingConversation(snapshotMessages = [], pendingEntry, pe
   const filteredSnapshotMessages = filterStoppedTurnAssistantMessages(snapshotMessages, pendingEntry);
   const localStreamingAssistant = findLocalStreamingAssistant(localMessages, pendingEntry);
   if (hasSnapshotAssistantReply(filteredSnapshotMessages, pendingEntry)) {
+    const snapshotWithPendingUser =
+      findPendingUserIndex(filteredSnapshotMessages, pendingEntry) >= 0
+        ? filteredSnapshotMessages
+        : insertPendingUserMessage(filteredSnapshotMessages, pendingEntry);
     return collapseDuplicateConversationTurns(
-      mergeStreamingAssistant(filteredSnapshotMessages, pendingEntry, localStreamingAssistant),
+      mergeStreamingAssistant(snapshotWithPendingUser, pendingEntry, localStreamingAssistant),
     );
   }
 
@@ -1205,6 +1287,7 @@ export function hasAuthoritativePendingAssistantReply(snapshotMessages = [], pen
       (message) =>
         message?.role === "assistant"
         && !message?.pending
+        && !message?.streaming
         && String(message?.id || "").trim() === assistantMessageId
         && Boolean(String(message?.content || "").trim()),
     );

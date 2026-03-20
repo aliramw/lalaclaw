@@ -39,6 +39,8 @@ const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler, createChatStopHandler } = require('../routes/chat');
 const { createFileManagerHandler } = require('../routes/file-manager');
 const { createFilePreviewHandlers } = require('../routes/file-preview');
+const { createLalaClawUpdateDevHandler } = require('../routes/lalaclaw-update-dev');
+const { createLalaClawUpdateHandler } = require('../routes/lalaclaw-update');
 const { createOpenClawConfigHandler } = require('../routes/openclaw-config');
 const { createOpenClawHistoryHandler } = require('../routes/openclaw-history');
 const { createOpenClawManagementHandler } = require('../routes/openclaw-management');
@@ -53,6 +55,7 @@ const {
   createOpenClawOperationHistory,
 } = require('../services/openclaw-operations');
 const { createOpenClawUpdateService } = require('../services/openclaw-update');
+const { createLalaClawUpdateService } = require('../services/lalaclaw-update');
 const { createSessionHandlers } = require('../routes/session');
 const { createWorkspaceTreeHandler } = require('../routes/workspace-tree');
 const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require('./session-store');
@@ -388,6 +391,14 @@ function createAppContext() {
     config,
     execFileAsync,
   });
+  const {
+    getLalaClawUpdateDevMockState,
+    getLalaClawUpdateState,
+    runLalaClawUpdate,
+    setLalaClawUpdateDevMockState,
+  } = createLalaClawUpdateService({
+    config,
+  });
   const openClawFacade = createOpenClawFacade({
     config,
     openClawOperationHistory,
@@ -421,6 +432,18 @@ function createAppContext() {
   });
   const handleOpenClawHistory = createOpenClawHistoryHandler({
     listOpenClawOperationHistory: openClawFacade.listOpenClawOperationHistory,
+    sendJson,
+  });
+  const handleLalaClawUpdateDev = createLalaClawUpdateDevHandler({
+    getLalaClawUpdateDevMockState,
+    parseRequestBody,
+    sendJson,
+    setLalaClawUpdateDevMockState,
+  });
+  const handleLalaClawUpdate = createLalaClawUpdateHandler({
+    getLalaClawUpdateState,
+    parseRequestBody,
+    runLalaClawUpdate,
     sendJson,
   });
 
@@ -468,6 +491,8 @@ function createAppContext() {
     handleChat,
     handleChatStop,
     handleFileManagerReveal,
+    handleLalaClawUpdateDev,
+    handleLalaClawUpdate,
     handleOpenClawManagement,
     handleOpenClawConfig,
     handleOpenClawHistory,

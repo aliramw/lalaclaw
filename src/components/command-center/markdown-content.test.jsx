@@ -25,6 +25,8 @@ describe("MarkdownContent", () => {
     expect(contentNeedsMarkdownRenderer("# 控制台")).toBe(true);
     expect(contentNeedsMarkdownRenderer("访问 https://openai.com")).toBe(true);
     expect(contentNeedsMarkdownRenderer("```js\nconst answer = 42;\n```")).toBe(true);
+    expect(contentNeedsMarkdownRenderer("收到，**3** 也正常。")).toBe(true);
+    expect(contentNeedsMarkdownRenderer("结论：**收发正常**。")).toBe(true);
   });
 
   it("renders plain chat text without markdown transforms", () => {
@@ -54,6 +56,15 @@ describe("MarkdownContent", () => {
     const inlineCode = await screen.findByText("npm test");
     expect(inlineCode.tagName).toBe("CODE");
     expect(inlineCode).toHaveClass("cc-inline-code", "border-0", "align-baseline", "font-mono");
+  });
+
+  it("renders inline bold markdown inside normal chat prose", async () => {
+    render(<MarkdownContent content={"收到，**3** 也正常。\n\n结论：**收发正常**。"} />);
+
+    const strongValues = await screen.findAllByText((_, element) => element?.tagName === "STRONG");
+    expect(strongValues).toHaveLength(2);
+    expect(strongValues[0]).toHaveTextContent("3");
+    expect(strongValues[1]).toHaveTextContent("收发正常");
   });
 
   it("renders fenced code blocks and supports copying", async () => {
@@ -248,6 +259,26 @@ describe("MarkdownContent", () => {
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: "关闭预览" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the same image node mounted while streaming text continues around it", async () => {
+    const { rerender } = render(
+      <MarkdownContent
+        streaming
+        content={"![示例图](https://example.com/demo.png)\n\n正在生成中"}
+      />,
+    );
+
+    const initialImage = await screen.findByAltText("示例图");
+
+    rerender(
+      <MarkdownContent
+        streaming
+        content={"![示例图](https://example.com/demo.png)\n\n正在生成中，补充更多说明，避免图片在流式阶段被重挂载。"}
+      />,
+    );
+
+    expect(await screen.findByAltText("示例图")).toBe(initialImage);
   });
 
   it("routes image clicks to the shared image preview handler when provided", async () => {

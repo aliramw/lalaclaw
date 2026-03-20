@@ -41,6 +41,9 @@ describe("useOpenClawInspector", () => {
       if (url.startsWith("/api/openclaw/config")) {
         return createJsonResponse({ ok: false, errorCode: "requestFailed" }, false);
       }
+      if (url === "/api/lalaclaw/update") {
+        return createJsonResponse({ ok: false, errorCode: "requestFailed" }, false);
+      }
       if (url === "/api/openclaw/update") {
         return createJsonResponse({ ok: false, errorCode: "requestFailed" }, false);
       }
@@ -55,6 +58,7 @@ describe("useOpenClawInspector", () => {
 
     await waitFor(() => {
       expect(result.current.openClawConfigError).toBe(zh.inspector.openClawConfig.errors.requestFailed);
+      expect(result.current.lalaclawUpdateError).toBe(zh.inspector.lalaclawUpdate.errors.requestFailed);
       expect(result.current.openClawUpdateError).toBe(zh.inspector.openClawUpdate.errors.requestFailed);
       expect(result.current.openClawHistoryError).toBe(zh.inspector.remoteOperations.historyRequestFailed);
     });
@@ -65,6 +69,7 @@ describe("useOpenClawInspector", () => {
     });
 
     expect(countFetchCalls(fetchMock, "/api/openclaw/config")).toBe(1);
+    expect(countFetchCalls(fetchMock, "/api/lalaclaw/update")).toBe(1);
     expect(countFetchCalls(fetchMock, "/api/openclaw/update")).toBe(1);
     expect(countFetchCalls(fetchMock, "/api/openclaw/history")).toBe(1);
   });
@@ -78,6 +83,19 @@ describe("useOpenClawInspector", () => {
           baseHash: "hash",
           fields: [],
           validation: { ok: true, valid: true },
+        });
+      }
+      if (url === "/api/lalaclaw/update") {
+        return createJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.20-1",
+          currentRelease: { version: "2026.3.20-1", stable: true },
+          targetRelease: { version: "2026.3.20-1", stable: true },
+          stableTag: "stable",
+          updateAvailable: false,
+          capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
         });
       }
       if (url === "/api/openclaw/update") {
@@ -109,6 +127,7 @@ describe("useOpenClawInspector", () => {
     });
 
     expect(countFetchCalls(fetchMock, "/api/openclaw/config")).toBe(1);
+    expect(countFetchCalls(fetchMock, "/api/lalaclaw/update")).toBe(1);
     expect(countFetchCalls(fetchMock, "/api/openclaw/update")).toBe(1);
     expect(countFetchCalls(fetchMock, "/api/openclaw/history")).toBe(1);
   });
