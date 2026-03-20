@@ -379,6 +379,9 @@ const ta = {
         unknown: "தெரியாது",
       },
     },
+    openClawOnboarding: {
+      ...en.inspector.openClawOnboarding,
+    },
     openClawManagement: {
       ...en.inspector.openClawManagement,
       title: "OpenClaw மேலாண்மை",

@@ -9,6 +9,33 @@ export function buildOpenClawConfigFormValues(state = null) {
   return values;
 }
 
+export function buildOpenClawOnboardingFormValues(state = null) {
+  return {
+    authChoice: String(state?.defaults?.authChoice || "openai-api-key").trim() || "openai-api-key",
+    apiKey: "",
+    customBaseUrl: "",
+    customCompatibility: String(state?.defaults?.customCompatibility || "openai").trim() || "openai",
+    customModelId: "",
+    customProviderId: "",
+    daemonRuntime: String(state?.defaults?.daemonRuntime || "node").trim() || "node",
+    flow: String(state?.defaults?.flow || "quickstart").trim() || "quickstart",
+    gatewayAuth: String(state?.defaults?.gatewayAuth || "off").trim() || "off",
+    gatewayBind: String(state?.defaults?.gatewayBind || "loopback").trim() || "loopback",
+    gatewayPassword: "",
+    gatewayToken: "",
+    gatewayTokenInputMode: String(state?.defaults?.gatewayTokenInputMode || "plaintext").trim() || "plaintext",
+    gatewayTokenRefEnv: "",
+    installDaemon: Boolean(state?.defaults?.installDaemon ?? true),
+    secretInputMode: String(state?.defaults?.secretInputMode || "plaintext").trim() || "plaintext",
+    skipHealthCheck: Boolean(state?.defaults?.skipHealthCheck ?? false),
+    token: "",
+    tokenExpiresIn: "",
+    tokenProfileId: "",
+    tokenProvider: "",
+    workspace: String(state?.defaults?.workspace || "").trim(),
+  };
+}
+
 function getOpenClawConfigFieldValue(state = null, fieldKey = "", options = {}) {
   const normalizedKey = String(fieldKey || "").trim();
   const normalizedAgentId = String(options?.agentId || "").trim();
@@ -50,6 +77,14 @@ function resolveOpenClawUpdateErrorMessage(errorCode = "", messages) {
   }
 
   return messages.inspector.openClawUpdate.errors[errorCode] || messages.inspector.openClawUpdate.errors.requestFailed;
+}
+
+function resolveOpenClawOnboardingErrorMessage(errorCode = "", messages) {
+  if (!errorCode) {
+    return messages.inspector.openClawOnboarding.errors.requestFailed;
+  }
+
+  return messages.inspector.openClawOnboarding.errors[errorCode] || messages.inspector.openClawOnboarding.errors.requestFailed;
 }
 
 function resolveLalaClawUpdateErrorMessage(errorCode = "", messages) {
@@ -103,6 +138,14 @@ export function useOpenClawInspector({
   const [openClawConfigResult, setOpenClawConfigResult] = useState(null);
   const [openClawConfigState, setOpenClawConfigState] = useState(null);
   const [openClawConfigValues, setOpenClawConfigValues] = useState({});
+  const [openClawOnboardingBusy, setOpenClawOnboardingBusy] = useState(false);
+  const [openClawOnboardingError, setOpenClawOnboardingError] = useState("");
+  const [openClawOnboardingLoading, setOpenClawOnboardingLoading] = useState(false);
+  const [openClawOnboardingRequested, setOpenClawOnboardingRequested] = useState(false);
+  const [openClawOnboardingRefreshResult, setOpenClawOnboardingRefreshResult] = useState(null);
+  const [openClawOnboardingResult, setOpenClawOnboardingResult] = useState(null);
+  const [openClawOnboardingState, setOpenClawOnboardingState] = useState(null);
+  const [openClawOnboardingValues, setOpenClawOnboardingValues] = useState({});
   const [openClawUpdateBusy, setOpenClawUpdateBusy] = useState(false);
   const [openClawUpdateError, setOpenClawUpdateError] = useState("");
   const [openClawUpdateLoading, setOpenClawUpdateLoading] = useState(false);
@@ -256,12 +299,58 @@ export function useOpenClawInspector({
     }
   }, [messages, openClawRemoteGuard.blocked]);
 
+  const handleLoadOpenClawOnboarding = useCallback(async ({ refreshCapabilities = false } = {}) => {
+    if (openClawRemoteGuard.blocked) {
+      setOpenClawOnboardingState(null);
+      setOpenClawOnboardingRefreshResult(null);
+      return;
+    }
+    setOpenClawOnboardingRequested(true);
+    setOpenClawOnboardingLoading(true);
+    setOpenClawOnboardingError("");
+    const refreshRequestedAt = new Date().toISOString();
+    try {
+      const response = await apiFetch(`/api/openclaw/onboarding${refreshCapabilities ? "?refreshCapabilities=1" : ""}`, {
+        method: "GET",
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) {
+        throw new Error(resolveOpenClawOnboardingErrorMessage(payload?.errorCode, messages));
+      }
+      setOpenClawOnboardingState(payload);
+      setOpenClawOnboardingValues((current) => ({
+        ...buildOpenClawOnboardingFormValues(payload),
+        ...current,
+      }));
+      if (refreshCapabilities) {
+        setOpenClawOnboardingRefreshResult({
+          ok: true,
+          requestedAt: refreshRequestedAt,
+          capabilityDetection: payload?.capabilityDetection || null,
+        });
+      }
+    } catch (error) {
+      const errorMessage = error.message || messages.inspector.openClawOnboarding.errors.requestFailed;
+      setOpenClawOnboardingError(errorMessage);
+      if (refreshCapabilities) {
+        setOpenClawOnboardingRefreshResult({
+          ok: false,
+          requestedAt: refreshRequestedAt,
+          capabilityDetection: null,
+          error: errorMessage,
+        });
+      }
+    } finally {
+      setOpenClawOnboardingLoading(false);
+    }
+  }, [messages, openClawRemoteGuard.blocked]);
+
   const handleRunOpenClawUpdate = useCallback(async () => {
+    const action = openClawUpdateState?.installed ? "update" : "install";
     setOpenClawUpdateBusy(true);
     setOpenClawUpdateError("");
     setOpenClawUpdateHelpEntry(null);
     try {
-      const action = openClawUpdateState?.installed ? "update" : "install";
       const response = await apiFetch("/api/openclaw/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -282,6 +371,7 @@ export function useOpenClawInspector({
       if (payload?.state) {
         setOpenClawUpdateState(payload.state);
       }
+      await handleLoadOpenClawOnboarding().catch(() => {});
       if (typeof onRefreshEnvironment === "function") {
         setOpenClawEnvironmentRefreshing(true);
         try {
@@ -293,7 +383,7 @@ export function useOpenClawInspector({
       const errorMessage = error.message || messages.inspector.openClawUpdate.errors.requestFailed;
       setOpenClawUpdateResult({
         ok: false,
-        action: openClawUpdateState?.installed ? "update" : "install",
+        action,
         errorCode: "requestFailed",
         error: errorMessage,
         commandResult: {
@@ -310,7 +400,7 @@ export function useOpenClawInspector({
       setOpenClawEnvironmentRefreshing(false);
       setOpenClawUpdateBusy(false);
     }
-  }, [messages, onRefreshEnvironment, openClawUpdateState]);
+  }, [handleLoadOpenClawOnboarding, messages, onRefreshEnvironment, openClawUpdateState]);
 
   const handleLoadOpenClawHistory = useCallback(async () => {
     setOpenClawHistoryRequested(true);
@@ -357,6 +447,13 @@ export function useOpenClawInspector({
 
   const handleChangeOpenClawConfigValue = useCallback((fieldKey, value) => {
     setOpenClawConfigValues((current) => ({
+      ...current,
+      [fieldKey]: value,
+    }));
+  }, []);
+
+  const handleChangeOpenClawOnboardingValue = useCallback((fieldKey, value) => {
+    setOpenClawOnboardingValues((current) => ({
       ...current,
       [fieldKey]: value,
     }));
@@ -436,6 +533,50 @@ export function useOpenClawInspector({
       setOpenClawConfigBusy(false);
     }
   }, [handleLoadOpenClawConfig, messages, normalizedConfigAgentId, onRefreshEnvironment, onSyncCurrentSessionModel, openClawConfigRemoteAuthorization, openClawConfigState, openClawConfigValues, openClawRemoteGuard.blocked]);
+
+  const handleSubmitOpenClawOnboarding = useCallback(async () => {
+    setOpenClawOnboardingBusy(true);
+    setOpenClawOnboardingError("");
+    try {
+      const response = await apiFetch("/api/openclaw/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(openClawOnboardingValues),
+      });
+      const payload = await response.json();
+      const normalizedPayload = {
+        ...payload,
+        ok: Boolean(payload?.ok),
+        errorCode: payload?.errorCode || "",
+        error: payload?.error || "",
+      };
+      setOpenClawOnboardingResult(normalizedPayload);
+      if (!response.ok || payload?.ok === false) {
+        setOpenClawOnboardingError(resolveOpenClawOnboardingErrorMessage(payload?.errorCode, messages));
+        return;
+      }
+      if (payload?.state) {
+        setOpenClawOnboardingState(payload.state);
+        setOpenClawOnboardingValues(buildOpenClawOnboardingFormValues(payload.state));
+      }
+      await Promise.all([
+        handleLoadOpenClawUpdate(),
+        handleLoadOpenClawConfig(),
+      ]).catch(() => {});
+      if (typeof onRefreshEnvironment === "function") {
+        setOpenClawEnvironmentRefreshing(true);
+        try {
+          await onRefreshEnvironment();
+        } catch {}
+        setOpenClawEnvironmentRefreshing(false);
+      }
+    } catch (error) {
+      setOpenClawOnboardingError(error.message || messages.inspector.openClawOnboarding.errors.requestFailed);
+    } finally {
+      setOpenClawEnvironmentRefreshing(false);
+      setOpenClawOnboardingBusy(false);
+    }
+  }, [handleLoadOpenClawConfig, handleLoadOpenClawUpdate, messages, onRefreshEnvironment, openClawOnboardingValues]);
 
   const handleSubmitOpenClawRollback = useCallback(async () => {
     if (!openClawRollbackIntent?.backupId) {
@@ -549,6 +690,26 @@ export function useOpenClawInspector({
   useEffect(() => {
     if (
       activeTab !== "environment"
+      || openClawOnboardingState
+      || openClawOnboardingLoading
+      || openClawOnboardingRequested
+      || openClawRemoteGuard.blocked
+    ) {
+      return;
+    }
+    void handleLoadOpenClawOnboarding();
+  }, [
+    activeTab,
+    handleLoadOpenClawOnboarding,
+    openClawOnboardingLoading,
+    openClawOnboardingRequested,
+    openClawOnboardingState,
+    openClawRemoteGuard.blocked,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeTab !== "environment"
       || !hasOpenClawDiagnostics
       || openClawConfigState
       || openClawConfigLoading
@@ -583,6 +744,9 @@ export function useOpenClawInspector({
     if (!openClawRemoteGuard.blocked) {
       return;
     }
+    setOpenClawOnboardingRefreshResult(null);
+    setOpenClawOnboardingState(null);
+    setOpenClawOnboardingRequested(false);
     setOpenClawUpdateState(null);
     setOpenClawUpdateRequested(false);
   }, [openClawRemoteGuard.blocked]);
@@ -608,6 +772,13 @@ export function useOpenClawInspector({
     openClawHistoryEntries,
     openClawHistoryError,
     openClawHistoryLoading,
+    openClawOnboardingBusy,
+    openClawOnboardingError,
+    openClawOnboardingLoading,
+    openClawOnboardingRefreshResult,
+    openClawOnboardingResult,
+    openClawOnboardingState,
+    openClawOnboardingValues,
     openClawRemoteGuard,
     openClawRemoteGuideOpen,
     openClawRollbackAuthorization,
@@ -625,13 +796,16 @@ export function useOpenClawInspector({
     setOpenClawUpdateHelpEntry,
     handleChangeOpenClawConfigRemoteAuthorization,
     handleChangeOpenClawConfigValue,
+    handleChangeOpenClawOnboardingValue,
     handleChangeOpenClawRollbackAuthorization,
     handleLoadOpenClawConfig,
     handleLoadOpenClawHistory,
+    handleLoadOpenClawOnboarding,
     handleLoadOpenClawUpdate,
     handleRefreshEnvironment,
     handleRequestOpenClawAction,
     handleRunOpenClawAction,
+    handleSubmitOpenClawOnboarding,
     handleRunOpenClawUpdate,
     handleSubmitOpenClawConfig,
     handleSubmitOpenClawRollback,

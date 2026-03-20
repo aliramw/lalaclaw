@@ -9,7 +9,9 @@ function createOpenClawFacade({
   getOpenClawConfigState,
   applyLocalOpenClawConfigPatch,
   restoreLocalOpenClawConfigBackup,
+  getOpenClawOnboardingState,
   getOpenClawUpdateState,
+  runLocalOpenClawOnboarding,
   runLocalOpenClawAction,
   runLocalOpenClawInstall,
   runLocalOpenClawUpdate,
@@ -275,12 +277,49 @@ function createOpenClawFacade({
     }
   }
 
+  async function runOpenClawOnboarding(options = {}) {
+    assertRemoteMutationAllowed('onboarding', 'onboard');
+
+    const startedAt = now();
+    try {
+      const result = await runLocalOpenClawOnboarding(options);
+      recordOpenClawOperation({
+        scope: 'onboarding',
+        action: 'onboard',
+        ok: Boolean(result?.ok),
+        outcome: result?.ok ? 'success' : 'warning',
+        startedAt,
+        finishedAt: now(),
+        errorCode: result?.errorCode || '',
+        error: result?.error || '',
+        summary: result?.healthCheck?.status && result.healthCheck.status !== 'healthy'
+          ? `Onboarding finished with health status ${result.healthCheck.status}.`
+          : '',
+      });
+      return result;
+    } catch (error) {
+      recordOpenClawOperation({
+        scope: 'onboarding',
+        action: 'onboard',
+        ok: false,
+        outcome: 'error',
+        startedAt,
+        finishedAt: now(),
+        errorCode: error?.errorCode || '',
+        error: error?.message || '',
+      });
+      throw error;
+    }
+  }
+
   return {
     getOpenClawConfigState,
+    getOpenClawOnboardingState,
     applyOpenClawConfigPatch,
     restoreRemoteOpenClawConfigBackup,
     listOpenClawOperationHistory,
     getOpenClawUpdateState,
+    runOpenClawOnboarding,
     runOpenClawAction,
     runOpenClawInstall,
     runOpenClawUpdate,

@@ -379,6 +379,9 @@ const ms = {
         unknown: "Tidak diketahui",
       },
     },
+    openClawOnboarding: {
+      ...en.inspector.openClawOnboarding,
+    },
     openClawManagement: {
       ...en.inspector.openClawManagement,
       title: "Pengurusan OpenClaw",

@@ -56,6 +56,7 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleOpenClawConfig,
     handleOpenClawHistory,
     handleOpenClawManagement,
+    handleOpenClawOnboarding,
     handleOpenClawUpdate,
     handleFilePreview,
     handleFilePreviewContent,
@@ -171,6 +172,11 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/openclaw/update') {
       runRouteHandler(handleOpenClawUpdate, req, res);
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/openclaw/onboarding') {
+      runRouteHandler(handleOpenClawOnboarding, req, res);
       return;
     }
 

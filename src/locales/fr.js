@@ -394,6 +394,9 @@ const fr = {
         unknown: "Inconnu",
       },
     },
+    openClawOnboarding: {
+      ...en.inspector.openClawOnboarding,
+    },
     openClawManagement: {
       ...en.inspector.openClawManagement,
       title: "Gestion OpenClaw",

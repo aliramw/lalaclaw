@@ -379,6 +379,9 @@ const de = {
         unknown: "Unbekannt",
       },
     },
+    openClawOnboarding: {
+      ...en.inspector.openClawOnboarding,
+    },
     openClawManagement: {
       ...en.inspector.openClawManagement,
       title: "OpenClaw-Verwaltung",

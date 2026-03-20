@@ -376,6 +376,9 @@ const ko = {
         unknown: "알 수 없음",
       },
     },
+    openClawOnboarding: {
+      ...en.inspector.openClawOnboarding,
+    },
     openClawManagement: {
       ...en.inspector.openClawManagement,
       title: "OpenClaw 관리 작업",

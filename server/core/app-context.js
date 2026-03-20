@@ -44,12 +44,14 @@ const { createLalaClawUpdateHandler } = require('../routes/lalaclaw-update');
 const { createOpenClawConfigHandler } = require('../routes/openclaw-config');
 const { createOpenClawHistoryHandler } = require('../routes/openclaw-history');
 const { createOpenClawManagementHandler } = require('../routes/openclaw-management');
+const { createOpenClawOnboardingHandler } = require('../routes/openclaw-onboarding');
 const { createOpenClawUpdateHandler } = require('../routes/openclaw-update');
 const { createRuntimeHandler } = require('../routes/runtime');
 const { createRuntimeHub } = require('../services/runtime-hub');
 const { createOpenClawConfigService } = require('../services/openclaw-config');
 const { createOpenClawFacade } = require('../services/openclaw-facade');
 const { createOpenClawManagementService } = require('../services/openclaw-management');
+const { createOpenClawOnboardingService } = require('../services/openclaw-onboarding');
 const {
   createOpenClawBackupStore,
   createOpenClawOperationHistory,
@@ -392,6 +394,13 @@ function createAppContext() {
     execFileAsync,
   });
   const {
+    getOpenClawOnboardingState,
+    runOpenClawOnboarding: runLocalOpenClawOnboarding,
+  } = createOpenClawOnboardingService({
+    config,
+    execFileAsync,
+  });
+  const {
     getLalaClawUpdateDevMockState,
     getLalaClawUpdateState,
     runLalaClawUpdate,
@@ -405,7 +414,9 @@ function createAppContext() {
     getOpenClawConfigState,
     applyLocalOpenClawConfigPatch,
     restoreLocalOpenClawConfigBackup,
+    getOpenClawOnboardingState,
     getOpenClawUpdateState,
+    runLocalOpenClawOnboarding,
     runLocalOpenClawAction,
     runLocalOpenClawInstall,
     runLocalOpenClawUpdate,
@@ -428,6 +439,12 @@ function createAppContext() {
     parseRequestBody,
     runOpenClawInstall: openClawFacade.runOpenClawInstall,
     runOpenClawUpdate: openClawFacade.runOpenClawUpdate,
+    sendJson,
+  });
+  const handleOpenClawOnboarding = createOpenClawOnboardingHandler({
+    getOpenClawOnboardingState: openClawFacade.getOpenClawOnboardingState,
+    parseRequestBody,
+    runOpenClawOnboarding: openClawFacade.runOpenClawOnboarding,
     sendJson,
   });
   const handleOpenClawHistory = createOpenClawHistoryHandler({
@@ -496,6 +513,7 @@ function createAppContext() {
     handleOpenClawManagement,
     handleOpenClawConfig,
     handleOpenClawHistory,
+    handleOpenClawOnboarding,
     handleOpenClawUpdate,
     handleFilePreview,
     handleFilePreviewContent,

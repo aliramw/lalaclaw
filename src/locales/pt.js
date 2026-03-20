@@ -392,6 +392,9 @@ const pt = {
         unknown: "Desconhecido",
       },
     },
+    openClawOnboarding: {
+      ...en.inspector.openClawOnboarding,
+    },
     openClawManagement: {
       ...en.inspector.openClawManagement,
       title: "Gerenciamento do OpenClaw",

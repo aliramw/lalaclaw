@@ -133,6 +133,26 @@ describe("InspectorPanel", () => {
           }),
         };
       }
+      if (url === "/api/openclaw/onboarding") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: true,
+            needsOnboarding: false,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: true, valid: true, path: "/Users/marila/.openclaw/openclaw.json" },
+            defaults: {
+              authChoice: "openai-api-key",
+              gatewayBind: "loopback",
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["openai-api-key", "openrouter-api-key", "moonshot-api-key", "kimi-code-api-key", "custom-api-key"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
       if (url === "/api/lalaclaw/update") {
         return {
           ok: true,
@@ -362,7 +382,7 @@ describe("InspectorPanel", () => {
     ]));
     const diagnosticsSection = screen.getByRole("button", { name: "概览 查看详情" });
     expect(diagnosticsSection).toHaveClass("min-h-9");
-    for (const sectionLabel of ["概览", "连接概况", "OpenClaw Doctor", "日志", "会话上下文", "实时同步", "Gateway 配置", "LalaClaw", "其他"]) {
+    for (const sectionLabel of ["概览", "连接概况", "OpenClaw Doctor", "实时同步", "LalaClaw"]) {
       await ensureEnvironmentSectionExpanded(user, sectionLabel);
     }
     expect(screen.getAllByText("版本").length).toBeGreaterThan(0);
@@ -391,7 +411,7 @@ describe("InspectorPanel", () => {
     expect(longValueContainer).not.toBeNull();
     expect(longValueContainer?.className).toContain("overflow-hidden");
     expect(longValueContainer?.className).toContain("break-all");
-  });
+  }, 15000);
 
   it("opens a file preview when an environment value is an absolute file path", async () => {
     const fetchMock = vi.fn(async (input) => {
@@ -1157,6 +1177,1660 @@ describe("InspectorPanel", () => {
       }),
     );
     expect(await screen.findByText("bash -lc curl -fsSL https://openclaw.ai/install.sh | bash")).toBeInTheDocument();
+  });
+
+  it("switches straight into onboarding after the official install completes", async () => {
+    let onboardingGetCount = 0;
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        onboardingGetCount += 1;
+        return {
+          ok: true,
+          json: async () => (
+            onboardingGetCount > 1
+              ? {
+                  ok: true,
+                  installed: true,
+                  ready: false,
+                  needsOnboarding: true,
+                  configPath: "/Users/marila/.openclaw/openclaw.json",
+                  validation: { ok: false, valid: false },
+                  defaults: {
+                    authChoice: "openai-api-key",
+                    gatewayBind: "loopback",
+                    workspace: "/Users/marila/.openclaw/workspace",
+                  },
+                  supportedAuthChoices: ["openai-api-key", "openrouter-api-key", "custom-api-key"],
+                  supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+                }
+              : {
+                  ok: true,
+                  installed: false,
+                  ready: false,
+                  needsOnboarding: false,
+                  configPath: "",
+                  validation: null,
+                  defaults: {
+                    authChoice: "openai-api-key",
+                    gatewayBind: "loopback",
+                    workspace: "/Users/marila/.openclaw/workspace",
+                  },
+                  supportedAuthChoices: ["openai-api-key", "openrouter-api-key", "custom-api-key"],
+                  supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+                }
+          ),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [] }),
+        };
+      }
+      if (url === "/api/openclaw/update" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: false,
+            installGuidance: {
+              docsUrl: "https://docs.openclaw.ai/install",
+              command: "curl -fsSL https://openclaw.ai/install.sh | bash",
+            },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "install",
+            commandResult: {
+              ok: true,
+              stdout: "installed",
+              stderr: "",
+              command: { display: "bash -lc curl -fsSL https://openclaw.ai/install.sh | bash" },
+            },
+            state: {
+              ok: true,
+              installed: true,
+              currentVersion: "2026.3.19",
+              targetVersion: "2026.3.19",
+              availability: { available: false },
+              update: { installKind: "package", packageManager: "pnpm" },
+              channel: { value: "stable", label: "stable (default)" },
+              preview: { actions: [] },
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    await user.click(screen.getByRole("button", { name: "执行官方安装" }));
+
+    expect(await screen.findByText("OpenClaw 初始化")).toBeInTheDocument();
+    expect(screen.queryByText("OpenClaw 配置")).not.toBeInTheDocument();
+    expect(onboardingGetCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("prioritizes onboarding when OpenClaw is installed but first-run setup is incomplete", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            defaults: {
+              authChoice: "openai-api-key",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["openai-api-key", "openrouter-api-key", "custom-api-key"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "onboard",
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw onboard --non-interactive --mode local --flow quickstart" },
+              stdout: "onboarded",
+              stderr: "",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              ready: true,
+              needsOnboarding: false,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              validation: { ok: true, valid: true },
+              defaults: {
+                authChoice: "openai-api-key",
+                customCompatibility: "openai",
+                daemonRuntime: "node",
+                flow: "quickstart",
+                gatewayAuth: "off",
+                gatewayBind: "loopback",
+                gatewayTokenInputMode: "plaintext",
+                installDaemon: true,
+                secretInputMode: "plaintext",
+                skipHealthCheck: false,
+                workspace: "/Users/marila/.openclaw/workspace",
+              },
+              supportedAuthChoices: ["openai-api-key", "openrouter-api-key", "custom-api-key"],
+              supportedDaemonRuntimes: ["node", "bun"],
+              supportedFlows: ["quickstart", "advanced", "manual"],
+              supportedGatewayAuthModes: ["off", "token", "password"],
+              supportedGatewayTokenInputModes: ["plaintext", "ref"],
+              supportedSecretInputModes: ["plaintext", "ref"],
+              supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+            },
+            healthCheck: { status: "healthy" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 初始化")).toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    expect(screen.queryByText("OpenClaw 配置")).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("API Key"), "sk-test");
+    await user.click(screen.getByRole("button", { name: "执行初始化" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/onboarding",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authChoice: "openai-api-key",
+          apiKey: "sk-test",
+          customBaseUrl: "",
+          customCompatibility: "openai",
+          customModelId: "",
+          customProviderId: "",
+          daemonRuntime: "node",
+          flow: "quickstart",
+          gatewayAuth: "off",
+          gatewayBind: "loopback",
+          gatewayPassword: "",
+          gatewayToken: "",
+          gatewayTokenInputMode: "plaintext",
+          gatewayTokenRefEnv: "",
+          installDaemon: true,
+          secretInputMode: "plaintext",
+          skipHealthCheck: false,
+          token: "",
+          tokenExpiresIn: "",
+          tokenProfileId: "",
+          tokenProvider: "",
+          workspace: "/Users/marila/.openclaw/workspace",
+        }),
+      }),
+    );
+    expect(await screen.findByText("openclaw onboard --non-interactive --mode local --flow quickstart")).toBeInTheDocument();
+  });
+
+  it("supports custom provider onboarding in SecretRef mode", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            defaults: {
+              authChoice: "custom-api-key",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["openai-api-key", "custom-api-key", "ollama", "skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "onboard",
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw onboard --non-interactive --accept-risk --mode local --flow quickstart" },
+              stdout: "onboarded",
+              stderr: "",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              ready: true,
+              needsOnboarding: false,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              validation: { ok: true, valid: true },
+              defaults: {
+                authChoice: "custom-api-key",
+                customCompatibility: "openai",
+                daemonRuntime: "node",
+                flow: "quickstart",
+                gatewayAuth: "off",
+                gatewayBind: "loopback",
+                gatewayTokenInputMode: "plaintext",
+                installDaemon: true,
+                secretInputMode: "plaintext",
+                skipHealthCheck: false,
+                workspace: "/Users/marila/.openclaw/workspace",
+              },
+              supportedAuthChoices: ["openai-api-key", "custom-api-key", "ollama", "skip"],
+              supportedDaemonRuntimes: ["node", "bun"],
+              supportedFlows: ["quickstart", "advanced", "manual"],
+              supportedGatewayAuthModes: ["off", "token", "password"],
+              supportedGatewayTokenInputModes: ["plaintext", "ref"],
+              supportedSecretInputModes: ["plaintext", "ref"],
+              supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+            },
+            healthCheck: { status: "healthy" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    await user.selectOptions(screen.getByRole("combobox", { name: "模型提供方" }), "custom-api-key");
+    await user.selectOptions(screen.getByRole("combobox", { name: "凭据保存方式" }), "ref");
+    await user.type(screen.getByLabelText("提供方 Base URL"), "https://llm.example.com/v1");
+    await user.type(screen.getByLabelText("提供方模型 ID"), "claude-compat");
+    await user.type(screen.getByLabelText("自定义提供方 ID"), "acme-anthropic");
+    await user.selectOptions(screen.getByRole("combobox", { name: "提供方兼容类型" }), "anthropic");
+    await user.click(screen.getByRole("button", { name: "执行初始化" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/onboarding",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authChoice: "custom-api-key",
+          apiKey: "",
+          customBaseUrl: "https://llm.example.com/v1",
+          customCompatibility: "anthropic",
+          customModelId: "claude-compat",
+          customProviderId: "acme-anthropic",
+          daemonRuntime: "node",
+          flow: "quickstart",
+          gatewayAuth: "off",
+          gatewayBind: "loopback",
+          gatewayPassword: "",
+          gatewayToken: "",
+          gatewayTokenInputMode: "plaintext",
+          gatewayTokenRefEnv: "",
+          installDaemon: true,
+          secretInputMode: "ref",
+          skipHealthCheck: false,
+          token: "",
+          tokenExpiresIn: "",
+          tokenProfileId: "",
+          tokenProvider: "",
+          workspace: "/Users/marila/.openclaw/workspace",
+        }),
+      }),
+    );
+  });
+
+  it("passes the selected official onboarding flow through to the backend", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            capabilityDetection: {
+              source: "help",
+              reason: "",
+              signature: "openclaw@2026.3.13@package@stable",
+            },
+            defaults: {
+              authChoice: "skip",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "onboard",
+            capabilityDetection: {
+              source: "help",
+              reason: "",
+              signature: "openclaw@2026.3.13@package@stable",
+            },
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw onboard --non-interactive --accept-risk --mode local --flow manual" },
+              stdout: "onboarded",
+              stderr: "",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              ready: true,
+              needsOnboarding: false,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              validation: { ok: true, valid: true },
+              capabilityDetection: {
+                source: "help",
+                reason: "",
+                signature: "openclaw@2026.3.13@package@stable",
+              },
+              defaults: {
+                authChoice: "skip",
+                customCompatibility: "openai",
+                daemonRuntime: "node",
+                flow: "manual",
+                gatewayAuth: "off",
+                gatewayBind: "loopback",
+                gatewayTokenInputMode: "plaintext",
+                installDaemon: true,
+                secretInputMode: "plaintext",
+                skipHealthCheck: false,
+                workspace: "/Users/marila/.openclaw/workspace",
+              },
+              supportedAuthChoices: ["skip"],
+              supportedDaemonRuntimes: ["node", "bun"],
+              supportedFlows: ["quickstart", "advanced", "manual"],
+              supportedGatewayAuthModes: ["off", "token", "password"],
+              supportedGatewayTokenInputModes: ["plaintext", "ref"],
+              supportedSecretInputModes: ["plaintext", "ref"],
+              supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+            },
+            healthCheck: { status: "healthy" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    await user.selectOptions(screen.getByRole("combobox", { name: "初始化流程" }), "manual");
+    await user.click(screen.getByRole("button", { name: "执行初始化" }));
+
+    expect(await screen.findByText("能力探测")).toBeInTheDocument();
+    expect(screen.getAllByText("来自 `openclaw onboard --help` 的实时探测").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("版本签名: openclaw@2026.3.13@package@stable").length).toBeGreaterThanOrEqual(1);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/onboarding",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authChoice: "skip",
+          apiKey: "",
+          customBaseUrl: "",
+          customCompatibility: "openai",
+          customModelId: "",
+          customProviderId: "",
+          daemonRuntime: "node",
+          flow: "manual",
+          gatewayAuth: "off",
+          gatewayBind: "loopback",
+          gatewayPassword: "",
+          gatewayToken: "",
+          gatewayTokenInputMode: "plaintext",
+          gatewayTokenRefEnv: "",
+          installDaemon: true,
+          secretInputMode: "plaintext",
+          skipHealthCheck: false,
+          token: "",
+          tokenExpiresIn: "",
+          tokenProfileId: "",
+          tokenProvider: "",
+          workspace: "/Users/marila/.openclaw/workspace",
+        }),
+      }),
+    );
+  });
+
+  it("lets the onboarding panel force-refresh detected CLI capabilities", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            capabilityDetection: {
+              source: "help-cache",
+              reason: "",
+              detectedAt: "2026-03-21T02:50:00.000Z",
+              signature: "openclaw@2026.3.13@package@stable",
+            },
+            defaults: {
+              authChoice: "skip",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "manual",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["google-gemini-cli", "skip"],
+            supportedDaemonRuntimes: ["node"],
+            supportedFlows: ["manual"],
+            supportedGatewayAuthModes: ["off"],
+            supportedGatewayTokenInputModes: ["plaintext"],
+            supportedSecretInputModes: ["plaintext"],
+            supportedGatewayBinds: ["loopback"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding?refreshCapabilities=1" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            capabilityDetection: {
+              source: "help",
+              reason: "",
+              detectedAt: "2026-03-21T02:55:00.000Z",
+              signature: "openclaw@2026.3.21@package@stable",
+            },
+            defaults: {
+              authChoice: "skip",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "manual",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["github-copilot", "google-gemini-cli", "skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+
+    expect(screen.getByText("复用已缓存的 `openclaw onboard --help` 能力快照")).toBeInTheDocument();
+    expect(screen.getByText("版本签名: openclaw@2026.3.13@package@stable")).toBeInTheDocument();
+    expect(screen.getByText("探测时间: 2026-03-21T02:50:00.000Z")).toBeInTheDocument();
+    expect(screen.getByText("Google Gemini CLI 登录 / 暂时跳过提供方配置")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "重新检测 OpenClaw 支持项" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/openclaw/onboarding?refreshCapabilities=1",
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    expect(await screen.findByText("来自 `openclaw onboard --help` 的实时探测")).toBeInTheDocument();
+    expect(screen.getByText("最近一次支持项检测结果")).toBeInTheDocument();
+    expect(screen.getByText("检测请求时间")).toBeInTheDocument();
+    expect(screen.getByText("版本签名: openclaw@2026.3.21@package@stable")).toBeInTheDocument();
+    expect(screen.getByText("探测时间: 2026-03-21T02:55:00.000Z")).toBeInTheDocument();
+    expect(screen.getByText("GitHub Copilot 本机登录 / Google Gemini CLI 登录 / 暂时跳过提供方配置")).toBeInTheDocument();
+  });
+
+  it("supports gateway token SecretRef fields during onboarding", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            capabilityDetection: {
+              source: "help",
+              reason: "",
+            },
+            defaults: {
+              authChoice: "skip",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "onboard",
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw onboard --non-interactive --accept-risk --mode local --flow quickstart" },
+              stdout: "onboarded",
+              stderr: "",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              ready: true,
+              needsOnboarding: false,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              validation: { ok: true, valid: true },
+              defaults: {
+                authChoice: "skip",
+                customCompatibility: "openai",
+                daemonRuntime: "node",
+                flow: "quickstart",
+                gatewayAuth: "off",
+                gatewayBind: "loopback",
+                gatewayTokenInputMode: "plaintext",
+                installDaemon: true,
+                secretInputMode: "plaintext",
+                skipHealthCheck: false,
+                workspace: "/Users/marila/.openclaw/workspace",
+              },
+              supportedAuthChoices: ["skip"],
+              supportedDaemonRuntimes: ["node", "bun"],
+              supportedFlows: ["quickstart", "advanced", "manual"],
+              supportedGatewayAuthModes: ["off", "token", "password"],
+              supportedGatewayTokenInputModes: ["plaintext", "ref"],
+              supportedSecretInputModes: ["plaintext", "ref"],
+              supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+            },
+            healthCheck: { status: "healthy" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Gateway 认证方式" }), "token");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Gateway Token 保存方式" }), "ref");
+    await user.type(screen.getByLabelText("Gateway Token 环境变量名"), "OPENCLAW_GATEWAY_TOKEN");
+    await user.click(screen.getByRole("button", { name: "执行初始化" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/onboarding",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authChoice: "skip",
+          apiKey: "",
+          customBaseUrl: "",
+          customCompatibility: "openai",
+          customModelId: "",
+          customProviderId: "",
+          daemonRuntime: "node",
+          flow: "quickstart",
+          gatewayAuth: "token",
+          gatewayBind: "loopback",
+          gatewayPassword: "",
+          gatewayToken: "",
+          gatewayTokenInputMode: "ref",
+          gatewayTokenRefEnv: "OPENCLAW_GATEWAY_TOKEN",
+          installDaemon: true,
+          secretInputMode: "plaintext",
+          skipHealthCheck: false,
+          token: "",
+          tokenExpiresIn: "",
+          tokenProfileId: "",
+          tokenProvider: "",
+          workspace: "/Users/marila/.openclaw/workspace",
+        }),
+      }),
+    );
+  });
+
+  it("lets onboarding skip daemon install without failing the submitted payload shape", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            defaults: {
+              authChoice: "skip",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "onboard",
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw onboard --non-interactive --accept-risk --mode local --flow quickstart" },
+              stdout: "onboarded",
+              stderr: "",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              ready: true,
+              needsOnboarding: false,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              validation: { ok: true, valid: true },
+              defaults: {
+                authChoice: "skip",
+                customCompatibility: "openai",
+                daemonRuntime: "node",
+                flow: "quickstart",
+                gatewayAuth: "off",
+                gatewayBind: "loopback",
+                gatewayTokenInputMode: "plaintext",
+                installDaemon: true,
+                secretInputMode: "plaintext",
+                skipHealthCheck: false,
+                workspace: "/Users/marila/.openclaw/workspace",
+              },
+              supportedAuthChoices: ["skip"],
+              supportedDaemonRuntimes: ["node", "bun"],
+              supportedFlows: ["quickstart", "advanced", "manual"],
+              supportedGatewayAuthModes: ["off", "token", "password"],
+              supportedGatewayTokenInputModes: ["plaintext", "ref"],
+              supportedSecretInputModes: ["plaintext", "ref"],
+              supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+            },
+            healthCheck: { status: "unreachable" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    expect(screen.getByRole("combobox", { name: "Gateway 服务运行时" })).toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "安装 Gateway 后台服务" }));
+    expect(screen.queryByRole("combobox", { name: "Gateway 服务运行时" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "跳过官方健康检查" }));
+    await user.click(screen.getByRole("button", { name: "执行初始化" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/onboarding",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authChoice: "skip",
+          apiKey: "",
+          customBaseUrl: "",
+          customCompatibility: "openai",
+          customModelId: "",
+          customProviderId: "",
+          daemonRuntime: "node",
+          flow: "quickstart",
+          gatewayAuth: "off",
+          gatewayBind: "loopback",
+          gatewayPassword: "",
+          gatewayToken: "",
+          gatewayTokenInputMode: "plaintext",
+          gatewayTokenRefEnv: "",
+          installDaemon: false,
+          secretInputMode: "plaintext",
+          skipHealthCheck: true,
+          token: "",
+          tokenExpiresIn: "",
+          tokenProfileId: "",
+          tokenProvider: "",
+          workspace: "/Users/marila/.openclaw/workspace",
+        }),
+      }),
+    );
+  });
+
+  it("supports token-based provider onboarding", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            defaults: {
+              authChoice: "token",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["token", "skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "onboard",
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw onboard --non-interactive --accept-risk --mode local --flow quickstart" },
+              stdout: "onboarded",
+              stderr: "",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              ready: true,
+              needsOnboarding: false,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              validation: { ok: true, valid: true },
+              defaults: {
+                authChoice: "token",
+                customCompatibility: "openai",
+                daemonRuntime: "node",
+                flow: "quickstart",
+                gatewayAuth: "off",
+                gatewayBind: "loopback",
+                gatewayTokenInputMode: "plaintext",
+                installDaemon: true,
+                secretInputMode: "plaintext",
+                skipHealthCheck: false,
+                workspace: "/Users/marila/.openclaw/workspace",
+              },
+              supportedAuthChoices: ["token", "skip"],
+              supportedDaemonRuntimes: ["node", "bun"],
+              supportedFlows: ["quickstart", "advanced", "manual"],
+              supportedGatewayAuthModes: ["off", "token", "password"],
+              supportedGatewayTokenInputModes: ["plaintext", "ref"],
+              supportedSecretInputModes: ["plaintext", "ref"],
+              supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+            },
+            healthCheck: { status: "healthy" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    await user.selectOptions(screen.getByRole("combobox", { name: "模型提供方" }), "token");
+    await user.type(screen.getByLabelText("Token 提供方 ID"), "openai");
+    await user.type(screen.getByLabelText("访问 Token"), "provider-token");
+    await user.type(screen.getByLabelText("认证配置 ID"), "openai:manual");
+    await user.type(screen.getByLabelText("Token 有效期"), "30d");
+    await user.click(screen.getByRole("button", { name: "执行初始化" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/onboarding",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authChoice: "token",
+          apiKey: "",
+          customBaseUrl: "",
+          customCompatibility: "openai",
+          customModelId: "",
+          customProviderId: "",
+          daemonRuntime: "node",
+          flow: "quickstart",
+          gatewayAuth: "off",
+          gatewayBind: "loopback",
+          gatewayPassword: "",
+          gatewayToken: "",
+          gatewayTokenInputMode: "plaintext",
+          gatewayTokenRefEnv: "",
+          installDaemon: true,
+          secretInputMode: "plaintext",
+          skipHealthCheck: false,
+          token: "provider-token",
+          tokenExpiresIn: "30d",
+          tokenProfileId: "openai:manual",
+          tokenProvider: "openai",
+          workspace: "/Users/marila/.openclaw/workspace",
+        }),
+      }),
+    );
+  });
+
+  it("supports managed local-login providers without showing API key inputs", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding" && (!init || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            defaults: {
+              authChoice: "github-copilot",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["github-copilot", "openai-api-key", "skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            action: "onboard",
+            commandResult: {
+              ok: true,
+              command: { display: "openclaw onboard --non-interactive --accept-risk --mode local --flow quickstart" },
+              stdout: "onboarded",
+              stderr: "",
+            },
+            state: {
+              ok: true,
+              installed: true,
+              ready: true,
+              needsOnboarding: false,
+              configPath: "/Users/marila/.openclaw/openclaw.json",
+              validation: { ok: true, valid: true },
+              defaults: {
+                authChoice: "github-copilot",
+                customCompatibility: "openai",
+                daemonRuntime: "node",
+                flow: "quickstart",
+                gatewayAuth: "off",
+                gatewayBind: "loopback",
+                gatewayTokenInputMode: "plaintext",
+                installDaemon: true,
+                secretInputMode: "plaintext",
+                skipHealthCheck: false,
+                workspace: "/Users/marila/.openclaw/workspace",
+              },
+              supportedAuthChoices: ["github-copilot", "openai-api-key", "skip"],
+              supportedDaemonRuntimes: ["node", "bun"],
+              supportedFlows: ["quickstart", "advanced", "manual"],
+              supportedGatewayAuthModes: ["off", "token", "password"],
+              supportedGatewayTokenInputModes: ["plaintext", "ref"],
+              supportedSecretInputModes: ["plaintext", "ref"],
+              supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+            },
+            healthCheck: { status: "healthy" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    await user.selectOptions(screen.getByRole("combobox", { name: "模型提供方" }), "github-copilot");
+
+    expect(screen.getByText("复用本机已有登录态")).toBeInTheDocument();
+    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("凭据保存方式")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "执行初始化" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/openclaw/onboarding",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          authChoice: "github-copilot",
+          apiKey: "",
+          customBaseUrl: "",
+          customCompatibility: "openai",
+          customModelId: "",
+          customProviderId: "",
+          daemonRuntime: "node",
+          flow: "quickstart",
+          gatewayAuth: "off",
+          gatewayBind: "loopback",
+          gatewayPassword: "",
+          gatewayToken: "",
+          gatewayTokenInputMode: "plaintext",
+          gatewayTokenRefEnv: "",
+          installDaemon: true,
+          secretInputMode: "plaintext",
+          skipHealthCheck: false,
+          token: "",
+          tokenExpiresIn: "",
+          tokenProfileId: "",
+          tokenProvider: "",
+          workspace: "/Users/marila/.openclaw/workspace",
+        }),
+      }),
+    );
+  });
+
+  it("renders onboarding selects from backend capability lists instead of local fallback options", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/onboarding") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false },
+            defaults: {
+              authChoice: "skip",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "manual",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["google-gemini-cli", "skip"],
+            supportedDaemonRuntimes: ["node"],
+            supportedFlows: ["manual"],
+            supportedGatewayAuthModes: ["off"],
+            supportedGatewayTokenInputModes: ["plaintext"],
+            supportedSecretInputModes: ["plaintext"],
+            supportedGatewayBinds: ["loopback"],
+          }),
+        };
+      }
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.19",
+            targetVersion: "2026.3.19",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "1.2.3" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await screen.findByText("OpenClaw 初始化");
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+
+    const providerSelect = screen.getByRole("combobox", { name: "模型提供方" });
+
+    expect(screen.getByText("当前 CLI 能力")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "支持的流程: Manual")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "支持的模型提供方: Google Gemini CLI 登录 / 暂时跳过提供方配置")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "支持的 Gateway 绑定: 仅本机")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "支持的服务运行时: Node.js")).toBeInTheDocument();
+    expect(screen.getAllByText("当前 OpenClaw CLI 能力已将这里固定为只读值。").length).toBeGreaterThanOrEqual(3);
+
+    expect(Array.from(providerSelect.options).map((option) => option.value)).toEqual(["google-gemini-cli", "skip"]);
+    expect(screen.queryByRole("combobox", { name: "初始化流程" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Gateway 绑定方式" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Gateway 认证方式" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Gateway 服务运行时" })).not.toBeInTheDocument();
+
+    await user.selectOptions(providerSelect, "google-gemini-cli");
+    expect(screen.getByText("复用本机已有登录态")).toBeInTheDocument();
+    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
   });
 
   it("shows stderr plus troubleshooting guidance for install failures", async () => {

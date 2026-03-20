@@ -454,6 +454,9 @@ const ja = {
         unknown: "不明",
       },
     },
+    openClawOnboarding: {
+      ...en.inspector.openClawOnboarding,
+    },
     openClawManagement: {
       ...en.inspector.openClawManagement,
       title: "OpenClaw 管理アクション",
