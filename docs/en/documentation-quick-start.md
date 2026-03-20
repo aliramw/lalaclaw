@@ -111,10 +111,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.3.20-1`:
+If you want a specific published version instead, such as `2026.3.20-2`:
 
 ```bash
-npm install -g lalaclaw@2026.3.20-1
+npm install -g lalaclaw@2026.3.20-2
 lalaclaw init
 ```
 
@@ -128,12 +128,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.3.20-1`:
+If you want a specific released version instead, such as `2026.3.20-2`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.20-1
+git checkout 2026.3.20-2
 npm ci
 npm run build
 npm run lalaclaw:start

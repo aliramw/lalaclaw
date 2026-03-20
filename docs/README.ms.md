@@ -126,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Jika anda mahu versi tertentu, contohnya `2026.3.20-1`:
+Jika anda mahu versi tertentu, contohnya `2026.3.20-2`:
 
 ```bash
-npm install -g lalaclaw@2026.3.20-1
+npm install -g lalaclaw@2026.3.20-2
 lalaclaw init
 ```
 
@@ -143,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Jika anda mahu versi tertentu, contohnya `2026.3.20-1`:
+Jika anda mahu versi tertentu, contohnya `2026.3.20-2`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.20-1
+git checkout 2026.3.20-2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -194,7 +194,7 @@ Senarai semak penuh ada di [CONTRIBUTING.md](../CONTRIBUTING.md).
 LalaClaw menggunakan pemversian kalendar yang serasi dengan npm.
 
 - Kemas kini [CHANGELOG.md](../CHANGELOG.md) setiap kali versi berubah
-- Jika ada beberapa release pada hari yang sama, gunakan `YYYY.M.D-N`, contohnya `2026.3.20-1`
+- Jika ada beberapa release pada hari yang sama, gunakan `YYYY.M.D-N`, contohnya `2026.3.20-2`
 - Perubahan yang memecahkan keserasian perlu dinyatakan dengan jelas dalam nota keluaran dan dokumen migrasi
 - Untuk pembangunan, versi Node.js yang disyorkan ialah `22` seperti dalam [`.nvmrc`](../.nvmrc). Pakej npm yang diterbitkan menyokong `^20.19.0 || ^22.12.0 || >=24.0.0`
 

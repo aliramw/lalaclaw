@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026.3.20-2]
+
+### Added
+
+- Added a dev-only LalaClaw update mock route so source-checkout demos can toggle a target stable version without restarting the backend
+
+### Changed
+
+- Added a dedicated LalaClaw in-app self-update flow that checks npm `stable` releases, surfaces update state in the Environment tab, and documents stable dist-tag confirmation as an explicit release decision
+- Refined the Environment panel LalaClaw update presentation so the update-available copy stays inline while the immediate action reuses the same filled blue treatment as the main send button
+- Updated README and localized quick-start / README version examples to `2026.3.20-2`
+
+### Fixed
+
+- Removed the old environment-variable LalaClaw update mock path so the dev-only route is the single supported demo entrypoint
+- Cleared the current release blockers in lint and App-level regressions so tarball validation, installed startup, and the new LalaClaw update flow pass release verification again
+
 ## [2026.3.20-1]
 
 ### Added
