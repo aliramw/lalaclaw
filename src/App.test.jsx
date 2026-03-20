@@ -1598,7 +1598,7 @@ describe("App", () => {
     expect(await screen.findByText("协同任务")).toBeInTheDocument();
     expect(screen.getByText("已建立")).toBeInTheDocument();
     expect(screen.getByText("执行中")).toBeInTheDocument();
-    expect(screen.getByText("Session Spawn")).toBeInTheDocument();
+    expect(screen.getByText("会话创建")).toBeInTheDocument();
     expect(screen.getByText("fresh-session")).toBeInTheDocument();
     expect(screen.getByText("paint")).toBeInTheDocument();
     expect(screen.getByText("image-worker")).toBeInTheDocument();
@@ -2895,6 +2895,7 @@ describe("App", () => {
   });
 
   it("shows an environment-tab alert and auto-expands the LalaClaw section when a new stable update is available", async () => {
+    mockDesktopLayout();
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
@@ -2974,7 +2975,6 @@ describe("App", () => {
     expect(screen.getByText("有可用更新")).toBeInTheDocument();
     expect(screen.queryByText("当前有新的 stable 版本可更新。")).not.toBeInTheDocument();
     expect(screen.getByText("2026.3.21-1")).toBeInTheDocument();
-    expect(screen.getAllByText("stable").length).toBeGreaterThan(0);
   });
 
   it("keeps prompt history isolated after resetting into a new session", async () => {

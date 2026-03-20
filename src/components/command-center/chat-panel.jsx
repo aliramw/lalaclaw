@@ -665,7 +665,6 @@ function MessageMeta({
   formatTime,
   onJumpPreviousUserMessage,
   pending,
-  streaming,
   sticky,
   compact,
   timestamp,
@@ -2747,12 +2746,6 @@ export function ChatPanel({
     suppressRestoredBottomButtonRef.current = false;
     suppressedBottomButtonAssistantKeyRef.current = "";
     if (force || !programmaticScrollRef.current) {
-      const previousScrollMode = scrollModeRef.current;
-      const latestBubble = latestAssistantBubbleRef.current;
-      const viewport = resolvedMessageViewport;
-      const currentTurnCanResumeBottomFollow = !latestBubble
-        || !viewport
-        || latestBubble.getBoundingClientRect().height <= viewport.clientHeight;
       const wasManualLocked =
         manualScrollLockRef.current
         || persistentManualScrollLockRef.current
@@ -2763,8 +2756,7 @@ export function ChatPanel({
       if (lockAutoFollow) {
         manualScrollLockRef.current = true;
         persistentManualScrollLockRef.current = true;
-        pendingAutoFollowResumeOnBottomRef.current =
-          previousScrollMode !== "pin-top" && currentTurnCanResumeBottomFollow;
+        pendingAutoFollowResumeOnBottomRef.current = true;
         if (!wasManualLocked) {
           manualScrollLockMovedAwayFromBottomRef.current = false;
         }
@@ -2773,7 +2765,7 @@ export function ChatPanel({
         restoredScrollKeyRef.current = `${restoredScrollKey}:${restoredScrollRevision}`;
       }
     }
-  }, [cancelAnimatedViewportScroll, resolvedMessageViewport, restoredScrollKey, restoredScrollRevision]);
+  }, [cancelAnimatedViewportScroll, restoredScrollKey, restoredScrollRevision]);
 
   const resumeAutomaticLatestReplyFollow = useCallback((nextMode = "follow-bottom") => {
     manualScrollLockRef.current = false;
@@ -2788,10 +2780,6 @@ export function ChatPanel({
 
   const updateViewportBottomState = useCallback((isNearBottom, { markManual = false, viewport } = {}) => {
     const resolvedViewport = viewport || resolvedMessageViewport;
-    const latestBubble = latestAssistantBubbleRef.current;
-    const currentTurnCanResumeBottomFollow = !latestBubble
-      || !resolvedViewport
-      || latestBubble.getBoundingClientRect().height <= resolvedViewport.clientHeight;
     wasNearBottomRef.current = isNearBottom;
     if (markManual) {
       if (!programmaticScrollRef.current) {
@@ -2807,11 +2795,8 @@ export function ChatPanel({
       }
 
       if (
-        currentTurnCanResumeBottomFollow
-        && (
-          (pendingAutoFollowResumeOnBottomRef.current && manualScrollLockMovedAwayFromBottomRef.current)
-          || ((manualScrollLockRef.current || persistentManualScrollLockRef.current) && !programmaticScrollRef.current)
-        )
+        (pendingAutoFollowResumeOnBottomRef.current && manualScrollLockMovedAwayFromBottomRef.current)
+        || ((manualScrollLockRef.current || persistentManualScrollLockRef.current) && !programmaticScrollRef.current)
       ) {
         pendingAutoFollowResumeOnBottomRef.current = false;
         persistentManualScrollLockRef.current = false;
@@ -3317,7 +3302,6 @@ export function ChatPanel({
       || !latestMessageIsAssistant
       || latestAssistantIsCompactIntro
       || manualScrollLockRef.current
-      || (persistentManualScrollLockRef.current && !pendingAutoFollowResumeOnBottomRef.current)
       || autoScrollSuppressedRef.current
     ) {
       if (latestAssistantIsCompactIntro) {

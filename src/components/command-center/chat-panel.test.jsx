@@ -4141,7 +4141,7 @@ describe("ChatPanel", () => {
     expect(viewport.scrollTop).toBe(800);
   });
 
-  it("does not re-enter the top-20% pin for the same turn after the user manually intervenes", async () => {
+  it("restores bottom-follow instead of re-entering the top-20% pin after manual intervention", async () => {
     const viewportRef = { current: null };
     vi.stubGlobal("requestAnimationFrame", (callback) => {
       callback();
@@ -4257,9 +4257,9 @@ describe("ChatPanel", () => {
     });
 
     await waitFor(() => {
-      expect(viewport.scrollTo).not.toHaveBeenCalled();
+      expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 800, behavior: "auto" });
     });
-    expect(viewport.scrollTop).toBe(740);
+    expect(viewport.scrollTop).toBe(800);
   });
 
   it("starts a fresh bottom-follow cycle for a new user turn after the previous turn was manually interrupted", async () => {

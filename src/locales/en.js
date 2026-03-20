@@ -265,7 +265,7 @@ const en = {
     },
     runtimeSocket: {
       connecting: "Connecting",
-      connected: "Connected",
+      connected: "Online",
       reconnecting: "Reconnecting",
       disconnected: "Disconnected",
     },

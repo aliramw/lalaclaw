@@ -169,7 +169,7 @@ const zhHk = {
     },
     runtimeSocket: {
       connecting: "連線中",
-      connected: "已連線",
+      connected: "在線",
       reconnecting: "重連中",
       disconnected: "已中斷",
     },

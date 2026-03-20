@@ -265,7 +265,7 @@ const zh = {
     },
     runtimeSocket: {
       connecting: "连接中",
-      connected: "已连接",
+      connected: "在线",
       reconnecting: "重连中",
       disconnected: "已断开",
     },

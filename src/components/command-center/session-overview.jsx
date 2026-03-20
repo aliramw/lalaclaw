@@ -1777,6 +1777,7 @@ export function SessionOverview({
   const runtimeTransportLabel =
     messages.sessionOverview.runtimeTransport?.[runtimeTransport]
     || runtimeTransport;
+  const runtimeTransportDisplayLabel = runtimeTransport === "ws" ? "WS" : runtimeTransportLabel;
   const runtimeSocketLabel =
     messages.sessionOverview.runtimeSocket?.[runtimeSocketStatus]
     || runtimeSocketStatus;
@@ -1943,7 +1944,7 @@ export function SessionOverview({
         {session.mode === "openclaw" ? (
           <StatusPill
             label={messages.sessionOverview.labels.transport}
-            value={`${runtimeTransportLabel} / ${runtimeSocketLabel}`}
+            value={`${runtimeTransportDisplayLabel} / ${runtimeSocketLabel}`}
             resolvedTheme={resolvedTheme}
             tooltipContent={(
               <TransportTooltipContent
