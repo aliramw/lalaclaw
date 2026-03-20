@@ -348,8 +348,35 @@ describe("FilePreviewOverlay", () => {
 
     expect(screen.getByTestId("file-preview-files-sidebar")).toBeInTheDocument();
     expect(screen.getByTestId("file-preview-code-block")).toHaveClass("min-w-0", "max-w-full");
-    expect(screen.getByTestId("file-preview-code-scroll")).toHaveClass("min-w-0", "max-w-full", "overflow-auto");
-    expect(document.querySelector(".token-line")).toHaveClass("block", "min-w-full");
+    expect(screen.getByTestId("file-preview-code-scroll")).toHaveClass("min-w-0", "w-full", "max-w-full", "overflow-auto");
+    expect(document.querySelector(".token-line")).toHaveClass("block", "min-w-max");
+  });
+
+  it("uses an explicit constrained main column when the files sidebar is visible", () => {
+    const { container } = renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        sessionFiles={[
+          {
+            path: "/Users/marila/projects/lalaclaw/src/alpha.md",
+            fullPath: "/Users/marila/projects/lalaclaw/src/alpha.md",
+            primaryAction: "modified",
+          },
+        ]}
+        preview={{
+          kind: "markdown",
+          name: "wide.md",
+          path: "/Users/marila/projects/lalaclaw/wide.md",
+          content: "---\nname: nano-banana\nveryLongValue: " + "x".repeat(400) + "\n---\n\n```bash\n" + "x".repeat(400) + "\n```",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("file-preview-main-column")).toHaveClass("min-w-0", "w-full", "overflow-hidden");
+    expect(screen.getByTestId("file-preview-files-sidebar")).toBeInTheDocument();
+    expect(container.querySelector("[data-radix-scroll-area-viewport]")).toHaveClass("[&>div]:!block", "[&>div]:!w-full", "[&>div]:!min-w-0", "[&>div]:!max-w-full");
   });
 
   it("uses a light code preview surface and syntax theme in light mode", () => {

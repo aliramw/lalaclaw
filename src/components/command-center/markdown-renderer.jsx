@@ -569,12 +569,12 @@ function CodeBlock({ code, language, scrollAnchorId = "" }) {
       </div>
       <Highlight prism={Prism} theme={codeTheme} code={code} language={highlightedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
-          <pre className="min-w-0 max-w-full overflow-x-auto px-0 py-1.5 text-[12px] leading-5 text-zinc-50">
+          <pre className="min-w-0 w-full max-w-full overflow-x-auto px-0 py-1.5 text-[12px] leading-5 text-zinc-50">
             {tokens.map((line, lineIndex) => (
               <div
                 key={lineIndex}
                 {...getLineProps({ line })}
-                className="min-h-5 px-2.5 font-mono"
+                className="block min-h-5 min-w-max px-2.5 font-mono"
               >
                 {line.map((token, tokenIndex) => (
                   <span key={tokenIndex} {...getTokenProps({ token })} />

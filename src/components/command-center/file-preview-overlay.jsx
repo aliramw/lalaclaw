@@ -337,7 +337,7 @@ function FilePreviewCodeBlock({
           <pre
             data-testid="file-preview-code-scroll"
             className={cn(
-              "min-w-0 max-w-full overflow-auto px-0",
+              "min-w-0 w-full max-w-full overflow-auto px-0",
               fillHeight && "min-h-0 flex-1",
               fontSizeClassName,
               isSubtle
@@ -353,7 +353,7 @@ function FilePreviewCodeBlock({
               <div
                 key={lineIndex}
                 {...getLineProps({ line })}
-                className={cn("token-line block min-w-full px-4 font-mono", isSubtle && "text-[12.5px]")}
+                className={cn("token-line block min-w-max px-4 font-mono", isSubtle && "text-[12.5px]")}
               >
                 {line.length ? line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />) : <span>&nbsp;</span>}
               </div>
@@ -1288,7 +1288,7 @@ export function FilePreviewOverlay({
               files={files}
               headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
               resolvedTheme={resolvedTheme}
-              className={richTextPreviewFontSizeClassName}
+              className={cn("min-w-0 max-w-full", richTextPreviewFontSizeClassName)}
               onOpenFilePreview={onOpenFilePreview}
             />
           </div>
@@ -1362,7 +1362,12 @@ export function FilePreviewOverlay({
       {body}
     </div>
   ) : (
-    <ScrollArea className="min-h-0 min-w-0 flex-1" viewportRef={previewViewportRef}>
+    <ScrollArea
+      className="min-h-0 min-w-0 flex-1"
+      viewportClassName="[&>div]:!block [&>div]:!w-full [&>div]:!min-w-0 [&>div]:!max-w-full"
+      viewportRef={previewViewportRef}
+      style={{ contain: "layout inline-size paint" }}
+    >
       <div className="min-h-full min-w-0 max-w-full overflow-x-hidden px-6 py-5">{body}</div>
       {preview.truncated ? (
         <div className={cn("px-6 pb-6 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
@@ -1579,14 +1584,18 @@ export function FilePreviewOverlay({
           </div>
           {showFilesSidebar ? (
             <div className="min-h-0 flex-1 overflow-hidden">
-              <div className="flex h-full min-h-0 flex-col lg:flex-row">
-                <div className="flex min-h-0 min-w-0 basis-0 flex-1 flex-col overflow-hidden lg:max-w-[calc(100%-340px)]">
+              <div className="grid h-full min-h-0 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_340px]">
+                <div
+                  data-testid="file-preview-main-column"
+                  className="relative z-0 flex min-h-0 min-w-0 w-full flex-col overflow-hidden"
+                  style={{ contain: "layout inline-size paint" }}
+                >
                   {mainBody}
                 </div>
                 <aside
                   data-testid="file-preview-files-sidebar"
                   className={cn(
-                    "hidden min-h-0 w-[340px] shrink-0 border-l lg:flex lg:flex-col",
+                    "relative z-10 hidden min-h-0 min-w-0 w-[340px] shrink-0 border-l lg:flex lg:flex-col",
                     isDark ? "border-white/10 bg-[#13151a]" : "border-slate-200 bg-slate-50/70",
                   )}
                   aria-label={messages.inspector.tabs.files}
