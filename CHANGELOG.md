@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026.3.21-2]
+
+### Added
+
+- Added an internal open-source maturity review plan under `plan/` so the next project-quality improvements can be tracked as a concrete roadmap
+
+### Changed
+
+- Updated README and localized quick-start / README version examples to `2026.3.21-2`
+
+### Fixed
+
+- Fixed a release-blocking hook-order issue in the image preview overlay so `npm run lint` passes again during release validation
+
 ## [2026.3.21-1]
 
 ### Added

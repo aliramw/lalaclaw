@@ -668,6 +668,7 @@ function SpreadsheetPreview({ preview, resolvedTheme = "light" }) {
 
 export function ImagePreviewOverlay({ image, onClose }) {
   const { messages } = useI18n();
+  const hasImageSrc = Boolean(image?.src);
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -682,17 +683,13 @@ export function ImagePreviewOverlay({ image, onClose }) {
   });
 
   useEffect(() => {
-    if (!image?.src) {
+    if (!hasImageSrc) {
       setScale(1);
       setRotation(0);
       setOffset({ x: 0, y: 0 });
       setIsDraggingImage(false);
     }
-  }, [image?.src]);
-
-  if (!image?.src) {
-    return null;
-  }
+  }, [hasImageSrc]);
 
   const clampScale = (value) => Math.min(4, Math.max(0.5, value));
   const clampOffset = (candidate, nextScale = scale, nextRotation = rotation) => {
@@ -817,7 +814,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
   };
 
   useEffect(() => {
-    if (!image?.src) {
+    if (!hasImageSrc) {
       return undefined;
     }
 
@@ -885,7 +882,11 @@ export function ImagePreviewOverlay({ image, onClose }) {
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
       doc.removeEventListener("keydown", handleKeyDown, { capture: true });
     };
-  }, [image?.src, onClose, handleRevealInFileManager, handleReset, handleRotateLeft, handleRotateRight, handleZoomIn, handleZoomOut]);
+  }, [hasImageSrc, onClose, handleRevealInFileManager, handleReset, handleRotateLeft, handleRotateRight, handleZoomIn, handleZoomOut]);
+
+  if (!hasImageSrc) {
+    return null;
+  }
   const renderImageShortcutTooltip = (label, shortcut) => (
     <div className="space-y-0.5">
       <div>{label}</div>
