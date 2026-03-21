@@ -2582,7 +2582,9 @@ describe("App", () => {
       const occurrences = bodyText.split(promptText).length - 1;
       expect(occurrences).toBe(1);
     });
-    expect(getNormalizedBodyText()).not.toContain("正在思考…");
+    await waitFor(() => {
+      expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+    });
   });
 
   it("hydrates prompt history from the current session conversation", async () => {

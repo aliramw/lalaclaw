@@ -96,6 +96,7 @@ jobs:
         run: |
           export PATH="$(npm prefix -g)/bin:$HOME/.npm-global/bin:$PATH"
           command -v openclaw
+          echo "OPENCLAW_BIN=$(command -v openclaw)" >> "$GITHUB_ENV"
           openclaw --version
 
       - name: Run OpenClaw onboarding smoke
