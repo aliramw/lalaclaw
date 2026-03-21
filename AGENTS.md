@@ -278,6 +278,16 @@ http://127.0.0.1:3000
 - 用户可见行为、命令、配置项、版本策略变化时，尽量同改动更新 `README.md`、相关文档或示例。
 - `README.md` 负责贡献入口、开发摘要和版本约定；`CONTRIBUTING.md` 负责完整贡献流程，避免两边重复堆细节。
 
+### Worktree 流程 / Worktree Workflow
+
+- 默认在主仓库外创建 feature worktree，并给分支使用清晰名称；如果进入 worktree 时发现是 detached HEAD，开始正式修改前先执行 `git switch -c <branch>`。Prefer named feature branches for worktrees; if a worktree opens in detached HEAD, create a branch before doing real work.
+- 开工前先看 `git status --short`，区分“本次任务改动”和“worktree 里原本已存在的改动”，不要在收尾时把两类内容静默混成一个 commit。Check the worktree status up front and keep pre-existing changes separate from the current task unless explicitly intended.
+- worktree 内的开发、验证、提交顺序与普通分支一致：实现 -> 跑验证 -> `git add` -> `git commit`。Treat a worktree branch like a normal branch for implementation, validation, staging, and commits.
+- 收尾前必须确认 worktree 内没有遗漏的未提交改动；如果还有内容，要么补充提交，要么明确保留，不能在脏工作区上直接删 worktree。Do not remove a dirty worktree; either commit or intentionally preserve remaining changes first.
+- 如果任务需要删除 worktree，先推送对应分支，再从该 worktree 外部执行 `git worktree remove <path>`，避免在当前目录里删当前 worktree。When removing a worktree, push the branch first and run `git worktree remove <path>` from outside that worktree.
+- 删除后补执行一次 `git worktree prune`，并确认 `git worktree list` 里已不再出现该路径。After removal, run `git worktree prune` and verify the path no longer appears in `git worktree list`.
+- 如果 worktree 中保留了额外未并入的实验性改动，删除前必须先决定：继续单独提交、转移到新分支，或明确放弃；不要靠删除 worktree 来“顺手清掉”。 Resolve leftover experimental changes explicitly before removal instead of using worktree deletion as cleanup-by-accident.
+
 ### 计划文档 / Planning Docs
 
 - 仓库根目录下的 `plan/` 专门用于存放后续开发计划、执行计划、阶段方案和拆解文档。Use `plan/` for implementation plans, execution plans, phased roadmaps, and task breakdowns.
