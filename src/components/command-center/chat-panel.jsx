@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,7 @@ const chatTabShortcutBandHeightPx = 14;
 const chatTabBodyHeightPx = 36;
 const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx;
 const streamingTailIndicatorClearDelayMs = 420;
+const speechRecognitionStatusResetDelayMs = 2200;
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -638,6 +639,97 @@ function isManualScrollKey(event) {
     " ",
     "Spacebar",
   ].includes(key);
+}
+
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function joinPromptWithSpeechTranscript(basePrompt = "", transcript = "") {
+  const normalizedBase = String(basePrompt || "");
+  const normalizedTranscript = String(transcript || "").trim();
+  if (!normalizedTranscript) {
+    return normalizedBase;
+  }
+
+  if (!normalizedBase.trim()) {
+    return normalizedTranscript;
+  }
+
+  return /\s$/.test(normalizedBase)
+    ? `${normalizedBase}${normalizedTranscript}`
+    : `${normalizedBase} ${normalizedTranscript}`;
+}
+
+function buildSpeechTranscriptFromResults(results = []) {
+  const normalizeComparable = (value = "") => String(value || "").replace(/[\s,.;:!?，。！？；：、]/g, "").trim();
+  const getCommonPrefixLength = (left = "", right = "") => {
+    const maxLength = Math.min(left.length, right.length);
+    let index = 0;
+
+    while (index < maxLength && left[index] === right[index]) {
+      index += 1;
+    }
+
+    return index;
+  };
+
+  const mergeTranscript = (combined = "", next = "") => {
+    const currentText = String(combined || "");
+    const nextText = String(next || "");
+    if (!nextText.trim()) {
+      return currentText;
+    }
+    if (!currentText) {
+      return nextText;
+    }
+
+    const currentComparable = normalizeComparable(currentText);
+    const nextComparable = normalizeComparable(nextText);
+
+    if (!nextComparable) {
+      return currentText;
+    }
+    if (!currentComparable) {
+      return nextText;
+    }
+    if (currentComparable.includes(nextComparable)) {
+      return currentText;
+    }
+    if (nextComparable.includes(currentComparable)) {
+      return nextText;
+    }
+
+    const commonPrefixLength = getCommonPrefixLength(currentComparable, nextComparable);
+    const shorterComparableLength = Math.min(currentComparable.length, nextComparable.length);
+    if (
+      commonPrefixLength >= 4
+      && shorterComparableLength > 0
+      && (commonPrefixLength / shorterComparableLength) >= 0.6
+    ) {
+      return nextText;
+    }
+
+    const maxLength = Math.min(currentText.length, nextText.length);
+    for (let length = maxLength; length > 0; length -= 1) {
+      if (currentText.slice(-length) === nextText.slice(0, length)) {
+        return `${currentText}${nextText.slice(length)}`;
+      }
+    }
+
+    return `${currentText}${nextText}`;
+  };
+
+  let transcript = "";
+  for (const result of results) {
+    transcript = mergeTranscript(transcript, String(result?.[0]?.transcript || ""));
+  }
+
+  return transcript;
 }
 
 function CopyMessageButton({ content }) {
@@ -2388,6 +2480,14 @@ export function ChatPanel({
   const attachmentInputRef = useRef(null);
   const composerTextareaRef = useRef(null);
   const composerCompositionActiveRef = useRef(false);
+  const speechRecognitionRef = useRef(null);
+  const speechStatusResetTimeoutRef = useRef(0);
+  const speechSessionBasePromptRef = useRef("");
+  const speechSessionTranscriptRef = useRef("");
+  const speechRecognitionLastRawTranscriptRef = useRef("");
+  const speechRecognitionIgnoredTranscriptPrefixRef = useRef("");
+  const voiceInputStateRef = useRef("idle");
+  const voiceInputTerminalStateRef = useRef("");
   const composerCompositionGuardTimeoutRef = useRef(0);
   const composerCompositionGuardArmedAtRef = useRef(0);
   const composerLastCompositionAtRef = useRef(0);
@@ -2403,6 +2503,7 @@ export function ChatPanel({
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
   const [composerPrompt, setComposerPrompt] = useState(prompt);
+  const [voiceInputState, setVoiceInputState] = useState("idle");
   const [latchedStreamingTailMessageId, setLatchedStreamingTailMessageId] = useState("");
   const mentionMenuRef = useRef(null);
   const composerMentionLayerRef = useRef(null);
@@ -2713,6 +2814,26 @@ export function ChatPanel({
   const visibleConversationKey = session?.sessionUser
     ? createConversationKey(session.sessionUser, session.agentId)
     : restoredScrollKey;
+  const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
+  const speechRecognitionSupported = Boolean(SpeechRecognitionCtor);
+  const voiceInputButtonLabel = voiceInputState === "listening"
+    ? i18n.chat.voiceInputStop
+    : i18n.chat.voiceInputStart;
+  const voiceInputStatusText = voiceInputState === "unsupported"
+    ? i18n.chat.voiceInputUnavailable
+    : voiceInputState === "denied"
+      ? i18n.chat.voiceInputPermissionDenied
+      : voiceInputState === "error"
+        ? i18n.chat.voiceInputError
+        : voiceInputState === "listening"
+          ? i18n.chat.voiceInputListening
+          : voiceInputState === "stopped"
+            ? i18n.chat.voiceInputStopped
+            : "";
+
+  useEffect(() => {
+    voiceInputStateRef.current = voiceInputState;
+  }, [voiceInputState]);
 
   useEffect(() => {
     setComposerPrompt((current) => (current === prompt ? current : prompt));
@@ -2721,6 +2842,28 @@ export function ChatPanel({
   useEffect(() => () => {
     window.clearTimeout(composerCompositionGuardTimeoutRef.current);
   }, []);
+
+  useEffect(() => () => {
+    window.clearTimeout(speechStatusResetTimeoutRef.current);
+    const recognition = speechRecognitionRef.current;
+    if (recognition) {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.stop?.();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!composerLocked) {
+      return;
+    }
+
+    const recognition = speechRecognitionRef.current;
+    if (recognition) {
+      recognition.stop?.();
+    }
+  }, [composerLocked]);
 
   useLayoutEffect(() => {
     const textarea = composerTextareaRef.current;
@@ -2894,6 +3037,140 @@ export function ChatPanel({
     await onAddAttachments?.(fileList);
     focusComposer();
   }, [focusComposer, onAddAttachments]);
+
+  const resetVoiceInputStatusLater = useCallback(() => {
+    window.clearTimeout(speechStatusResetTimeoutRef.current);
+    speechStatusResetTimeoutRef.current = window.setTimeout(() => {
+      setVoiceInputState("idle");
+      speechStatusResetTimeoutRef.current = 0;
+    }, speechRecognitionStatusResetDelayMs);
+  }, []);
+
+  const syncComposerPrompt = useCallback((nextPrompt, { keepSpeechBase = false } = {}) => {
+    setComposerPrompt(nextPrompt);
+    onPromptChange(nextPrompt);
+    if (!keepSpeechBase) {
+      speechSessionBasePromptRef.current = nextPrompt;
+      speechSessionTranscriptRef.current = "";
+    }
+  }, [onPromptChange]);
+
+  const syncVoiceInputManualBaseline = useCallback((nextPrompt = "") => {
+    if (voiceInputStateRef.current !== "listening") {
+      return;
+    }
+
+    speechSessionBasePromptRef.current = String(nextPrompt || "");
+    speechSessionTranscriptRef.current = "";
+    speechRecognitionIgnoredTranscriptPrefixRef.current = speechRecognitionLastRawTranscriptRef.current;
+  }, []);
+
+  const applySpeechTranscript = useCallback((nextTranscript = "") => {
+    const normalizedTranscript = String(nextTranscript || "").trim();
+    speechSessionTranscriptRef.current = normalizedTranscript;
+    const nextPrompt = joinPromptWithSpeechTranscript(speechSessionBasePromptRef.current, normalizedTranscript);
+    syncComposerPrompt(nextPrompt, { keepSpeechBase: true });
+
+    window.requestAnimationFrame(() => {
+      const textarea = composerTextareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      const caret = textarea.value.length;
+      textarea.setSelectionRange?.(caret, caret);
+    });
+  }, [syncComposerPrompt]);
+
+  const handleVoiceRecognitionEnd = useCallback(() => {
+    speechRecognitionRef.current = null;
+    if (voiceInputTerminalStateRef.current) {
+      voiceInputTerminalStateRef.current = "";
+      return;
+    }
+    if (voiceInputStateRef.current === "listening") {
+      setVoiceInputState("stopped");
+      resetVoiceInputStatusLater();
+    }
+  }, [resetVoiceInputStatusLater]);
+
+  const stopVoiceInput = useCallback(() => {
+    const recognition = speechRecognitionRef.current;
+    if (!recognition) {
+      if (!speechRecognitionSupported) {
+        setVoiceInputState("unsupported");
+      }
+      return;
+    }
+
+    voiceInputTerminalStateRef.current = "";
+    recognition.stop?.();
+  }, [speechRecognitionSupported]);
+
+  const startVoiceInput = useCallback(() => {
+    if (!speechRecognitionSupported || !SpeechRecognitionCtor) {
+      setVoiceInputState("unsupported");
+      return;
+    }
+
+    window.clearTimeout(speechStatusResetTimeoutRef.current);
+    speechStatusResetTimeoutRef.current = 0;
+    voiceInputTerminalStateRef.current = "";
+
+    const recognition = new SpeechRecognitionCtor();
+    speechRecognitionRef.current = recognition;
+    speechSessionBasePromptRef.current = String(composerTextareaRef.current?.value || composerPrompt || "");
+    speechSessionTranscriptRef.current = "";
+    speechRecognitionLastRawTranscriptRef.current = "";
+    speechRecognitionIgnoredTranscriptPrefixRef.current = "";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = intlLocale || "zh-CN";
+    recognition.onresult = (event) => {
+      const rawTranscript = buildSpeechTranscriptFromResults(event.results);
+      speechRecognitionLastRawTranscriptRef.current = rawTranscript;
+      const ignoredPrefix = speechRecognitionIgnoredTranscriptPrefixRef.current;
+      const visibleTranscript = ignoredPrefix && rawTranscript.startsWith(ignoredPrefix)
+        ? rawTranscript.slice(ignoredPrefix.length)
+        : rawTranscript;
+      applySpeechTranscript(visibleTranscript);
+    };
+    recognition.onerror = (event) => {
+      const errorCode = String(event?.error || "").trim();
+      voiceInputTerminalStateRef.current = errorCode === "not-allowed" || errorCode === "service-not-allowed" ? "denied" : "error";
+      setVoiceInputState(errorCode === "not-allowed" || errorCode === "service-not-allowed" ? "denied" : "error");
+      resetVoiceInputStatusLater();
+    };
+    recognition.onend = handleVoiceRecognitionEnd;
+
+    try {
+      recognition.start();
+      setVoiceInputState("listening");
+      focusComposer();
+    } catch {
+      speechRecognitionRef.current = null;
+      setVoiceInputState("error");
+      resetVoiceInputStatusLater();
+    }
+  }, [
+    SpeechRecognitionCtor,
+    applySpeechTranscript,
+    composerPrompt,
+    focusComposer,
+    handleVoiceRecognitionEnd,
+    intlLocale,
+    resetVoiceInputStatusLater,
+    speechRecognitionSupported,
+  ]);
+
+  const handleVoiceInputToggle = useCallback(() => {
+    if (voiceInputState === "listening") {
+      stopVoiceInput();
+      return;
+    }
+
+    startVoiceInput();
+  }, [startVoiceInput, stopVoiceInput, voiceInputState]);
 
   const cancelAnimatedViewportScroll = useCallback(() => {
     window.cancelAnimationFrame(animatedScrollFrameRef.current);
@@ -3989,6 +4266,7 @@ export function ChatPanel({
                       clearComposerInput();
                       return;
                     }
+                    syncVoiceInputManualBaseline(nextPrompt);
                     setComposerPrompt(nextPrompt);
                     onPromptChange(nextPrompt);
                     syncAgentMention(nextPrompt, event.target.selectionStart ?? nextPrompt.length);
@@ -4061,6 +4339,11 @@ export function ChatPanel({
                 resolvedTheme={resolvedTheme}
                 session={session}
               />
+              {voiceInputStatusText ? (
+                <span aria-live="polite" className="text-[11px] text-muted-foreground">
+                  {voiceInputStatusText}
+                </span>
+              ) : null}
             </div>
             <div className="flex items-center justify-end gap-1.5">
               <div className="relative flex items-center gap-px">
@@ -4156,6 +4439,27 @@ export function ChatPanel({
                   <TooltipContent>{i18n.chat.uploadAttachment}</TooltipContent>
                 </Tooltip>
               </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={cn(
+                      "h-9 w-9 rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground",
+                      voiceInputState === "listening" ? "bg-red-500/12 text-red-600 hover:bg-red-500/15 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300" : "",
+                    )}
+                    disabled={composerLocked}
+                    aria-label={voiceInputButtonLabel}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={handleVoiceInputToggle}
+                  >
+                    <Mic className={cn("h-4.5 w-4.5", voiceInputState === "listening" ? "animate-pulse" : "")} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {speechRecognitionSupported ? voiceInputButtonLabel : i18n.chat.voiceInputUnavailable}
+                </TooltipContent>
+              </Tooltip>
               <Button
                 onMouseDown={(event) => {
                   if (!showStopButton) {

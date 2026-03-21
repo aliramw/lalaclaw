@@ -98,6 +98,62 @@ function QueuedMessagesHarness({
   );
 }
 
+function VoiceInputHarness() {
+  const [prompt, setPrompt] = useState("");
+
+  return (
+    <TooltipProvider>
+      <ChatPanel
+        busy={false}
+        formatTime={() => "10:00:00"}
+        messageViewportRef={null}
+        messages={[]}
+        onPromptChange={setPrompt}
+        onPromptKeyDown={() => {}}
+        onReset={() => {}}
+        onSend={() => {}}
+        prompt={prompt}
+        promptRef={null}
+        session={createSession()}
+      />
+    </TooltipProvider>
+  );
+}
+
+function createSpeechRecognitionMock() {
+  const instances = [];
+
+  class MockSpeechRecognition {
+    constructor() {
+      this.continuous = false;
+      this.interimResults = false;
+      this.lang = "";
+      this.onresult = null;
+      this.onerror = null;
+      this.onend = null;
+      this.start = vi.fn();
+      this.stop = vi.fn(() => {
+        this.onend?.();
+      });
+      instances.push(this);
+    }
+
+    emitResult(results) {
+      this.onresult?.({ results });
+    }
+
+    emitError(error) {
+      this.onerror?.({ error });
+      this.onend?.();
+    }
+  }
+
+  return {
+    MockSpeechRecognition,
+    instances,
+  };
+}
+
 describe("ChatPanel", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -289,6 +345,234 @@ describe("ChatPanel", () => {
       expect(textarea).toHaveFocus();
     });
     expect(screen.queryByTestId("queued-messages-panel")).not.toBeInTheDocument();
+  });
+
+  it("shows a stable unsupported message when voice input is unavailable", async () => {
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    expect(screen.getByText("当前浏览器不支持语音输入")).toBeInTheDocument();
+  });
+
+  it("streams speech recognition text into the composer and keeps the final transcript after stop", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.type(textarea, "帮我记录");
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0].start).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("正在监听并转写…")).toBeInTheDocument();
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "今天下午" }, isFinal: false },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("帮我记录 今天下午");
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "今天下午开会" }, isFinal: true },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("帮我记录 今天下午开会");
+
+    await user.click(screen.getByRole("button", { name: "停止语音输入" }));
+
+    expect(instances[0].stop).toHaveBeenCalledTimes(1);
+    expect(textarea).toHaveValue("帮我记录 今天下午开会");
+    expect(screen.getByText("语音输入已停止")).toBeInTheDocument();
+  });
+
+  it("does not restore deleted transcript text after the user clears the composer during voice input", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "今天下午" }, isFinal: false },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("今天下午");
+
+    await user.clear(textarea);
+    expect(textarea).toHaveValue("");
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "今天下午开会" }, isFinal: false },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("开会");
+  });
+
+  it("does not duplicate a repeated interim tail when speech results contain a finalized phrase and its shorter draft", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "你一按就可以语音" }, isFinal: true },
+        { 0: { transcript: "一按就可" }, isFinal: false },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("你一按就可以语音");
+  });
+
+  it("collapses progressively longer draft segments into one sentence instead of concatenating each draft", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当" }, isFinal: false },
+        { 0: { transcript: "当前代办还很早期核心 4 件事都没收" }, isFinal: false },
+        { 0: { transcript: "当前代办还很早期，核心 4 件事都没收，补全" }, isFinal: false },
+        { 0: { transcript: "当前代办还很早期，核心 4 件事都没收，补全关键时间线" }, isFinal: true },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("当前代办还很早期，核心 4 件事都没收，补全关键时间线");
+  });
+
+  it("uses the latest interim phrase instead of concatenating multiple interim drafts from one event", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当前代办还很早" }, isFinal: false },
+        { 0: { transcript: "当前代办还很早期核心" }, isFinal: false },
+        { 0: { transcript: "当前代办还很早期核心事件是都没收" }, isFinal: false },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("当前代办还很早期核心事件是都没收");
+  });
+
+  it("does not concatenate progressively longer finalized drafts from one event", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当前" }, isFinal: true },
+        { 0: { transcript: "当前代办还很早期核" }, isFinal: true },
+        { 0: { transcript: "当前代办还很早期核心事件是都没收" }, isFinal: true },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("当前代办还很早期核心事件是都没收");
+  });
+
+  it("replaces the in-flight transcript across successive recognition events instead of accumulating older drafts", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当前" }, isFinal: false },
+      ]);
+    });
+    expect(textarea).toHaveValue("当前");
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当前代办还很早期核心事件" }, isFinal: false },
+      ]);
+    });
+    expect(textarea).toHaveValue("当前代办还很早期核心事件");
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当前代办还很早期核心事件事都没收" }, isFinal: false },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("当前代办还很早期核心事件事都没收");
+  });
+
+  it("replaces a highly similar draft when the recognizer corrects words inside the same sentence", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.click(screen.getByRole("button", { name: "开始语音输入" }));
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当前代办还很早期核心事件" }, isFinal: false },
+      ]);
+    });
+    expect(textarea).toHaveValue("当前代办还很早期核心事件");
+
+    act(() => {
+      instances[0].emitResult([
+        { 0: { transcript: "当前代办还很早期核心 4 件事都没收" }, isFinal: false },
+      ]);
+    });
+
+    expect(textarea).toHaveValue("当前代办还很早期核心 4 件事都没收");
   });
 
   it("removes a queued message when the trash icon is pressed", async () => {
