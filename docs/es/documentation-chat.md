@@ -61,3 +61,10 @@ Si la pestana ya esta ocupada:
 - `/think <mode>`
 - `/new [prompt]`
 - `/reset [prompt]`
+
+## Entrada de voz
+
+- En los navegadores que exponen la API Web Speech, el compositor muestra un boton de microfono junto a los controles de adjuntar y enviar
+- Un clic inicia el dictado y otro clic lo detiene. El texto reconocido se inserta en el borrador actual en lugar de enviarse automaticamente
+- Mientras la entrada de voz esta activa, el boton late y el compositor muestra un estado de escucha / transcripcion en tiempo real
+- Si el reconocimiento de voz no esta disponible o se deniega el permiso del microfono, el compositor muestra un estado no disponible o de error en lugar de fallar en silencio

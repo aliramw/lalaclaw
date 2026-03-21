@@ -152,3 +152,10 @@ Good use cases:
 - Send large textual material as text attachments and images as image attachments
 - Prefer a new session or `/new` when you want to split context cleanly
 - Queue follow-up requests directly instead of waiting for the active turn to fully finish
+
+## Voice Input
+
+- In browsers that expose the Web Speech API, the composer shows a microphone button beside the attachment and send controls
+- Click once to start dictation and click again to stop; recognized text is inserted into the current draft instead of being sent automatically
+- While voice input is active, the button pulses and the composer shows a live listening / transcription status
+- If speech recognition is unavailable or microphone permission is denied, the composer shows an unavailable or error state instead of silently failing

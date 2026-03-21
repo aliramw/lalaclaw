@@ -1425,6 +1425,11 @@ function ShortcutHelpButton({ composerSendMode = "enter-send" }) {
           shortcut: messages.shortcuts.shortcuts.nextPrompt,
           description: messages.shortcuts.items.nextPrompt,
         },
+        {
+          id: "voice-input",
+          shortcut: formatShortcutForPlatform("Cmd + Shift + ."),
+          description: messages.shortcuts.items.voiceInputToggle,
+        },
       ],
     },
     {

@@ -31,6 +31,7 @@ Les raccourcis de saisie dépendent du mode d'envoi sélectionné :
   - `Enter` : nouvelle ligne
 - `ArrowUp` : historique précédent
 - `ArrowDown` : historique suivant
+- `Cmd + Shift + .` / `Ctrl + Shift + .` : démarrer ou arrêter la saisie vocale
 
 ## Menus et dialogues
 

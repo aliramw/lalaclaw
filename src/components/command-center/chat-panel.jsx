@@ -45,6 +45,7 @@ const chatTabBodyHeightPx = 36;
 const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx;
 const streamingTailIndicatorClearDelayMs = 420;
 const speechRecognitionStatusResetDelayMs = 2200;
+const voiceInputShortcutLabel = "Cmd + Shift + .";
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -647,6 +648,14 @@ function getSpeechRecognitionConstructor() {
   }
 
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function hasActiveModalSurface() {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  return Boolean(document.querySelector("[aria-modal='true']"));
 }
 
 function joinPromptWithSpeechTranscript(basePrompt = "", transcript = "") {
@@ -2819,6 +2828,7 @@ export function ChatPanel({
   const voiceInputButtonLabel = voiceInputState === "listening"
     ? i18n.chat.voiceInputStop
     : i18n.chat.voiceInputStart;
+  const voiceInputShortcut = formatShortcutForPlatform(voiceInputShortcutLabel);
   const voiceInputStatusText = voiceInputState === "unsupported"
     ? i18n.chat.voiceInputUnavailable
     : voiceInputState === "denied"
@@ -3171,6 +3181,34 @@ export function ChatPanel({
 
     startVoiceInput();
   }, [startVoiceInput, stopVoiceInput, voiceInputState]);
+
+  useEffect(() => {
+    const handleVoiceInputHotkey = (event) => {
+      const normalizedKey = String(event.key || "").trim().toLowerCase();
+      const isVoiceShortcut =
+        (event.metaKey || event.ctrlKey)
+        && !(event.metaKey && event.ctrlKey)
+        && event.shiftKey
+        && !event.altKey
+        && (event.code === "Period" || normalizedKey === ".");
+
+      if (!isVoiceShortcut || event.repeat || event.isComposing || event.defaultPrevented) {
+        return;
+      }
+
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (hasActiveModalSurface() && !target?.closest?.("[aria-modal='true']")) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      handleVoiceInputToggle();
+    };
+
+    window.addEventListener("keydown", handleVoiceInputHotkey, { capture: true });
+    return () => window.removeEventListener("keydown", handleVoiceInputHotkey, { capture: true });
+  }, [handleVoiceInputToggle]);
 
   const cancelAnimatedViewportScroll = useCallback(() => {
     window.cancelAnimationFrame(animatedScrollFrameRef.current);
@@ -4450,6 +4488,7 @@ export function ChatPanel({
                     )}
                     disabled={composerLocked}
                     aria-label={voiceInputButtonLabel}
+                    aria-keyshortcuts={voiceInputShortcut}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={handleVoiceInputToggle}
                   >
@@ -4457,7 +4496,12 @@ export function ChatPanel({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {speechRecognitionSupported ? voiceInputButtonLabel : i18n.chat.voiceInputUnavailable}
+                  <div className="space-y-0.5">
+                    <div>{speechRecognitionSupported ? voiceInputButtonLabel : i18n.chat.voiceInputUnavailable}</div>
+                    {speechRecognitionSupported ? (
+                      <div className="text-[11px] text-muted-foreground">{i18n.theme.shortcutHint(voiceInputShortcut)}</div>
+                    ) : null}
+                  </div>
                 </TooltipContent>
               </Tooltip>
               <Button

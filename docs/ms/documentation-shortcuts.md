@@ -23,3 +23,4 @@ Mod tekan Enter dua kali untuk hantar:
 - Enter dua kali: hantar
 - Shift + Enter: hantar
 - Enter: baris baharu
+- Cmd + Shift + . / Ctrl + Shift + .: mula atau hentikan input suara

@@ -272,3 +272,9 @@ In `remote-gateway` mode, `doctor` also performs a live probe against the config
 - A chat composer with attachment and send controls
 - Inspector tabs for `Run Log / Files / Summaries / Environment / Collab / Preview`
 - Working chat replies even in `mock` mode
+
+## Startup Diagnostics
+
+- `lalaclaw doctor` and `npm run doctor` now print colored status labels, macOS `launchd` service details when available, preview prerequisites, and a final summary line so startup blockers are visible before you open the app
+- `lalaclaw start` and `npm run lalaclaw:start` run the same doctor preflight before startup and stop immediately if blocking errors remain
+- On macOS, the doctor output also points you to the LaunchAgent plist path and log directory, which helps when debugging background startup after `lalaclaw init`

@@ -243,3 +243,9 @@ npm run doctor
 - 執行 `lalaclaw access token --rotate` 產生並寫入新的 token
 - 檢查 `~/.config/lalaclaw/.env.local` 裡的 `COMMANDCENTER_ACCESS_TOKENS` 或 `COMMANDCENTER_ACCESS_TOKENS_FILE`
 - 如果這個實例不是你自己部署的，向部署者索取 token
+
+## 啟動診斷
+
+- `lalaclaw doctor` 和 `npm run doctor` 現在會輸出彩色狀態標籤、可用時的 macOS `launchd` 服務資訊、預覽依賴檢查，以及最後的摘要行，方便你在開啟應用前先發現啟動阻塞項
+- `lalaclaw start` 和 `npm run lalaclaw:start` 會在啟動前執行同一套 doctor 預檢；如果仍有阻塞性錯誤，會直接停止啟動
+- 在 macOS 上，doctor 輸出還會提供 LaunchAgent plist 路徑與日誌目錄，方便排查 `lalaclaw init` 之後的背景啟動問題

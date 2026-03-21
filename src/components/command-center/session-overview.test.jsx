@@ -745,6 +745,8 @@ describe("SessionOverview", () => {
     expect(within(dialog).getAllByText("Esc").length).toBeGreaterThan(0);
     expect(within(dialog).getByText("Enter")).toBeInTheDocument();
     expect(within(dialog).getByText("Shift + Enter")).toBeInTheDocument();
+    expect(within(dialog).getByText("开始或停止语音输入")).toBeInTheDocument();
+    expect(within(dialog).getByText("Cmd + Shift + .")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "关闭快捷键提示" }));
     await waitFor(() => {
@@ -786,6 +788,7 @@ describe("SessionOverview", () => {
     expect(within(dialog).getByText("Ctrl + /")).toBeInTheDocument();
     expect(within(dialog).getByText("E")).toBeInTheDocument();
     expect(within(dialog).getByText("Ctrl + S")).toBeInTheDocument();
+    expect(within(dialog).getByText("Ctrl + Shift + .")).toBeInTheDocument();
     expect(within(dialog).getByText("=/+")).toBeInTheDocument();
     expect(within(dialog).getByText("O")).toBeInTheDocument();
     await user.hover(screen.getByRole("button", { name: "快捷键提示" }));

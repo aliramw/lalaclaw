@@ -54,3 +54,9 @@ As abas seguem algumas regras simples:
 - O seletor pode abrir tanto sessões de agente quanto conversas IM, como DingTalk, Feishu e WeCom
 - Fechar uma aba apenas a oculta da visualização atual; o estado real da sessão não é apagado
 - Abas de agente já abertas e canais IM já abertos ficam fora do seletor
+
+## Badge do workspace de desenvolvimento
+
+- No modo de desenvolvimento, aparece um badge flutuante no canto inferior direito com a branch, o worktree, a porta e o caminho atuais
+- Voce pode recolher ou expandir o badge e escolher o worktree de destino e a branch de destino sem sair do navegador
+- O badge consegue reiniciar os servicos de desenvolvimento no lugar e, ao trocar de branch ou worktree, faz primeiro a mudanca e depois espera a volta do preview

@@ -60,3 +60,9 @@ Comportements notables :
 - Les chemins absolus vérifiés, comme les logs ou fichiers de configuration, ouvrent l'aperçu partagé au clic
 - Les chemins de répertoire, comme le dossier des logs ou le répertoire de travail de l'Agent de la session courante, n'ouvrent pas d'aperçu inline et vont directement vers le gestionnaire de fichiers du système
 - L'onglet Environment combine désormais les diagnostics OpenClaw, les actions de gestion, les outils de configuration et les détails runtime dans une seule vue
+
+## Collage dans un repertoire et ouverture de dossier
+
+- Dans `Workspace Files`, un clic droit sur un repertoire permet de coller directement dans ce dossier des uploads issus du presse-papiers ou des fichiers locaux deja copies
+- Apres un collage reussi dans un repertoire, l'arborescence recharge ce dossier et les nouveaux fichiers sont aussi rattaches a la liste de fichiers de la session courante
+- Les chemins de dossier dans l'inspector continuent d'ouvrir Finder, Explorer ou le gestionnaire de fichiers du systeme au lieu d'essayer un apercu inline

@@ -20,3 +20,10 @@
 - படங்களுக்கு முன்னோட்டம் கிடைக்கும்
 - உரைக் கோப்புகள் வாசிக்கப்பட்டு மிக நீளமானால் சுருக்கப்படும்
 - /model, /think, /new, /reset போன்ற slash கட்டளைகள் ஆதரிக்கப்படுகின்றன
+
+## குரல் உள்ளீடு
+
+- Web Speech API ஆதரவு உள்ள browser-களில் composer, attachment மற்றும் send controls அருகில் microphone button-ஐ காட்டும்
+- ஒருமுறை அழுத்தினால் dictation தொடங்கும்; மீண்டும் அழுத்தினால் நிற்கும். அறியப்பட்ட உரை தானாக அனுப்பப்படாது, தற்போதைய draft-இல் சேர்க்கப்படும்
+- குரல் உள்ளீடு இயங்கும் போது button pulse ஆகும்; composer-லும் live listening / transcription நிலை காட்டப்படும்
+- voice recognition கிடைக்காத browser அல்லது microphone permission மறுக்கப்பட்ட சூழலில், அமைதியாக தோல்வியடையாமல் unavailable / error நிலை காட்டப்படும்

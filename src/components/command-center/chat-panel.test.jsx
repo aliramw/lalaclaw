@@ -395,6 +395,34 @@ describe("ChatPanel", () => {
     expect(screen.getByText("语音输入已停止")).toBeInTheDocument();
   });
 
+  it("toggles voice input with ctrl shift period", async () => {
+    const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+
+    render(<VoiceInputHarness />);
+
+    fireEvent.keyDown(window, {
+      key: ".",
+      code: "Period",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0].start).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("正在监听并转写…")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, {
+      key: ".",
+      code: "Period",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    expect(instances[0].stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("语音输入已停止")).toBeInTheDocument();
+  });
+
   it("does not restore deleted transcript text after the user clears the composer during voice input", async () => {
     const { MockSpeechRecognition, instances } = createSpeechRecognitionMock();
     vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);

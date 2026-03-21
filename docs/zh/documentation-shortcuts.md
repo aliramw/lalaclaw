@@ -31,6 +31,7 @@
   - `Enter`：插入换行
 - `ArrowUp`：上一条输入历史
 - `ArrowDown`：下一条输入历史
+- `Cmd + Shift + .` / `Ctrl + Shift + .`：开始或停止语音输入
 
 ## 弹窗与菜单
 

@@ -31,6 +31,7 @@
   - `Enter`: 改行
 - `ArrowUp`: 1 つ前の prompt history
 - `ArrowDown`: 次の prompt history
+- `Cmd + Shift + .` / `Ctrl + Shift + .`: 音声入力を開始または停止
 
 ## ダイアログとメニュー
 

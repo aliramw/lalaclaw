@@ -86,3 +86,9 @@ Wenn im Browser der Entsperrbildschirm fuer das Token erscheint, kannst du das t
 - `lalaclaw access token --rotate` erzeugt und speichert ein neues token
 - pruefe `COMMANDCENTER_ACCESS_TOKENS` oder `COMMANDCENTER_ACCESS_TOKENS_FILE` in `~/.config/lalaclaw/.env.local`
 - wenn die Instanz nicht von dir bereitgestellt wurde, frage die zustaendige Person nach dem token
+
+## Startdiagnose
+
+- `lalaclaw doctor` und `npm run doctor` zeigen jetzt farbige Statuslabels, vorhandene macOS-`launchd`-Servicedetails, Vorschau-Voraussetzungen und eine abschliessende Zusammenfassungszeile an, damit Startblocker vor dem Oeffnen der App sichtbar werden
+- `lalaclaw start` und `npm run lalaclaw:start` fuehren vor dem Start dieselbe Doctor-Vorpruefung aus und brechen sofort ab, wenn noch blockierende Fehler vorhanden sind
+- Unter macOS verweist die Doctor-Ausgabe ausserdem auf den LaunchAgent-plist-Pfad und das Log-Verzeichnis, was beim Debuggen des Hintergrundstarts nach `lalaclaw init` hilft

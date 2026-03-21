@@ -54,3 +54,9 @@ Tabs சில எளிய விதிகளைப் பின்பற்ற
 - switcher மூலம் agent sessions மட்டுமல்ல, DingTalk, Feishu, WeCom போன்ற IM conversations யும் திறக்கலாம்
 - tab ஐ மூடுவது தற்போதைய view இலிருந்து மறைப்பதற்கே; உண்மையான session state நீக்கப்படாது
 - ஏற்கனவே திறந்த agent tabs மற்றும் IM channels switcher இல் மீண்டும் காட்டப்படாது
+
+## Development workspace badge
+
+- development mode-இல் கீழ் வலப்புறத்தில் current branch, worktree, port, path ஆகியவற்றைக் காட்டும் floating badge தோன்றும்
+- அதை collapse / expand செய்யலாம்; browser-ஐ விட்டு செல்லாமல் target worktree மற்றும் target branch ஐ தேர்வு செய்யலாம்
+- இந்த badge development services-ஐ அங்கேயே restart செய்யும்; branch அல்லது worktree மாறினால் முதலில் switch செய்து, பின்னர் preview மீண்டும் கிடைக்க காத்திருக்கும்

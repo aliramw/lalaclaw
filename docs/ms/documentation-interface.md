@@ -54,3 +54,9 @@ Tab mengikuti beberapa peraturan mudah:
 - Switcher boleh membuka sesi ejen dan juga perbualan IM seperti DingTalk, Feishu, dan WeCom
 - Menutup tab hanya menyembunyikannya daripada paparan semasa; keadaan sesi sebenar tidak dipadam
 - Tab ejen yang sudah terbuka dan saluran IM yang sudah terbuka tidak dipaparkan lagi dalam switcher
+
+## Lencana workspace pembangunan
+
+- Dalam mod pembangunan, lencana terapung muncul berhampiran penjuru kanan bawah dengan branch, worktree, port dan laluan semasa
+- Anda boleh melipat atau mengembangkannya, kemudian memilih worktree sasaran dan branch sasaran tanpa meninggalkan pelayar
+- Lencana ini boleh memulakan semula servis pembangunan terus dari situ, dan apabila anda menukar branch atau worktree ia akan menukar dahulu sebelum menunggu pratonton kembali tersedia

@@ -60,3 +60,9 @@ Wichtige Hinweise:
 - Verifizierte absolute Dateipfade, etwa Log- oder Konfigurationsdateien, lassen sich direkt in der gemeinsamen Dateivorschau öffnen
 - Verzeichnis-Pfade wie Log-Ordner oder das Arbeitsverzeichnis des Agenten der aktuellen Sitzung oeffnen keine Inline-Vorschau, sondern direkt den System-Dateimanager
 - Die Environment-Oberflaeche kombiniert jetzt OpenClaw-Diagnosen, Verwaltungsaktionen, Konfigurationswerkzeuge und Laufzeitdetails in einem Bereich
+
+## Verzeichnisse einfuegen und Ordner oeffnen
+
+- In `Workspace Files` kannst du per Rechtsklick auf ein Verzeichnis Uploads aus der Zwischenablage oder bereits kopierte lokale Dateien direkt in diesen Ordner einfuegen
+- Nach erfolgreichem Einfuegen in ein Verzeichnis wird dieser Ordner neu geladen und die neuen Dateien erscheinen auch in der Dateiliste der aktuellen Sitzung
+- Ordnerpfade im Inspector oeffnen weiterhin Finder, Explorer oder den System-Dateimanager statt eine Inline-Vorschau zu versuchen

@@ -71,3 +71,9 @@ Tab behavior follows a few simple rules:
 
 - For sending messages, attachments, queueing, and slash commands, read [Chat, Attachments, and Commands](./documentation-chat.md)
 - For a detailed explanation of the right-side panel, read [Inspector, File Preview, and Tracing](./documentation-inspector.md)
+
+## Development Workspace Badge
+
+- In development mode, a floating badge appears near the lower-right corner with the current branch, worktree, port, and path
+- You can collapse or expand it, then choose a target worktree and target branch without leaving the browser
+- The badge can restart the dev services in place, and when the selected branch or worktree changes it performs the switch before waiting for the preview to come back

@@ -113,3 +113,9 @@ npm run dev:all
 - `lalaclaw access token --rotate` 로 새 token 생성 및 저장
 - `~/.config/lalaclaw/.env.local` 의 `COMMANDCENTER_ACCESS_TOKENS` 또는 `COMMANDCENTER_ACCESS_TOKENS_FILE` 확인
 - 직접 배포한 인스턴스가 아니라면 배포 관리자에게 token 요청
+
+## 시작 진단
+
+- `lalaclaw doctor` 와 `npm run doctor` 는 이제 색상 상태 라벨, 가능한 경우 macOS `launchd` 서비스 정보, 미리보기 전제 조건, 마지막 요약 줄을 함께 보여주므로 앱을 열기 전에 시작 차단 요소를 확인할 수 있습니다
+- `lalaclaw start` 와 `npm run lalaclaw:start` 는 시작 전에 같은 doctor 사전 점검을 실행하며, 차단 오류가 남아 있으면 바로 시작을 중단합니다
+- macOS 에서는 doctor 출력에 LaunchAgent plist 경로와 로그 디렉터리도 포함되어 `lalaclaw init` 이후의 백그라운드 시작 문제를 추적하기 쉽습니다

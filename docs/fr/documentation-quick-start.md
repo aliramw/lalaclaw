@@ -86,3 +86,9 @@ Si l'ecran de deverrouillage par token apparait dans le navigateur, vous pouvez 
 - `lalaclaw access token --rotate` pour generer et enregistrer un nouveau token
 - verifier `COMMANDCENTER_ACCESS_TOKENS` ou `COMMANDCENTER_ACCESS_TOKENS_FILE` dans `~/.config/lalaclaw/.env.local`
 - si cette instance n'est pas la votre, demandez le token a la personne qui l'administre
+
+## Diagnostics de demarrage
+
+- `lalaclaw doctor` et `npm run doctor` affichent maintenant des etiquettes d'etat colorees, les details du service macOS `launchd` quand ils existent, les prerequis de preview et une ligne de resume finale pour rendre visibles les blocages avant l'ouverture de l'application
+- `lalaclaw start` et `npm run lalaclaw:start` executent le meme precontrole doctor avant le demarrage et s'arretent immediatement s'il reste des erreurs bloquantes
+- Sur macOS, la sortie doctor indique aussi le chemin du plist LaunchAgent et le repertoire de logs, ce qui aide a diagnostiquer un demarrage en arriere-plan apres `lalaclaw init`

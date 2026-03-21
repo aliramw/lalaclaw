@@ -181,3 +181,9 @@ COMMANDCENTER_FORCE_MOCK=1 PORT=3000 HOST=127.0.0.1 node server.js
 - `lalaclaw access token --rotate` で新しい token を生成して保存する
 - `~/.config/lalaclaw/.env.local` の `COMMANDCENTER_ACCESS_TOKENS` または `COMMANDCENTER_ACCESS_TOKENS_FILE` を確認する
 - 自分でデプロイしていない環境なら、管理者に token を確認する
+
+## 起動診断
+
+- `lalaclaw doctor` と `npm run doctor` は、色付きステータス、利用可能な場合の macOS `launchd` サービス情報、プレビュー前提条件、最後の要約行を表示するようになり、アプリを開く前に起動ブロッカーを確認できます
+- `lalaclaw start` と `npm run lalaclaw:start` は起動前に同じ doctor 事前チェックを実行し、重大なエラーが残っている場合はそのまま起動を止めます
+- macOS では、doctor 出力に LaunchAgent plist のパスとログディレクトリも表示されるため、`lalaclaw init` 後のバックグラウンド起動を追跡しやすくなります

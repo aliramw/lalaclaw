@@ -60,3 +60,9 @@ Comportamiento destacado:
 - Las rutas absolutas verificadas, como logs o archivos de configuración, pueden abrir la vista previa compartida con un clic
 - Las rutas de directorio, como el directorio de logs o el directorio de trabajo del Agent de la sesión actual, no abren vista previa en línea y van directo al gestor de archivos del sistema
 - La superficie de Environment ahora combina diagnósticos de OpenClaw, acciones de gestión, herramientas de configuración y detalles de runtime en una sola vista
+
+## Pegado en directorios y apertura de carpetas
+
+- En `Workspace Files`, puedes hacer clic derecho sobre un directorio para pegar directamente en esa carpeta cargas desde el portapapeles o archivos locales ya copiados
+- Despues de pegar en un directorio correctamente, el arbol recarga esa carpeta y los archivos nuevos tambien se registran en la lista de archivos de la sesion actual
+- Las rutas de carpeta dentro del inspector siguen abriendo Finder, Explorer o el gestor de archivos del sistema en lugar de intentar una vista previa en linea

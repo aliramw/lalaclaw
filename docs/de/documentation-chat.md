@@ -20,3 +20,10 @@ Wenn ein Tab bereits beschäftigt ist, wird die neue Nachricht eingereiht und au
 - Bilder erhalten eine Vorschau
 - Textdateien werden eingelesen und bei Bedarf gekürzt
 - Slash-Befehle wie /model, /think, /new und /reset werden unterstützt
+
+## Spracheingabe
+
+- In Browsern mit Web Speech API zeigt der Composer neben Anhang- und Senden-Aktionen eine Mikrofon-Schaltflaeche an
+- Ein Klick startet das Diktat, ein weiterer Klick stoppt es. Erkannter Text wird in den aktuellen Entwurf eingefuegt und nicht automatisch gesendet
+- Waehrend die Spracheingabe aktiv ist, pulsiert die Schaltflaeche und der Composer zeigt einen Live-Status fuer Zuhoeren / Transkription an
+- Wenn Spracherkennung nicht verfuegbar ist oder die Mikrofonberechtigung verweigert wird, zeigt der Composer einen Nicht-verfuegbar- oder Fehlerstatus statt still zu scheitern

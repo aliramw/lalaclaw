@@ -23,3 +23,4 @@ Enter 두 번 전송 모드:
 - Enter 두 번: 전송
 - Shift + Enter: 전송
 - Enter: 줄바꿈
+- Cmd + Shift + . / Ctrl + Shift + .: 음성 입력 시작 또는 중지

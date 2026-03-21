@@ -23,3 +23,4 @@ Modo `Enter duplo para enviar`:
 - Duplo `Enter`: enviar
 - `Shift + Enter`: enviar
 - `Enter`: nova linha
+- `Cmd + Shift + .` / `Ctrl + Shift + .`: iniciar ou parar a entrada por voz

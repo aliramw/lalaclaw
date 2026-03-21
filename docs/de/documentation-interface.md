@@ -54,3 +54,9 @@ Für Tabs gelten ein paar einfache Regeln:
 - Der Umschalter kann sowohl Agent-Sitzungen als auch IM-Unterhaltungen wie DingTalk, Feishu oder WeCom öffnen
 - Das Schließen eines Tabs blendet ihn nur in der aktuellen Ansicht aus; der eigentliche Sitzungszustand bleibt erhalten
 - Bereits geöffnete Agent-Tabs und bereits geöffnete IM-Kanäle werden im Umschalter nicht erneut angeboten
+
+## Entwicklungs-Workspace-Badge
+
+- Im Entwicklungsmodus erscheint unten rechts ein schwebendes Badge mit aktuellem Branch, Worktree, Port und Pfad
+- Du kannst das Badge einklappen oder aufklappen und direkt im Browser einen Ziel-Worktree und Ziel-Branch auswaehlen
+- Das Badge kann die Entwicklungsdienste direkt neu starten. Wenn du Branch oder Worktree wechselst, fuehrt es zuerst den Wechsel aus und wartet dann auf die Rueckkehr der Vorschau

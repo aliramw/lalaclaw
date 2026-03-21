@@ -23,3 +23,4 @@ Modo `Doble Enter para enviar`:
 - Doble `Enter`: enviar
 - `Shift + Enter`: enviar
 - `Enter`: nueva linea
+- `Cmd + Shift + .` / `Ctrl + Shift + .`: iniciar o detener la entrada por voz

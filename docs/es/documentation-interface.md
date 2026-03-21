@@ -54,3 +54,9 @@ Las pestañas siguen estas reglas:
 - El selector puede abrir sesiones de agente y conversaciones IM como DingTalk, Feishu o WeCom
 - Cerrar una pestaña solo la oculta en la vista actual, no elimina el estado real de la sesión
 - Las pestañas de agente ya abiertas y los canales IM ya abiertos se excluyen del selector
+
+## Insignia del workspace de desarrollo
+
+- En modo desarrollo aparece una insignia flotante cerca de la esquina inferior derecha con la rama, el worktree, el puerto y la ruta actuales
+- Puedes contraerla o expandirla y elegir un worktree de destino y una rama de destino sin salir del navegador
+- La insignia puede reiniciar los servicios de desarrollo en el sitio y, cuando cambias de rama o worktree, hace primero el cambio y luego espera a que vuelva la vista previa

@@ -31,6 +31,7 @@ The composer shortcuts depend on the selected send mode:
   - `Enter`: insert a newline
 - `ArrowUp`: previous prompt history entry
 - `ArrowDown`: next prompt history entry
+- `Cmd + Shift + .` / `Ctrl + Shift + .`: start or stop voice input
 
 ## Dialogs and Menus
 

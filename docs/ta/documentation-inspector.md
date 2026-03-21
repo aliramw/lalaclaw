@@ -60,3 +60,9 @@
 - logs அல்லது config files போன்ற verify செய்யப்பட்ட absolute paths ஐ click செய்தால் shared file preview திறக்கும்
 - log directory அல்லது தற்போதைய session Agent workspace directory போன்ற folder paths inline preview திறக்காது; அவை system file manager-இல் நேரடியாக திறக்கும்
 - Environment பகுதி இப்போது OpenClaw diagnostics, management actions, config tools, மற்றும் runtime details அனைத்தையும் ஒரே view-இல் சேர்க்கிறது
+
+## Directory paste மற்றும் folder open
+
+- `Workspace Files` இல் directory-ஐ right-click செய்தால் clipboard uploads அல்லது முன்பே copy செய்த local files-ஐ அந்த folder-க்கு நேராக paste செய்யலாம்
+- directory paste வெற்றி பெற்றதும் அந்த folder tree refresh ஆகும்; புதிய files தற்போதைய session file list-லவும் சேர்க்கப்படும்
+- inspector உள்ள folder paths, inline preview முயற்சிக்காமல் தொடர்ந்து Finder / Explorer / system file manager-ஐ நேரடியாகத் திறக்கும்

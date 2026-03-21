@@ -23,3 +23,4 @@ Modus Doppeltes Enter zum Senden:
 - Doppelt Enter: senden
 - Shift + Enter: senden
 - Enter: Zeilenumbruch
+- Cmd + Shift + . / Ctrl + Shift + .: Spracheingabe starten oder stoppen

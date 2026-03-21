@@ -102,3 +102,10 @@ Modes pris en charge :
 - Créent un nouveau `sessionUser`
 - Reprennent les préférences courantes de modèle, agent, mode rapide et mode de réflexion
 - Peuvent continuer immédiatement avec un prompt fourni
+
+## Saisie vocale
+
+- Dans les navigateurs qui exposent l'API Web Speech, le composeur affiche un bouton microphone a cote des actions de piece jointe et d'envoi
+- Un clic demarre la dictee et un second clic l'arrete. Le texte reconnu est insere dans le brouillon courant au lieu d'etre envoye automatiquement
+- Pendant la saisie vocale, le bouton pulse et le composeur affiche un etat d'ecoute / transcription en direct
+- Si la reconnaissance vocale n'est pas disponible ou si l'autorisation micro est refusee, le composeur affiche un etat indisponible ou en erreur au lieu d'echouer silencieusement

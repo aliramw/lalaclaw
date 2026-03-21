@@ -43,6 +43,7 @@ const zhHk = {
       dialog: "對話框",
     },
     items: {
+      ...zh.shortcuts.items,
       openHelp: "開啟鍵盤快捷鍵",
       resetConversation: "重設目前對話",
       switchSessionByNumber: "用數字切換工作階段",
@@ -55,6 +56,7 @@ const zhHk = {
       insertNewline: "插入換行",
       previousPrompt: "顯示上一條提示歷史",
       nextPrompt: "顯示下一條提示歷史",
+      voiceInputToggle: "開始或停止語音輸入",
       previewZoomIn: "放大圖片",
       previewZoomOut: "縮小圖片",
       previewResetZoom: "恢復預設縮放",

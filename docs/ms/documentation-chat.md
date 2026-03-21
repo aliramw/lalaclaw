@@ -20,3 +20,10 @@ Jika tab semasa sedang sibuk, mesej baharu akan masuk ke baris gilir dan dihanta
 - Imej diberi pratonton
 - Fail teks dibaca dan dipotong jika terlalu panjang
 - Arahan slash seperti /model, /think, /new dan /reset disokong
+
+## Input suara
+
+- Dalam pelayar yang menyokong Web Speech API, composer memaparkan butang mikrofon di sebelah kawalan lampiran dan hantar
+- Klik sekali untuk mula imlak dan klik sekali lagi untuk berhenti. Teks yang dikenali dimasukkan ke dalam draf semasa dan tidak dihantar secara automatik
+- Semasa input suara aktif, butang akan berdenyut dan composer memaparkan status mendengar / transkripsi secara langsung
+- Jika pengecaman suara tidak tersedia atau kebenaran mikrofon ditolak, composer memaparkan keadaan tidak tersedia atau ralat dan bukannya gagal secara senyap

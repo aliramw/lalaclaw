@@ -64,6 +64,7 @@ const en = {
       insertNewline: "Insert newline",
       previousPrompt: "Show previous prompt history",
       nextPrompt: "Show next prompt history",
+      voiceInputToggle: "Start or stop voice input",
       previewZoomIn: "Zoom in on the image",
       previewZoomOut: "Zoom out on the image",
       previewResetZoom: "Reset image zoom",

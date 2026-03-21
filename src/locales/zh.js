@@ -64,6 +64,7 @@ const zh = {
       insertNewline: "插入换行",
       previousPrompt: "查看上一条输入历史",
       nextPrompt: "查看下一条输入历史",
+      voiceInputToggle: "开始或停止语音输入",
       previewZoomIn: "放大图片",
       previewZoomOut: "缩小图片",
       previewResetZoom: "恢复默认缩放",

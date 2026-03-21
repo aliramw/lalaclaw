@@ -86,3 +86,9 @@ Jika pelayar memaparkan skrin buka kunci token, anda boleh mencari atau menjana 
 - `lalaclaw access token --rotate` untuk menjana dan menyimpan token baharu
 - semak `COMMANDCENTER_ACCESS_TOKENS` atau `COMMANDCENTER_ACCESS_TOKENS_FILE` dalam `~/.config/lalaclaw/.env.local`
 - jika instans ini bukan anda yang pasang, minta token daripada pentadbirnya
+
+## Diagnostik permulaan
+
+- `lalaclaw doctor` dan `npm run doctor` kini memaparkan label status berwarna, butiran servis macOS `launchd` apabila tersedia, prasyarat preview dan baris ringkasan akhir supaya halangan permulaan dapat dilihat sebelum anda membuka aplikasi
+- `lalaclaw start` dan `npm run lalaclaw:start` menjalankan prapemeriksaan doctor yang sama sebelum bermula dan akan terus berhenti jika masih ada ralat yang menyekat
+- Di macOS, output doctor juga menunjukkan laluan plist LaunchAgent dan direktori log, yang membantu menyiasat permulaan latar belakang selepas `lalaclaw init`

@@ -60,3 +60,9 @@ Tingkah laku penting:
 - Laluan mutlak yang telah disahkan, seperti log atau fail konfigurasi, boleh dibuka dalam pratonton fail bersama dengan satu klik
 - Laluan direktori seperti direktori log atau direktori ruang kerja Agent sesi semasa tidak membuka pratonton sebaris, sebaliknya terus membuka pengurus fail sistem
 - Permukaan Environment kini menggabungkan diagnostik OpenClaw, tindakan pengurusan, alat konfigurasi dan butiran runtime dalam satu tempat
+
+## Tampal ke direktori dan buka folder
+
+- Dalam `Workspace Files`, klik kanan pada direktori untuk menampal terus ke folder itu muat naik daripada papan klip atau fail tempatan yang sudah disalin
+- Selepas tampalan direktori berjaya, pokok fail akan memuat semula folder tersebut dan fail baharu juga akan dijejak ke dalam senarai fail sesi semasa
+- Laluan folder dalam inspector akan terus membuka Finder, Explorer atau pengurus fail sistem dan bukannya cuba memaparkan pratonton sebaris

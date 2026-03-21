@@ -86,3 +86,9 @@ Se o navegador mostrar a tela de desbloqueio por token, voce pode encontrar ou r
 - `lalaclaw access token --rotate` para gerar e salvar um novo token
 - verifique `COMMANDCENTER_ACCESS_TOKENS` ou `COMMANDCENTER_ACCESS_TOKENS_FILE` em `~/.config/lalaclaw/.env.local`
 - se esta instancia nao foi implantada por voce, peca o token para quem administra o ambiente
+
+## Diagnosticos de inicializacao
+
+- `lalaclaw doctor` e `npm run doctor` agora mostram rotulos de status coloridos, detalhes do servico macOS `launchd` quando existirem, prerequisitos de preview e uma linha final de resumo para que os bloqueios de inicializacao fiquem visiveis antes de abrir o app
+- `lalaclaw start` e `npm run lalaclaw:start` executam a mesma verificacao previa do doctor antes de iniciar e interrompem a inicializacao imediatamente se ainda houver erros bloqueantes
+- No macOS, a saida do doctor tambem aponta o caminho do plist do LaunchAgent e o diretorio de logs, o que ajuda a depurar a inicializacao em segundo plano depois do `lalaclaw init`

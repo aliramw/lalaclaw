@@ -118,3 +118,9 @@ File preview endpoints require absolute paths, so items without one usually cann
 - You want to jump back to a specific important answer in a long conversation
 - You want to confirm whether the current session is running in `mock` or against a live gateway
 - You want to inspect whether runtime sync is currently on `ws` or has fallen back to `polling`
+
+## Directory Paste and Folder Opening
+
+- In `Workspace Files`, right-click a directory to paste clipboard uploads or copied local files directly into that folder
+- After a directory paste succeeds, the tree refreshes that folder and the new files are tracked back into the current session file list
+- Directory paths across the inspector still open Finder, Explorer, or the system file manager instead of trying inline preview

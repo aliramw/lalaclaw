@@ -23,3 +23,4 @@ Double Enter 傳送模式：
 - 連按兩次 Enter：傳送
 - Shift + Enter：傳送
 - Enter：換行
+- Cmd + Shift + . / Ctrl + Shift + .：開始或停止語音輸入

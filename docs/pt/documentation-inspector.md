@@ -60,3 +60,9 @@ Comportamentos importantes:
 - Caminhos absolutos verificados, como logs e arquivos de configuração, abrem a pré-visualização compartilhada ao clicar
 - Caminhos de diretório, como o diretório de logs ou o diretório de trabalho do Agent da sessão atual, não abrem pré-visualização inline e vão direto para o gerenciador de arquivos do sistema
 - A superfície de Environment agora combina diagnósticos do OpenClaw, ações de gerenciamento, ferramentas de configuração e detalhes de runtime em uma única vista
+
+## Colagem em diretorio e abertura de pastas
+
+- Em `Workspace Files`, clique com o botao direito em um diretorio para colar diretamente nessa pasta uploads da area de transferencia ou arquivos locais ja copiados
+- Depois que a colagem em diretorio termina com sucesso, a arvore recarrega essa pasta e os novos arquivos tambem entram na lista de arquivos da sessao atual
+- Os caminhos de pasta dentro do inspector continuam abrindo Finder, Explorer ou o gerenciador de arquivos do sistema em vez de tentar uma pre-visualizacao inline

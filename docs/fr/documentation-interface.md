@@ -54,3 +54,9 @@ Les onglets suivent quelques règles simples :
 - Le switcher peut ouvrir des sessions d'agent et des conversations IM comme DingTalk, Feishu ou WeCom
 - Fermer un onglet le masque seulement dans la vue courante ; l'état réel de la session n'est pas supprimé
 - Les onglets d'agent déjà ouverts et les canaux IM déjà ouverts sont exclus du switcher
+
+## Badge de workspace de developpement
+
+- En mode developpement, un badge flottant apparait en bas a droite avec la branche, le worktree, le port et le chemin courants
+- Vous pouvez le reduire ou l'ouvrir, puis choisir un worktree cible et une branche cible sans quitter le navigateur
+- Le badge peut relancer les services de developpement sur place et, si vous changez de branche ou de worktree, il effectue d'abord la bascule puis attend le retour de l'aperçu
