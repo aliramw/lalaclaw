@@ -1,4 +1,3 @@
-/* global console, process, setTimeout */
 const http = require("node:http");
 const { spawn } = require("node:child_process");
 

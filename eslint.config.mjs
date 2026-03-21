@@ -74,7 +74,7 @@ export default [
     },
   },
   {
-    files: ["bin/**/*.js"],
+    files: ["bin/**/*.js", "scripts/**/*.cjs"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "commonjs",

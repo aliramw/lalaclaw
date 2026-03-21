@@ -168,6 +168,9 @@ function ModelSwitchOverlay({ modelLabel }) {
 function DevWorkspaceBadge() {
   const { messages } = useI18n();
   const devWorkspaceInfo = getDevWorkspaceInfo();
+  const showDevWorkspaceBadge = Boolean(
+    (import.meta.env?.DEV || import.meta.env?.MODE === "test" || import.meta.env?.VITEST) && devWorkspaceInfo,
+  );
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -189,10 +192,6 @@ function DevWorkspaceBadge() {
       window.localStorage.setItem(devWorkspaceBadgeStorageKey, collapsed ? "1" : "0");
     } catch {}
   }, [collapsed]);
-
-  if (!(import.meta.env?.DEV || import.meta.env?.MODE === "test" || import.meta.env?.VITEST) || !devWorkspaceInfo) {
-    return null;
-  }
 
   const port = typeof window !== "undefined" ? window.location.port : "";
   const host = typeof window !== "undefined" ? window.location.hostname : "";
@@ -273,6 +272,10 @@ function DevWorkspaceBadge() {
       setRestartError(error?.message || messages.common.devWorkspaceRestartFailed);
     }
   }, [host, messages, pollForRestartReady, port, restarting]);
+
+  if (!showDevWorkspaceBadge) {
+    return null;
+  }
 
   return (
     <div className="pointer-events-none fixed right-3 bottom-3 z-[140]">

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global console, fetch, process */
 
 const fs = require("node:fs/promises");
 const os = require("node:os");
