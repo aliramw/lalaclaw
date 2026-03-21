@@ -23,6 +23,29 @@ const compactInspectorPanelMinWidth = 58;
 const compactInspectorPanelMaxWidth = 72;
 const compactChatPanelMinWidth = 220;
 const shouldBypassAccessGate = Boolean(import.meta.env?.MODE === "test" || import.meta.env?.VITEST);
+const pointerFocusDismissSelector = [
+  "button",
+  "[role='button']",
+  "[role='tab']",
+  "[role='menuitem']",
+  "[role='menuitemcheckbox']",
+  "[role='option']",
+  "[role='switch']",
+  "a[href]",
+  "summary",
+].join(",");
+
+function shouldDismissPointerFocus(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (element.isContentEditable || element.matches("input, textarea, select, [role='textbox']")) {
+    return false;
+  }
+
+  return element.matches(pointerFocusDismissSelector);
+}
 
 function getRelationshipDisplay(relationship, messages) {
   const fallbackLabel =
@@ -492,6 +515,41 @@ function AppContent() {
   );
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [splitLayoutWidth, setSplitLayoutWidth] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return undefined;
+    }
+
+    const handlePointerUp = (event) => {
+      const activeElement = document.activeElement;
+      if (!shouldDismissPointerFocus(activeElement)) {
+        return;
+      }
+
+      const pointerTarget = event.target instanceof Element
+        ? event.target.closest(pointerFocusDismissSelector)
+        : null;
+      if (!pointerTarget) {
+        return;
+      }
+
+      if (activeElement !== pointerTarget && !pointerTarget.contains(activeElement)) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        if (document.activeElement === activeElement) {
+          activeElement.blur();
+        }
+      });
+    };
+
+    window.addEventListener("pointerup", handlePointerUp, true);
+    return () => {
+      window.removeEventListener("pointerup", handlePointerUp, true);
+    };
+  }, []);
 
   const getInspectorPanelWidthBounds = useCallback((containerWidth = splitLayoutWidth) => {
     const minimumWidth = minInspectorPanelWidth;

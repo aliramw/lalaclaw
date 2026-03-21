@@ -11,6 +11,7 @@ const {
   version: PACKAGE_VERSION,
   engines: PACKAGE_ENGINES = {},
 } = require('../package.json');
+const { getLalaClawServiceStatus } = require('../server/services/lalaclaw-service-status');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_HOST = '127.0.0.1';
@@ -901,8 +902,12 @@ function xmlEscape(value) {
     .replaceAll("'", '&apos;');
 }
 
+function resolveLaunchdLabel() {
+  return String(process.env.LALACLAW_LAUNCHD_LABEL || MACOS_LAUNCHD_LABEL).trim() || MACOS_LAUNCHD_LABEL;
+}
+
 function resolveLaunchdPlistPath(homeDir = os.homedir()) {
-  return path.join(homeDir, 'Library', 'LaunchAgents', `${MACOS_LAUNCHD_LABEL}.plist`);
+  return path.join(homeDir, 'Library', 'LaunchAgents', `${resolveLaunchdLabel()}.plist`);
 }
 
 function resolveLaunchdLogDir() {
@@ -910,8 +915,10 @@ function resolveLaunchdLogDir() {
 }
 
 function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, stdoutPath, stderrPath, pathEnv = '' }) {
+  const launchdLabel = resolveLaunchdLabel();
   const values = {
-    label: xmlEscape(MACOS_LAUNCHD_LABEL),
+    label: xmlEscape(launchdLabel),
+    comment: xmlEscape(`LalaClaw Server (v${PACKAGE_VERSION})`),
     nodePath: xmlEscape(nodePath),
     cliPath: xmlEscape(cliPath),
     workingDirectory: xmlEscape(workingDirectory),
@@ -919,6 +926,9 @@ function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, 
     stdoutPath: xmlEscape(stdoutPath),
     stderrPath: xmlEscape(stderrPath),
     pathEnv: xmlEscape(pathEnv),
+    homeDir: xmlEscape(os.homedir()),
+    tmpDir: xmlEscape(os.tmpdir()),
+    serviceVersion: xmlEscape(PACKAGE_VERSION),
   };
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -928,11 +938,20 @@ function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, 
     <key>Label</key>
     <string>${values.label}</string>
 
+    <key>Comment</key>
+    <string>${values.comment}</string>
+
     <key>RunAtLoad</key>
     <true/>
 
     <key>KeepAlive</key>
     <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+
+    <key>Umask</key>
+    <integer>63</integer>
 
     <key>WorkingDirectory</key>
     <string>${values.workingDirectory}</string>
@@ -948,8 +967,20 @@ function renderLaunchdPlist({ nodePath, cliPath, workingDirectory, envFilePath, 
 
     <key>EnvironmentVariables</key>
     <dict>
+      <key>HOME</key>
+      <string>${values.homeDir}</string>
+      <key>TMPDIR</key>
+      <string>${values.tmpDir}</string>
       <key>PATH</key>
       <string>${values.pathEnv}</string>
+      <key>LALACLAW_LAUNCHD_LABEL</key>
+      <string>${values.label}</string>
+      <key>LALACLAW_SERVICE_KIND</key>
+      <string>app</string>
+      <key>LALACLAW_SERVICE_VERSION</key>
+      <string>${values.serviceVersion}</string>
+      <key>LALACLAW_CONFIG_FILE</key>
+      <string>${values.envFilePath}</string>
     </dict>
 
     <key>StandardOutPath</key>
@@ -1031,7 +1062,8 @@ function installLaunchdService(envFilePath, spawnSyncImpl = spawnSync) {
     path.isAbsolute(launchdConfig.openclawBin) ? path.dirname(launchdConfig.openclawBin) : '',
   ]);
   const guiTarget = `gui/${process.getuid()}`;
-  const serviceTarget = `${guiTarget}/${MACOS_LAUNCHD_LABEL}`;
+  const launchdLabel = resolveLaunchdLabel();
+  const serviceTarget = `${guiTarget}/${launchdLabel}`;
 
   fs.mkdirSync(path.dirname(plistPath), { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });
@@ -1055,7 +1087,7 @@ function installLaunchdService(envFilePath, spawnSyncImpl = spawnSync) {
   assertLaunchctlSuccess(runLaunchctl(['kickstart', '-k', serviceTarget], spawnSyncImpl), 'launchctl kickstart');
 
   return {
-    label: MACOS_LAUNCHD_LABEL,
+    label: launchdLabel,
     plistPath,
     logDir,
     stdoutPath,
@@ -1103,9 +1135,11 @@ async function promptToOpenApp(url, input = process.stdin, output = process.stdo
 
 function getLaunchdTargets() {
   const guiTarget = `gui/${process.getuid()}`;
+  const launchdLabel = resolveLaunchdLabel();
   return {
     guiTarget,
-    serviceTarget: `${guiTarget}/${MACOS_LAUNCHD_LABEL}`,
+    label: launchdLabel,
+    serviceTarget: `${guiTarget}/${launchdLabel}`,
     plistPath: resolveLaunchdPlistPath(),
   };
 }
@@ -1218,12 +1252,20 @@ function registerWindowsBackgroundService(envFilePath, child, config, fsImpl = f
 function readLaunchdServiceStatus(spawnSyncImpl = spawnSync) {
   const { serviceTarget, plistPath } = getLaunchdTargets();
   const result = runLaunchctl(['print', serviceTarget], spawnSyncImpl);
+  const details = String(result.stdout || result.stderr || '').trim();
+  const plistExists = fs.existsSync(plistPath);
+  const plistContent = plistExists ? fs.readFileSync(plistPath, 'utf8') : '';
+  const commentMatch = plistContent.match(/<key>Comment<\/key>\s*<string>([^<]+)<\/string>/);
+  const labelMatch = plistContent.match(/<key>Label<\/key>\s*<string>([^<]+)<\/string>/);
+
   return {
-    installed: fs.existsSync(plistPath),
+    installed: plistExists,
     running: result.status === 0,
     plistPath,
     logDir: resolveLaunchdLogDir(),
-    details: String(result.stdout || result.stderr || '').trim(),
+    label: labelMatch?.[1] || resolveLaunchdLabel(),
+    comment: commentMatch?.[1] || '',
+    details,
   };
 }
 
@@ -1408,6 +1450,7 @@ function buildDoctorReport({
   validation,
   gatewayProbe = null,
   remoteValidation = null,
+  service = null,
 }) {
   const warnings = [...validation.warnings];
   const errors = [...validation.errors];
@@ -1434,6 +1477,10 @@ function buildDoctorReport({
 
   if (gatewayProbe && !gatewayProbe.ok && !gatewayProbe.skipped) {
     warnings.push(gatewayProbe.message);
+  }
+
+  if (service?.platform === 'darwin' && service.installed && !service.running) {
+    warnings.push(`LalaClaw launchd service is installed but not running (${service.label || resolveLaunchdLabel()}).`);
   }
 
   if (remoteValidation && !remoteValidation.ok && !remoteValidation.skipped) {
@@ -1472,6 +1519,7 @@ function buildDoctorReport({
       path: openclawBinary || '',
       requested: config.openclawBin || '',
     },
+    service: service || getLalaClawServiceStatus(),
     presentationPreview: {
       available: Boolean(sofficeBinary),
       binaryPath: sofficeBinary || '',
@@ -1552,6 +1600,7 @@ async function collectDoctorData(envFilePath, overrides = {}) {
   const backendPortFree = await checkPortAvailable(config.host, config.backendPort);
   let gatewayProbe = null;
   let remoteValidation = null;
+  const service = getLalaClawServiceStatus();
 
   if (!validation.errors.length && config.profile === 'remote-gateway') {
     gatewayProbe = await probeOpenClawGateway(config);
@@ -1574,6 +1623,7 @@ async function collectDoctorData(envFilePath, overrides = {}) {
     validation,
     gatewayProbe,
     remoteValidation,
+    service,
   });
 }
 
@@ -1608,6 +1658,22 @@ function printDoctorReport(report) {
           : 'not found on PATH'
     }`,
   ));
+  if (report.service?.platform === 'darwin') {
+    console.log(formatCliMessage(
+      report.service.installed ? (report.service.running ? 'OK   ' : 'WARN ') : 'INFO ',
+      `LalaClaw launchd service ${
+        report.service.installed
+          ? (report.service.running ? `installed and running (${report.service.label})` : `installed but not running (${report.service.label})`)
+          : 'not installed'
+      }`,
+    ));
+    if (report.service.plistPath) {
+      console.log(formatCliMessage('INFO ', `LalaClaw LaunchAgent: ${report.service.plistPath}`));
+    }
+    if (report.service.logDir) {
+      console.log(formatCliMessage('INFO ', `LalaClaw logs: ${report.service.logDir}`));
+    }
+  }
   console.log(formatCliMessage(
     report.presentationPreview.available ? 'OK   ' : 'WARN ',
     `LibreOffice-backed preview ${report.presentationPreview.available ? `enabled via ${report.presentationPreview.binaryPath}` : 'disabled because soffice was not found'}`,
@@ -1752,7 +1818,24 @@ async function runInit(envFilePath, options = {}) {
     try {
       let ready = null;
       if (sourceCheckout) {
-        ready = await startInitBackgroundServices(envFilePath);
+        if (shouldAutoStartBackgroundService(options)) {
+          const buildStatus = ensureBackgroundServiceBuildReady();
+          if (buildStatus.built) {
+            console.log('INFO  Built the production app so the background service can serve the latest dist output.');
+          }
+          const service = installLaunchdService(envFilePath);
+          console.log(`OK    Started Server background service (launchd) ${service.label}`);
+          console.log(`INFO  LaunchAgent: ${service.plistPath}`);
+          console.log(`INFO  Logs:        ${service.logDir}`);
+          console.log(`INFO  Starting Frontend in background at http://${nextConfig.frontendHost}:${nextConfig.frontendPort}`);
+          const frontendReady = await startInitBackgroundServices(envFilePath, { skipBackend: true });
+          ready = frontendReady || {
+            openUrl: `http://${nextConfig.host}:${nextConfig.backendPort}`,
+            openHint: `${nextConfig.host}:${nextConfig.backendPort}`,
+          };
+        } else {
+          ready = await startInitBackgroundServices(envFilePath);
+        }
       } else if (shouldAutoStartBackgroundService(options)) {
         const buildStatus = ensureBackgroundServiceBuildReady();
         if (buildStatus.built) {
@@ -2025,18 +2108,23 @@ function runDetachedChild(command, args, env) {
   return child;
 }
 
-async function startInitBackgroundServices(envFilePath) {
+async function startInitBackgroundServices(envFilePath, options = {}) {
   ensureDevelopmentAssetsAvailable();
   const { childEnv, config } = buildChildEnv(envFilePath);
-  await ensurePortAvailable('Server port', config.host, config.backendPort);
+  const skipBackend = Boolean(options.skipBackend);
+
+  if (!skipBackend) {
+    await ensurePortAvailable('Server port', config.host, config.backendPort);
+  }
   await ensurePortAvailable('Frontend port', config.frontendHost, config.frontendPort);
 
-  console.log(`INFO  Starting Server in background at http://${config.host}:${config.backendPort}`);
-  const backend = runDetachedChild(process.execPath, ['server.js', WINDOWS_BACKGROUND_SERVICE_MARKER], childEnv);
-  await waitForPortInUse('Server port', config.host, config.backendPort, backend);
-  registerWindowsBackgroundService(envFilePath, backend, config);
+  if (!skipBackend) {
+    console.log(`INFO  Starting Server in background at http://${config.host}:${config.backendPort}`);
+    const backend = runDetachedChild(process.execPath, ['server.js', WINDOWS_BACKGROUND_SERVICE_MARKER], childEnv);
+    await waitForPortInUse('Server port', config.host, config.backendPort, backend);
+    registerWindowsBackgroundService(envFilePath, backend, config);
+  }
 
-  console.log(`INFO  Starting Frontend in background at http://${config.frontendHost}:${config.frontendPort}`);
   const frontend = runDetachedChild(
     npmCommand(),
     ['run', 'dev', '--', '--host', config.frontendHost, '--port', config.frontendPort, '--strictPort'],
@@ -2269,6 +2357,12 @@ function runStatus() {
   }
 
   console.log(`INFO  LaunchAgent: ${status.plistPath}`);
+  if (status.label) {
+    console.log(`INFO  Label:       ${status.label}`);
+  }
+  if (status.comment) {
+    console.log(`INFO  Service:     ${status.comment}`);
+  }
   console.log(`INFO  Logs:        ${status.logDir}`);
   console.log(`${status.running ? 'OK   ' : 'WARN '} Server background service (launchd) ${status.running ? 'is running' : 'is not running'}`);
   if (status.details) {
@@ -2459,6 +2553,7 @@ module.exports = {
   getRuntimeUrls,
   shouldAutoStartBackgroundService,
   ensureBackgroundServiceBuildReady,
+  getLaunchdTargets,
   installLaunchdService,
   readLaunchdServiceStatus,
   stopLaunchdService,

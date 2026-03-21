@@ -2647,6 +2647,23 @@ describe("App", () => {
     expect(window.localStorage.getItem("command-center-theme")).toBe("system");
   });
 
+  it("clears pointer focus from toolbar buttons after click while preserving keyboard focus", async () => {
+    const { fetchMock } = createInteractiveFetchMock();
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const languageButton = await screen.findByRole("button", { name: "切换语言" });
+
+    await user.click(languageButton);
+    expect(languageButton).not.toHaveFocus();
+
+    fireEvent.keyDown(document.activeElement || document.body, { key: "Escape" });
+    languageButton.focus();
+    expect(languageButton).toHaveFocus();
+  });
+
   it("switches the selected model from the top menu", async () => {
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);

@@ -50,6 +50,8 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleAccessLogout,
     handleAccessState,
     handleAccessToken,
+    handleFileManagerPaste,
+    handleFileManagerRename,
     handleFileManagerReveal,
     handleLalaClawUpdateDev,
     handleLalaClawUpdate,
@@ -157,6 +159,16 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if (req.method === 'POST' && url.pathname === '/api/file-manager/reveal') {
       runRouteHandler(handleFileManagerReveal, req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/file-manager/paste') {
+      runRouteHandler(handleFileManagerPaste, req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/file-manager/rename') {
+      runRouteHandler(handleFileManagerRename, req, res);
       return;
     }
 

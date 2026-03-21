@@ -1428,6 +1428,27 @@ function ShortcutHelpButton({ composerSendMode = "enter-send" }) {
       ],
     },
     {
+      id: "preview",
+      title: messages.inspector.previewActions.previewTitle,
+      items: [
+        {
+          id: "preview-edit",
+          shortcut: "E",
+          description: messages.inspector.previewActions.editFile,
+        },
+        {
+          id: "preview-save",
+          shortcut: formatShortcutForPlatform("Cmd + S"),
+          description: messages.inspector.previewActions.saveFile,
+        },
+        {
+          id: "preview-close",
+          shortcut: "Esc",
+          description: messages.common.closePreview,
+        },
+      ],
+    },
+    {
       id: "dialog",
       title: messages.shortcuts.sections.dialog,
       items: [
@@ -1515,15 +1536,49 @@ function ShortcutHelpButton({ composerSendMode = "enter-send" }) {
 function LanguageToggle() {
   const { locale, localeOptions, messages, setLocale } = useI18n();
   const activeLocale = localeOptions.find((option) => option.value === locale);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [tooltipSuppressed, setTooltipSuppressed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleTooltipOpenChange = useCallback((nextOpen) => {
+    if (tooltipSuppressed || menuOpen) {
+      setTooltipOpen(false);
+      return;
+    }
+    setTooltipOpen(nextOpen);
+  }, [menuOpen, tooltipSuppressed]);
+
+  const dismissTooltip = useCallback(() => {
+    setTooltipSuppressed(true);
+    setTooltipOpen(false);
+  }, []);
+
+  const handleMenuOpenChange = useCallback((nextOpen) => {
+    setMenuOpen(nextOpen);
+    if (nextOpen) {
+      dismissTooltip();
+    }
+  }, [dismissTooltip]);
+
+  const handlePointerLeave = useCallback(() => {
+    setTooltipSuppressed(false);
+  }, []);
+
+  const handleLocaleChange = useCallback((nextLocale) => {
+    dismissTooltip();
+    setLocale(nextLocale);
+  }, [dismissTooltip, setLocale]);
 
   return (
-    <DropdownMenu>
-      <Tooltip>
+    <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
+      <Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label={messages.locale.switchLabel}
+              onPointerDown={dismissTooltip}
+              onPointerLeave={handlePointerLeave}
               className="inline-flex h-9 items-center self-stretch gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
             >
               <Languages className="h-4 w-4" />
@@ -1540,7 +1595,7 @@ function LanguageToggle() {
           <DropdownMenuCheckboxItem
             key={option.value}
             checked={option.value === locale}
-            onCheckedChange={() => setLocale(option.value)}
+            onCheckedChange={() => handleLocaleChange(option.value)}
           >
             {option.label}
           </DropdownMenuCheckboxItem>

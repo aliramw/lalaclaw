@@ -1,6 +1,6 @@
 # Frontend Visual Spec
 
-Last updated: 2026-03-20
+Last updated: 2026-03-21
 
 ## Purpose
 
@@ -40,6 +40,9 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Streaming assistant bubbles should show a trailing three-dot waiting indicator at the end of the card content until the turn settles. Use this as the inline progress affordance instead of an extra `Generating` label near the timestamp.
 - Small muted subtitles in cards, sheets, and section headers must keep enough line-height and vertical breathing room to avoid clipping Latin descenders such as `g`, `p`, and `y`.
 - Queued outgoing messages belong directly above the chat composer instead of above the scrollable transcript. The queue should use a compact strip layout with capped height, one-row items by default, and per-item pencil/trash actions for edit and delete.
+- Preview toolbar actions that support keyboard shortcuts must surface those shortcuts in hover tooltips. The preview `Edit` action should show plain `E`, and it should only trigger while a file preview is open and focus is not already inside an editable control. The keyboard-shortcuts dialog should explicitly list preview edit, save, and close actions alongside the existing global/composer shortcuts.
+- Toolbar controls that open a selection menu, such as the locale switcher, must dismiss their tooltip as soon as the menu opens or a choice is committed. The same tooltip must stay suppressed until the pointer leaves and re-enters the trigger, so a successful selection never leaves a stale tooltip floating under the updated control.
+- Pointer clicks on button-like controls must not leave a persistent focus outline, ring, or emphasized frame behind after the action completes. Clear pointer-acquired focus for toolbar buttons, tabs, menu actions, and similar click targets, while preserving visible focus treatment for keyboard navigation.
 - The LalaClaw lobster easter egg may include `🐡`, `🐟`, and `🐠` aquatic companions with distinct spawn rates: `🐡` at `3%`, `🐟` at `8%`, and `🐠` at `2%`. Their routes should be near-horizontal straight lines with at most `20deg` vertical pitch, and their travel speed should stay at `50%` of the default lobster-walk speed so they visibly drift more slowly than the other companions. They should not perform extra random horizontal flips mid-route. When one approaches the left or right viewport edge in its current travel direction, it should flip horizontally immediately; when it approaches the top or bottom viewport edge, it should immediately reroute onto a new near-horizontal line that heads back away from that vertical edge. Their total on-screen lifetime should still follow the same appearance-duration rule as the other easter-egg walkers instead of extending themselves after each reroute.
 
 ## Section Containers
@@ -53,6 +56,8 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Expanded sections may add a top divider between header and content, but collapsed and expanded states should keep a stable outer shape.
 - For inspector-style collapsible lists, header and content padding should stay compact enough that many sections can be scanned without excessive vertical scrolling.
 - In the files inspector, the `Workspace files` group should be collapsed by default while the current-session file group may stay expanded. Workspace inventory is secondary context and should not push active session changes below the fold on first render.
+- In the files inspector tree, clicking a folder must apply a persistent selected state that stays visually distinct from both hover and keyboard focus. That selection is the target for paste shortcuts, and directory context menus must expose a disabled/enabled paste action based on whether the clipboard currently contains files or images.
+- Directory context menus should preserve the core file-management actions available on file rows when they still make sense for a folder. For system file-manager integration, files may use a reveal action, while folders should directly open that directory in `Finder` / `Explorer`.
 
 ## Naming And Information Architecture
 
@@ -128,3 +133,5 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - When a user gives specific visual feedback, update this spec in the same workstream as the code change.
 - New visual rules should be written here as explicit guidance, not left implied in a component implementation.
 - If a requested visual change conflicts with an older rule, update this file to reflect the new decision instead of silently diverging from the spec.
+- 文件与文件夹的右键菜单都要提供“重命名”入口；重命名弹窗默认聚焦名称输入框，提交后列表应立即反映新名称，不等待整页刷新。
+- 文件重命名如果会修改后缀，必须先弹出二次确认；文件夹重命名不需要后缀确认。

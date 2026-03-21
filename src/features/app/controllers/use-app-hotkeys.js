@@ -1,6 +1,14 @@
 import { useEffect, useEffectEvent } from "react";
 import { isEditableElement } from "@/features/chat/utils";
 
+function hasActiveModalSurface() {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  return Boolean(document.querySelector("[aria-modal='true']"));
+}
+
 export function useAppHotkeys({
   handleActivateAdjacentChatTab,
   handleActivateChatTabByIndex,
@@ -90,7 +98,12 @@ export function useAppHotkeys({
 
     const activeElement = document.activeElement;
     const eventTarget = event.target instanceof HTMLElement ? event.target : null;
-    if (activeElement === textarea || isEditableElement(activeElement) || isEditableElement(eventTarget)) {
+    if (
+      activeElement === textarea
+      || isEditableElement(activeElement)
+      || isEditableElement(eventTarget)
+      || hasActiveModalSurface()
+    ) {
       return;
     }
 

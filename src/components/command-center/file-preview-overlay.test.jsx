@@ -569,6 +569,111 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/Saved successfully\.|保存成功/);
   });
 
+  it("shows the edit shortcut in the tooltip using the active platform label", async () => {
+    mockNavigatorPlatform("Win32");
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# Before\n\nPreview body",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByRole("button", { name: /Edit|编辑/ }));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/Shortcut: E|快捷键：E/);
+  });
+
+  it("uses E to start editing from preview mode", async () => {
+    mockNavigatorPlatform("MacIntel");
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# Before\n\nPreview body",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    fireEvent.keyDown(window, {
+      key: "e",
+      code: "KeyE",
+    });
+
+    expect(await screen.findByTestId("file-preview-monaco-editor")).toBeInTheDocument();
+  });
+
+  it("does not insert E into the editor when the edit shortcut opens it", async () => {
+    mockNavigatorPlatform("MacIntel");
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# Before\n\nPreview body",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    fireEvent.keyDown(window, {
+      key: "e",
+      code: "KeyE",
+    });
+
+    const editor = await screen.findByTestId("file-preview-monaco-editor");
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(editor).toHaveValue("# Before\n\nPreview body");
+  });
+
+  it("does not trigger preview editing from an already editable field", async () => {
+    mockNavigatorPlatform("Win32");
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "publish.md",
+          path: "/Users/marila/projects/lalaclaw/publish.md",
+          content: "# Before\n\nPreview body",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+
+    fireEvent.keyDown(window, {
+      key: "e",
+      code: "KeyE",
+    });
+
+    expect(screen.queryByTestId("file-preview-monaco-editor")).not.toBeInTheDocument();
+    input.remove();
+  });
+
   it("shows the inspector files sidebar for editable previews and opens files from it", async () => {
     const onOpenFilePreview = vi.fn();
 
