@@ -2887,7 +2887,9 @@ describe("App", () => {
 
     const user = userEvent.setup();
     await screen.findByText("main - 当前会话");
-    expect(screen.getByLabelText("切换模型")).toHaveTextContent("openrouter/minimax/minimax-m2.5");
+    await waitFor(() => {
+      expect(screen.getByLabelText("切换模型")).toHaveTextContent("openrouter/minimax/minimax-m2.5");
+    });
 
     await user.click(screen.getByRole("tab", { name: "环境" }));
     await screen.findByText("OpenClaw 配置");
