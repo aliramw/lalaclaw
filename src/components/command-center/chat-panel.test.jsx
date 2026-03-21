@@ -1829,7 +1829,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
+    expect(screen.getByText("↑↓输入历史 - 回车发送，Shift + 回车换行")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为Shift + 回车发送" })).toHaveClass("text-[#6b7280]");
 
     const user = userEvent.setup();
@@ -1859,7 +1859,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByText("快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
+    expect(screen.getByText("↑↓输入历史 - 快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
   });
 

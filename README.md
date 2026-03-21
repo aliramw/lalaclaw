@@ -95,7 +95,7 @@ Notes:
 - `lalaclaw init` writes local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
 - By default, `lalaclaw init` uses `HOST=127.0.0.1`, `PORT=5678`, and `FRONTEND_PORT=4321` unless you override them
 - In a source checkout, `lalaclaw init` starts both Server and Vite Dev Server in the background, then prompts to open the Dev Server URL
-- On macOS npm installs, `lalaclaw init` installs and starts the Server `launchd` service, then prompts to open the Server URL
+- On macOS npm installs, `lalaclaw init` installs a per-user `launchd` LaunchAgent, bootstraps it with `launchctl`, enables it, and kickstarts the Server so it comes back automatically after login or crashes
 - On Linux npm installs, `lalaclaw init` starts the Server in the background, then prompts to open the Server URL
 - Use `lalaclaw init --no-background` if you only want to write config without auto-starting services
 - After `--no-background`, run `lalaclaw doctor`, then use `lalaclaw dev` for source checkouts or `lalaclaw start` for packaged installs

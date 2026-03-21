@@ -1,6 +1,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const { performHealthCheck } = require('./openclaw-management');
+const { getLalaClawServiceStatus } = require('./lalaclaw-service-status');
 
 const DEFAULT_ONBOARDING_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_GATEWAY_BIND = 'loopback';
@@ -421,6 +422,7 @@ function buildOnboardingState({
   configPath = '',
   installed = false,
   validation = null,
+  service = null,
 } = {}) {
   const resolvedCapabilities = resolveCapabilityValues(capabilities);
   const ready = Boolean(installed) && Boolean(validation?.ok);
@@ -452,6 +454,7 @@ function buildOnboardingState({
     supportedGatewayTokenInputModes: [...resolvedCapabilities.supportedGatewayTokenInputModes],
     supportedGatewayBinds: [...resolvedCapabilities.supportedGatewayBinds],
     capabilityDetection: resolvedCapabilities.capabilityDetection,
+    service: service || getLalaClawServiceStatus(),
   };
 }
 

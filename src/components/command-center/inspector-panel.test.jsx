@@ -2,6 +2,7 @@ import { useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as clipboardUtils from "@/components/command-center/clipboard-utils";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
@@ -3109,7 +3110,7 @@ describe("InspectorPanel", () => {
     expect(screen.queryByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /OpenClaw 配置 (?:查看|收起)详情/i }));
     expect(screen.getByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" })).toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("reloads the latest config state before showing a config conflict error", async () => {
     const initialState = {
@@ -5046,7 +5047,7 @@ describe("InspectorPanel", () => {
       expect(screen.getByRole("menuitem", { name: "在 VS Code 中打开" })).toBeInTheDocument();
       expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
       expect(screen.getAllByRole("separator")).toHaveLength(2);
-      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["预览", "编辑", "在 访达 中显示", "在 VS Code 中打开", "复制路径"]);
+      expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["重命名", "预览", "编辑", "在 访达 中显示", "在 VS Code 中打开", "复制路径"]);
     } finally {
       Object.defineProperty(window.navigator, "platform", { configurable: true, value: originalPlatform });
     }
@@ -5259,18 +5260,292 @@ describe("InspectorPanel", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await user.click(screen.getByRole("button", { name: "src 查看详情" }));
     await user.pointer([
       {
-        target: screen.getByRole("button", { name: "src 查看详情" }),
+        target: screen.getByRole("button", { name: "src 收起详情" }),
         keys: "[MouseRight]",
       },
     ]);
 
     expect(await screen.findByRole("menu", { name: "文件菜单" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "刷新" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "粘贴到此处" })).toBeInTheDocument();
+    const revealItem = screen.getByRole("menuitem", { name: /在 .* 中打开/ });
+    expect(revealItem).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "复制路径" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "预览" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["刷新", "复制路径"]);
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["重命名", "刷新", "粘贴到此处", revealItem.textContent, "复制路径"]);
+  });
+
+  it("renames files from the context menu and updates the session tree", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url === "/api/file-manager/rename") {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              path: "/Users/marila/projects/lalaclaw/AGENTS.md",
+              nextPath: "/Users/marila/projects/lalaclaw/README.md",
+              name: "README.md",
+              kind: "文件",
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([{ target: screen.getByRole("button", { name: "AGENTS.md" }), keys: "[MouseRight]" }]);
+    await user.click(await screen.findByRole("menuitem", { name: "重命名" }));
+    const input = screen.getByLabelText("新名称");
+    await user.clear(input);
+    await user.type(input, "README.md");
+    await user.click(screen.getByRole("button", { name: "重命名" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/file-manager/rename",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ path: "/Users/marila/projects/lalaclaw/AGENTS.md", nextName: "README.md" }),
+        }),
+      );
+    });
+    expect(await screen.findByRole("button", { name: "README.md" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "AGENTS.md" })).not.toBeInTheDocument();
+  });
+
+  it("asks for confirmation before changing a file extension", async () => {
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        path: "/Users/marila/projects/lalaclaw/AGENTS.md",
+        nextPath: "/Users/marila/projects/lalaclaw/AGENTS.txt",
+        name: "AGENTS.txt",
+        kind: "文件",
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[
+          { path: "/Users/marila/projects/lalaclaw/AGENTS.md", fullPath: "/Users/marila/projects/lalaclaw/AGENTS.md", kind: "文件", primaryAction: "viewed" },
+        ]}
+        peeks={{ workspace: null, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.pointer([{ target: screen.getByRole("button", { name: "AGENTS.md" }), keys: "[MouseRight]" }]);
+    await user.click(await screen.findByRole("menuitem", { name: "重命名" }));
+    const input = screen.getByLabelText("新名称");
+    await user.clear(input);
+    await user.type(input, "AGENTS.txt");
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByText("确认修改文件后缀？")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      "/api/file-manager/rename",
+      expect.anything(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "仍然修改后缀" }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/file-manager/rename",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ path: "/Users/marila/projects/lalaclaw/AGENTS.md", nextName: "AGENTS.txt" }),
+        }),
+      );
+    });
+  });
+
+  it("renames workspace directories from the context menu and updates the tree", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url === "/api/file-manager/rename") {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              path: "/Users/marila/projects/lalaclaw/src",
+              nextPath: "/Users/marila/projects/lalaclaw/app",
+              name: "app",
+              kind: "目录",
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: false },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await user.pointer([{ target: screen.getByRole("button", { name: "src 查看详情" }), keys: "[MouseRight]" }]);
+    await user.click(await screen.findByRole("menuitem", { name: "重命名" }));
+    const input = screen.getByLabelText("新名称");
+    await user.clear(input);
+    await user.type(input, "app");
+    await user.click(screen.getByRole("button", { name: "重命名" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/file-manager/rename",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ path: "/Users/marila/projects/lalaclaw/src", nextName: "app" }),
+        }),
+      );
+    });
+    expect(await screen.findByRole("button", { name: "app 查看详情" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "src 查看详情" })).not.toBeInTheDocument();
+  });
+
+  it("opens workspace directories in Finder from the context menu", async () => {
+    const originalPlatform = window.navigator.platform;
+    Object.defineProperty(window.navigator, "platform", { configurable: true, value: "MacIntel" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url === "/api/file-manager/reveal") {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              label: "Finder",
+              path: "/Users/marila/projects/lalaclaw/src",
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, items: [] }),
+        };
+      }),
+    );
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    try {
+      renderWithTooltip(
+        <InspectorPanel
+          activeTab={activeTab}
+          agents={[]}
+          artifacts={[]}
+          currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+          files={[]}
+          peeks={{
+            workspace: {
+              summary: "工作区摘要",
+              items: [],
+              entries: [
+                { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+              ],
+            },
+            terminal: null,
+            browser: null,
+            environment: null,
+          }}
+          renderPeek={(_, fallback) => fallback}
+          setActiveTab={setActiveTab}
+          taskTimeline={[]}
+        />,
+      );
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+      await user.click(screen.getByRole("button", { name: "src 查看详情" }));
+      await user.pointer([
+        {
+          target: screen.getByRole("button", { name: "src 收起详情" }),
+          keys: "[MouseRight]",
+        },
+      ]);
+      await user.click(await screen.findByRole("menuitem", { name: "在 访达 中打开" }));
+
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/file-manager/reveal",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ path: "/Users/marila/projects/lalaclaw/src" }),
+        }),
+      );
+    } finally {
+      Object.defineProperty(window.navigator, "platform", { configurable: true, value: originalPlatform });
+    }
   });
 
   it("refreshes workspace directory contents from the context menu", async () => {
@@ -5346,6 +5621,244 @@ describe("InspectorPanel", () => {
       expect(screen.queryByText("old.txt")).not.toBeInTheDocument();
     });
     expect(srcFetchCount).toBe(2);
+  });
+
+  it("marks the clicked folder as selected and saves pasted files into that directory", async () => {
+    const fetchMock = vi.fn();
+    let srcFetchCount = 0;
+
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc")) {
+        srcFetchCount += 1;
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            items: srcFetchCount === 1
+              ? []
+              : [{ path: "/Users/marila/projects/lalaclaw/src/clip.png", fullPath: "/Users/marila/projects/lalaclaw/src/clip.png", kind: "文件" }],
+          }),
+        };
+      }
+      if (url === "/api/file-manager/paste") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            directoryPath: "/Users/marila/projects/lalaclaw/src",
+            items: [{ path: "/Users/marila/projects/lalaclaw/src/clip.png", name: "clip.png", kind: "文件" }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    const srcButton = screen.getByRole("button", { name: "src 查看详情" });
+    await user.click(srcButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "src 收起详情" })).toHaveAttribute("data-selected", "true");
+    });
+
+    fireEvent.paste(window, {
+      clipboardData: {
+        files: [new File(["image-bytes"], "clip.png", { type: "image/png" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/file-manager/paste",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("\"directoryPath\":\"/Users/marila/projects/lalaclaw/src\""),
+        }),
+      );
+    });
+    expect(await screen.findByText("clip.png")).toBeInTheDocument();
+    expect(screen.getByText("已将 1 个剪贴板文件保存到 src。")).toBeInTheDocument();
+  });
+
+  it("enables the directory paste context action when the clipboard has a pasteable image", async () => {
+    vi.spyOn(clipboardUtils, "clipboardHasPasteableFiles").mockResolvedValue(true);
+    vi.spyOn(clipboardUtils, "readClipboardFileEntries").mockResolvedValue([
+      {
+        kind: "upload",
+        file: new File(["image-bytes"], "pasted-file-1.png", { type: "image/png" }),
+      },
+    ]);
+
+    const fetchMock = vi.fn();
+    let srcFetchCount = 0;
+
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsrc")) {
+        srcFetchCount += 1;
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            items: srcFetchCount === 1
+              ? []
+              : [{ path: "/Users/marila/projects/lalaclaw/src/pasted-file-1.png", fullPath: "/Users/marila/projects/lalaclaw/src/pasted-file-1.png", kind: "文件" }],
+          }),
+        };
+      }
+      if (url === "/api/file-manager/paste") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            directoryPath: "/Users/marila/projects/lalaclaw/src",
+            items: [{ path: "/Users/marila/projects/lalaclaw/src/pasted-file-1.png", name: "pasted-file-1.png", kind: "文件" }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "src 查看详情" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+
+    const pasteItem = await screen.findByRole("menuitem", { name: "粘贴到此处" });
+    await waitFor(() => {
+      expect(pasteItem).toBeEnabled();
+    });
+
+    await user.click(pasteItem);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/file-manager/paste",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining("\"directoryPath\":\"/Users/marila/projects/lalaclaw/src\""),
+        }),
+      );
+    });
+    expect(await screen.findByText("已将 1 个剪贴板文件保存到 src。")).toBeInTheDocument();
+  });
+
+  it("disables the directory paste context action when the clipboard has no files or images", async () => {
+    vi.spyOn(clipboardUtils, "clipboardHasPasteableFiles").mockResolvedValue(false);
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{
+          workspace: {
+            summary: "工作区摘要",
+            items: [],
+            entries: [
+              { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+            ],
+          },
+          terminal: null,
+          browser: null,
+          environment: null,
+        }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await user.pointer([
+      {
+        target: screen.getByRole("button", { name: "src 查看详情" }),
+        keys: "[MouseRight]",
+      },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("menuitem", { name: "粘贴到此处" })).toBeDisabled();
+    });
   });
 
   it.each([

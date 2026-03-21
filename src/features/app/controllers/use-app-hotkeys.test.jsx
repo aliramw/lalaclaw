@@ -403,4 +403,35 @@ describe("useAppHotkeys", () => {
     expect(setPromptVisible).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(editorSurface);
   });
+
+  it("does not route printable keys into the prompt while a modal dialog is open", () => {
+    const setPromptVisible = vi.fn();
+    const modal = document.createElement("div");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    document.body.appendChild(modal);
+
+    renderHook(() =>
+      useAppHotkeys({
+        handleActivateAdjacentChatTab: vi.fn(),
+        handleActivateChatTabByIndex: vi.fn(),
+        handleReset: vi.fn().mockResolvedValue(undefined),
+        promptRef: { current: textarea },
+        setPromptVisible,
+        setTheme: vi.fn(),
+      }),
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "e",
+        code: "KeyE",
+      }),
+    );
+
+    expect(setPromptVisible).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("");
+  });
 });

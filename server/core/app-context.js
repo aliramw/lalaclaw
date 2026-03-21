@@ -37,7 +37,7 @@ const { collapseDuplicateConversationTurns, mergeConversationMessages } = requir
 const { createOpenClawClient } = require('../services/openclaw-client');
 const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler, createChatStopHandler } = require('../routes/chat');
-const { createFileManagerHandler } = require('../routes/file-manager');
+const { createFileManagerHandlers } = require('../routes/file-manager');
 const { createFilePreviewHandlers } = require('../routes/file-preview');
 const { createLalaClawUpdateDevHandler } = require('../routes/lalaclaw-update-dev');
 const { createLalaClawUpdateHandler } = require('../routes/lalaclaw-update');
@@ -369,7 +369,7 @@ function createAppContext() {
     sendJson,
   });
 
-  const handleFileManagerReveal = createFileManagerHandler({
+  const { handleFileManagerPaste, handleFileManagerRename, handleFileManagerReveal } = createFileManagerHandlers({
     execFileAsync,
     parseRequestBody,
     sendJson,
@@ -507,6 +507,8 @@ function createAppContext() {
     handleAccessToken: accessController.handleToken,
     handleChat,
     handleChatStop,
+    handleFileManagerPaste,
+    handleFileManagerRename,
     handleFileManagerReveal,
     handleLalaClawUpdateDev,
     handleLalaClawUpdate,

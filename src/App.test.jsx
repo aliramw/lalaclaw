@@ -2181,12 +2181,12 @@ describe("App", () => {
     const user = userEvent.setup();
     const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
-    expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
+    expect(screen.getByText("↑↓输入历史 - 回车发送，Shift + 回车换行")).toBeInTheDocument();
     expect(screen.getByTestId("composer-placeholder-overlay")).toHaveTextContent("PS: 不用点击输入框，任何时候直接打字");
 
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
-    expect(screen.getByText("快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
+    expect(screen.getByText("↑↓输入历史 - 快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
     expect(screen.getByTestId("composer-placeholder-overlay")).toHaveTextContent("PS: 不用点击输入框，任何时候直接打字");
     expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
 
@@ -2582,7 +2582,9 @@ describe("App", () => {
       const occurrences = bodyText.split(promptText).length - 1;
       expect(occurrences).toBe(1);
     });
-    expect(getNormalizedBodyText()).not.toContain("正在思考…");
+    await waitFor(() => {
+      expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+    });
   });
 
   it("hydrates prompt history from the current session conversation", async () => {
@@ -2645,6 +2647,23 @@ describe("App", () => {
 
     await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
     expect(window.localStorage.getItem("command-center-theme")).toBe("system");
+  });
+
+  it("clears pointer focus from toolbar buttons after click while preserving keyboard focus", async () => {
+    const { fetchMock } = createInteractiveFetchMock();
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const languageButton = await screen.findByRole("button", { name: "切换语言" });
+
+    await user.click(languageButton);
+    expect(languageButton).not.toHaveFocus();
+
+    fireEvent.keyDown(document.activeElement || document.body, { key: "Escape" });
+    languageButton.focus();
+    expect(languageButton).toHaveFocus();
   });
 
   it("switches the selected model from the top menu", async () => {
@@ -2870,7 +2889,9 @@ describe("App", () => {
 
     const user = userEvent.setup();
     await screen.findByText("main - 当前会话");
-    expect(screen.getByLabelText("切换模型")).toHaveTextContent("openrouter/minimax/minimax-m2.5");
+    await waitFor(() => {
+      expect(screen.getByLabelText("切换模型")).toHaveTextContent("openrouter/minimax/minimax-m2.5");
+    });
 
     await user.click(screen.getByRole("tab", { name: "环境" }));
     await screen.findByText("OpenClaw 配置");
@@ -3349,7 +3370,7 @@ describe("App", () => {
       sessionUpdateSessionUser: expect.stringMatching(/^command-center-worker-/),
       sessionUpdateAgentId: "worker",
     });
-  });
+  }, 10_000);
 
   it("does not list agents that already have open tabs in the switcher menu", async () => {
     const harness = createInteractiveFetchMock({

@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { isEditableElement } from "@/features/chat/utils";
 import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
@@ -378,10 +379,21 @@ function EditableFilePreview({
 }) {
   const [EditorComponent, setEditorComponent] = useState(null);
   const initialScrollRatioRef = useRef(initialScrollRatio);
+  const focusFrameRef = useRef(0);
+  const focusTimeoutRef = useRef(0);
 
   useEffect(() => {
     initialScrollRatioRef.current = initialScrollRatio;
   }, [initialScrollRatio]);
+
+  useEffect(() => () => {
+    if (typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function" && focusFrameRef.current) {
+      window.cancelAnimationFrame(focusFrameRef.current);
+    }
+    if (focusTimeoutRef.current) {
+      window.clearTimeout(focusTimeoutRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -418,7 +430,17 @@ function EditableFilePreview({
           theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
           loading={loadingState}
           onMount={(editor) => {
-            editor.focus();
+            const focusEditor = () => {
+              focusFrameRef.current = 0;
+              focusTimeoutRef.current = 0;
+              editor.focus();
+            };
+
+            if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+              focusFrameRef.current = window.requestAnimationFrame(focusEditor);
+            } else {
+              focusTimeoutRef.current = window.setTimeout(focusEditor, 0);
+            }
 
             const normalizedRatio = Number(initialScrollRatioRef.current);
             initialScrollRatioRef.current = null;
@@ -1065,6 +1087,7 @@ export function FilePreviewOverlay({
   const showFilesSidebar = editablePreview && Boolean(title);
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
   const showPreviewFontSizeControls = preview?.kind === "markdown" || preview?.kind === "text" || preview?.kind === "json";
+  const editShortcutLabel = "E";
 
   const handleRevealInFileManager = async () => {
     if (!title || openingInFileManager) {
@@ -1087,7 +1110,7 @@ export function FilePreviewOverlay({
     }
   };
 
-  const handleStartEditing = () => {
+  const handleStartEditing = useCallback(() => {
     if (!canEditPreview) {
       return;
     }
@@ -1106,7 +1129,7 @@ export function FilePreviewOverlay({
     setSaveError("");
     setSaveNotice(null);
     setIsEditing(true);
-  };
+  }, [canEditPreview, effectivePreviewContent]);
 
   const handleCancelEditing = () => {
     setEditableContent(effectivePreviewContent);
@@ -1199,35 +1222,54 @@ export function FilePreviewOverlay({
   }, [editSessionDirty]);
 
   useEffect(() => {
-    if (!preview || !isEditing || !canEditPreview) {
+    if (!preview || !canEditPreview) {
       return undefined;
     }
 
     const handleKeyDown = (event) => {
       const normalizedKey = String(event.key || "").trim().toLowerCase();
+      const activeElement = document.activeElement;
+      const eventTarget = event.target instanceof HTMLElement ? event.target : null;
       const usesExpectedModifier = applePlatform
         ? event.metaKey && !event.ctrlKey
         : event.ctrlKey && !event.metaKey;
-      const isSaveShortcut =
+      const supportsSaveShortcut =
         usesExpectedModifier
         && !event.shiftKey
         && !event.altKey
         && !event.repeat
-        && !event.isComposing
-        && (event.code === "KeyS" || normalizedKey === "s");
+        && !event.isComposing;
 
-      if (!isSaveShortcut) {
+      const isEditShortcut =
+        !event.metaKey
+        && !event.ctrlKey
+        && !event.altKey
+        && !event.shiftKey
+        && !event.repeat
+        && !event.isComposing
+        && (event.code === "KeyE" || normalizedKey === "e");
+      const isSaveShortcut = event.code === "KeyS" || normalizedKey === "s";
+
+      if (isEditShortcut && !isEditing) {
+        if (isEditableElement(activeElement) || isEditableElement(eventTarget)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        handleStartEditing();
         return;
       }
 
-      event.preventDefault();
-      event.stopPropagation();
-      handleSaveEditing({ stayInEditing: true });
+      if (supportsSaveShortcut && isSaveShortcut && isEditing) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleSaveEditing({ stayInEditing: true });
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [applePlatform, canEditPreview, handleSaveEditing, isEditing, preview]);
+  }, [applePlatform, canEditPreview, handleSaveEditing, handleStartEditing, isEditing, preview]);
 
   if (!preview) {
     return null;
@@ -1405,6 +1447,9 @@ export function FilePreviewOverlay({
       ) : null}
       <div className={cn("flex h-full items-center justify-center p-6", isFullscreen && "p-0")} onClick={(event) => event.stopPropagation()}>
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={preview.name || preview.item?.name || messages.inspector.previewActions.previewTitle}
           className={cn(
             "flex h-[min(88vh,980px)] w-full max-w-[1200px] flex-col overflow-hidden rounded-[24px] border shadow-2xl",
             isFullscreen && "h-full w-full max-w-none rounded-none border-0 shadow-none",
@@ -1498,21 +1543,26 @@ export function FilePreviewOverlay({
                     </Button>
                   </>
                 ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      "h-8 gap-1.5 px-3 text-xs",
-                      isDark
-                        ? "border-white/8 bg-white/[0.045] text-zinc-300 hover:border-white/12 hover:bg-white/8 hover:text-white"
-                        : "border-slate-200 bg-slate-50/90 text-slate-700 hover:border-slate-300 hover:bg-white hover:text-slate-950",
-                    )}
-                    onClick={handleStartEditing}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    {messages.inspector.previewActions.editFile}
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          "h-8 gap-1.5 px-3 text-xs",
+                          isDark
+                            ? "border-white/8 bg-white/[0.045] text-zinc-300 hover:border-white/12 hover:bg-white/8 hover:text-white"
+                            : "border-slate-200 bg-slate-50/90 text-slate-700 hover:border-slate-300 hover:bg-white hover:text-slate-950",
+                        )}
+                        onClick={handleStartEditing}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        {messages.inspector.previewActions.editFile}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{messages.theme.shortcutHint(editShortcutLabel)}</TooltipContent>
+                  </Tooltip>
                 )
               ) : null}
               <div

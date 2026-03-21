@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getPufferEdgeResponse, resolveAquaticWalkDurationMs, resolvePufferPitchForVerticalEdge, resolveWalkerEndAtAfterReroute, SessionOverview } from "@/components/command-center/session-overview";
@@ -695,11 +695,19 @@ describe("SessionOverview", () => {
     expect((await screen.findAllByText("Cmd + /")).length).toBeGreaterThan(0);
 
     await user.click(trigger);
-    expect(screen.getByRole("dialog", { name: "快捷键提示" })).toBeInTheDocument();
-    expect(screen.getByText("这里列出当前可用的快捷键以及它们对应的功能。")).toBeInTheDocument();
-    expect(screen.getByText("打开快捷键提示")).toBeInTheDocument();
-    expect(screen.getByText("Enter")).toBeInTheDocument();
-    expect(screen.getByText("Shift + Enter")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "快捷键提示" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText("这里列出当前可用的快捷键以及它们对应的功能。")).toBeInTheDocument();
+    expect(within(dialog).getByText("打开快捷键提示")).toBeInTheDocument();
+    expect(within(dialog).getByText("文件预览")).toBeInTheDocument();
+    expect(within(dialog).getByText("编辑")).toBeInTheDocument();
+    expect(within(dialog).getByText("保存")).toBeInTheDocument();
+    expect(within(dialog).getByText("关闭预览")).toBeInTheDocument();
+    expect(within(dialog).getByText("E")).toBeInTheDocument();
+    expect(within(dialog).getByText("Cmd + S")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("Esc").length).toBeGreaterThan(0);
+    expect(within(dialog).getByText("Enter")).toBeInTheDocument();
+    expect(within(dialog).getByText("Shift + Enter")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "关闭快捷键提示" }));
     await waitFor(() => {
@@ -736,8 +744,11 @@ describe("SessionOverview", () => {
     const user = userEvent.setup();
     await user.keyboard("{Control>}/{/Control}");
 
-    expect(screen.getByRole("dialog", { name: "快捷键提示" })).toBeInTheDocument();
-    expect(screen.getByText("Ctrl + /")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "快捷键提示" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText("Ctrl + /")).toBeInTheDocument();
+    expect(within(dialog).getByText("E")).toBeInTheDocument();
+    expect(within(dialog).getByText("Ctrl + S")).toBeInTheDocument();
     await user.hover(screen.getByRole("button", { name: "快捷键提示" }));
     expect((await screen.findAllByText("Ctrl + /")).length).toBeGreaterThan(0);
 
@@ -889,6 +900,15 @@ describe("SessionOverview", () => {
     await waitFor(() => {
       expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     });
+
+    await user.hover(trigger);
+    await waitFor(() => {
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    });
+
+    await user.unhover(trigger);
+    await user.hover(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Changer de langue");
   });
 
   it("hides agents that already have an open session from the switcher menu", async () => {

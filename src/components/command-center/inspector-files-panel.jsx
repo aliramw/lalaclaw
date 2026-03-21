@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, Copy, Eye, FolderOpen, Pencil, RotateCcw, SquareArrowOutUpRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiFetch } from "@/lib/api-client";
@@ -103,6 +104,178 @@ function getVsCodeHref(filePath = "") {
     return "";
   }
   return `vscode://file/${encodeURIComponent(filePath)}`;
+}
+
+function getPathName(filePath = "") {
+  const normalizedPath = String(filePath || "").replace(/\/+$/, "");
+  if (!normalizedPath) {
+    return "";
+  }
+  return normalizedPath.split("/").filter(Boolean).pop() || "";
+}
+
+function getPathExtension(fileName = "") {
+  const normalizedName = String(fileName || "").trim();
+  if (!normalizedName) {
+    return "";
+  }
+  const dotIndex = normalizedName.lastIndexOf(".");
+  if (dotIndex <= 0 || dotIndex === normalizedName.length - 1) {
+    return dotIndex === normalizedName.length - 1 ? "." : "";
+  }
+  return normalizedName.slice(dotIndex).toLowerCase();
+}
+
+function doesFileExtensionChange(item, nextName = "") {
+  if (!item || item.kind === "目录") {
+    return false;
+  }
+
+  const currentName = String(item.name || getPathName(resolveItemPath(item)) || "").trim();
+  return getPathExtension(currentName) !== getPathExtension(nextName);
+}
+
+function replacePathPrefix(sourcePath = "", previousPath = "", nextPath = "") {
+  const normalizedSource = String(sourcePath || "");
+  const normalizedPrevious = String(previousPath || "");
+  const normalizedNext = String(nextPath || "");
+
+  if (!normalizedSource || !normalizedPrevious || normalizedSource === normalizedPrevious) {
+    return normalizedSource === normalizedPrevious ? normalizedNext : normalizedSource;
+  }
+
+  if (!normalizedSource.startsWith(`${normalizedPrevious}/`)) {
+    return normalizedSource;
+  }
+
+  return `${normalizedNext}${normalizedSource.slice(normalizedPrevious.length)}`;
+}
+
+function renameWorkspaceNodePaths(node, previousPath, nextPath) {
+  const currentPath = resolveItemPath(node);
+  const renamedPath = replacePathPrefix(currentPath, previousPath, nextPath);
+  const nextName = getPathName(renamedPath) || node.name;
+  const nextChildren = Array.isArray(node.children)
+    ? node.children.map((child) => renameWorkspaceNodePaths(child, previousPath, nextPath))
+    : [];
+
+  return {
+    ...node,
+    key: renamedPath || node.key,
+    path: renamedPath || node.path,
+    fullPath: renamedPath || node.fullPath,
+    name: nextName,
+    children: nextChildren,
+  };
+}
+
+function renameWorkspaceNodes(nodes = [], previousPath = "", nextPath = "") {
+  return nodes.map((node) => {
+    const currentPath = resolveItemPath(node);
+    if (currentPath === previousPath || currentPath.startsWith(`${previousPath}/`)) {
+      return renameWorkspaceNodePaths(node, previousPath, nextPath);
+    }
+    if (node.kind === "目录" && node.children?.length) {
+      return {
+        ...node,
+        children: renameWorkspaceNodes(node.children, previousPath, nextPath),
+      };
+    }
+    return node;
+  });
+}
+
+function renameSessionItems(items = [], previousPath = "", nextPath = "") {
+  return items.map((item) => {
+    const currentPath = resolveItemPath(item);
+    if (currentPath !== previousPath && !currentPath.startsWith(`${previousPath}/`)) {
+      return item;
+    }
+    const renamedPath = replacePathPrefix(currentPath, previousPath, nextPath);
+    return {
+      ...item,
+      path: renamedPath || item.path,
+      fullPath: renamedPath || item.fullPath,
+      name: getPathName(renamedPath) || item.name,
+    };
+  });
+}
+
+function RenameDialog({
+  confirmLabel,
+  description,
+  error,
+  inputLabel,
+  messages,
+  onCancel,
+  onChange,
+  onConfirm,
+  placeholder,
+  submitting = false,
+  title,
+  value,
+}) {
+  return (
+    <div className="fixed inset-0 z-[41] flex items-center justify-center bg-background/55 px-4 backdrop-blur-[1px]">
+      <div className="w-full max-w-md rounded-[24px] border border-border/70 bg-card shadow-2xl">
+        <div className="space-y-4 px-5 py-5">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+            <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+          </div>
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-foreground">{inputLabel}</span>
+            <input
+              autoFocus
+              type="text"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onConfirm();
+                }
+              }}
+              placeholder={placeholder}
+              className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40"
+            />
+          </label>
+          {error ? <p className="text-sm leading-6 text-destructive">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+              {messages.inspector.workspaceTree.renameCancel}
+            </Button>
+            <Button type="button" onClick={onConfirm} disabled={submitting || !String(value || "").trim()}>
+              {submitting ? messages.inspector.workspaceTree.renameConfirming : confirmLabel}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RenameExtensionConfirmDialog({ description, messages, onCancel, onConfirm, submitting = false, title }) {
+  return (
+    <div className="fixed inset-0 z-[42] flex items-center justify-center bg-background/55 px-4 backdrop-blur-[1px]">
+      <div className="w-full max-w-md rounded-[24px] border border-border/70 bg-card shadow-2xl">
+        <div className="space-y-4 px-5 py-5">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+            <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+              {messages.inspector.workspaceTree.renameCancel}
+            </Button>
+            <Button type="button" onClick={onConfirm} disabled={submitting}>
+              {messages.inspector.workspaceTree.renameExtensionChangeConfirm}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function resolveFileManagerLocaleLabel(messages) {
@@ -657,7 +830,7 @@ function SessionTreeNode({
   );
 }
 
-function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, onRefreshDirectory }) {
+function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, onRefreshDirectory, onRename }) {
   const menuRef = useRef(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
 
@@ -729,6 +902,7 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
   const canPreview = canPreviewFileItem(menu.item);
   const canEdit = canEditFileItem(menu.item);
   const canRefreshDirectory = menu.item?.kind === "目录" && typeof onRefreshDirectory === "function";
+  const canRename = typeof onRename === "function";
   const targetPath = resolveItemPath(menu.item);
   const vscodeHref = getVsCodeHref(targetPath);
   const fileManagerLabel = resolveFileManagerLocaleLabel(messages);
@@ -768,20 +942,50 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
       style={{ left: position.left, top: position.top }}
     >
       {canRefreshDirectory ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onRefreshDirectory(menu.item).catch(() => {});
-            onClose();
-          }}
-          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
-        >
-          <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
-          <span>{messages.inspector.fileMenu.refresh}</span>
-        </button>
+        <>
+          {canRename ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onRename(menu.item, "workspace");
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{messages.inspector.fileMenu.rename}</span>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onRefreshDirectory(menu.item).catch(() => {});
+              onClose();
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{messages.inspector.fileMenu.refresh}</span>
+          </button>
+        </>
       ) : (
         <>
+          {canRename ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onRename(menu.item, "session");
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{messages.inspector.fileMenu.rename}</span>
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
@@ -953,6 +1157,9 @@ export function InspectorFilesPanel({
   const [sessionFilterInput, setSessionFilterInput] = useState("");
   const [workspaceFilterInput, setWorkspaceFilterInput] = useState("");
   const [workspaceFilter, setWorkspaceFilter] = useState("");
+  const [sessionItems, setSessionItems] = useState(items);
+  const [renameState, setRenameState] = useState(null);
+  const [renameExtensionState, setRenameExtensionState] = useState(null);
   const fileActionSections = [
     { key: "created", label: messages.inspector.fileActions.created },
     { key: "modified", label: messages.inspector.fileActions.modified },
@@ -962,7 +1169,7 @@ export function InspectorFilesPanel({
   const groups = fileActionSections
     .map((section) => ({
       ...section,
-      items: items
+      items: sessionItems
         .filter((item) => item.primaryAction === section.key)
         .filter((item) => (sessionFilterMatcher ? sessionFilterMatcher(item, currentWorkspaceRoot) : true))
         .sort((left, right) => compareFileItemsByPath(left, right, currentWorkspaceRoot)),
@@ -977,7 +1184,7 @@ export function InspectorFilesPanel({
   const previousWorkspaceRootRef = useRef(currentWorkspaceRoot);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [expandedSessionDirectories, setExpandedSessionDirectories] = useState({});
-  const hasSessionFiles = items.length > 0;
+  const hasSessionFiles = sessionItems.length > 0;
   const hasSessionFilter = Boolean(String(sessionFilterInput || "").trim());
   const visibleSessionCount = groups.reduce((total, group) => total + group.items.length, 0);
   const hasWorkspaceFilter = Boolean(String(workspaceFilter || "").trim());
@@ -1006,6 +1213,10 @@ export function InspectorFilesPanel({
 
     onOpenPreview?.(item);
   }, [isEditSelectionMode, onOpenEdit, onOpenPreview]);
+
+  useEffect(() => {
+    setSessionItems(items);
+  }, [items, currentWorkspaceRoot]);
 
   const loadWorkspaceDirectoryChildren = useCallback(async (targetPath) => {
     const directChildren = await requestWorkspaceTree({
@@ -1074,10 +1285,14 @@ export function InspectorFilesPanel({
     previousWorkspaceRootRef.current = currentWorkspaceRoot;
 
     if (workspaceRootChanged) {
+      setContextMenu(null);
+      setRenameState(null);
+      setRenameExtensionState(null);
       setExpandedSessionDirectories({});
       setSessionFilterInput("");
       setWorkspaceFilterInput("");
       setWorkspaceFilter("");
+      setSessionItems(items);
       setWorkspaceNodes(normalizeWorkspaceNodes(workspaceItems, currentWorkspaceRoot));
       setWorkspaceState({
         loaded: workspaceLoaded,
@@ -1097,7 +1312,7 @@ export function InspectorFilesPanel({
         error: "",
       }));
     }
-  }, [currentWorkspaceRoot, hasWorkspaceFilter, workspaceItems, workspaceLoaded]);
+  }, [currentWorkspaceRoot, hasWorkspaceFilter, items, workspaceItems, workspaceLoaded]);
 
   useEffect(() => {
     const nextFilter = String(workspaceFilterInput || "");
@@ -1259,6 +1474,106 @@ export function InspectorFilesPanel({
     await fetchWorkspaceDirectory(node);
   }, [fetchWorkspaceDirectory]);
 
+  const commitRename = useCallback(async ({ item, nextName }) => {
+    const currentPath = resolveItemPath(item);
+    if (!currentPath) {
+      return;
+    }
+
+    const response = await apiFetch("/api/file-manager/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: currentPath, nextName }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(
+        typeof messages.inspector.workspaceTree.renameFailed === "function"
+          ? messages.inspector.workspaceTree.renameFailed(item.name || getPathName(currentPath), payload.error || "Rename failed")
+          : (payload.error || "Rename failed"),
+      );
+    }
+
+    const nextPath = String(payload.nextPath || "").trim() || currentPath;
+    setSessionItems((current) => renameSessionItems(current, currentPath, nextPath));
+
+    if (hasWorkspaceFilter && currentWorkspaceRoot) {
+      try {
+        const nextNodes = await requestWorkspaceTree({
+          currentAgentId,
+          currentSessionUser,
+          currentWorkspaceRoot,
+          filter: workspaceFilter.trim(),
+        });
+        setWorkspaceNodes(nextNodes);
+        setWorkspaceState({ loaded: true, loading: false, error: "" });
+      } catch (error) {
+        console.error(error);
+        setWorkspaceState((current) => ({
+          ...current,
+          loading: false,
+          error: messages.inspector.workspaceTree.loadFailed,
+        }));
+      }
+    } else {
+      setWorkspaceNodes((current) => renameWorkspaceNodes(current, currentPath, nextPath));
+    }
+  }, [
+    currentAgentId,
+    currentSessionUser,
+    currentWorkspaceRoot,
+    hasWorkspaceFilter,
+    messages.inspector.workspaceTree,
+    workspaceFilter,
+  ]);
+
+  const handleOpenRenameDialog = useCallback((item) => {
+    const resolvedPath = resolveItemPath(item);
+    const fallbackName = String(item?.name || getPathName(resolvedPath) || "").trim();
+    if (!fallbackName) {
+      return;
+    }
+    setRenameExtensionState(null);
+    setRenameState({
+      item,
+      value: fallbackName,
+      submitting: false,
+      error: "",
+    });
+  }, []);
+
+  const submitRename = useCallback(async (forceExtensionChange = false) => {
+    if (!renameState) {
+      return;
+    }
+
+    const nextName = String(renameState.value || "").trim();
+    const currentName = String(renameState.item?.name || getPathName(resolveItemPath(renameState.item)) || "").trim();
+    if (!nextName) {
+      return;
+    }
+
+    if (!forceExtensionChange && doesFileExtensionChange(renameState.item, nextName)) {
+      setRenameExtensionState({
+        fromExtension: getPathExtension(currentName).replace(/^\./, ""),
+        toExtension: getPathExtension(nextName).replace(/^\./, ""),
+      });
+      return;
+    }
+
+    setRenameState((current) => current ? { ...current, submitting: true, error: "" } : current);
+
+    try {
+      await commitRename({ item: renameState.item, nextName });
+      setRenameState(null);
+      setRenameExtensionState(null);
+    } catch (error) {
+      console.error(error);
+      setRenameState((current) => current ? { ...current, submitting: false, error: error.message || messages.inspector.workspaceTree.loadFailed } : current);
+      setRenameExtensionState(null);
+    }
+  }, [commitRename, messages.inspector.workspaceTree, renameState]);
+
   return (
     <>
       <ScrollArea className="h-full min-h-0 flex-1">
@@ -1266,7 +1581,7 @@ export function InspectorFilesPanel({
           {showHint ? <InspectorHint text={messages.inspector.filesHint} /> : null}
           {hasSessionFiles ? (
             <FileGroupSection
-              count={hasSessionFilter ? visibleSessionCount : items.length}
+              count={hasSessionFilter ? visibleSessionCount : sessionItems.length}
               defaultOpen
               label={messages.inspector.fileCollections.session}
               messages={messages}
@@ -1402,8 +1717,55 @@ export function InspectorFilesPanel({
         onClose={() => setContextMenu(null)}
         onOpenEdit={onOpenEdit}
         onOpenPreview={onOpenPreview}
+        onRename={handleOpenRenameDialog}
         onRefreshDirectory={!hasWorkspaceFilter ? handleRefreshWorkspaceDirectory : undefined}
       />
+      {renameState ? (
+        <RenameDialog
+          confirmLabel={messages.inspector.workspaceTree.renameConfirm}
+          description={messages.inspector.workspaceTree.renameDescription(renameState.item?.name || getPathName(resolveItemPath(renameState.item)))}
+          error={renameState.error}
+          inputLabel={messages.inspector.workspaceTree.renameLabel}
+          messages={messages}
+          onCancel={() => {
+            if (renameState.submitting) {
+              return;
+            }
+            setRenameState(null);
+            setRenameExtensionState(null);
+          }}
+          onChange={(value) => {
+            setRenameState((current) => current ? { ...current, value, error: "" } : current);
+          }}
+          onConfirm={() => {
+            submitRename(false).catch(() => {});
+          }}
+          placeholder={messages.inspector.workspaceTree.renamePlaceholder}
+          submitting={renameState.submitting}
+          title={messages.inspector.workspaceTree.renameTitle}
+          value={renameState.value}
+        />
+      ) : null}
+      {renameState && renameExtensionState ? (
+        <RenameExtensionConfirmDialog
+          description={messages.inspector.workspaceTree.renameExtensionChangeDescription(
+            renameExtensionState.fromExtension,
+            renameExtensionState.toExtension,
+          )}
+          messages={messages}
+          onCancel={() => {
+            if (renameState.submitting) {
+              return;
+            }
+            setRenameExtensionState(null);
+          }}
+          onConfirm={() => {
+            submitRename(true).catch(() => {});
+          }}
+          submitting={renameState.submitting}
+          title={messages.inspector.workspaceTree.renameExtensionChangeTitle}
+        />
+      ) : null}
     </>
   );
 }

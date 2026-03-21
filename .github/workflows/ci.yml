@@ -73,7 +73,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22.12.0
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -81,19 +81,29 @@ jobs:
 
       - name: Install OpenClaw
         run: |
-          curl -fsSL https://openclaw.ai/install.sh | bash
+          set -euo pipefail
+
+          if ! curl -fsSL https://openclaw.ai/install.sh | bash; then
+            echo "Official installer failed; falling back to npm install -g openclaw@latest"
+            SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install -g openclaw@latest
+          fi
+
+          OPENCLAW_NPM_PREFIX="$(npm prefix -g)"
+          echo "${OPENCLAW_NPM_PREFIX}/bin" >> "$GITHUB_PATH"
           echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
 
       - name: Verify OpenClaw CLI
         run: |
-          export PATH="$HOME/.npm-global/bin:$PATH"
+          export PATH="$(npm prefix -g)/bin:$HOME/.npm-global/bin:$PATH"
+          command -v openclaw
+          echo "OPENCLAW_BIN=$(command -v openclaw)" >> "$GITHUB_ENV"
           openclaw --version
 
       - name: Run OpenClaw onboarding smoke
         env:
           LALACLAW_ONBOARDING_SMOKE_OUTPUT_FILE: ${{ runner.temp }}/openclaw-onboarding-smoke.json
         run: |
-          export PATH="$HOME/.npm-global/bin:$PATH"
+          export PATH="$(npm prefix -g)/bin:$HOME/.npm-global/bin:$PATH"
           npm run test:openclaw:onboarding:smoke -- --json
 
       - name: Upload OpenClaw onboarding smoke report

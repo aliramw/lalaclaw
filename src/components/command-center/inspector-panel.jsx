@@ -9,7 +9,13 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { copyTextToClipboard } from "@/components/command-center/clipboard-utils";
+import {
+  buildClipboardPasteRequestEntries,
+  clipboardHasPasteableFiles,
+  copyTextToClipboard,
+  createClipboardUploadEntriesFromFiles,
+  readClipboardFileEntries,
+} from "@/components/command-center/clipboard-utils";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, localizeStatusSummary, normalizeStatusKey } from "@/features/session/status-display";
 import { buildOpenClawConfigFormValues, buildOpenClawRemoteGuard, useOpenClawInspector } from "@/features/app/controllers/use-openclaw-inspector";
@@ -216,10 +222,189 @@ function getVsCodeHref(filePath = "") {
   return `vscode://file/${encodeURIComponent(filePath)}`;
 }
 
+function getPathName(filePath = "") {
+  const normalizedPath = String(filePath || "").replace(/\/+$/, "");
+  if (!normalizedPath) {
+    return "";
+  }
+  return normalizedPath.split("/").filter(Boolean).pop() || "";
+}
+
+function getPathExtension(fileName = "") {
+  const normalizedName = String(fileName || "").trim();
+  if (!normalizedName) {
+    return "";
+  }
+  const dotIndex = normalizedName.lastIndexOf(".");
+  if (dotIndex <= 0 || dotIndex === normalizedName.length - 1) {
+    return dotIndex === normalizedName.length - 1 ? "." : "";
+  }
+  return normalizedName.slice(dotIndex).toLowerCase();
+}
+
+function doesFileExtensionChange(item, nextName = "") {
+  if (!item || item.kind === "目录") {
+    return false;
+  }
+
+  const currentName = String(item.name || getPathName(resolveItemPath(item)) || "").trim();
+  return getPathExtension(currentName) !== getPathExtension(nextName);
+}
+
+function replacePathPrefix(sourcePath = "", previousPath = "", nextPath = "") {
+  const normalizedSource = String(sourcePath || "");
+  const normalizedPrevious = String(previousPath || "");
+  const normalizedNext = String(nextPath || "");
+
+  if (!normalizedSource || !normalizedPrevious || normalizedSource === normalizedPrevious) {
+    return normalizedSource === normalizedPrevious ? normalizedNext : normalizedSource;
+  }
+
+  if (!normalizedSource.startsWith(`${normalizedPrevious}/`)) {
+    return normalizedSource;
+  }
+
+  return `${normalizedNext}${normalizedSource.slice(normalizedPrevious.length)}`;
+}
+
+function renameWorkspaceNodePaths(node, previousPath, nextPath) {
+  const currentPath = resolveItemPath(node);
+  const renamedPath = replacePathPrefix(currentPath, previousPath, nextPath);
+  const nextName = getPathName(renamedPath) || node.name;
+  const nextChildren = Array.isArray(node.children)
+    ? node.children.map((child) => renameWorkspaceNodePaths(child, previousPath, nextPath))
+    : [];
+
+  return {
+    ...node,
+    key: renamedPath || node.key,
+    path: renamedPath || node.path,
+    fullPath: renamedPath || node.fullPath,
+    name: nextName,
+    children: nextChildren,
+  };
+}
+
+function renameWorkspaceNodes(nodes = [], previousPath = "", nextPath = "") {
+  return nodes.map((node) => {
+    const currentPath = resolveItemPath(node);
+    if (currentPath === previousPath || currentPath.startsWith(`${previousPath}/`)) {
+      return renameWorkspaceNodePaths(node, previousPath, nextPath);
+    }
+    if (node.kind === "目录" && node.children?.length) {
+      return {
+        ...node,
+        children: renameWorkspaceNodes(node.children, previousPath, nextPath),
+      };
+    }
+    return node;
+  });
+}
+
+function renameSessionItems(items = [], previousPath = "", nextPath = "") {
+  return items.map((item) => {
+    const currentPath = resolveItemPath(item);
+    if (currentPath !== previousPath && !currentPath.startsWith(`${previousPath}/`)) {
+      return item;
+    }
+    const renamedPath = replacePathPrefix(currentPath, previousPath, nextPath);
+    return {
+      ...item,
+      path: renamedPath || item.path,
+      fullPath: renamedPath || item.fullPath,
+      name: getPathName(renamedPath) || item.name,
+    };
+  });
+}
+
+function RenameDialog({
+  confirmLabel,
+  description,
+  error,
+  inputLabel,
+  messages,
+  onCancel,
+  onChange,
+  onConfirm,
+  placeholder,
+  submitting = false,
+  title,
+  value,
+}) {
+  return (
+    <div className="fixed inset-0 z-[41] flex items-center justify-center bg-background/55 px-4 backdrop-blur-[1px]">
+      <div className="w-full max-w-md rounded-[24px] border border-border/70 bg-card shadow-2xl">
+        <div className="space-y-4 px-5 py-5">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+            <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+          </div>
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-foreground">{inputLabel}</span>
+            <input
+              autoFocus
+              type="text"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onConfirm();
+                }
+              }}
+              placeholder={placeholder}
+              className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40"
+            />
+          </label>
+          {error ? <p className="text-sm leading-6 text-destructive">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+              {messages.inspector.workspaceTree.renameCancel}
+            </Button>
+            <Button type="button" onClick={onConfirm} disabled={submitting || !String(value || "").trim()}>
+              {submitting ? messages.inspector.workspaceTree.renameConfirming : confirmLabel}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RenameExtensionConfirmDialog({ description, messages, onCancel, onConfirm, submitting = false, title }) {
+  return (
+    <div className="fixed inset-0 z-[42] flex items-center justify-center bg-background/55 px-4 backdrop-blur-[1px]">
+      <div className="w-full max-w-md rounded-[24px] border border-border/70 bg-card shadow-2xl">
+        <div className="space-y-4 px-5 py-5">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+            <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+              {messages.inspector.workspaceTree.renameCancel}
+            </Button>
+            <Button type="button" onClick={onConfirm} disabled={submitting}>
+              {messages.inspector.workspaceTree.renameExtensionChangeConfirm}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function resolveFileManagerLocaleLabel(messages) {
   return isApplePlatform()
     ? messages.inspector.previewActions.fileManagers.finder
     : messages.inspector.previewActions.fileManagers.explorer;
+}
+
+function resolveFileManagerActionLabel(messages, isDirectory = false) {
+  const fileManagerLabel = resolveFileManagerLocaleLabel(messages);
+  return isDirectory
+    ? messages.inspector.previewActions.openDirectoryInFileManager(fileManagerLabel)
+    : messages.inspector.previewActions.revealInFileManager(fileManagerLabel);
 }
 
 function countWorkspaceFiles(nodes = []) {
@@ -1566,6 +1751,36 @@ function OpenClawOnboardingPanel({
               <div className="mt-2 text-muted-foreground">
                 {messages.inspector.openClawOnboarding.labels.validation}:{" "}
                 {state.validation.ok ? messages.inspector.openClawOnboarding.validation.valid : messages.inspector.openClawOnboarding.validation.invalid}
+              </div>
+            ) : null}
+            {state?.service ? (
+              <div className="mt-2 space-y-1 text-muted-foreground">
+                <div>
+                  <span className="font-medium text-foreground">LalaClaw Service</span>
+                  {": "}
+                  <span>{state.service.installed ? (state.service.running ? "installed · running" : "installed · stopped") : "not installed"}</span>
+                </div>
+                {state.service.label ? (
+                  <div>
+                    <span className="font-medium text-foreground">Label</span>
+                    {": "}
+                    <span className="font-mono">{state.service.label}</span>
+                  </div>
+                ) : null}
+                {state.service.plistPath ? (
+                  <div className="break-all">
+                    <span className="font-medium text-foreground">LaunchAgent</span>
+                    {": "}
+                    <span className="font-mono">{state.service.plistPath}</span>
+                  </div>
+                ) : null}
+                {state.service.logDir ? (
+                  <div className="break-all">
+                    <span className="font-medium text-foreground">Logs</span>
+                    {": "}
+                    <span className="font-mono">{state.service.logDir}</span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {capabilityRows.length ? (
@@ -3068,12 +3283,39 @@ function updateWorkspaceNode(nodes = [], targetPath = "", updater) {
   });
 }
 
-function WorkspaceTreeNode({ currentWorkspaceRoot = "", depth = 0, messages, node, onOpenContextMenu, onOpenDirectory, onOpenPreview }) {
+function findWorkspaceNodeByPath(nodes = [], targetPath = "") {
+  for (const node of nodes) {
+    if (resolveItemPath(node) === targetPath) {
+      return node;
+    }
+    if (node.kind === "目录" && node.children?.length) {
+      const nestedNode = findWorkspaceNodeByPath(node.children, targetPath);
+      if (nestedNode) {
+        return nestedNode;
+      }
+    }
+  }
+  return null;
+}
+
+function WorkspaceTreeNode({
+  currentWorkspaceRoot = "",
+  depth = 0,
+  messages,
+  node,
+  onOpenContextMenu,
+  onOpenDirectory,
+  onOpenPreview,
+  onSelectDirectory,
+  selectedDirectoryPath = "",
+}) {
   const isDirectory = node.kind === "目录";
   const compactChain = isDirectory ? getCompactDirectoryChain(node) : [];
   const visibleNode = compactChain.at(-1) || node;
   const displayName = compactChain.length ? formatCompactDirectoryLabel(compactChain) : node.name;
   const isExpandable = isDirectory && (visibleNode.hasChildren || visibleNode.children?.length || visibleNode.loading || visibleNode.error);
+  const visibleNodePath = resolveItemPath(visibleNode);
+  const isSelected = Boolean(visibleNodePath) && visibleNodePath === selectedDirectoryPath;
 
   if (!isDirectory) {
     return (
@@ -3096,16 +3338,20 @@ function WorkspaceTreeNode({ currentWorkspaceRoot = "", depth = 0, messages, nod
         type="button"
         className={cn(
           "flex w-full items-center gap-1.5 rounded-sm py-0.5 text-left text-[11px] font-medium text-muted-foreground transition hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border/35",
+          isSelected && "bg-accent/35 text-foreground ring-1 ring-border/35",
           !isExpandable && "cursor-default hover:bg-transparent",
         )}
+        data-selected={isSelected ? "true" : "false"}
         aria-expanded={isExpandable ? node.expanded : undefined}
         aria-label={`${displayName} ${node.expanded ? messages.inspector.timeline.collapse : messages.inspector.timeline.expand}`}
         style={{ paddingLeft: `${depth * 14}px` }}
         onContextMenu={(event) => {
           event.preventDefault();
-          onOpenContextMenu?.(event, node);
+          onSelectDirectory?.(visibleNode);
+          onOpenContextMenu?.(event, visibleNode);
         }}
         onClick={() => {
+          onSelectDirectory?.(visibleNode);
           if (isExpandable || !node.loaded) {
             onOpenDirectory?.(node);
           }
@@ -3142,6 +3388,8 @@ function WorkspaceTreeNode({ currentWorkspaceRoot = "", depth = 0, messages, nod
               onOpenPreview={onOpenPreview}
               onOpenContextMenu={onOpenContextMenu}
               onOpenDirectory={onOpenDirectory}
+              onSelectDirectory={onSelectDirectory}
+              selectedDirectoryPath={selectedDirectoryPath}
             />
           )) : null}
         </div>
@@ -3158,12 +3406,16 @@ function SessionTreeNode({
   node,
   onOpenContextMenu,
   onOpenPreview,
+  onSelectDirectory,
   onToggleDirectory,
+  selectedDirectoryPath = "",
 }) {
   const isDirectory = node.kind === "目录";
   const compactChain = isDirectory ? getCompactDirectoryChain(node) : [];
   const visibleNode = compactChain.at(-1) || node;
   const displayName = compactChain.length ? formatCompactDirectoryLabel(compactChain) : node.name;
+  const visibleNodePath = resolveItemPath(visibleNode);
+  const isSelected = Boolean(visibleNodePath) && visibleNodePath === selectedDirectoryPath;
 
   if (!isDirectory) {
     return (
@@ -3186,11 +3438,21 @@ function SessionTreeNode({
     <div className="space-y-1">
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 rounded-sm py-0.5 text-left text-[11px] font-medium text-muted-foreground transition hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border/35"
+        className={cn(
+          "flex w-full items-center gap-1.5 rounded-sm py-0.5 text-left text-[11px] font-medium text-muted-foreground transition hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border/35",
+          isSelected && "bg-accent/35 text-foreground ring-1 ring-border/35",
+        )}
+        data-selected={isSelected ? "true" : "false"}
         aria-expanded={isExpanded}
         aria-label={`${displayName} ${isExpanded ? messages.inspector.timeline.collapse : messages.inspector.timeline.expand}`}
         style={{ paddingLeft: `${depth * 14}px` }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onSelectDirectory?.(visibleNode);
+          onOpenContextMenu?.(event, visibleNode);
+        }}
         onClick={() => {
+          onSelectDirectory?.(visibleNode);
           onToggleDirectory?.(node.fullPath);
         }}
       >
@@ -3210,7 +3472,9 @@ function SessionTreeNode({
               node={child}
               onOpenPreview={onOpenPreview}
               onOpenContextMenu={onOpenContextMenu}
+              onSelectDirectory={onSelectDirectory}
               onToggleDirectory={onToggleDirectory}
+              selectedDirectoryPath={selectedDirectoryPath}
             />
           ))}
         </div>
@@ -3219,9 +3483,10 @@ function SessionTreeNode({
   );
 }
 
-function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, onRefreshDirectory }) {
+function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, onPasteDirectory, onRefreshDirectory, onRename }) {
   const menuRef = useRef(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
+  const [canPasteDirectory, setCanPasteDirectory] = useState(false);
 
   useLayoutEffect(() => {
     if (!menu) {
@@ -3277,23 +3542,54 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
     };
   }, [menu, onClose]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!menu || menu.item?.kind !== "目录" || typeof onPasteDirectory !== "function") {
+      setCanPasteDirectory(false);
+      return undefined;
+    }
+
+    setCanPasteDirectory(typeof window !== "undefined" && typeof window.navigator?.clipboard?.read === "function");
+    clipboardHasPasteableFiles()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setCanPasteDirectory(Boolean(result));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setCanPasteDirectory(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [menu, onPasteDirectory]);
+
   if (!menu) {
     return null;
   }
 
   const handleCopyPath = async () => {
     try {
-      await navigator.clipboard?.writeText?.(resolveItemPath(menu.item));
+      await copyTextToClipboard(resolveItemPath(menu.item));
     } finally {
       onClose();
     }
   };
   const canPreview = canPreviewFileItem(menu.item);
   const canEdit = canEditFileItem(menu.item);
-  const canRefreshDirectory = menu.item?.kind === "目录" && typeof onRefreshDirectory === "function";
+  const isDirectory = menu.item?.kind === "目录";
+  const canRename = typeof onRename === "function";
+  const canRefreshDirectory = isDirectory && menu.source === "workspace" && typeof onRefreshDirectory === "function";
+  const showPasteDirectory = isDirectory && typeof onPasteDirectory === "function";
   const targetPath = resolveItemPath(menu.item);
   const vscodeHref = getVsCodeHref(targetPath);
-  const fileManagerLabel = resolveFileManagerLocaleLabel(messages);
+  const pasteMenuLabel = messages.inspector.fileMenu.paste || messages.chat.uploadAttachment;
 
   const handleRevealInFileManager = async () => {
     try {
@@ -3329,21 +3625,84 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
       className="fixed z-50 min-w-40 rounded-md border border-border/80 bg-popover p-1 text-popover-foreground shadow-lg"
       style={{ left: position.left, top: position.top }}
     >
-      {canRefreshDirectory ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onRefreshDirectory(menu.item).catch(() => {});
-            onClose();
-          }}
-          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
-        >
-          <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
-          <span>{messages.inspector.fileMenu.refresh}</span>
-        </button>
+      {isDirectory ? (
+        <>
+          {canRename ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onRename(menu.item, menu.source);
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{messages.inspector.fileMenu.rename}</span>
+            </button>
+          ) : null}
+          {canRefreshDirectory ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onRefreshDirectory(menu.item).catch(() => {});
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{messages.inspector.fileMenu.refresh}</span>
+            </button>
+          ) : null}
+          {showPasteDirectory ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canPasteDirectory}
+              onClick={() => {
+                if (!canPasteDirectory) {
+                  return;
+                }
+                onPasteDirectory(menu.item).catch(() => {});
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{pasteMenuLabel}</span>
+            </button>
+          ) : null}
+          {(canRename || canRefreshDirectory || showPasteDirectory) ? <div role="separator" className="my-1 h-px bg-border/70" /> : null}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              handleRevealInFileManager().catch(() => {});
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+          >
+            <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{resolveFileManagerActionLabel(messages, true)}</span>
+          </button>
+          <div role="separator" className="my-1 h-px bg-border/70" />
+        </>
       ) : (
         <>
+          {canRename ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onRename(menu.item, menu.source);
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{messages.inspector.fileMenu.rename}</span>
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
@@ -3376,7 +3735,7 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
           ) : null}
         </>
       )}
-      {!canRefreshDirectory ? (
+      {!isDirectory ? (
         <>
           <div role="separator" className="my-1 h-px bg-border/70" />
           <button
@@ -3388,7 +3747,7 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
             className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus-visible:bg-accent/60"
           >
             <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
-            <span>{messages.inspector.previewActions.revealInFileManager(fileManagerLabel)}</span>
+            <span>{resolveFileManagerActionLabel(messages, false)}</span>
           </button>
           <button
             type="button"
@@ -3476,6 +3835,7 @@ function FileFilterInput({ filterInput, messages, onChange, onClear }) {
 }
 
 function FilesTab({
+  active = false,
   currentAgentId = "",
   currentWorkspaceRoot = "",
   currentSessionUser = "",
@@ -3488,9 +3848,14 @@ function FilesTab({
   workspaceLoaded = false,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
+  const [selectedDirectoryPath, setSelectedDirectoryPath] = useState("");
+  const [pasteFeedback, setPasteFeedback] = useState(null);
   const [sessionFilterInput, setSessionFilterInput] = useState("");
   const [workspaceFilterInput, setWorkspaceFilterInput] = useState("");
   const [workspaceFilter, setWorkspaceFilter] = useState("");
+  const [sessionItems, setSessionItems] = useState(items);
+  const [renameState, setRenameState] = useState(null);
+  const [renameExtensionState, setRenameExtensionState] = useState(null);
   const fileActionSections = [
     { key: "created", label: messages.inspector.fileActions.created },
     { key: "modified", label: messages.inspector.fileActions.modified },
@@ -3500,7 +3865,7 @@ function FilesTab({
   const groups = fileActionSections
     .map((section) => ({
       ...section,
-      items: items
+      items: sessionItems
         .filter((item) => item.primaryAction === section.key)
         .filter((item) => (sessionFilterMatcher ? sessionFilterMatcher(item, currentWorkspaceRoot) : true))
         .sort((left, right) => compareFileItemsByPath(left, right, currentWorkspaceRoot)),
@@ -3515,13 +3880,32 @@ function FilesTab({
   const previousWorkspaceRootRef = useRef(currentWorkspaceRoot);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [expandedSessionDirectories, setExpandedSessionDirectories] = useState({});
-  const hasSessionFiles = items.length > 0;
+  const hasSessionFiles = sessionItems.length > 0;
   const hasSessionFilter = Boolean(String(sessionFilterInput || "").trim());
   const visibleSessionCount = groups.reduce((total, group) => total + group.items.length, 0);
   const hasWorkspaceFilter = Boolean(String(workspaceFilter || "").trim());
   const visibleWorkspaceCount = hasWorkspaceFilter
     ? countWorkspaceFiles(workspaceNodes)
     : (Number.isFinite(workspaceCount) ? workspaceCount : workspaceNodes.length);
+  const pasteUnavailableMessage = messages.inspector.workspaceTree.pasteUnavailable || messages.inspector.workspaceTree.loadFailed;
+
+  useEffect(() => {
+    if (!pasteFeedback) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setPasteFeedback(null);
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [pasteFeedback]);
+
+  useEffect(() => {
+    setSessionItems(items);
+  }, [items, currentWorkspaceRoot]);
 
   const loadWorkspaceDirectoryChildren = useCallback(async (targetPath) => {
     const directChildren = await requestWorkspaceTree({
@@ -3590,10 +3974,16 @@ function FilesTab({
     previousWorkspaceRootRef.current = currentWorkspaceRoot;
 
     if (workspaceRootChanged) {
+      setContextMenu(null);
+      setSelectedDirectoryPath("");
+      setPasteFeedback(null);
+      setRenameState(null);
+      setRenameExtensionState(null);
       setExpandedSessionDirectories({});
       setSessionFilterInput("");
       setWorkspaceFilterInput("");
       setWorkspaceFilter("");
+      setSessionItems(items);
       setWorkspaceNodes(normalizeWorkspaceNodes(workspaceItems, currentWorkspaceRoot));
       setWorkspaceState({
         loaded: workspaceLoaded,
@@ -3617,7 +4007,7 @@ function FilesTab({
         }));
       }
     }
-  }, [currentWorkspaceRoot, hasWorkspaceFilter, workspaceItems, workspaceLoaded]);
+  }, [currentWorkspaceRoot, hasWorkspaceFilter, items, workspaceItems, workspaceLoaded]);
 
   useEffect(() => {
     const nextFilter = String(workspaceFilterInput || "");
@@ -3634,6 +4024,12 @@ function FilesTab({
       window.clearTimeout(timeoutId);
     };
   }, [workspaceFilterInput]);
+
+  useEffect(() => {
+    if (!active) {
+      setContextMenu(null);
+    }
+  }, [active]);
 
   useEffect(() => {
     setCollapsedGroups((current) => {
@@ -3779,14 +4175,288 @@ function FilesTab({
     await fetchWorkspaceDirectory(node);
   }, [fetchWorkspaceDirectory]);
 
+  const getPasteTargetLabel = useCallback((targetPath = "") => {
+    const displayPath = formatDisplayPath({ path: targetPath, fullPath: targetPath }, currentWorkspaceRoot);
+    return displayPath || compactHomePath(targetPath) || targetPath;
+  }, [currentWorkspaceRoot]);
+
+  const refreshWorkspaceAfterPaste = useCallback(async (targetPath) => {
+    if (!targetPath || !currentWorkspaceRoot) {
+      return;
+    }
+
+    if (hasWorkspaceFilter) {
+      setWorkspaceState((current) => ({ ...current, loading: true, error: "" }));
+      try {
+        const nextNodes = await requestWorkspaceTree({
+          currentAgentId,
+          currentSessionUser,
+          currentWorkspaceRoot,
+          filter: workspaceFilter.trim(),
+        });
+        setWorkspaceNodes(nextNodes);
+        setWorkspaceState({ loaded: true, loading: false, error: "" });
+      } catch (error) {
+        console.error(error);
+        setWorkspaceState((current) => ({
+          ...current,
+          loading: false,
+          error: messages.inspector.workspaceTree.loadFailed,
+        }));
+      }
+      return;
+    }
+
+    const targetNode = findWorkspaceNodeByPath(workspaceNodes, targetPath);
+    if (targetNode) {
+      await fetchWorkspaceDirectory(targetNode, { preserveExpanded: targetNode.expanded });
+      return;
+    }
+
+    if (targetPath === currentWorkspaceRoot) {
+      try {
+        const nextNodes = await requestWorkspaceTree({
+          currentAgentId,
+          currentSessionUser,
+          currentWorkspaceRoot,
+        });
+        setWorkspaceNodes(nextNodes);
+        setWorkspaceState({ loaded: true, loading: false, error: "" });
+      } catch (error) {
+        console.error(error);
+        setWorkspaceState((current) => ({
+          ...current,
+          loading: false,
+          error: messages.inspector.workspaceTree.loadFailed,
+        }));
+      }
+    }
+  }, [
+    currentAgentId,
+    currentSessionUser,
+    currentWorkspaceRoot,
+    fetchWorkspaceDirectory,
+    hasWorkspaceFilter,
+    messages.inspector.workspaceTree.loadFailed,
+    workspaceFilter,
+    workspaceNodes,
+  ]);
+
+  const pasteClipboardEntriesIntoDirectory = useCallback(async (directoryItem, clipboardEntries) => {
+    const targetPath = resolveItemPath(directoryItem);
+    if (!targetPath) {
+      return;
+    }
+
+    const targetLabel = getPasteTargetLabel(targetPath);
+
+    try {
+      const requestEntries = await buildClipboardPasteRequestEntries(clipboardEntries);
+      if (!requestEntries.length) {
+        throw new Error(pasteUnavailableMessage);
+      }
+
+      const response = await apiFetch("/api/file-manager/paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          directoryPath: targetPath,
+          entries: requestEntries,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || pasteUnavailableMessage);
+      }
+
+      setSelectedDirectoryPath(targetPath);
+      await refreshWorkspaceAfterPaste(targetPath);
+
+      const savedCount = Array.isArray(payload.items) && payload.items.length
+        ? payload.items.length
+        : requestEntries.length;
+      const successText = typeof messages.inspector.workspaceTree.pasteSucceeded === "function"
+        ? messages.inspector.workspaceTree.pasteSucceeded(savedCount, targetLabel)
+        : messages.inspector.workspaceTree.loadFailed;
+      setPasteFeedback({
+        kind: "success",
+        text: successText,
+      });
+    } catch (error) {
+      console.error(error);
+      const failureText = typeof messages.inspector.workspaceTree.pasteFailed === "function"
+        ? messages.inspector.workspaceTree.pasteFailed(targetLabel, error.message || pasteUnavailableMessage)
+        : (error.message || messages.inspector.workspaceTree.loadFailed);
+      setPasteFeedback({
+        kind: "error",
+        text: failureText,
+      });
+    }
+  }, [
+    getPasteTargetLabel,
+    messages.inspector.workspaceTree,
+    pasteUnavailableMessage,
+    refreshWorkspaceAfterPaste,
+  ]);
+
+  const handlePasteDirectoryFromMenu = useCallback(async (directoryItem) => {
+    const clipboardEntries = await readClipboardFileEntries();
+    await pasteClipboardEntriesIntoDirectory(directoryItem, clipboardEntries);
+  }, [pasteClipboardEntriesIntoDirectory]);
+
+  const commitRename = useCallback(async ({ item, nextName }) => {
+    const currentPath = resolveItemPath(item);
+    if (!currentPath) {
+      return;
+    }
+
+    const response = await apiFetch("/api/file-manager/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: currentPath, nextName }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(
+        typeof messages.inspector.workspaceTree.renameFailed === "function"
+          ? messages.inspector.workspaceTree.renameFailed(item.name || getPathName(currentPath), payload.error || "Rename failed")
+          : (payload.error || "Rename failed"),
+      );
+    }
+
+    const nextPath = String(payload.nextPath || "").trim() || replacePathPrefix(currentPath, currentPath, currentPath);
+    setSessionItems((current) => renameSessionItems(current, currentPath, nextPath));
+    setSelectedDirectoryPath((current) => replacePathPrefix(current, currentPath, nextPath));
+
+    if (hasWorkspaceFilter && currentWorkspaceRoot) {
+      try {
+        const nextNodes = await requestWorkspaceTree({
+          currentAgentId,
+          currentSessionUser,
+          currentWorkspaceRoot,
+          filter: workspaceFilter.trim(),
+        });
+        setWorkspaceNodes(nextNodes);
+        setWorkspaceState({ loaded: true, loading: false, error: "" });
+      } catch (error) {
+        console.error(error);
+        setWorkspaceState((current) => ({
+          ...current,
+          loading: false,
+          error: messages.inspector.workspaceTree.loadFailed,
+        }));
+      }
+    } else {
+      setWorkspaceNodes((current) => renameWorkspaceNodes(current, currentPath, nextPath));
+    }
+  }, [
+    currentAgentId,
+    currentSessionUser,
+    currentWorkspaceRoot,
+    hasWorkspaceFilter,
+    messages.inspector.workspaceTree,
+    workspaceFilter,
+  ]);
+
+  const openRenameDialog = useCallback((item, source = "session") => {
+    const resolvedPath = resolveItemPath(item);
+    const fallbackName = String(item?.name || getPathName(resolvedPath) || "").trim();
+    if (!fallbackName) {
+      return;
+    }
+    setRenameExtensionState(null);
+    setRenameState({
+      source,
+      item,
+      value: fallbackName,
+      submitting: false,
+      error: "",
+    });
+  }, []);
+
+  const submitRename = useCallback(async (forceExtensionChange = false) => {
+    if (!renameState) {
+      return;
+    }
+
+    const nextName = String(renameState.value || "").trim();
+    const currentName = String(renameState.item?.name || getPathName(resolveItemPath(renameState.item)) || "").trim();
+    if (!nextName) {
+      setRenameState((current) => current ? { ...current, error: messages.inspector.workspaceTree.loadFailed } : current);
+      return;
+    }
+
+    if (!forceExtensionChange && doesFileExtensionChange(renameState.item, nextName)) {
+      setRenameExtensionState({
+        fromExtension: getPathExtension(currentName).replace(/^\./, ""),
+        toExtension: getPathExtension(nextName).replace(/^\./, ""),
+      });
+      return;
+    }
+
+    setRenameState((current) => current ? { ...current, submitting: true, error: "" } : current);
+
+    try {
+      await commitRename({ item: renameState.item, nextName });
+      setRenameState(null);
+      setRenameExtensionState(null);
+    } catch (error) {
+      console.error(error);
+      setRenameState((current) => current ? { ...current, submitting: false, error: error.message || messages.inspector.workspaceTree.loadFailed } : current);
+      setRenameExtensionState(null);
+      return;
+    }
+  }, [commitRename, messages.inspector.workspaceTree, renameState]);
+
+  useEffect(() => {
+    if (!active || !selectedDirectoryPath) {
+      return undefined;
+    }
+
+    const handleDirectoryPaste = (event) => {
+      const pastedFiles = Array.from(event.clipboardData?.files || []).filter(Boolean);
+      if (!pastedFiles.length) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+
+      pasteClipboardEntriesIntoDirectory(
+        { path: selectedDirectoryPath, fullPath: selectedDirectoryPath, kind: "目录" },
+        createClipboardUploadEntriesFromFiles(pastedFiles),
+      ).catch((error) => {
+        console.error(error);
+      });
+    };
+
+    window.addEventListener("paste", handleDirectoryPaste, true);
+    return () => {
+      window.removeEventListener("paste", handleDirectoryPaste, true);
+    };
+  }, [active, pasteClipboardEntriesIntoDirectory, selectedDirectoryPath]);
+
   return (
     <>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 py-1 pr-4">
           <InspectorHint text={messages.inspector.filesHint} />
+          {pasteFeedback ? (
+            <div
+              className={cn(
+                "rounded-xl border px-3 py-2 text-[12px] leading-5",
+                pasteFeedback.kind === "success"
+                  ? "border-emerald-500/25 bg-emerald-500/6 text-emerald-700 dark:text-emerald-300"
+                  : "border-destructive/30 bg-destructive/5 text-destructive",
+              )}
+            >
+              {pasteFeedback.text}
+            </div>
+          ) : null}
           {hasSessionFiles ? (
             <FileGroupSection
-              count={hasSessionFilter ? visibleSessionCount : items.length}
+              count={hasSessionFilter ? visibleSessionCount : sessionItems.length}
               defaultOpen
               label={messages.inspector.fileCollections.session}
               messages={messages}
@@ -3837,9 +4507,13 @@ function FilesTab({
                               onOpenContextMenu={(event, nextItem) => {
                                 setContextMenu({
                                   item: nextItem,
+                                  source: "session",
                                   x: event.clientX,
                                   y: event.clientY,
                                 });
+                              }}
+                              onSelectDirectory={(nextItem) => {
+                                setSelectedDirectoryPath(resolveItemPath(nextItem));
                               }}
                               onToggleDirectory={(directoryPath) => {
                                 setExpandedSessionDirectories((current) => ({
@@ -3847,6 +4521,7 @@ function FilesTab({
                                   [directoryPath]: !(current[directoryPath] ?? true),
                                 }));
                               }}
+                              selectedDirectoryPath={selectedDirectoryPath}
                             />
                           ))}
                         </div>
@@ -3897,10 +4572,15 @@ function FilesTab({
                     onOpenContextMenu={(event, nextItem) => {
                       setContextMenu({
                         item: nextItem,
+                        source: "workspace",
                         x: event.clientX,
                         y: event.clientY,
                       });
                     }}
+                    onSelectDirectory={(nextItem) => {
+                      setSelectedDirectoryPath(resolveItemPath(nextItem));
+                    }}
+                    selectedDirectoryPath={selectedDirectoryPath}
                   />
                 ))}
               </div>
@@ -3914,8 +4594,56 @@ function FilesTab({
         onClose={() => setContextMenu(null)}
         onOpenEdit={onOpenEdit}
         onOpenPreview={onOpenPreview}
+        onPasteDirectory={handlePasteDirectoryFromMenu}
+        onRename={openRenameDialog}
         onRefreshDirectory={!hasWorkspaceFilter ? handleRefreshWorkspaceDirectory : undefined}
       />
+      {renameState ? (
+        <RenameDialog
+          confirmLabel={messages.inspector.workspaceTree.renameConfirm}
+          description={messages.inspector.workspaceTree.renameDescription(renameState.item?.name || getPathName(resolveItemPath(renameState.item)))}
+          error={renameState.error}
+          inputLabel={messages.inspector.workspaceTree.renameLabel}
+          messages={messages}
+          onCancel={() => {
+            if (renameState.submitting) {
+              return;
+            }
+            setRenameState(null);
+            setRenameExtensionState(null);
+          }}
+          onChange={(value) => {
+            setRenameState((current) => current ? { ...current, value, error: "" } : current);
+          }}
+          onConfirm={() => {
+            submitRename(false).catch(() => {});
+          }}
+          placeholder={messages.inspector.workspaceTree.renamePlaceholder}
+          submitting={renameState.submitting}
+          title={messages.inspector.workspaceTree.renameTitle}
+          value={renameState.value}
+        />
+      ) : null}
+      {renameState && renameExtensionState ? (
+        <RenameExtensionConfirmDialog
+          description={messages.inspector.workspaceTree.renameExtensionChangeDescription(
+            renameExtensionState.fromExtension,
+            renameExtensionState.toExtension,
+          )}
+          messages={messages}
+          onCancel={() => {
+            if (renameState.submitting) {
+              return;
+            }
+            setRenameExtensionState(null);
+          }}
+          onConfirm={() => {
+            submitRename(true).catch(() => {});
+          }}
+          submitting={renameState.submitting}
+          title={messages.inspector.workspaceTree.renameExtensionChangeTitle}
+        />
+      ) : null}
     </>
   );
 }
@@ -4865,6 +5593,7 @@ export function InspectorPanel({
 
   const filesTabContent = (
     <FilesTab
+      active={resolvedActiveTab === "files"}
       currentAgentId={currentAgentId}
       currentSessionUser={currentSessionUser}
       items={files}
