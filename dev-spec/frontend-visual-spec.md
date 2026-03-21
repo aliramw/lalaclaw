@@ -54,6 +54,7 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Count badges should be visually secondary to the title and should not dominate the header.
 - Count badges inside segmented inspector tabs must keep a distinct pill background and outline even when the tab is not selected; the inactive badge cannot blend into the tab list surface in either light or dark theme.
 - Expanded sections may add a top divider between header and content, but collapsed and expanded states should keep a stable outer shape.
+- In dialogs, sheets, and cards, dividers with inset spacing must stay inside the container width. Do not combine `w-full`-style separators with horizontal margins in a way that makes the rule visually protrude past the surface edge.
 - For inspector-style collapsible lists, header and content padding should stay compact enough that many sections can be scanned without excessive vertical scrolling.
 - In the files inspector, the `Workspace files` group should be collapsed by default while the current-session file group may stay expanded. Workspace inventory is secondary context and should not push active session changes below the fold on first render.
 - In the files inspector tree, clicking a folder must apply a persistent selected state that stays visually distinct from both hover and keyboard focus. That selection is the target for paste shortcuts, and directory context menus must expose a disabled/enabled paste action based on whether the clipboard currently contains files or images.
@@ -127,6 +128,7 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - In split preview overlays, the main preview column should also use a `basis-0`-style flex basis and full-width content wrappers so wide markdown tables, code blocks, or front matter sections cannot force the overall layout past the right edge.
 - When a preview includes the files sidebar, prefer an explicit two-column grid such as `minmax(0, 1fr) + fixed sidebar width` over loose flex sizing. The sidebar may never be visually overlapped or pushed out by markdown, code, front matter, or table content.
 - Code-like previews in light mode should use a true light syntax surface and token palette; avoid embedding a dark code block inside an otherwise light preview shell unless the user explicitly asks for it.
+- Long diagnostic or transcript-style content inside dialogs must scroll within the dialog body instead of forcing the surface to grow past its height budget. Keep an internal scroll container with a visible scrollbar affordance so operators can tell the content is scrollable.
 
 ## Feedback Loop
 

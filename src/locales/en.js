@@ -472,6 +472,8 @@ const en = {
         system: "System",
         assistant: "Assistant",
         user: "User",
+        developer: "Developer",
+        tool: "Tool",
         unknown: "Unknown",
       },
       fastModeValues: {

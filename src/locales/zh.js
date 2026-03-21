@@ -475,6 +475,8 @@ const zh = {
         system: "系统",
         assistant: "助手",
         user: "用户",
+        developer: "开发者",
+        tool: "工具",
         unknown: "未知",
       },
       fastModeValues: {

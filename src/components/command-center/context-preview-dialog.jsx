@@ -8,6 +8,19 @@ import { Separator } from "@/components/ui/separator";
 import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 
+function formatCompactNumber(value, intlLocale) {
+  if (value == null || value === "") {
+    return "";
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "";
+  }
+
+  return new Intl.NumberFormat(intlLocale).format(numeric);
+}
+
 function formatTimestamp(value, intlLocale) {
   if (!value) {
     return "";
@@ -27,36 +40,95 @@ function formatTimestamp(value, intlLocale) {
   }).format(date);
 }
 
+function stringifyForPreview(value) {
+  if (value == null) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function extractTextFromPart(part) {
+  if (part == null) {
+    return "";
+  }
+
+  if (typeof part === "string") {
+    return part;
+  }
+
+  if (typeof part === "number" || typeof part === "boolean") {
+    return String(part);
+  }
+
+  if (Array.isArray(part)) {
+    const segments = part.map(extractTextFromPart).filter(Boolean);
+    return segments.join("\n");
+  }
+
+  if (typeof part !== "object") {
+    return "";
+  }
+
+  if (typeof part.text === "string" && part.text.trim()) {
+    return part.text;
+  }
+  if (typeof part.output_text === "string" && part.output_text.trim()) {
+    return part.output_text;
+  }
+  if (typeof part.input_text === "string" && part.input_text.trim()) {
+    return part.input_text;
+  }
+  if (typeof part.content === "string" && part.content.trim()) {
+    return part.content;
+  }
+  if (Array.isArray(part.content) && part.content.length) {
+    return extractTextFromPart(part.content);
+  }
+  if (Array.isArray(part.summary) && part.summary.length) {
+    return extractTextFromPart(part.summary);
+  }
+  if (typeof part.arguments === "string" && part.arguments.trim()) {
+    return part.arguments;
+  }
+  if (typeof part.partialJson === "string" && part.partialJson.trim()) {
+    return part.partialJson;
+  }
+  if (typeof part.output === "string" && part.output.trim()) {
+    return part.output;
+  }
+  if (part.json != null) {
+    return stringifyForPreview(part.json);
+  }
+
+  const type = String(part.type || "").trim().toLowerCase();
+  if (type === "image_url" || type === "image") {
+    return "[image]";
+  }
+  if (type === "tool_use" || type === "toolcall") {
+    return `[tool_use: ${part.name || "unknown"}]`;
+  }
+  if (type === "tool_result" || type === "toolresult") {
+    return extractTextFromPart(part.result ?? part.content ?? part.output ?? part.text);
+  }
+
+  return stringifyForPreview(part);
+}
+
 function extractTextContent(content) {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (!part || typeof part !== "object") {
-          return "";
-        }
-        if (part.type === "text" || part.type === "input_text") {
-          return part.text || "";
-        }
-        if (part.type === "image_url" || part.type === "image") {
-          return "[image]";
-        }
-        if (part.type === "tool_use") {
-          return `[tool_use: ${part.name || "unknown"}]`;
-        }
-        if (part.type === "tool_result") {
-          return `[tool_result: ${part.tool_use_id || ""}]`;
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  return JSON.stringify(content, null, 2);
+  return extractTextFromPart(content).trim();
 }
 
 function roleBadgeVariant(role) {
@@ -72,19 +144,110 @@ function roleBadgeVariant(role) {
   return "default";
 }
 
+function normalizeMessageRole(rawMessage) {
+  const message = rawMessage?.message && typeof rawMessage.message === "object"
+    ? rawMessage.message
+    : rawMessage;
+  const explicitRole = String(
+    message?.role
+      || message?.author?.role
+      || message?.sender?.role
+      || rawMessage?.role
+      || rawMessage?.author?.role
+      || rawMessage?.sender?.role
+      || "",
+  ).trim().toLowerCase();
+
+  if (explicitRole) {
+    if (explicitRole === "function" || explicitRole === "tool") {
+      return "tool";
+    }
+    if (explicitRole === "developer") {
+      return "developer";
+    }
+    return explicitRole;
+  }
+
+  const type = String(message?.type || rawMessage?.type || "").trim().toLowerCase();
+  if (["tool", "tool_result", "tool_use", "function"].includes(type)) {
+    return "tool";
+  }
+  if (type === "developer") {
+    return "developer";
+  }
+
+  return "unknown";
+}
+
+function normalizeMessageUsage(rawMessage) {
+  const usage = rawMessage?.message?.usage ?? rawMessage?.usage ?? null;
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+
+  const input = usage.input_tokens ?? usage.prompt_tokens ?? usage.input ?? usage.prompt ?? null;
+  const output = usage.output_tokens ?? usage.completion_tokens ?? usage.output ?? usage.completion ?? null;
+  const total = usage.total_tokens ?? usage.total ?? null;
+  if (input == null && output == null && total == null) {
+    return null;
+  }
+
+  return { input, output, total };
+}
+
+function formatUsageSummary(usage, intlLocale) {
+  if (!usage) {
+    return "";
+  }
+
+  const parts = [];
+  const input = formatCompactNumber(usage.input, intlLocale);
+  const output = formatCompactNumber(usage.output, intlLocale);
+  const total = formatCompactNumber(usage.total, intlLocale);
+
+  if (input) {
+    parts.push(`↑${input}`);
+  }
+  if (output) {
+    parts.push(`↓${output}`);
+  }
+
+  if (parts.length) {
+    return parts.join(" ");
+  }
+
+  return total;
+}
+
+function normalizeContextMessage(rawMessage) {
+  const message = rawMessage?.message && typeof rawMessage.message === "object"
+    ? rawMessage.message
+    : rawMessage;
+  const role = normalizeMessageRole(rawMessage);
+  const usage = normalizeMessageUsage(rawMessage);
+  const text = extractTextContent(message?.content ?? rawMessage?.content ?? "");
+  const timestamp = message?.timestamp ?? rawMessage?.timestamp ?? rawMessage?.ts ?? message?.ts ?? null;
+
+  return {
+    role,
+    text,
+    timestamp,
+    usage,
+  };
+}
+
 function MessageCard({ intlLocale, message }) {
   const { messages } = useI18n();
   const contextMessages = messages.inspector.contextPreview;
   const role = message.role || "unknown";
-  const text = extractTextContent(message.content);
-  const timestamp = message.timestamp || message.ts;
+  const text = message.text || "";
+  const timestamp = message.timestamp;
   const maxPreviewChars = 2000;
   const [expanded, setExpanded] = useState(false);
   const truncated = text.length > maxPreviewChars;
   const displayText = expanded ? text : text.slice(0, maxPreviewChars);
   const roleLabel = contextMessages.roles?.[role] || contextMessages.roles?.unknown || role;
-  const inputTokens = message.usage?.input_tokens ?? message.usage?.prompt_tokens ?? "?";
-  const outputTokens = message.usage?.output_tokens ?? message.usage?.completion_tokens ?? "?";
+  const usageSummary = formatUsageSummary(message.usage, intlLocale);
 
   return (
     <div className="rounded-lg border border-border/60 bg-background/60 p-3">
@@ -95,9 +258,9 @@ function MessageCard({ intlLocale, message }) {
         {timestamp ? (
           <span className="text-[11px] text-muted-foreground">{formatTimestamp(timestamp, intlLocale)}</span>
         ) : null}
-        {message.usage ? (
+        {usageSummary ? (
           <span className="text-[11px] text-muted-foreground">
-            {contextMessages.tokenUsage}: {inputTokens}/{outputTokens}
+            {contextMessages.tokenUsage}: {usageSummary}
           </span>
         ) : null}
       </div>
@@ -186,7 +349,9 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
     return null;
   }
 
-  const messageList = data?.messages || [];
+  const messageList = (data?.messages || [])
+    .map(normalizeContextMessage)
+    .filter((message) => message.text || formatUsageSummary(message.usage, intlLocale));
 
   return createPortal(
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]">
@@ -195,7 +360,7 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="flex max-h-[85vh] w-full max-w-[52rem] flex-col rounded-2xl border border-border/80 bg-card shadow-2xl"
+        className="flex max-h-[85vh] w-full max-w-[52rem] flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-2xl"
       >
         <div className="flex items-start justify-between gap-4 p-5 pb-0 sm:p-6 sm:pb-0">
           <div className="space-y-1">
@@ -247,9 +412,11 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
           </div>
         ) : null}
 
-        <Separator className="mx-5 mt-4 sm:mx-6" />
+        <div className="px-5 pt-4 sm:px-6">
+          <Separator />
+        </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden p-5 pt-3 sm:p-6 sm:pt-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-5 pt-3 sm:p-6 sm:pt-3">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -260,7 +427,11 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
           ) : messageList.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">{contextMessages.empty}</div>
           ) : (
-            <ScrollArea className="h-full max-h-[calc(85vh-14rem)]" viewportClassName="min-w-0">
+            <ScrollArea
+              className="min-h-0 flex-1"
+              data-testid="context-preview-scroll-area"
+              viewportClassName="h-full min-w-0"
+            >
               <div className="space-y-2 pr-4">
                 {messageList.map((message, index) => (
                   <MessageCard key={`${message.role}-${message.timestamp || index}`} intlLocale={intlLocale} message={message} />

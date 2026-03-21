@@ -90,6 +90,17 @@ If your change depends on built output, run `npm run build` and verify against `
 
 If you are preparing a release or changing packaging behavior, do not stop at validating the source checkout. Also validate the actual npm artifact with `npm pack`, install that tarball in a clean temporary directory, and verify one real installed startup path before publishing.
 
+## Branch Hygiene
+
+- Start each task on a dedicated feature branch instead of working directly on `main`.
+- Prefer short-lived branches. Once a branch is merged into `main`, delete the local branch the same day.
+- Delete abandoned or superseded experiment branches instead of keeping them around "just in case".
+- Keep local branches more aggressively trimmed than remote branches. Local history should usually stay close to `main` plus only a small number of active tasks.
+- If a branch was absorbed by cherry-pick or manual porting instead of a direct merge, still make an explicit keep-or-delete decision right away.
+- Before reviving an old branch, check whether its changes were already absorbed into `main`. Do not assume an old branch still represents missing work.
+- If a local branch only tracks `origin/main`, is far behind, and has no unique value left, delete it.
+- `pr-*` or other review snapshot branches should be treated as temporary. Keep them only while they are actively being reviewed or evaluated.
+
 ## Project Shape
 
 - Frontend feature structure is documented in [src/features/README.md](./src/features/README.md)
