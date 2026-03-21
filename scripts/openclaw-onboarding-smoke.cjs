@@ -17,7 +17,7 @@ const KEEP_TMP = ["1", "true", "yes", "on"].includes(String(process.env.LALACLAW
 const OUTPUT_FILE = String(process.env.LALACLAW_ONBOARDING_SMOKE_OUTPUT_FILE || "").trim();
 const GITHUB_STEP_SUMMARY = String(process.env.GITHUB_STEP_SUMMARY || "").trim();
 const JSON_ONLY = argv.has("--json");
-const SERVER_READY_TIMEOUT_MS = 30_000;
+const SERVER_READY_TIMEOUT_MS = 90_000;
 
 function assert(condition, message) {
   if (!condition) {

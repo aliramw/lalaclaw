@@ -28,6 +28,21 @@ async function installBaseRoutes(page, runtimeSnapshot = createSnapshot()) {
   await page.route("**/api/runtime**", (route) =>
     jsonRoute(route, runtimeSnapshot),
   );
+
+  await page.routeWebSocket(/\/api\/runtime\/ws(\?.*)?$/, (ws) => {
+    ws.onMessage((message) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(String(message || ""));
+      } catch {
+        return;
+      }
+
+      if (payload?.type === "ping") {
+        ws.send(JSON.stringify({ type: "pong", ts: payload.ts }));
+      }
+    });
+  });
 }
 
 test.describe("Command center e2e", () => {
@@ -59,6 +74,7 @@ test.describe("Command center e2e", () => {
     await expect(page.getByText(CURRENT_SESSION_TITLE)).toBeVisible();
 
     const textbox = page.getByRole("textbox");
+    await expect(textbox).toBeEnabled();
     await textbox.fill("浏览器冒烟测试");
     await page.getByRole("button", { name: SEND_BUTTON_NAME }).click();
 
@@ -104,6 +120,7 @@ test.describe("Command center e2e", () => {
     await expect(page.getByText(CURRENT_SESSION_TITLE)).toBeVisible();
 
     const textbox = page.getByRole("textbox");
+    await expect(textbox).toBeEnabled();
     const conversation = page.locator("[data-message-bottom-sentinel]").locator("..");
 
     await textbox.fill("第一条");
