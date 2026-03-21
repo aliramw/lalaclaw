@@ -327,6 +327,17 @@ const es = {
     artifactsHint: "Aquí se listan los resúmenes de respuesta de esta sesión. Haz clic para saltar a esa parte de la conversación.",
     artifactReplyPrefix: "Respuesta",
     artifactJumpTo: "Ir a",
+    contextPreview: {
+      ...en.inspector.contextPreview,
+      unknownRoleLabel: "Rol desconocido",
+      roles: {
+        ...en.inspector.contextPreview.roles,
+        developer: "Desarrollador",
+        tool: "Herramienta",
+        toolUse: "Llamada de herramienta",
+        toolResult: "Resultado de herramienta",
+      },
+    },
     empty: {
       files: "Los archivos detectados para la sesión actual aparecerán aquí.",
       workspaceFiles: "Los archivos detectados del workspace actual aparecerán aquí.",

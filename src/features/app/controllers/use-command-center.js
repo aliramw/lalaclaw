@@ -87,8 +87,70 @@ function createTabMeta(tab, overrides = {}) {
     model: "",
     fastMode: false,
     thinkMode: "off",
+    sessionFiles: [],
+    sessionFileRewrites: [],
     ...overrides,
   };
+}
+
+function replacePathPrefix(sourcePath = "", previousPath = "", nextPath = "") {
+  const normalizedSource = String(sourcePath || "");
+  const normalizedPrevious = String(previousPath || "");
+  const normalizedNext = String(nextPath || "");
+
+  if (!normalizedSource || !normalizedPrevious || normalizedSource === normalizedPrevious) {
+    return normalizedSource === normalizedPrevious ? normalizedNext : normalizedSource;
+  }
+
+  if (!normalizedSource.startsWith(`${normalizedPrevious}/`)) {
+    return normalizedSource;
+  }
+
+  return `${normalizedNext}${normalizedSource.slice(normalizedPrevious.length)}`;
+}
+
+function renameSessionFiles(items = [], previousPath = "", nextPath = "") {
+  return (items || []).map((item) => {
+    const currentPath = String(item?.fullPath || item?.path || "").trim();
+    if (currentPath !== previousPath && !currentPath.startsWith(`${previousPath}/`)) {
+      return item;
+    }
+
+    const renamedPath = replacePathPrefix(currentPath, previousPath, nextPath);
+    return {
+      ...item,
+      path: renamedPath || item.path,
+      fullPath: renamedPath || item.fullPath,
+      name: renamedPath.split("/").filter(Boolean).pop() || item.name,
+    };
+  });
+}
+
+function applySessionFileRewrites(items = [], rewrites = []) {
+  return (rewrites || []).reduce(
+    (current, rewrite) => renameSessionFiles(current, rewrite?.previousPath, rewrite?.nextPath),
+    items,
+  );
+}
+
+function mergeSessionFileRewrites(previousRewrites = [], nextRewrites = []) {
+  const merged = [...(previousRewrites || [])];
+
+  for (const rewrite of nextRewrites || []) {
+    const previousPath = String(rewrite?.previousPath || "").trim();
+    const nextPath = String(rewrite?.nextPath || "").trim();
+    if (!previousPath || !nextPath) {
+      continue;
+    }
+
+    if (merged.some((entry) => entry.previousPath === previousPath && entry.nextPath === nextPath)) {
+      continue;
+    }
+
+    merged.push({ previousPath, nextPath });
+  }
+
+  return merged;
 }
 
 function createSessionForTab(messages, tab, meta, cachedSession = null) {
@@ -1003,7 +1065,17 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         sessionUser: defaultSessionUser,
       };
       const previous = current[tabId] || createTabMeta(tab);
-      const next = typeof value === "function" ? value(previous) : { ...previous, ...value };
+      const nextBase = typeof value === "function" ? value(previous) : { ...previous, ...value };
+      const identityChanged =
+        previous.agentId !== nextBase.agentId
+        || previous.sessionUser !== nextBase.sessionUser;
+      const next = identityChanged
+        ? {
+            ...nextBase,
+            sessionFiles: [],
+            sessionFileRewrites: [],
+          }
+        : nextBase;
 
       if (
         previous.agentId === next.agentId
@@ -1012,6 +1084,8 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
         && previous.fastMode === next.fastMode
         && previous.thinkMode === next.thinkMode
         && previous.title === next.title
+        && JSON.stringify(previous.sessionFiles || []) === JSON.stringify(next.sessionFiles || [])
+        && JSON.stringify(previous.sessionFileRewrites || []) === JSON.stringify(next.sessionFileRewrites || [])
       ) {
         return current;
       }
@@ -1058,7 +1132,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     availableAgents,
     availableModels,
     clearSnapshotData,
-    files,
+    files: runtimeFiles,
     hydrateRuntimeState,
     loadRuntime,
     peeks,
@@ -1088,6 +1162,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     setPromptHistoryByConversation,
     setSession,
   });
+  const files = useMemo(() => {
+    const rewrittenRuntimeFiles = applySessionFileRewrites(runtimeFiles, activeTabMeta?.sessionFileRewrites || []);
+    return mergeRuntimeFiles(rewrittenRuntimeFiles, activeTabMeta?.sessionFiles || []);
+  }, [activeTabMeta?.sessionFileRewrites, activeTabMeta?.sessionFiles, runtimeFiles]);
 
   const {
     activeQueuedMessages,
@@ -2954,6 +3032,19 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     setTheme,
   });
 
+  const handleTrackSessionFiles = useCallback(({ files: nextFiles = [], rewrites = [] } = {}) => {
+    const activeTabId = activeChatTabIdRef.current;
+    if (!activeTabId) {
+      return;
+    }
+
+    updateTabMeta(activeTabId, (current) => ({
+      ...current,
+      sessionFiles: mergeRuntimeFiles(current?.sessionFiles || [], nextFiles || []),
+      sessionFileRewrites: mergeSessionFileRewrites(current?.sessionFileRewrites || [], rewrites || []),
+    }));
+  }, [updateTabMeta]);
+
   const renderPeek = (section, fallback) => {
     if (!section) return fallback;
     return [section.summary, ...(section.items || []).map((item) => `${item.label}: ${item.value}`)].filter(Boolean).join("\n");
@@ -3075,6 +3166,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     handleSend,
     handleSelectSearchedSession,
     handleStop,
+    handleTrackSessionFiles,
     handleThinkModeChange,
     localizedFormatTime,
     messageViewportRef,

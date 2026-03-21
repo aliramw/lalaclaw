@@ -5712,7 +5712,8 @@ describe("InspectorPanel", () => {
         }),
       );
     });
-    expect(await screen.findByText("clip.png")).toBeInTheDocument();
+    expect(await screen.findAllByText("clip.png")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "本次会话文件 收起详情" })).toHaveTextContent("1");
     expect(screen.getByText("已将 1 个剪贴板文件保存到 src。")).toBeInTheDocument();
   });
 
@@ -5815,6 +5816,9 @@ describe("InspectorPanel", () => {
       );
     });
     expect(await screen.findByText("已将 1 个剪贴板文件保存到 src。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本次会话文件 收起详情" })).toHaveTextContent("1");
+    expect(screen.getByRole("button", { name: "创建 收起详情" })).toBeInTheDocument();
+    expect(screen.getByText("pasted-file-1.png")).toBeInTheDocument();
   });
 
   it("disables the directory paste context action when the clipboard has no files or images", async () => {

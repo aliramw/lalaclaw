@@ -510,7 +510,7 @@ describe("App", () => {
     };
 
     let restartPollCount = 0;
-    const fetchMock = vi.fn(async (input) => {
+    const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);
       if (url === "/api/auth/state") {
         return mockJsonResponse({
@@ -547,16 +547,27 @@ describe("App", () => {
         });
       }
       if (url === "/api/dev/workspace-restart") {
+        if (init?.method === "POST") {
+          return mockJsonResponse({
+            ok: true,
+            available: true,
+            accepted: true,
+            active: true,
+            restartId: "restart-123",
+            status: "scheduled",
+          });
+        }
         restartPollCount += 1;
         return mockJsonResponse(
           restartPollCount === 1
             ? {
                 ok: true,
                 available: true,
-                accepted: true,
-                active: true,
-                restartId: "restart-123",
-                status: "scheduled",
+                active: false,
+                restartId: "",
+                status: "idle",
+                currentBranch: "feat/init-autostart",
+                branches: ["feat/init-autostart", "main"],
               }
             : {
                 ok: true,
@@ -564,6 +575,8 @@ describe("App", () => {
                 active: false,
                 restartId: "restart-123",
                 status: "ready",
+                currentBranch: "feat/init-autostart",
+                branches: ["feat/init-autostart", "main"],
               },
         );
       }
@@ -582,6 +595,124 @@ describe("App", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/dev/workspace-restart", expect.objectContaining({ method: "POST" }));
       expect(fetchMock).toHaveBeenCalledWith("/api/dev/workspace-restart", expect.objectContaining({ cache: "no-store" }));
+      expect(reloadSpy).toHaveBeenCalled();
+    });
+  });
+
+  it("lets the dev workspace badge switch branches and restart from the selected branch", async () => {
+    globalThis.__LALACLAW_DEV_INFO__ = {
+      branch: "feat/init-autostart",
+      commit: "a206eda",
+      cwd: "/Users/marila/projects/lalaclaw2",
+      worktree: "lalaclaw2",
+    };
+
+    let restartPollCount = 0;
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/auth/state") {
+        return mockJsonResponse({
+          ok: true,
+          accessMode: "off",
+          authenticated: true,
+        });
+      }
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+      if (url === "/api/config") {
+        return mockJsonResponse({ openClawConnected: false });
+      }
+      if (url === "/api/launcher/config") {
+        return mockJsonResponse({
+          ok: true,
+          config: null,
+          onboardingState: { dismissed: false, completedAt: 0, autoConnect: false },
+          diagnostics: { supportedAuthChoices: [], hasSavedAuthChoice: false },
+        });
+      }
+      if (url === "/api/lalaclaw/update") {
+        return mockJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.20-1",
+          currentRelease: { version: "2026.3.20-1", stable: true },
+          targetRelease: { version: "2026.3.20-1", stable: true },
+          stableTag: "stable",
+          updateAvailable: false,
+          capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+        });
+      }
+      if (url === "/api/dev/workspace-restart") {
+        if (init?.method === "POST") {
+          expect(JSON.parse(String(init.body || "{}"))).toEqual(expect.objectContaining({
+            targetBranch: "main",
+            targetWorktreePath: "/Users/marila/.codex/worktrees/c11c/lalaclaw2",
+          }));
+          return mockJsonResponse({
+            ok: true,
+            available: true,
+            accepted: true,
+            active: true,
+            restartId: "restart-branch-1",
+            status: "scheduled",
+          });
+        }
+        restartPollCount += 1;
+        return mockJsonResponse(
+          restartPollCount === 1
+            ? {
+                ok: true,
+                available: true,
+                active: false,
+                restartId: "",
+                status: "idle",
+                currentBranch: "feat/init-autostart",
+                branches: ["feat/init-autostart", "main"],
+                currentWorktreePath: "/Users/marila/projects/lalaclaw2",
+                worktrees: [
+                  { path: "/Users/marila/projects/lalaclaw2", name: "lalaclaw2", branch: "feat/init-autostart", detached: false },
+                  { path: "/Users/marila/.codex/worktrees/c11c/lalaclaw2", name: "lalaclaw2", branch: "", detached: true },
+                ],
+              }
+            : {
+                ok: true,
+                available: true,
+                active: false,
+                restartId: "restart-branch-1",
+                status: "ready",
+                currentBranch: "main",
+                branches: ["feat/init-autostart", "main"],
+                currentWorktreePath: "/Users/marila/.codex/worktrees/c11c/lalaclaw2",
+                worktrees: [
+                  { path: "/Users/marila/projects/lalaclaw2", name: "lalaclaw2", branch: "feat/init-autostart", detached: false },
+                  { path: "/Users/marila/.codex/worktrees/c11c/lalaclaw2", name: "lalaclaw2", branch: "", detached: true },
+                ],
+              },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const reloadSpy = vi.spyOn(AppModule.devWorkspacePageReloader, "reload").mockImplementation(() => {});
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const worktreeSelect = await screen.findByTestId("dev-workspace-worktree-select");
+    expect(worktreeSelect).toHaveValue("/Users/marila/projects/lalaclaw2");
+    const branchSelect = await screen.findByTestId("dev-workspace-branch-select");
+    expect(branchSelect).toHaveValue("main");
+
+    await user.selectOptions(worktreeSelect, "/Users/marila/.codex/worktrees/c11c/lalaclaw2");
+
+    expect(screen.getByTestId("dev-workspace-restart-button")).toHaveTextContent("切分支并重启");
+
+    await user.click(screen.getByTestId("dev-workspace-restart-button"));
+
+    await waitFor(() => {
       expect(reloadSpy).toHaveBeenCalled();
     });
   });

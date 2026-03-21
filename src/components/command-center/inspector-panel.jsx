@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, Copy, Eye, FileText, FolderOpen, Hammer, Monitor, Pencil, RotateCcw, ScrollText, SquareArrowOutUpRight, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { Badge } from "@/components/ui/badge";
@@ -315,6 +315,58 @@ function renameSessionItems(items = [], previousPath = "", nextPath = "") {
       name: getPathName(renamedPath) || item.name,
     };
   });
+}
+
+function resolveSessionItemAction(...actions) {
+  if (actions.includes("modified")) {
+    return "modified";
+  }
+  if (actions.includes("created")) {
+    return "created";
+  }
+  if (actions.includes("viewed")) {
+    return "viewed";
+  }
+  return actions.find(Boolean) || "viewed";
+}
+
+function mergeSessionFileItems(baseItems = [], extraItems = []) {
+  const mergedByPath = new Map();
+
+  [...baseItems, ...extraItems].forEach((item) => {
+    const resolvedPath = resolveItemPath(item);
+    if (!resolvedPath) {
+      return;
+    }
+
+    const previous = mergedByPath.get(resolvedPath);
+    mergedByPath.set(resolvedPath, {
+      ...previous,
+      ...item,
+      key: resolvedPath,
+      path: item?.path || resolvedPath,
+      fullPath: item?.fullPath || resolvedPath,
+      name: item?.name || previous?.name || getPathName(resolvedPath),
+      kind: item?.kind || previous?.kind || "文件",
+      primaryAction: resolveSessionItemAction(previous?.primaryAction, item?.primaryAction),
+    });
+  });
+
+  return [...mergedByPath.values()];
+}
+
+function buildUserSessionItemsFromPaths(paths = [], primaryAction = "created") {
+  return paths
+    .map((sourcePath) => String(sourcePath || "").trim())
+    .filter(Boolean)
+    .map((resolvedPath) => ({
+      key: resolvedPath,
+      path: resolvedPath,
+      fullPath: resolvedPath,
+      name: getPathName(resolvedPath),
+      kind: "文件",
+      primaryAction,
+    }));
 }
 
 function RenameDialog({
@@ -3850,6 +3902,7 @@ function FilesTab({
   messages,
   onOpenEdit,
   onOpenPreview,
+  onTrackSessionFiles,
   workspaceCount,
   workspaceItems = [],
   workspaceLoaded = false,
@@ -3860,7 +3913,8 @@ function FilesTab({
   const [sessionFilterInput, setSessionFilterInput] = useState("");
   const [workspaceFilterInput, setWorkspaceFilterInput] = useState("");
   const [workspaceFilter, setWorkspaceFilter] = useState("");
-  const [sessionItems, setSessionItems] = useState(items);
+  const [localSessionItems, setLocalSessionItems] = useState([]);
+  const [sessionPathRewrites, setSessionPathRewrites] = useState([]);
   const [renameState, setRenameState] = useState(null);
   const [renameExtensionState, setRenameExtensionState] = useState(null);
   const fileActionSections = [
@@ -3868,6 +3922,17 @@ function FilesTab({
     { key: "modified", label: messages.inspector.fileActions.modified },
     { key: "viewed", label: messages.inspector.fileActions.viewed },
   ];
+  const runtimeSessionItems = useMemo(
+    () => sessionPathRewrites.reduce(
+      (current, rewrite) => renameSessionItems(current, rewrite.previousPath, rewrite.nextPath),
+      items,
+    ),
+    [items, sessionPathRewrites],
+  );
+  const sessionItems = useMemo(
+    () => mergeSessionFileItems(runtimeSessionItems, localSessionItems),
+    [localSessionItems, runtimeSessionItems],
+  );
   const sessionFilterMatcher = buildFileFilterMatcher(sessionFilterInput);
   const groups = fileActionSections
     .map((section) => ({
@@ -3911,8 +3976,9 @@ function FilesTab({
   }, [pasteFeedback]);
 
   useEffect(() => {
-    setSessionItems(items);
-  }, [items, currentWorkspaceRoot]);
+    setLocalSessionItems([]);
+    setSessionPathRewrites([]);
+  }, [currentAgentId, currentSessionUser]);
 
   const loadWorkspaceDirectoryChildren = useCallback(async (targetPath) => {
     const directChildren = await requestWorkspaceTree({
@@ -3990,7 +4056,8 @@ function FilesTab({
       setSessionFilterInput("");
       setWorkspaceFilterInput("");
       setWorkspaceFilter("");
-      setSessionItems(items);
+      setLocalSessionItems([]);
+      setSessionPathRewrites([]);
       setWorkspaceNodes(normalizeWorkspaceNodes(workspaceItems, currentWorkspaceRoot));
       setWorkspaceState({
         loaded: workspaceLoaded,
@@ -4277,6 +4344,24 @@ function FilesTab({
       }
 
       setSelectedDirectoryPath(targetPath);
+      const savedPaths = Array.isArray(payload.items)
+        ? payload.items
+            .map((item) => String(item?.fullPath || item?.path || "").trim())
+            .filter(Boolean)
+        : [];
+      const fallbackPaths = requestEntries
+        .map((entry) => String(entry?.name || "").trim())
+        .filter(Boolean)
+        .map((name) => joinPathSegments(targetPath, [name]));
+      onTrackSessionFiles?.({
+        files: buildUserSessionItemsFromPaths(savedPaths.length ? savedPaths : fallbackPaths, "created"),
+      });
+      setLocalSessionItems((current) =>
+        mergeSessionFileItems(
+          current,
+          buildUserSessionItemsFromPaths(savedPaths.length ? savedPaths : fallbackPaths, "created"),
+        )
+      );
       await refreshWorkspaceAfterPaste(targetPath);
 
       const savedCount = Array.isArray(payload.items) && payload.items.length
@@ -4302,6 +4387,7 @@ function FilesTab({
   }, [
     getPasteTargetLabel,
     messages.inspector.workspaceTree,
+    onTrackSessionFiles,
     pasteUnavailableMessage,
     refreshWorkspaceAfterPaste,
   ]);
@@ -4332,7 +4418,21 @@ function FilesTab({
     }
 
     const nextPath = String(payload.nextPath || "").trim() || replacePathPrefix(currentPath, currentPath, currentPath);
-    setSessionItems((current) => renameSessionItems(current, currentPath, nextPath));
+    onTrackSessionFiles?.({
+      files: item?.kind === "目录" ? [] : buildUserSessionItemsFromPaths([nextPath], "modified"),
+      rewrites: [{ previousPath: currentPath, nextPath }],
+    });
+    setSessionPathRewrites((current) => [...current, { previousPath: currentPath, nextPath }]);
+    setLocalSessionItems((current) => {
+      const renamedItems = renameSessionItems(current, currentPath, nextPath);
+      if (item?.kind === "目录") {
+        return renamedItems;
+      }
+      return mergeSessionFileItems(
+        renamedItems,
+        buildUserSessionItemsFromPaths([nextPath], "modified"),
+      );
+    });
     setSelectedDirectoryPath((current) => replacePathPrefix(current, currentPath, nextPath));
 
     if (hasWorkspaceFilter && currentWorkspaceRoot) {
@@ -4362,6 +4462,7 @@ function FilesTab({
     currentWorkspaceRoot,
     hasWorkspaceFilter,
     messages.inspector.workspaceTree,
+    onTrackSessionFiles,
     workspaceFilter,
   ]);
 
@@ -5388,6 +5489,7 @@ export function InspectorPanel({
   files,
   onSelectArtifact,
   onRefreshEnvironment,
+  onTrackSessionFiles,
   onSyncCurrentSessionModel,
   peeks,
   resolvedTheme = "light",
@@ -5607,6 +5709,7 @@ export function InspectorPanel({
       messages={messages}
       onOpenEdit={(item) => handleOpenPreview(item, { startInEditMode: true })}
       onOpenPreview={handleOpenPreview}
+      onTrackSessionFiles={onTrackSessionFiles}
       currentWorkspaceRoot={currentWorkspaceRoot}
       workspaceCount={workspaceCount}
       workspaceItems={workspaceFiles}

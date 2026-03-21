@@ -314,6 +314,17 @@ const de = {
     artifactsHint: "Die Antwortzusammenfassungen dieser Sitzung werden hier aufgelistet. Klicke auf eine, um zu diesem Teil der Unterhaltung zu springen.",
     artifactReplyPrefix: "Antwort",
     artifactJumpTo: "Springen zu",
+    contextPreview: {
+      ...en.inspector.contextPreview,
+      unknownRoleLabel: "Unbekannte Rolle",
+      roles: {
+        ...en.inspector.contextPreview.roles,
+        developer: "Entwickler",
+        tool: "Werkzeug",
+        toolUse: "Werkzeugaufruf",
+        toolResult: "Werkzeugergebnis",
+      },
+    },
     empty: {
       files: "Erkannte Dateien für die aktuelle Sitzung erscheinen hier.",
       workspaceFiles: "Erkannte Dateien aus dem aktuellen Workspace erscheinen hier.",

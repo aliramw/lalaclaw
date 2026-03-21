@@ -1016,4 +1016,110 @@ describe("FilePreviewOverlay", () => {
     expect(previewImage.style.transform).toContain("translate(40px, 30px)");
     expect(previewImage.style.transform).toContain("scale(1.25)");
   });
+
+  it("supports image preview keyboard shortcuts and blocks them from typing into the focused input", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ ok: true }),
+      })),
+    );
+
+    renderPreview(
+      <div>
+        <textarea aria-label="underlay input" />
+        <ImagePreviewOverlay
+          image={{
+            src: "https://example.com/demo.png",
+            alt: "示例图",
+            path: "/Users/marila/projects/lalaclaw/demo.png",
+            fileManagerLabel: "Finder",
+          }}
+          onClose={() => {}}
+        />
+      </div>,
+    );
+
+    const user = userEvent.setup();
+    const previewImage = screen.getByAltText("示例图");
+    const input = screen.getByRole("textbox", { name: "underlay input" });
+    previewImage.setPointerCapture = () => {};
+    previewImage.releasePointerCapture = () => {};
+    previewImage.hasPointerCapture = () => true;
+    Object.defineProperty(previewImage, "offsetWidth", { configurable: true, value: 400 });
+    Object.defineProperty(previewImage, "offsetHeight", { configurable: true, value: 300 });
+
+    input.focus();
+
+    await user.keyboard("q");
+    expect(previewImage.style.transform).toContain("rotate(-90deg)");
+    expect(input).toHaveValue("");
+
+    await user.keyboard("w");
+    expect(previewImage.style.transform).toContain("rotate(0deg)");
+    expect(input).toHaveValue("");
+
+    await user.keyboard("=");
+    expect(screen.getByText("125%")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+
+    await user.keyboard("{Shift>}{=}{/Shift}");
+    expect(screen.getByText("150%")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+
+    await user.keyboard("-");
+    expect(screen.getByText("125%")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+
+    await user.keyboard("0");
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+
+    await user.keyboard("o");
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/file-manager/reveal",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ path: "/Users/marila/projects/lalaclaw/demo.png" }),
+        }),
+      );
+    });
+    expect(input).toHaveValue("");
+  });
+
+  it("shows image preview shortcut hints inside toolbar tooltips", async () => {
+    renderPreview(
+      <ImagePreviewOverlay
+        image={{
+          src: "https://example.com/demo.png",
+          alt: "示例图",
+          path: "/Users/marila/projects/lalaclaw/demo.png",
+          fileManagerLabel: "Finder",
+        }}
+        onClose={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByLabelText(/放大图片|Zoom in/));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/快捷键：=\/\+|Shortcut: =\/\+/);
+  });
+
+  it("shows the rotate-left shortcut inside the image toolbar tooltip", async () => {
+    renderPreview(
+      <ImagePreviewOverlay
+        image={{
+          src: "https://example.com/demo.png",
+          alt: "示例图",
+        }}
+        onClose={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByLabelText(/向左旋转|Rotate left/));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/快捷键：Q|Shortcut: Q/);
+  });
 });

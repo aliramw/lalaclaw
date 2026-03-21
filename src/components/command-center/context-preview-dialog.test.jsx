@@ -102,7 +102,80 @@ describe("ContextPreviewDialog", () => {
     const scrollArea = screen.getByTestId("context-preview-scroll-area");
     expect(scrollArea.className).toContain("min-h-0");
     expect(scrollArea.className).toContain("flex-1");
+    expect(scrollArea.className).toContain("overflow-y-auto");
 
     expect(screen.queryAllByText("助手")).toHaveLength(1);
+  });
+
+  it("shows a debuggable label when the message role is still unknown", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        messages: [
+          {
+            message: {
+              role: "unknown-role",
+              content: "raw payload",
+              timestamp: "2026-03-21T10:00:03.000Z",
+            },
+          },
+        ],
+      }),
+    });
+
+    renderDialog();
+
+    expect(await screen.findByText("未知角色 (unknown-role)")).toBeInTheDocument();
+    expect(screen.getByText("raw payload")).toBeInTheDocument();
+  });
+
+  it("renders toolResult as 工具返回结果", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        messages: [
+          {
+            message: {
+              role: "toolResult",
+              content: "执行完成",
+              timestamp: "2026-03-21T10:00:04.000Z",
+            },
+          },
+        ],
+      }),
+    });
+
+    renderDialog();
+
+    expect(await screen.findByText("工具返回结果")).toBeInTheDocument();
+    expect(screen.getByText("执行完成")).toBeInTheDocument();
+  });
+
+  it("renders toolUse as 工具调用", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        messages: [
+          {
+            message: {
+              role: "toolUse",
+              content: [{ type: "tool_use", name: "list_files" }],
+              timestamp: "2026-03-21T10:00:05.000Z",
+            },
+          },
+        ],
+      }),
+    });
+
+    renderDialog();
+
+    expect(await screen.findByText("工具调用")).toBeInTheDocument();
+    expect(screen.getByText("[tool_use: list_files]")).toBeInTheDocument();
   });
 });

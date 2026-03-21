@@ -183,6 +183,27 @@ function DevWorkspaceBadge() {
   });
   const [restartError, setRestartError] = useState("");
   const [restarting, setRestarting] = useState(false);
+  const [availableBranches, setAvailableBranches] = useState(() => {
+    const currentBranch = String(devWorkspaceInfo?.branch || "").trim();
+    return currentBranch ? [currentBranch] : [];
+  });
+  const [currentBranch, setCurrentBranch] = useState(() => String(devWorkspaceInfo?.branch || "").trim());
+  const [targetBranch, setTargetBranch] = useState(() => String(devWorkspaceInfo?.branch || "").trim());
+  const [availableWorktrees, setAvailableWorktrees] = useState(() => {
+    const currentPath = String(devWorkspaceInfo?.cwd || "").trim();
+    if (!currentPath) {
+      return [];
+    }
+    return [{
+      path: currentPath,
+      name: String(devWorkspaceInfo?.worktree || "").trim(),
+      branch: String(devWorkspaceInfo?.branch || "").trim(),
+      detached: String(devWorkspaceInfo?.branch || "").trim().startsWith("detached@"),
+    }];
+  });
+  const [currentWorktreePath, setCurrentWorktreePath] = useState(() => String(devWorkspaceInfo?.cwd || "").trim());
+  const [targetWorktreePath, setTargetWorktreePath] = useState(() => String(devWorkspaceInfo?.cwd || "").trim());
+  const [loadingBranches, setLoadingBranches] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -197,6 +218,81 @@ function DevWorkspaceBadge() {
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const label = buildDevWorkspaceLabel(devWorkspaceInfo, port);
   const toggleLabel = collapsed ? messages.common.devWorkspaceExpand : messages.common.devWorkspaceCollapse;
+  const isSwitchingBranch = Boolean(targetBranch) && targetBranch !== currentBranch;
+  const restartButtonLabel = restarting
+    ? messages.common.devWorkspaceRestarting
+    : isSwitchingBranch
+      ? messages.common.devWorkspaceSwitchRestart
+      : messages.common.devWorkspaceRestart;
+
+  useEffect(() => {
+    if (collapsed) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadBranches = async () => {
+      setLoadingBranches(true);
+      try {
+        const response = await fetch("/api/dev/workspace-restart", {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || payload?.ok === false || cancelled) {
+          return;
+        }
+
+        const nextBranches = Array.isArray(payload?.branches)
+          ? payload.branches.map((entry) => String(entry || "").trim()).filter(Boolean)
+          : [];
+        const nextWorktrees = Array.isArray(payload?.worktrees)
+          ? payload.worktrees.map((entry) => ({
+            path: String(entry?.path || "").trim(),
+            name: String(entry?.name || "").trim(),
+            branch: String(entry?.branch || "").trim(),
+            detached: Boolean(entry?.detached),
+          })).filter((entry) => entry.path)
+          : [];
+        const nextCurrentBranch = String(payload?.currentBranch || "").trim() || String(devWorkspaceInfo?.branch || "").trim();
+        const nextCurrentWorktreePath = String(payload?.currentWorktreePath || "").trim() || String(devWorkspaceInfo?.cwd || "").trim();
+
+        setAvailableBranches(nextBranches);
+        setAvailableWorktrees(nextWorktrees);
+        setCurrentBranch(nextCurrentBranch);
+        setCurrentWorktreePath(nextCurrentWorktreePath);
+        setTargetWorktreePath((current) => {
+          if (current && nextWorktrees.some((entry) => entry.path === current)) {
+            return current;
+          }
+          return nextCurrentWorktreePath || current;
+        });
+        setTargetBranch((current) => {
+          if (nextBranches.includes("main")) {
+            return "main";
+          }
+          if (current && nextBranches.includes(current)) {
+            return current;
+          }
+          if (nextCurrentBranch && nextBranches.includes(nextCurrentBranch)) {
+            return nextCurrentBranch;
+          }
+          return nextBranches[0] || nextCurrentBranch || current;
+        });
+      } finally {
+        if (!cancelled) {
+          setLoadingBranches(false);
+        }
+      }
+    };
+
+    loadBranches().catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [collapsed, devWorkspaceInfo?.branch]);
 
   const handleToggleCollapsed = useCallback(() => {
     setCollapsed((current) => !current);
@@ -259,6 +355,8 @@ function DevWorkspaceBadge() {
         body: JSON.stringify({
           frontendHost: host || "127.0.0.1",
           frontendPort: Number(port || 0),
+          targetBranch: isSwitchingBranch ? targetBranch : "",
+          targetWorktreePath,
         }),
       });
       const payload = await response.json().catch(() => null);
@@ -271,7 +369,7 @@ function DevWorkspaceBadge() {
       setRestarting(false);
       setRestartError(error?.message || messages.common.devWorkspaceRestartFailed);
     }
-  }, [host, messages, pollForRestartReady, port, restarting]);
+  }, [host, isSwitchingBranch, messages, pollForRestartReady, port, restarting, targetBranch, targetWorktreePath]);
 
   if (!showDevWorkspaceBadge) {
     return null;
@@ -312,20 +410,86 @@ function DevWorkspaceBadge() {
                 className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground transition hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
               >
                 <RotateCw className={cn("h-3.5 w-3.5", restarting ? "animate-spin" : "")} aria-hidden="true" />
-                <span>{restarting ? messages.common.devWorkspaceRestarting : messages.common.devWorkspaceRestart}</span>
+                <span>{restartButtonLabel}</span>
               </button>
             </div>
             <div className="text-[12px] font-semibold leading-5 text-foreground">
               <code>{label}</code>
             </div>
+            <div className="mt-2 grid gap-1">
+              <label htmlFor="dev-workspace-worktree-select" className="text-[11px] font-medium leading-4 text-muted-foreground">
+                {messages.common.devWorkspaceTargetWorktree}
+              </label>
+              <select
+                id="dev-workspace-worktree-select"
+                data-testid="dev-workspace-worktree-select"
+                value={targetWorktreePath}
+                disabled={restarting || loadingBranches || !availableWorktrees.length}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  setTargetWorktreePath(event.target.value);
+                }}
+                className="h-8 rounded-md border border-border/70 bg-background px-2 text-[12px] text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={messages.common.devWorkspaceTargetWorktree}
+              >
+                {loadingBranches ? (
+                  <option value={targetWorktreePath || ""}>{messages.common.devWorkspaceWorktreeLoading}</option>
+                ) : availableWorktrees.length ? (
+                  availableWorktrees.map((worktree) => (
+                    <option key={worktree.path} value={worktree.path}>
+                      {[worktree.name || worktree.path, worktree.branch || (worktree.detached ? "detached" : "")]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">{messages.common.devWorkspaceWorktreeUnavailable}</option>
+                )}
+              </select>
+            </div>
+            <div className="mt-2 grid gap-1">
+              <label htmlFor="dev-workspace-branch-select" className="text-[11px] font-medium leading-4 text-muted-foreground">
+                {messages.common.devWorkspaceTargetBranch}
+              </label>
+              <select
+                id="dev-workspace-branch-select"
+                data-testid="dev-workspace-branch-select"
+                value={targetBranch}
+                disabled={restarting || loadingBranches || !availableBranches.length}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  setTargetBranch(event.target.value);
+                }}
+                className="h-8 rounded-md border border-border/70 bg-background px-2 text-[12px] text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={messages.common.devWorkspaceTargetBranch}
+              >
+                {loadingBranches ? (
+                  <option value={targetBranch || ""}>{messages.common.devWorkspaceBranchLoading}</option>
+                ) : availableBranches.length ? (
+                  availableBranches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">{messages.common.devWorkspaceBranchUnavailable}</option>
+                )}
+              </select>
+            </div>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[11px] leading-4 text-muted-foreground">
               <dt>{messages.common.devWorkspaceBranch}</dt>
               <dd className="min-w-0 truncate">
-                <code>{devWorkspaceInfo.branch || devWorkspaceInfo.commit || messages.common.unknown}</code>
+                <code>{currentBranch || devWorkspaceInfo.branch || devWorkspaceInfo.commit || messages.common.unknown}</code>
               </dd>
               <dt>{messages.common.devWorkspaceWorktree}</dt>
               <dd className="min-w-0 truncate">
-                <code>{devWorkspaceInfo.worktree || messages.common.unknown}</code>
+                <code>{availableWorktrees.find((entry) => entry.path === currentWorktreePath)?.name || devWorkspaceInfo.worktree || messages.common.unknown}</code>
               </dd>
               <dt>{messages.common.devWorkspacePort}</dt>
               <dd>
@@ -333,7 +497,7 @@ function DevWorkspaceBadge() {
               </dd>
               <dt>{messages.common.devWorkspacePath}</dt>
               <dd className="min-w-0 truncate">
-                <code>{devWorkspaceInfo.cwd || messages.common.unknown}</code>
+                <code>{currentWorktreePath || devWorkspaceInfo.cwd || messages.common.unknown}</code>
               </dd>
             </dl>
             {restartError ? (
@@ -682,6 +846,7 @@ function AppContent() {
     handleSend,
     handleSelectSearchedSession,
     handleStop,
+    handleTrackSessionFiles,
     handleThinkModeChange,
     dismissTaskRelationship,
     localizedFormatTime,
@@ -1174,6 +1339,7 @@ function AppContent() {
       files={files}
       onSelectArtifact={handleArtifactSelect}
       onRefreshEnvironment={handleRefreshEnvironment}
+      onTrackSessionFiles={handleTrackSessionFiles}
       onSyncCurrentSessionModel={handleSyncCurrentSessionModel}
       peeks={peeks}
       renderPeek={renderPeek}
@@ -1193,6 +1359,7 @@ function AppContent() {
     files,
     handleArtifactSelect,
     handleRefreshEnvironment,
+    handleTrackSessionFiles,
     handleSyncCurrentSessionModel,
     isWideLayout,
     peeks,

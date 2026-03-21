@@ -1442,6 +1442,36 @@ function ShortcutHelpButton({ composerSendMode = "enter-send" }) {
           description: messages.inspector.previewActions.saveFile,
         },
         {
+          id: "preview-zoom-in",
+          shortcut: "=/+",
+          description: messages.shortcuts.items.previewZoomIn,
+        },
+        {
+          id: "preview-zoom-out",
+          shortcut: "-",
+          description: messages.shortcuts.items.previewZoomOut,
+        },
+        {
+          id: "preview-zoom-reset",
+          shortcut: "0",
+          description: messages.shortcuts.items.previewResetZoom,
+        },
+        {
+          id: "preview-reveal",
+          shortcut: "O",
+          description: messages.shortcuts.items.previewRevealInFileManager,
+        },
+        {
+          id: "preview-rotate-left",
+          shortcut: "Q",
+          description: messages.shortcuts.items.previewRotateLeft,
+        },
+        {
+          id: "preview-rotate-right",
+          shortcut: "W",
+          description: messages.shortcuts.items.previewRotateRight,
+        },
+        {
           id: "preview-close",
           shortcut: "Esc",
           description: messages.common.closePreview,

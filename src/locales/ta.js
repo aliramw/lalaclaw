@@ -314,6 +314,17 @@ const ta = {
     artifactsHint: "இந்த அமர்வின் பதில் சுருக்கங்கள் இங்கே பட்டியலிடப்பட்டுள்ளன. உரையாடலின் அந்தப் பகுதிக்கு செல்ல ஒன்றைக் கிளிக் செய்.",
     artifactReplyPrefix: "பதில்",
     artifactJumpTo: "செல்",
+    contextPreview: {
+      ...en.inspector.contextPreview,
+      unknownRoleLabel: "அறியாத பங்கு",
+      roles: {
+        ...en.inspector.contextPreview.roles,
+        developer: "உருவாக்குநர்",
+        tool: "கருவி",
+        toolUse: "கருவி அழைப்பு",
+        toolResult: "கருவி முடிவு",
+      },
+    },
     empty: {
       files: "தற்போதைய அமர்விற்கான கண்டறியப்பட்ட கோப்புகள் இங்கே தோன்றும்.",
       workspaceFiles: "தற்போதைய workspace-இலிருந்து கண்டறியப்பட்ட கோப்புகள் இங்கே தோன்றும்.",

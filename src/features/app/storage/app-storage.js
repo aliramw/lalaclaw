@@ -451,6 +451,54 @@ function sanitizeChatTabs(value, fallbackSessionUser = defaultSessionUser, fallb
     .filter(Boolean);
 }
 
+function sanitizeSessionFiles(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const fullPath = String(item?.fullPath || item?.path || "").trim();
+      if (!fullPath) {
+        return null;
+      }
+
+      const path = String(item?.path || fullPath).trim() || fullPath;
+      const name = String(item?.name || fullPath.split("/").filter(Boolean).pop() || "").trim();
+      const primaryAction = String(item?.primaryAction || "").trim();
+      const observedAt = Number(item?.observedAt || 0);
+      const updatedAt = Number(item?.updatedAt || 0);
+
+      return {
+        path,
+        fullPath,
+        ...(name ? { name } : {}),
+        kind: item?.kind === "目录" ? "目录" : "文件",
+        ...(primaryAction ? { primaryAction } : {}),
+        ...(Number.isFinite(observedAt) && observedAt > 0 ? { observedAt } : {}),
+        ...(Number.isFinite(updatedAt) && updatedAt > 0 ? { updatedAt } : {}),
+      };
+    })
+    .filter(Boolean);
+}
+
+function sanitizeSessionFileRewrites(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const previousPath = String(entry?.previousPath || "").trim();
+      const nextPath = String(entry?.nextPath || "").trim();
+      if (!previousPath || !nextPath) {
+        return null;
+      }
+      return { previousPath, nextPath };
+    })
+    .filter(Boolean);
+}
+
 function sanitizeTabMetaMap(value, tabs = []) {
   if (!value || typeof value !== "object") {
     return Object.fromEntries(
@@ -462,6 +510,8 @@ function sanitizeTabMetaMap(value, tabs = []) {
           model: "",
           fastMode: false,
           thinkMode: "off",
+          sessionFiles: [],
+          sessionFileRewrites: [],
         },
       ]),
     );
@@ -478,6 +528,8 @@ function sanitizeTabMetaMap(value, tabs = []) {
           model: String(meta.model || "").trim(),
           fastMode: Boolean(meta.fastMode),
           thinkMode: typeof meta.thinkMode === "string" ? meta.thinkMode : "off",
+          sessionFiles: sanitizeSessionFiles(meta.sessionFiles),
+          sessionFileRewrites: sanitizeSessionFileRewrites(meta.sessionFileRewrites),
         },
       ];
     }),
@@ -556,6 +608,8 @@ function loadParsedStorageState(raw) {
       model: parsed?.model || "",
       fastMode: Boolean(parsed?.fastMode),
       thinkMode: typeof parsed?.thinkMode === "string" ? parsed.thinkMode : "off",
+      sessionFiles: [],
+      sessionFileRewrites: [],
     };
   }
 

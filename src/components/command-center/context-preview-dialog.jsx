@@ -3,8 +3,6 @@ import { createPortal } from "react-dom";
 import { Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 
@@ -162,14 +160,28 @@ function normalizeMessageRole(rawMessage) {
     if (explicitRole === "function" || explicitRole === "tool") {
       return "tool";
     }
+    if (explicitRole === "tooluse" || explicitRole === "tool_use") {
+      return "toolUse";
+    }
+    if (explicitRole === "toolresult" || explicitRole === "tool_result") {
+      return "toolResult";
+    }
     if (explicitRole === "developer") {
       return "developer";
     }
-    return explicitRole;
+    if (["system", "assistant", "user"].includes(explicitRole)) {
+      return explicitRole;
+    }
   }
 
   const type = String(message?.type || rawMessage?.type || "").trim().toLowerCase();
-  if (["tool", "tool_result", "tool_use", "function"].includes(type)) {
+  if (type === "tool_result") {
+    return "toolResult";
+  }
+  if (type === "tool_use") {
+    return "toolUse";
+  }
+  if (["tool", "tool_use", "function"].includes(type)) {
     return "tool";
   }
   if (type === "developer") {
@@ -177,6 +189,31 @@ function normalizeMessageRole(rawMessage) {
   }
 
   return "unknown";
+}
+
+function describeUnknownRole(rawMessage) {
+  const message = rawMessage?.message && typeof rawMessage.message === "object"
+    ? rawMessage.message
+    : rawMessage;
+  const roleHint = String(
+    message?.role
+      || message?.author?.role
+      || message?.sender?.role
+      || rawMessage?.role
+      || rawMessage?.author?.role
+      || rawMessage?.sender?.role
+      || "",
+  ).trim();
+  if (roleHint) {
+    return roleHint;
+  }
+
+  const typeHint = String(message?.type || rawMessage?.type || "").trim();
+  if (typeHint) {
+    return `type:${typeHint}`;
+  }
+
+  return "";
 }
 
 function normalizeMessageUsage(rawMessage) {
@@ -224,6 +261,7 @@ function normalizeContextMessage(rawMessage) {
     ? rawMessage.message
     : rawMessage;
   const role = normalizeMessageRole(rawMessage);
+  const unknownRoleHint = role === "unknown" ? describeUnknownRole(rawMessage) : "";
   const usage = normalizeMessageUsage(rawMessage);
   const text = extractTextContent(message?.content ?? rawMessage?.content ?? "");
   const timestamp = message?.timestamp ?? rawMessage?.timestamp ?? rawMessage?.ts ?? message?.ts ?? null;
@@ -232,6 +270,7 @@ function normalizeContextMessage(rawMessage) {
     role,
     text,
     timestamp,
+    unknownRoleHint,
     usage,
   };
 }
@@ -246,7 +285,10 @@ function MessageCard({ intlLocale, message }) {
   const [expanded, setExpanded] = useState(false);
   const truncated = text.length > maxPreviewChars;
   const displayText = expanded ? text : text.slice(0, maxPreviewChars);
-  const roleLabel = contextMessages.roles?.[role] || contextMessages.roles?.unknown || role;
+  const defaultUnknownRoleLabel = contextMessages.unknownRoleLabel || contextMessages.roles?.unknown || role;
+  const roleLabel = role === "unknown" && message.unknownRoleHint
+    ? `${defaultUnknownRoleLabel} (${message.unknownRoleHint})`
+    : (contextMessages.roles?.[role] || defaultUnknownRoleLabel || role);
   const usageSummary = formatUsageSummary(message.usage, intlLocale);
 
   return (
@@ -412,11 +454,7 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
           </div>
         ) : null}
 
-        <div className="px-5 pt-4 sm:px-6">
-          <Separator />
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-5 pt-3 sm:p-6 sm:pt-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-5 pt-4 sm:p-6 sm:pt-4">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -427,17 +465,16 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
           ) : messageList.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">{contextMessages.empty}</div>
           ) : (
-            <ScrollArea
-              className="min-h-0 flex-1"
+            <div
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1"
               data-testid="context-preview-scroll-area"
-              viewportClassName="h-full min-w-0"
             >
               <div className="space-y-2 pr-4">
                 {messageList.map((message, index) => (
                   <MessageCard key={`${message.role}-${message.timestamp || index}`} intlLocale={intlLocale} message={message} />
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           )}
         </div>
       </div>

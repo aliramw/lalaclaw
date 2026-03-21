@@ -389,6 +389,17 @@ const ja = {
     artifactsHint: "このセッションの返信要約をここに表示します。クリックすると会話内の位置へ直接移動できます。",
     artifactReplyPrefix: "返信",
     artifactJumpTo: "移動",
+    contextPreview: {
+      ...en.inspector.contextPreview,
+      unknownRoleLabel: "不明な役割",
+      roles: {
+        ...en.inspector.contextPreview.roles,
+        developer: "開発者",
+        tool: "ツール",
+        toolUse: "ツール呼び出し",
+        toolResult: "ツール結果",
+      },
+    },
     empty: {
       files: "現在のセッションで検出されたファイルがここに表示されます。",
       workspaceFiles: "現在の workspace で検出されたファイルがここに表示されます。",

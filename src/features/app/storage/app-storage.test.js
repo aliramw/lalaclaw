@@ -787,6 +787,78 @@ describe("loadStoredState", () => {
       agentId: "main",
       sessionUser: "command-center",
     });
+    expect(stored.tabMetaById["agent:main"]).toMatchObject({
+      sessionFiles: [],
+      sessionFileRewrites: [],
+    });
+  });
+
+  it("upgrades older tab metadata that does not include session file overlays", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "files",
+        agentId: "main",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        messagesByTabId: {
+          "agent:main": [],
+        },
+        sessionUser: "command-center",
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    const stored = loadStoredState();
+
+    expect(stored.tabMetaById["agent:main"]).toMatchObject({
+      agentId: "main",
+      sessionUser: "command-center",
+      sessionFiles: [],
+      sessionFileRewrites: [],
+    });
+  });
+
+  it("sanitizes invalid session file overlay shapes from stored tab metadata", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "files",
+        agentId: "main",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        messagesByTabId: {
+          "agent:main": [],
+        },
+        sessionUser: "command-center",
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center",
+            thinkMode: "off",
+            sessionFiles: { nope: true },
+            sessionFileRewrites: "bad-data",
+          },
+        },
+      }),
+    );
+
+    const stored = loadStoredState();
+
+    expect(stored.tabMetaById["agent:main"]).toMatchObject({
+      sessionFiles: [],
+      sessionFileRewrites: [],
+    });
   });
 
   it("preserves stored message ids so restored scroll anchors can stay stable across refreshes", () => {
@@ -1075,6 +1147,61 @@ describe("loadStoredState", () => {
     ]);
     expect(stored.tabMetaById["agent:expert"]).toMatchObject({ agentId: "expert" });
     expect(stored.tabMetaById["agent:main"]).toMatchObject({ agentId: "main" });
+  });
+
+  it("persists tab-level session file overlays for the current conversation", () => {
+    persistUiStateSnapshot({
+      activeChatTabId: "agent:main",
+      activeTab: "files",
+      agentId: "main",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-5.4",
+          sessionUser: "command-center",
+          thinkMode: "off",
+          sessionFiles: [
+            {
+              path: "/Users/marila/projects/lalaclaw/src/clip.png",
+              fullPath: "/Users/marila/projects/lalaclaw/src/clip.png",
+              kind: "文件",
+              primaryAction: "created",
+            },
+          ],
+          sessionFileRewrites: [
+            {
+              previousPath: "/Users/marila/projects/lalaclaw/AGENTS.md",
+              nextPath: "/Users/marila/projects/lalaclaw/README.md",
+            },
+          ],
+        },
+      },
+      messagesByTabId: {
+        "agent:main": [],
+      },
+      messages: [],
+      pendingChatTurns: {},
+    });
+
+    const stored = loadStoredState();
+
+    expect(stored.tabMetaById["agent:main"]).toMatchObject({
+      sessionFiles: [
+        expect.objectContaining({
+          fullPath: "/Users/marila/projects/lalaclaw/src/clip.png",
+          primaryAction: "created",
+        }),
+      ],
+      sessionFileRewrites: [
+        {
+          previousPath: "/Users/marila/projects/lalaclaw/AGENTS.md",
+          nextPath: "/Users/marila/projects/lalaclaw/README.md",
+        },
+      ],
+    });
   });
 
   it("preserves serialized DingTalk session users for dedicated chat tabs", () => {

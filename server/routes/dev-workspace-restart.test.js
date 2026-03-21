@@ -42,6 +42,8 @@ describe('createDevWorkspaceRestartHandler', () => {
       parseRequestBody: async () => ({
         frontendHost: '127.0.0.1',
         frontendPort: 5173,
+        targetBranch: 'main',
+        targetWorktreePath: '/tmp/lalaclaw-worktree',
       }),
       scheduleDevWorkspaceRestart: async (payload) => {
         receivedPayload = payload;
@@ -65,6 +67,8 @@ describe('createDevWorkspaceRestartHandler', () => {
     expect(receivedPayload).toEqual({
       frontendHost: '127.0.0.1',
       frontendPort: 5173,
+      targetBranch: 'main',
+      targetWorktreePath: '/tmp/lalaclaw-worktree',
     });
     expect(responseStatus).toBe(202);
     expect(responseBody).toEqual({

@@ -314,6 +314,17 @@ const ms = {
     artifactsHint: "Ringkasan balasan sesi ini disenaraikan di sini. Klik salah satu untuk melompat ke bahagian perbualan tersebut.",
     artifactReplyPrefix: "Balasan",
     artifactJumpTo: "Lompat ke",
+    contextPreview: {
+      ...en.inspector.contextPreview,
+      unknownRoleLabel: "Peranan tidak diketahui",
+      roles: {
+        ...en.inspector.contextPreview.roles,
+        developer: "Pembangun",
+        tool: "Alat",
+        toolUse: "Panggilan alat",
+        toolResult: "Hasil alat",
+      },
+    },
     empty: {
       files: "Fail yang dikesan untuk sesi semasa akan muncul di sini.",
       workspaceFiles: "Fail yang dikesan daripada workspace semasa akan muncul di sini.",

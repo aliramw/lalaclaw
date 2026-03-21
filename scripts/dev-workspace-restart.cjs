@@ -80,6 +80,69 @@ function updateStatus(statusFilePath, patch) {
   });
 }
 
+function readCurrentBranch(projectRoot) {
+  const result = spawnSync('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    return '';
+  }
+  return String(result.stdout || '').trim();
+}
+
+function hasLocalBranch(projectRoot, branchName) {
+  const result = spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  return result.status === 0;
+}
+
+function hasTrackedRemoteBranch(projectRoot, branchName) {
+  const result = spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/remotes/origin/${branchName}`], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  return result.status === 0;
+}
+
+function switchToBranch(projectRoot, targetBranch) {
+  const normalizedTargetBranch = String(targetBranch || '').trim();
+  if (!normalizedTargetBranch) {
+    return;
+  }
+
+  const currentBranch = readCurrentBranch(projectRoot);
+  if (currentBranch && currentBranch === normalizedTargetBranch) {
+    return;
+  }
+
+  const switchArgs = hasLocalBranch(projectRoot, normalizedTargetBranch)
+    ? ['switch', normalizedTargetBranch]
+    : hasTrackedRemoteBranch(projectRoot, normalizedTargetBranch)
+      ? ['switch', '--track', '-c', normalizedTargetBranch, `origin/${normalizedTargetBranch}`]
+      : ['switch', normalizedTargetBranch];
+  const result = spawnSync('git', switchArgs, {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  if (result.status === 0) {
+    return;
+  }
+
+  const fallback = spawnSync('git', ['checkout', normalizedTargetBranch], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  if (fallback.status === 0) {
+    return;
+  }
+
+  const errorMessage = String(fallback.stderr || fallback.stdout || result.stderr || result.stdout || '').trim();
+  throw new Error(errorMessage || `Failed to switch to branch ${normalizedTargetBranch}`);
+}
+
 function findListeningPids(port) {
   const normalizedPort = Number(port || 0);
   if (!normalizedPort) {
@@ -148,6 +211,7 @@ async function main() {
   const backendHost = String(options['backend-host'] || '127.0.0.1').trim() || '127.0.0.1';
   const backendPort = Number(options['backend-port'] || 0);
   const backendPid = Number(options['backend-pid'] || 0);
+  const targetBranch = String(options['target-branch'] || '').trim();
   const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
   if (!statusFile || !restartId || !frontendPort || !backendPort) {
@@ -164,6 +228,8 @@ async function main() {
       error: '',
       readyAt: 0,
     });
+
+    switchToBranch(projectRoot, targetBranch);
 
     await stopPortProcesses(frontendHost, frontendPort);
     await stopPortProcesses(backendHost, backendPort, backendPid);

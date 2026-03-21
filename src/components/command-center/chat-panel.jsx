@@ -504,6 +504,58 @@ function shouldIgnoreMentionKeyUp(key = "") {
   return key === "ArrowDown" || key === "ArrowUp" || key === "Enter" || key === "Tab" || key === "Escape";
 }
 
+function getTextareaCaretAnchor(textarea, caretIndex = 0) {
+  if (!textarea || typeof window === "undefined" || typeof document === "undefined") {
+    return null;
+  }
+
+  const value = String(textarea.value || "");
+  const safeCaret = Math.max(0, Math.min(Number.isFinite(caretIndex) ? caretIndex : value.length, value.length));
+  const style = window.getComputedStyle(textarea);
+  const textareaRect = textarea.getBoundingClientRect();
+  const mirror = document.createElement("div");
+
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.pointerEvents = "none";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.wordWrap = "break-word";
+  mirror.style.overflowWrap = "break-word";
+  mirror.style.left = "0";
+  mirror.style.top = "0";
+  mirror.style.width = `${textarea.clientWidth}px`;
+  mirror.style.font = style.font;
+  mirror.style.fontFamily = style.fontFamily;
+  mirror.style.fontSize = style.fontSize;
+  mirror.style.fontWeight = style.fontWeight;
+  mirror.style.fontStyle = style.fontStyle;
+  mirror.style.letterSpacing = style.letterSpacing;
+  mirror.style.lineHeight = style.lineHeight;
+  mirror.style.textTransform = style.textTransform;
+  mirror.style.textIndent = style.textIndent;
+  mirror.style.padding = style.padding;
+  mirror.style.border = style.border;
+  mirror.style.boxSizing = style.boxSizing;
+
+  const before = value.slice(0, safeCaret).replace(/\n$/u, "\n ");
+  mirror.textContent = before;
+
+  const marker = document.createElement("span");
+  marker.textContent = value.slice(safeCaret, safeCaret + 1) || " ";
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+
+  const markerRect = marker.getBoundingClientRect();
+  const mirrorRect = mirror.getBoundingClientRect();
+  document.body.removeChild(mirror);
+
+  return {
+    left: textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft,
+    top: textareaRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop,
+    lineHeight: Number.parseFloat(style.lineHeight) || 20,
+  };
+}
+
 function normalizeSkillMention(skill) {
   if (typeof skill === "string") {
     const name = skill.trim();
@@ -2345,6 +2397,7 @@ export function ChatPanel({
   const [agentMention, setAgentMention] = useState(null);
   const [manualMention, setManualMention] = useState(null);
   const [mentionAnchor, setMentionAnchor] = useState("composer");
+  const [mentionComposerPosition, setMentionComposerPosition] = useState(null);
   const [messageViewportNode, setMessageViewportNode] = useState(null);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
@@ -2352,6 +2405,7 @@ export function ChatPanel({
   const [composerPrompt, setComposerPrompt] = useState(prompt);
   const [latchedStreamingTailMessageId, setLatchedStreamingTailMessageId] = useState("");
   const mentionMenuRef = useRef(null);
+  const composerMentionLayerRef = useRef(null);
   const latestAssistantBubbleRef = useRef(null);
   const bottomSentinelRef = useRef(null);
   const streamingTailIndicatorClearTimeoutRef = useRef(0);
@@ -2707,6 +2761,49 @@ export function ChatPanel({
     setAgentMention(match);
     setHighlightedAgentIndex(0);
   };
+
+  useLayoutEffect(() => {
+    if (!activeMention || mentionAnchor !== "composer") {
+      setMentionComposerPosition(null);
+      return;
+    }
+
+    const textarea = composerTextareaRef.current;
+    const layer = composerMentionLayerRef.current;
+    if (!textarea || !layer) {
+      setMentionComposerPosition(null);
+      return;
+    }
+
+    const anchorIndex = Math.max(0, activeMention.start + 1);
+    const updatePosition = () => {
+      const caretAnchor = getTextareaCaretAnchor(textarea, anchorIndex);
+      const layerRect = layer.getBoundingClientRect();
+      if (!caretAnchor) {
+        setMentionComposerPosition(null);
+        return;
+      }
+
+      const estimatedMenuWidth = Math.min(448, Math.max(280, layerRect.width - 24));
+      const relativeLeft = Math.max(12, Math.min(caretAnchor.left - layerRect.left, layerRect.width - estimatedMenuWidth - 12));
+      const relativeTop = Math.max(8, caretAnchor.top - layerRect.top - 8);
+
+      setMentionComposerPosition({
+        left: relativeLeft,
+        top: relativeTop,
+      });
+    };
+
+    updatePosition();
+    const handleViewportShift = () => updatePosition();
+    textarea.addEventListener("scroll", handleViewportShift, { passive: true });
+    window.addEventListener("resize", handleViewportShift);
+
+    return () => {
+      textarea.removeEventListener("scroll", handleViewportShift);
+      window.removeEventListener("resize", handleViewportShift);
+    };
+  }, [activeMention, composerPrompt, mentionAnchor]);
 
   const applyMention = useCallback((value) => {
     if (!activeMention) {
@@ -3768,9 +3865,18 @@ export function ChatPanel({
               onRemoveItem={onRemoveQueuedMessage}
               textClassName={fontSizeStyles.queued}
             />
-            <div className="relative">
+            <div ref={composerMentionLayerRef} className="relative">
               {activeMention && mentionOptions.length && mentionAnchor === "composer" ? (
-                <div ref={mentionMenuRef} data-testid="mention-menu-composer" className="absolute bottom-full left-0 z-20 mb-2 w-[min(28rem,calc(100vw-4rem))]">
+                <div
+                  ref={mentionMenuRef}
+                  data-testid="mention-menu-composer"
+                  className="absolute z-20 w-[min(28rem,calc(100vw-4rem))]"
+                  style={{
+                    left: mentionComposerPosition?.left ?? 12,
+                    top: mentionComposerPosition?.top ?? 8,
+                    transform: "translateY(calc(-100% - 8px))",
+                  }}
+                >
                   <div className="max-h-[31rem] overflow-y-auto rounded-xl border border-border/70 bg-background/95 p-2 pr-3 shadow-lg backdrop-blur cc-scroll-region">
                     {filteredMentionAgents.length ? (
                       <>

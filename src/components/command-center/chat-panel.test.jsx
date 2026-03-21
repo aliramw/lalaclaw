@@ -2934,6 +2934,76 @@ describe("ChatPanel", () => {
     expect(screen.queryByRole("button", { name: /expert/i })).not.toBeInTheDocument();
   });
 
+  it("positions the @ mention menu near the trigger caret instead of pinning it to the composer edge", async () => {
+    render(<MentionHarness availableMentionAgents={["writer", "expert", "transformer"]} />);
+
+    const user = userEvent.setup();
+    const textarea = screen.getByPlaceholderText(defaultPromptPlaceholder);
+    const composerMentionLayer = textarea.parentElement?.parentElement?.parentElement;
+    expect(composerMentionLayer).not.toBeNull();
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tagName, options) => {
+      const element = originalCreateElement(tagName, options);
+      if (String(tagName).toLowerCase() === "div") {
+        element.getBoundingClientRect = () => ({
+          x: 0,
+          y: 0,
+          left: 0,
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+          toJSON: () => ({}),
+        });
+      }
+      if (String(tagName).toLowerCase() === "span") {
+        element.getBoundingClientRect = () => ({
+          x: 220,
+          y: 44,
+          left: 220,
+          top: 44,
+          right: 228,
+          bottom: 64,
+          width: 8,
+          height: 20,
+          toJSON: () => ({}),
+        });
+      }
+      return element;
+    });
+
+    Object.defineProperty(textarea, "clientWidth", { configurable: true, value: 640 });
+    textarea.getBoundingClientRect = () => ({
+      x: 100,
+      y: 500,
+      left: 100,
+      top: 500,
+      right: 740,
+      bottom: 596,
+      width: 640,
+      height: 96,
+      toJSON: () => ({}),
+    });
+    composerMentionLayer.getBoundingClientRect = () => ({
+      x: 80,
+      y: 460,
+      left: 80,
+      top: 460,
+      right: 760,
+      bottom: 620,
+      width: 680,
+      height: 160,
+      toJSON: () => ({}),
+    });
+
+    await user.type(textarea, "abcdefghijklmnopqrstuvwxyz @wr");
+
+    const mentionMenu = screen.getByTestId("mention-menu-composer");
+    expect(mentionMenu.style.left).not.toBe("12px");
+    expect(Number.parseFloat(mentionMenu.style.left)).toBeGreaterThan(100);
+  });
+
   it("shows skills after agents and inserts the selected skill without the trigger character", async () => {
     render(<MentionHarness availableMentionAgents={["writer"]} availableSkills={[{ name: "coding", ownerAgentId: "expert" }, { name: "nano-banana", ownerAgentId: "paint" }]} />);
 

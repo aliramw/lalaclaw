@@ -690,23 +690,6 @@ export function ImagePreviewOverlay({ image, onClose }) {
     }
   }, [image?.src]);
 
-  useEffect(() => {
-    if (!image?.src) {
-      return undefined;
-    }
-
-    const handleKeyDown = (event) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      onClose?.();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [image?.src, onClose]);
-
   if (!image?.src) {
     return null;
   }
@@ -833,8 +816,91 @@ export function ImagePreviewOverlay({ image, onClose }) {
     }
   };
 
+  useEffect(() => {
+    if (!image?.src) {
+      return undefined;
+    }
+
+    const isPlainShortcutEvent = (event) => !event.metaKey && !event.ctrlKey && !event.altKey && !event.isComposing;
+    const stopPreviewShortcutEvent = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+
+    const handleKeyDown = (event) => {
+      const key = String(event.key || "");
+      const normalizedKey = key.toLowerCase();
+
+      if (key === "Escape") {
+        stopPreviewShortcutEvent(event);
+        onClose?.();
+        return;
+      }
+
+      if (!isPlainShortcutEvent(event)) {
+        return;
+      }
+
+      if (key === "=" || key === "+" || event.code === "NumpadAdd") {
+        stopPreviewShortcutEvent(event);
+        handleZoomIn();
+        return;
+      }
+
+      if (key === "-" || event.code === "NumpadSubtract") {
+        stopPreviewShortcutEvent(event);
+        handleZoomOut();
+        return;
+      }
+
+      if (key === "0" || event.code === "Numpad0") {
+        stopPreviewShortcutEvent(event);
+        handleReset();
+        return;
+      }
+
+      if (normalizedKey === "q") {
+        stopPreviewShortcutEvent(event);
+        handleRotateLeft();
+        return;
+      }
+
+      if (normalizedKey === "w") {
+        stopPreviewShortcutEvent(event);
+        handleRotateRight();
+        return;
+      }
+
+      if (normalizedKey === "o") {
+        stopPreviewShortcutEvent(event);
+        handleRevealInFileManager().catch(() => {});
+      }
+    };
+
+    const doc = window.document;
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    doc.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+      doc.removeEventListener("keydown", handleKeyDown, { capture: true });
+    };
+  }, [image?.src, onClose, handleRevealInFileManager, handleReset, handleRotateLeft, handleRotateRight, handleZoomIn, handleZoomOut]);
+  const renderImageShortcutTooltip = (label, shortcut) => (
+    <div className="space-y-0.5">
+      <div>{label}</div>
+      <div className="text-[11px] text-muted-foreground">{messages.theme.shortcutHint(shortcut)}</div>
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/88 backdrop-blur-[2px]" onClick={onClose}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={messages.inspector.previewActions.previewTitle}
+      className="fixed inset-0 z-50 bg-black/88 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
       <button
         type="button"
         className="absolute right-5 top-5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/16"
@@ -881,7 +947,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
                 <RotateCcw className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{messages.inspector.previewActions.imageRotateLeft}</TooltipContent>
+            <TooltipContent>{renderImageShortcutTooltip(messages.inspector.previewActions.imageRotateLeft, "Q")}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -894,7 +960,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
                 <RotateCw className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{messages.inspector.previewActions.imageRotateRight}</TooltipContent>
+            <TooltipContent>{renderImageShortcutTooltip(messages.inspector.previewActions.imageRotateRight, "W")}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -908,7 +974,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
                 <ZoomOut className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{messages.inspector.previewActions.imageZoomOut}</TooltipContent>
+            <TooltipContent>{renderImageShortcutTooltip(messages.inspector.previewActions.imageZoomOut, "-")}</TooltipContent>
           </Tooltip>
           <div className="min-w-12 text-center text-[11px] font-medium text-white/75">{Math.round(scale * 100)}%</div>
           <Tooltip>
@@ -922,7 +988,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
                 <RefreshCcw className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{messages.inspector.previewActions.imageResetZoom}</TooltipContent>
+            <TooltipContent>{renderImageShortcutTooltip(messages.inspector.previewActions.imageResetZoom, "0")}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -936,7 +1002,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
                 <ZoomIn className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{messages.inspector.previewActions.imageZoomIn}</TooltipContent>
+            <TooltipContent>{renderImageShortcutTooltip(messages.inspector.previewActions.imageZoomIn, "=/+")}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -950,7 +1016,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
                 <FolderOpen className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{messages.inspector.previewActions.revealInFileManager(fileManagerLabel)}</TooltipContent>
+            <TooltipContent>{renderImageShortcutTooltip(messages.inspector.previewActions.revealInFileManager(fileManagerLabel), "O")}</TooltipContent>
           </Tooltip>
         </div>
       </div>

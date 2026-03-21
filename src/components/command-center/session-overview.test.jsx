@@ -727,9 +727,21 @@ describe("SessionOverview", () => {
     expect(within(dialog).getByText("文件预览")).toBeInTheDocument();
     expect(within(dialog).getByText("编辑")).toBeInTheDocument();
     expect(within(dialog).getByText("保存")).toBeInTheDocument();
+    expect(within(dialog).getByText("放大图片")).toBeInTheDocument();
+    expect(within(dialog).getByText("缩小图片")).toBeInTheDocument();
+    expect(within(dialog).getByText("恢复默认缩放")).toBeInTheDocument();
+    expect(within(dialog).getByText("在文件管理器中显示")).toBeInTheDocument();
+    expect(within(dialog).getByText("向左旋转图片")).toBeInTheDocument();
+    expect(within(dialog).getByText("向右旋转图片")).toBeInTheDocument();
     expect(within(dialog).getByText("关闭预览")).toBeInTheDocument();
     expect(within(dialog).getByText("E")).toBeInTheDocument();
     expect(within(dialog).getByText("Cmd + S")).toBeInTheDocument();
+    expect(within(dialog).getByText("=/+")).toBeInTheDocument();
+    expect(within(dialog).getByText("-")).toBeInTheDocument();
+    expect(within(dialog).getByText("0")).toBeInTheDocument();
+    expect(within(dialog).getByText("O")).toBeInTheDocument();
+    expect(within(dialog).getByText("Q")).toBeInTheDocument();
+    expect(within(dialog).getByText("W")).toBeInTheDocument();
     expect(within(dialog).getAllByText("Esc").length).toBeGreaterThan(0);
     expect(within(dialog).getByText("Enter")).toBeInTheDocument();
     expect(within(dialog).getByText("Shift + Enter")).toBeInTheDocument();
@@ -774,6 +786,8 @@ describe("SessionOverview", () => {
     expect(within(dialog).getByText("Ctrl + /")).toBeInTheDocument();
     expect(within(dialog).getByText("E")).toBeInTheDocument();
     expect(within(dialog).getByText("Ctrl + S")).toBeInTheDocument();
+    expect(within(dialog).getByText("=/+")).toBeInTheDocument();
+    expect(within(dialog).getByText("O")).toBeInTheDocument();
     await user.hover(screen.getByRole("button", { name: "快捷键提示" }));
     expect((await screen.findAllByText("Ctrl + /")).length).toBeGreaterThan(0);
 

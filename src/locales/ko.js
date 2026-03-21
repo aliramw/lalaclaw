@@ -311,6 +311,17 @@ const ko = {
     artifactsHint: "이 세션의 응답 요약이 여기에 표시됩니다. 클릭하면 대화의 해당 부분으로 이동합니다.",
     artifactReplyPrefix: "응답",
     artifactJumpTo: "이동",
+    contextPreview: {
+      ...en.inspector.contextPreview,
+      unknownRoleLabel: "알 수 없는 역할",
+      roles: {
+        ...en.inspector.contextPreview.roles,
+        developer: "개발자",
+        tool: "도구",
+        toolUse: "도구 호출",
+        toolResult: "도구 결과",
+      },
+    },
     empty: {
       files: "현재 세션에서 감지된 파일이 여기에 표시됩니다.",
       workspaceFiles: "현재 작업공간에서 감지된 파일이 여기에 표시됩니다.",

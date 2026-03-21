@@ -16,6 +16,8 @@ function createDevWorkspaceRestartHandler({
         const result = await scheduleDevWorkspaceRestart({
           frontendHost: body?.frontendHost,
           frontendPort: body?.frontendPort,
+          targetBranch: body?.targetBranch,
+          targetWorktreePath: body?.targetWorktreePath,
         });
         sendJson(res, 202, result);
         return;
