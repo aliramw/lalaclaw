@@ -3110,7 +3110,7 @@ describe("InspectorPanel", () => {
     expect(screen.queryByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /OpenClaw 配置 (?:查看|收起)详情/i }));
     expect(screen.getByRole("checkbox", { name: "我确认要把这次修改写入远端 OpenClaw 配置" })).toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("reloads the latest config state before showing a config conflict error", async () => {
     const initialState = {

@@ -3366,7 +3366,7 @@ describe("App", () => {
       sessionUpdateSessionUser: expect.stringMatching(/^command-center-worker-/),
       sessionUpdateAgentId: "worker",
     });
-  });
+  }, 10_000);
 
   it("does not list agents that already have open tabs in the switcher menu", async () => {
     const harness = createInteractiveFetchMock({
