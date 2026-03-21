@@ -1306,7 +1306,7 @@ describe("ChatPanel", () => {
     expect(scrollLeftValue).toBeGreaterThan(0);
   });
 
-  it("hides the close button on the tab currently being dragged", () => {
+  it("keeps the close button visible on the active tab while dragging", () => {
     const { container } = render(
       <TooltipProvider>
         <ChatTabsStrip
@@ -1347,9 +1347,11 @@ describe("ChatPanel", () => {
     });
 
     fireEvent.pointerDown(sourceWrapper, { button: 0, clientX: 80, clientY: 46, pointerId: 1 });
+    expect(within(sourceWrapper).getByLabelText("关闭会话 main")).toBeInTheDocument();
+
     fireEvent.pointerMove(window, { clientX: 120, clientY: 46, pointerId: 1 });
 
-    expect(within(sourceWrapper).queryByLabelText(/close tab/i)).not.toBeInTheDocument();
+    expect(within(sourceWrapper).getByLabelText("关闭会话 main")).toBeInTheDocument();
   });
 
   it("does not activate an inactive tab while dragging it", () => {

@@ -53,6 +53,7 @@ function createRequestHandler(appContext = defaultAppContext) {
     handleFileManagerPaste,
     handleFileManagerRename,
     handleFileManagerReveal,
+    handleDevWorkspaceRestart,
     handleLalaClawUpdateDev,
     handleLalaClawUpdate,
     handleOpenClawConfig,
@@ -199,6 +200,11 @@ function createRequestHandler(appContext = defaultAppContext) {
 
     if ((req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE') && url.pathname === '/api/dev/lalaclaw/update-mock') {
       runRouteHandler(handleLalaClawUpdateDev, req, res);
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/dev/workspace-restart') {
+      runRouteHandler(handleDevWorkspaceRestart, req, res);
       return;
     }
 

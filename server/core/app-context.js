@@ -39,6 +39,7 @@ const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler, createChatStopHandler } = require('../routes/chat');
 const { createFileManagerHandlers } = require('../routes/file-manager');
 const { createFilePreviewHandlers } = require('../routes/file-preview');
+const { createDevWorkspaceRestartHandler } = require('../routes/dev-workspace-restart');
 const { createLalaClawUpdateDevHandler } = require('../routes/lalaclaw-update-dev');
 const { createLalaClawUpdateHandler } = require('../routes/lalaclaw-update');
 const { createOpenClawConfigHandler } = require('../routes/openclaw-config');
@@ -57,6 +58,7 @@ const {
   createOpenClawOperationHistory,
 } = require('../services/openclaw-operations');
 const { createOpenClawUpdateService } = require('../services/openclaw-update');
+const { createDevWorkspaceRestartService } = require('../services/dev-workspace-restart');
 const { createLalaClawUpdateService } = require('../services/lalaclaw-update');
 const { createSessionHandlers } = require('../routes/session');
 const { createWorkspaceTreeHandler } = require('../routes/workspace-tree');
@@ -408,6 +410,18 @@ function createAppContext() {
   } = createLalaClawUpdateService({
     config,
   });
+  const {
+    getDevWorkspaceRestartState,
+    scheduleDevWorkspaceRestart,
+  } = createDevWorkspaceRestartService({
+    backendHost: HOST,
+    backendPort: PORT,
+    fileExists,
+    processPid: process.pid,
+    projectRoot: PROJECT_ROOT,
+    readJsonIfExists,
+    stateDir: config.stateDir,
+  });
   const openClawFacade = createOpenClawFacade({
     config,
     openClawOperationHistory,
@@ -456,6 +470,12 @@ function createAppContext() {
     parseRequestBody,
     sendJson,
     setLalaClawUpdateDevMockState,
+  });
+  const handleDevWorkspaceRestart = createDevWorkspaceRestartHandler({
+    getDevWorkspaceRestartState,
+    parseRequestBody,
+    scheduleDevWorkspaceRestart,
+    sendJson,
   });
   const handleLalaClawUpdate = createLalaClawUpdateHandler({
     getLalaClawUpdateState,
@@ -510,6 +530,7 @@ function createAppContext() {
     handleFileManagerPaste,
     handleFileManagerRename,
     handleFileManagerReveal,
+    handleDevWorkspaceRestart,
     handleLalaClawUpdateDev,
     handleLalaClawUpdate,
     handleOpenClawManagement,

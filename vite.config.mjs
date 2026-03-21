@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { execSync } from "node:child_process";
 import path from "node:path";
 
 function getPackageName(id) {
@@ -21,7 +22,35 @@ function getPackageName(id) {
   return scopeOrName.startsWith("@") ? `${scopeOrName}/${nestedName || ""}` : scopeOrName;
 }
 
+function readGitValue(command) {
+  try {
+    return execSync(command, {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function getDevWorkspaceInfo() {
+  const cwd = process.cwd();
+  const branch = readGitValue("git branch --show-current");
+  const commit = readGitValue("git rev-parse --short HEAD");
+
+  return {
+    branch: branch || (commit ? `detached@${commit}` : "detached"),
+    commit,
+    cwd,
+    worktree: path.basename(cwd),
+  };
+}
+
 export default defineConfig({
+  define: {
+    "globalThis.__LALACLAW_DEV_INFO__": JSON.stringify(getDevWorkspaceInfo()),
+  },
   plugins: [react(), tailwindcss()],
   server: {
     host: "127.0.0.1",

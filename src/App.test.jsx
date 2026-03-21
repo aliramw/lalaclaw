@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App, { TaskRelationshipsPanel } from "@/App";
+import * as AppModule from "@/App";
 import { I18nProvider } from "@/lib/i18n";
 import { localeStorageKey } from "@/lib/i18n";
+
+const { default: App, TaskRelationshipsPanel } = AppModule;
 
 const storageKey = "command-center-ui-state-v2";
 const currentStorageKey = "command-center-ui-state-v3";
@@ -352,6 +354,7 @@ describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.localStorage.setItem(localeStorageKey, "zh");
+    delete globalThis.__LALACLAW_DEV_INFO__;
     vi.stubGlobal("confirm", vi.fn(() => true));
     originalWebSocket = globalThis.WebSocket;
     globalThis.WebSocket = MockWebSocket;
@@ -361,6 +364,7 @@ describe("App", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    delete globalThis.__LALACLAW_DEV_INFO__;
     globalThis.WebSocket = originalWebSocket;
   });
 
@@ -431,6 +435,155 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("轮询 / 连接中")).toBeInTheDocument();
+  });
+
+  it("toggles the dev workspace badge between expanded and one-line collapsed states", async () => {
+    globalThis.__LALACLAW_DEV_INFO__ = {
+      branch: "feat/init-autostart",
+      commit: "a206eda",
+      cwd: "/Users/marila/projects/lalaclaw2",
+      worktree: "lalaclaw2",
+    };
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url === "/api/auth/state") {
+        return mockJsonResponse({
+          ok: true,
+          accessMode: "off",
+          authenticated: true,
+        });
+      }
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+      if (url === "/api/config") {
+        return mockJsonResponse({ openClawConnected: false });
+      }
+      if (url === "/api/launcher/config") {
+        return mockJsonResponse({
+          ok: true,
+          config: null,
+          onboardingState: { dismissed: false, completedAt: 0, autoConnect: false },
+          diagnostics: { supportedAuthChoices: [], hasSavedAuthChoice: false },
+        });
+      }
+      if (url === "/api/lalaclaw/update") {
+        return mockJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.20-1",
+          currentRelease: { version: "2026.3.20-1", stable: true },
+          targetRelease: { version: "2026.3.20-1", stable: true },
+          stableTag: "stable",
+          updateAvailable: false,
+          capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const badge = await screen.findByTestId("dev-workspace-badge");
+
+    expect(badge).toHaveTextContent("feat/init-autostart");
+    expect(badge).toHaveTextContent("路径");
+
+    await user.click(badge);
+
+    expect(screen.getByTestId("dev-workspace-badge")).toHaveTextContent("feat/init-autostart");
+    expect(screen.getByTestId("dev-workspace-badge")).not.toHaveTextContent("路径");
+    expect(screen.getByTestId("dev-workspace-badge")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("shows a dev restart button and posts a restart request from the expanded badge", async () => {
+    globalThis.__LALACLAW_DEV_INFO__ = {
+      branch: "feat/init-autostart",
+      commit: "a206eda",
+      cwd: "/Users/marila/projects/lalaclaw2",
+      worktree: "lalaclaw2",
+    };
+
+    let restartPollCount = 0;
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/auth/state") {
+        return mockJsonResponse({
+          ok: true,
+          accessMode: "off",
+          authenticated: true,
+        });
+      }
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+      if (url === "/api/config") {
+        return mockJsonResponse({ openClawConnected: false });
+      }
+      if (url === "/api/launcher/config") {
+        return mockJsonResponse({
+          ok: true,
+          config: null,
+          onboardingState: { dismissed: false, completedAt: 0, autoConnect: false },
+          diagnostics: { supportedAuthChoices: [], hasSavedAuthChoice: false },
+        });
+      }
+      if (url === "/api/lalaclaw/update") {
+        return mockJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.20-1",
+          currentRelease: { version: "2026.3.20-1", stable: true },
+          targetRelease: { version: "2026.3.20-1", stable: true },
+          stableTag: "stable",
+          updateAvailable: false,
+          capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+        });
+      }
+      if (url === "/api/dev/workspace-restart") {
+        restartPollCount += 1;
+        return mockJsonResponse(
+          restartPollCount === 1
+            ? {
+                ok: true,
+                available: true,
+                accepted: true,
+                active: true,
+                restartId: "restart-123",
+                status: "scheduled",
+              }
+            : {
+                ok: true,
+                available: true,
+                active: false,
+                restartId: "restart-123",
+                status: "ready",
+              },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const reloadSpy = vi.spyOn(AppModule.devWorkspacePageReloader, "reload").mockImplementation(() => {});
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const restartButton = await screen.findByTestId("dev-workspace-restart-button");
+    await user.click(restartButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/dev/workspace-restart", expect.objectContaining({ method: "POST" }));
+      expect(fetchMock).toHaveBeenCalledWith("/api/dev/workspace-restart", expect.objectContaining({ cache: "no-store" }));
+      expect(reloadSpy).toHaveBeenCalled();
+    });
   });
 
   it("keeps the full app interactive after switching to a non-Chinese locale", async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight, RotateCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { SessionOverview } from "@/components/command-center/session-overview";
@@ -23,6 +23,7 @@ const compactInspectorPanelMinWidth = 58;
 const compactInspectorPanelMaxWidth = 72;
 const compactChatPanelMinWidth = 220;
 const shouldBypassAccessGate = Boolean(import.meta.env?.MODE === "test" || import.meta.env?.VITEST);
+const devWorkspaceBadgeStorageKey = "lalaclaw-dev-workspace-badge-collapsed";
 const pointerFocusDismissSelector = [
   "button",
   "[role='button']",
@@ -34,6 +35,27 @@ const pointerFocusDismissSelector = [
   "a[href]",
   "summary",
 ].join(",");
+
+function buildDevWorkspaceLabel(info, port = "") {
+  return [info?.branch || info?.commit || "", info?.worktree || "", port ? `:${port}` : ""].filter(Boolean).join(" · ");
+}
+
+function getDevWorkspaceInfo() {
+  const info = globalThis.__LALACLAW_DEV_INFO__;
+  return info && typeof info === "object" ? info : null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+export const devWorkspacePageReloader = {
+  reload() {
+    window.location.reload();
+  },
+};
 
 function shouldDismissPointerFocus(element) {
   if (!(element instanceof HTMLElement)) {
@@ -139,6 +161,186 @@ function ModelSwitchOverlay({ modelLabel }) {
           {messages.common.switchingModelWait}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DevWorkspaceBadge() {
+  const { messages } = useI18n();
+  const devWorkspaceInfo = getDevWorkspaceInfo();
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(devWorkspaceBadgeStorageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [restartError, setRestartError] = useState("");
+  const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(devWorkspaceBadgeStorageKey, collapsed ? "1" : "0");
+    } catch {}
+  }, [collapsed]);
+
+  if (!(import.meta.env?.DEV || import.meta.env?.MODE === "test" || import.meta.env?.VITEST) || !devWorkspaceInfo) {
+    return null;
+  }
+
+  const port = typeof window !== "undefined" ? window.location.port : "";
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
+  const label = buildDevWorkspaceLabel(devWorkspaceInfo, port);
+  const toggleLabel = collapsed ? messages.common.devWorkspaceExpand : messages.common.devWorkspaceCollapse;
+
+  const handleToggleCollapsed = useCallback(() => {
+    setCollapsed((current) => !current);
+  }, []);
+
+  const handleToggleKeyDown = useCallback((event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    handleToggleCollapsed();
+  }, [handleToggleCollapsed]);
+
+  const pollForRestartReady = useCallback(async (restartId) => {
+    const timeoutMs = 90_000;
+    const startedAt = Date.now();
+
+    await sleep(600);
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        const response = await fetch("/api/dev/workspace-restart", {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        const payload = await response.json().catch(() => null);
+          if (response.ok && payload?.restartId === restartId) {
+            if (payload.status === "ready") {
+              devWorkspacePageReloader.reload();
+              return;
+            }
+          if (payload.status === "failed") {
+            throw new Error(payload.error || messages.common.devWorkspaceRestartFailed);
+          }
+        }
+      } catch {}
+
+      await sleep(1000);
+    }
+
+    throw new Error(messages.common.devWorkspaceRestartFailed);
+  }, [messages]);
+
+  const handleRestartServices = useCallback(async (event) => {
+    event.stopPropagation();
+    if (restarting) {
+      return;
+    }
+
+    setRestartError("");
+    setRestarting(true);
+
+    try {
+      const response = await fetch("/api/dev/workspace-restart", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          frontendHost: host || "127.0.0.1",
+          frontendPort: Number(port || 0),
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok === false || !payload?.restartId) {
+        throw new Error(payload?.error || messages.common.devWorkspaceRestartFailed);
+      }
+
+      await pollForRestartReady(payload.restartId);
+    } catch (error) {
+      setRestarting(false);
+      setRestartError(error?.message || messages.common.devWorkspaceRestartFailed);
+    }
+  }, [host, messages, pollForRestartReady, port, restarting]);
+
+  return (
+    <div className="pointer-events-none fixed right-3 bottom-3 z-[140]">
+      <section
+        aria-expanded={collapsed ? "false" : "true"}
+        aria-label={toggleLabel}
+        data-testid="dev-workspace-badge"
+        onClick={handleToggleCollapsed}
+        onKeyDown={handleToggleKeyDown}
+        role="button"
+        tabIndex={0}
+        className={cn(
+          "pointer-events-auto rounded-2xl border border-border/70 bg-background/92 text-left shadow-[0_10px_30px_rgba(15,23,42,0.14)] backdrop-blur transition hover:border-border hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          collapsed
+            ? "max-w-[min(24rem,calc(100vw-1.5rem))] px-3 py-2"
+            : "min-w-[15rem] max-w-[min(24rem,calc(100vw-1.5rem))] px-3 py-2.5",
+        )}
+      >
+        {collapsed ? (
+          <div className="text-[12px] font-semibold leading-5 text-foreground">
+            <code>{label}</code>
+          </div>
+        ) : (
+          <>
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="inline-flex h-7 items-center rounded-full border border-amber-500/35 bg-amber-500/12 px-2 text-[10px] font-semibold tracking-[0.14em] text-amber-700 uppercase">
+                {messages.common.devWorkspace}
+              </div>
+              <button
+                type="button"
+                data-testid="dev-workspace-restart-button"
+                onClick={handleRestartServices}
+                disabled={restarting}
+                className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground transition hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
+              >
+                <RotateCw className={cn("h-3.5 w-3.5", restarting ? "animate-spin" : "")} aria-hidden="true" />
+                <span>{restarting ? messages.common.devWorkspaceRestarting : messages.common.devWorkspaceRestart}</span>
+              </button>
+            </div>
+            <div className="text-[12px] font-semibold leading-5 text-foreground">
+              <code>{label}</code>
+            </div>
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[11px] leading-4 text-muted-foreground">
+              <dt>{messages.common.devWorkspaceBranch}</dt>
+              <dd className="min-w-0 truncate">
+                <code>{devWorkspaceInfo.branch || devWorkspaceInfo.commit || messages.common.unknown}</code>
+              </dd>
+              <dt>{messages.common.devWorkspaceWorktree}</dt>
+              <dd className="min-w-0 truncate">
+                <code>{devWorkspaceInfo.worktree || messages.common.unknown}</code>
+              </dd>
+              <dt>{messages.common.devWorkspacePort}</dt>
+              <dd>
+                <code>{port || messages.common.unknown}</code>
+              </dd>
+              <dt>{messages.common.devWorkspacePath}</dt>
+              <dd className="min-w-0 truncate">
+                <code>{devWorkspaceInfo.cwd || messages.common.unknown}</code>
+              </dd>
+            </dl>
+            {restartError ? (
+              <div className="mt-2 text-[11px] leading-4 text-red-600 dark:text-red-300">
+                {restartError}
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
     </div>
   );
 }
@@ -515,6 +717,21 @@ function AppContent() {
   );
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [splitLayoutWidth, setSplitLayoutWidth] = useState(0);
+
+  useEffect(() => {
+    const devWorkspaceInfo = getDevWorkspaceInfo();
+
+    if (!(import.meta.env?.DEV || import.meta.env?.MODE === "test" || import.meta.env?.VITEST) || !devWorkspaceInfo || typeof document === "undefined") {
+      return;
+    }
+
+    const port = typeof window !== "undefined" ? window.location.port : "";
+    const baseTitle = i18nMessages?.app?.documentTitle || i18nMessages?.app?.title || document.title;
+    const label = buildDevWorkspaceLabel(devWorkspaceInfo, port);
+    document.title = i18nMessages?.app?.devDocumentTitle
+      ? i18nMessages.app.devDocumentTitle(baseTitle, label)
+      : `${baseTitle} [${label}]`;
+  }, [i18nMessages]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -1109,6 +1326,7 @@ function AppContent() {
         />
         <ModelSwitchOverlay modelLabel={switchingModelOverlay?.modelLabel || ""} />
         <SessionNotice notice={modelSwitchNotice} />
+        <DevWorkspaceBadge />
       </div>
     </TooltipProvider>
   );

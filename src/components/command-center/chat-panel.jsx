@@ -1627,10 +1627,6 @@ export function ChatTabsStrip({
   itemsRef.current = items;
   onReorderRef.current = onReorder;
 
-  useEffect(() => {
-    dragSessionRef.current = dragSession;
-  }, [dragSession]);
-
   const updateTabScrollState = useCallback(() => {
     const viewport = scrollViewportRef.current;
     if (!viewport) {
@@ -1784,6 +1780,7 @@ export function ChatTabsStrip({
       draggingTabIdRef.current = "";
       lastReorderIntentRef.current = "";
       cachedTabRectsRef.current.clear();
+      dragSessionRef.current = null;
       setDraggingTabId("");
       setDragSession(null);
     };
@@ -1854,9 +1851,11 @@ export function ChatTabsStrip({
       }
 
       if (!wasActive) {
+        draggingTabIdRef.current = currentSession.tabId;
         document.body.style.userSelect = "none";
         document.body.style.cursor = "grabbing";
         snapshotTabRects();
+        setDraggingTabId(currentSession.tabId);
         setDragSession({ ...currentSession });
       } else {
         updateDragOverlayPosition(clampedLeft);
@@ -2016,8 +2015,7 @@ export function ChatTabsStrip({
             <div ref={scrollContentRef} className="inline-flex min-w-max items-end gap-1 px-1 pt-0 pb-1">
               {items.map((item, index) => {
                 const shortcutNumber = index < 9 ? String(index + 1) : null;
-                const isDraggingThisTab = dragSession?.tabId === item.id;
-                const isClosableActiveTab = closable && item.active && !isDraggingThisTab;
+                const isClosableActiveTab = closable && item.active;
                 const tabTitle = item.title || item.agentId;
                 const imTitleParts = splitImTabTitleForDisplay(tabTitle, item.agentId, item.sessionUser);
 
@@ -2043,8 +2041,7 @@ export function ChatTabsStrip({
                       const rect = event.currentTarget.getBoundingClientRect();
                       draggingTabIdRef.current = item.id;
                       lastReorderIntentRef.current = "";
-                      setDraggingTabId(item.id);
-                      setDragSession({
+                      dragSessionRef.current = {
                         active: false,
                         currentLeft: rect.left,
                         height: rect.height,
@@ -2056,7 +2053,7 @@ export function ChatTabsStrip({
                         tabId: item.id,
                         width: rect.width,
                         xOffset: event.clientX - rect.left,
-                      });
+                      };
                     }}
                     className={cn(
                       "group relative inline-flex box-border h-[50px] max-w-[13rem] pt-[14px]",
