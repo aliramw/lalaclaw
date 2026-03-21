@@ -1638,6 +1638,7 @@ function AccessLogoutButton({ loggingOut = false, onLogout }) {
 }
 
 function LobsterBrand({ compact = false, subtitle }) {
+  const { messages } = useI18n();
   const anchorRef = useRef(null);
   const activeWalkersRef = useRef([]);
   const animationFrameRef = useRef(null);
@@ -1974,7 +1975,7 @@ function LobsterBrand({ compact = false, subtitle }) {
           ref={anchorRef}
           type="button"
           onClick={handleWalk}
-          aria-label="Let the lobster crawl"
+          aria-label={messages.app.walkLobster}
           className={cn(
             "inline-flex shrink-0 items-center justify-center rounded-full transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             compact ? "h-8 w-7 self-auto" : "h-10 w-10",

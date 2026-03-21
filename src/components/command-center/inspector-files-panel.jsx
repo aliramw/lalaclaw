@@ -335,6 +335,7 @@ async function requestWorkspaceTree({
   currentAgentId = "",
   currentSessionUser = "",
   currentWorkspaceRoot = "",
+  errorMessage = "",
   filter = "",
   targetPath = "",
 }) {
@@ -355,7 +356,7 @@ async function requestWorkspaceTree({
   const response = await apiFetch(`/api/workspace-tree?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || "Workspace tree failed");
+    throw new Error(payload.error || errorMessage);
   }
   return normalizeWorkspaceNodes(payload.items || [], currentWorkspaceRoot);
 }
@@ -916,7 +917,7 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Reveal in file manager failed");
+        throw new Error(payload.error || messages.inspector.previewErrors.revealInFileManagerFailed);
       }
     } finally {
       onClose();

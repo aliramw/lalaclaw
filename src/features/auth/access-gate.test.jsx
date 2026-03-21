@@ -128,4 +128,20 @@ describe("AccessGate", () => {
       "https://github.com/aliramw/lalaclaw/blob/main/docs/zh/documentation-quick-start.md#browser-access-tokens",
     );
   });
+
+  it("shows the localized fallback error when the access-state request fails without a server message", async () => {
+    window.localStorage.setItem(localeStorageKey, "en");
+    global.fetch.mockImplementation((input) => {
+      if (String(input) === "/api/auth/state") {
+        return mockJsonResponse({ ok: false }, false);
+      }
+
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+
+    renderAccessGate();
+
+    expect(await screen.findByRole("heading", { name: "Access check failed" })).toBeInTheDocument();
+    expect(screen.getByText("Unable to check the current access state.")).toBeInTheDocument();
+  });
 });

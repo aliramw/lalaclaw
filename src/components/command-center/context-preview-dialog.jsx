@@ -73,6 +73,8 @@ function roleBadgeVariant(role) {
 }
 
 function MessageCard({ intlLocale, message }) {
+  const { messages } = useI18n();
+  const contextMessages = messages.inspector.contextPreview;
   const role = message.role || "unknown";
   const text = extractTextContent(message.content);
   const timestamp = message.timestamp || message.ts;
@@ -80,19 +82,22 @@ function MessageCard({ intlLocale, message }) {
   const [expanded, setExpanded] = useState(false);
   const truncated = text.length > maxPreviewChars;
   const displayText = expanded ? text : text.slice(0, maxPreviewChars);
+  const roleLabel = contextMessages.roles?.[role] || contextMessages.roles?.unknown || role;
+  const inputTokens = message.usage?.input_tokens ?? message.usage?.prompt_tokens ?? "?";
+  const outputTokens = message.usage?.output_tokens ?? message.usage?.completion_tokens ?? "?";
 
   return (
     <div className="rounded-lg border border-border/60 bg-background/60 p-3">
       <div className="mb-2 flex items-center gap-2">
         <Badge variant={roleBadgeVariant(role)} className="px-2 py-0.5 text-[11px] leading-5">
-          {role}
+          {roleLabel}
         </Badge>
         {timestamp ? (
           <span className="text-[11px] text-muted-foreground">{formatTimestamp(timestamp, intlLocale)}</span>
         ) : null}
         {message.usage ? (
           <span className="text-[11px] text-muted-foreground">
-            tokens: {message.usage.input_tokens ?? message.usage.prompt_tokens ?? "?"}/{message.usage.output_tokens ?? message.usage.completion_tokens ?? "?"}
+            {contextMessages.tokenUsage}: {inputTokens}/{outputTokens}
           </span>
         ) : null}
       </div>
@@ -107,7 +112,7 @@ function MessageCard({ intlLocale, message }) {
           className="mt-1 h-6 px-1 text-[11px] text-muted-foreground"
           onClick={() => setExpanded((current) => !current)}
         >
-          {expanded ? "Collapse" : `Show all (${text.length} chars)`}
+          {expanded ? contextMessages.collapse : contextMessages.showAll(text.length)}
         </Button>
       ) : null}
     </div>
@@ -135,7 +140,7 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
       const response = await apiFetch(`/api/session/context?${params}`);
       const json = await response.json();
       if (!json.ok) {
-        throw new Error(json.error || "Unknown error");
+        throw new Error(json.error || contextMessages.unknownError);
       }
       setData(json);
     } catch (fetchError) {
@@ -143,7 +148,7 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
     } finally {
       setLoading(false);
     }
-  }, [contextMessages.error, sessionUser]);
+  }, [contextMessages.error, contextMessages.unknownError, sessionUser]);
 
   useEffect(() => {
     if (open) {
@@ -207,7 +212,7 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
             size="icon"
             className="h-8 w-8 shrink-0 rounded-full"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={contextMessages.close}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -230,7 +235,9 @@ export function ContextPreviewDialog({ onClose, open, sessionUser }) {
             {typeof data.fastMode === "boolean" ? (
               <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5">
                 <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{contextMessages.fastMode}</div>
-                <div className="text-xs text-foreground">{data.fastMode ? "ON" : "OFF"}</div>
+                <div className="text-xs text-foreground">
+                  {data.fastMode ? contextMessages.fastModeValues.on : contextMessages.fastModeValues.off}
+                </div>
               </div>
             ) : null}
             <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5">

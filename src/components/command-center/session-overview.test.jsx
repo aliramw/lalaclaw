@@ -584,6 +584,31 @@ describe("SessionOverview", () => {
     expect(screen.getByRole("button", { name: "Dark mode" })).toHaveClass("h-8", "min-w-[2.5rem]");
   });
 
+  it("localizes the lobster trigger aria label", () => {
+    window.localStorage.setItem(localeStorageKey, "en");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "Let the lobster crawl" })).toBeInTheDocument();
+  });
+
   it("shows ctrl shortcuts in theme tooltips on Windows", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
     platformSpy.mockReturnValue("Win32");

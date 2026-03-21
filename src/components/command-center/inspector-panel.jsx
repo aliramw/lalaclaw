@@ -458,6 +458,7 @@ async function requestWorkspaceTree({
   currentAgentId = "",
   currentSessionUser = "",
   currentWorkspaceRoot = "",
+  errorMessage = "",
   filter = "",
   targetPath = "",
 }) {
@@ -478,7 +479,7 @@ async function requestWorkspaceTree({
   const response = await apiFetch(`/api/workspace-tree?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || "Workspace tree failed");
+    throw new Error(payload.error || errorMessage);
   }
   return normalizeWorkspaceNodes(payload.items || [], currentWorkspaceRoot);
 }
@@ -1756,27 +1757,33 @@ function OpenClawOnboardingPanel({
             {state?.service ? (
               <div className="mt-2 space-y-1 text-muted-foreground">
                 <div>
-                  <span className="font-medium text-foreground">LalaClaw Service</span>
+                  <span className="font-medium text-foreground">{messages.inspector.openClawOnboarding.service.title}</span>
                   {": "}
-                  <span>{state.service.installed ? (state.service.running ? "installed · running" : "installed · stopped") : "not installed"}</span>
+                  <span>
+                    {state.service.installed
+                      ? (state.service.running
+                        ? messages.inspector.openClawOnboarding.service.installedRunning
+                        : messages.inspector.openClawOnboarding.service.installedStopped)
+                      : messages.inspector.openClawOnboarding.service.notInstalled}
+                  </span>
                 </div>
                 {state.service.label ? (
                   <div>
-                    <span className="font-medium text-foreground">Label</span>
+                    <span className="font-medium text-foreground">{messages.inspector.openClawOnboarding.service.label}</span>
                     {": "}
                     <span className="font-mono">{state.service.label}</span>
                   </div>
                 ) : null}
                 {state.service.plistPath ? (
                   <div className="break-all">
-                    <span className="font-medium text-foreground">LaunchAgent</span>
+                    <span className="font-medium text-foreground">{messages.inspector.openClawOnboarding.service.launchAgent}</span>
                     {": "}
                     <span className="font-mono">{state.service.plistPath}</span>
                   </div>
                 ) : null}
                 {state.service.logDir ? (
                   <div className="break-all">
-                    <span className="font-medium text-foreground">Logs</span>
+                    <span className="font-medium text-foreground">{messages.inspector.openClawOnboarding.service.logs}</span>
                     {": "}
                     <span className="font-mono">{state.service.logDir}</span>
                   </div>
@@ -3600,7 +3607,7 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Reveal in file manager failed");
+        throw new Error(payload.error || messages.inspector.previewErrors.revealInFileManagerFailed);
       }
     } finally {
       onClose();
@@ -5444,9 +5451,9 @@ export function InspectorPanel({
     });
     const payload = await response.json();
     if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || "Reveal in file manager failed");
+      throw new Error(payload.error || messages.inspector.previewErrors.revealInFileManagerFailed);
     }
-  }, []);
+  }, [messages.inspector.previewErrors.revealInFileManagerFailed]);
   const environmentSection = {
     summary: peeks?.environment?.summary || messages.inspector.empty.environment,
     items: [...runtimeEnvironmentItems, ...(peeks?.environment?.items || [])],
