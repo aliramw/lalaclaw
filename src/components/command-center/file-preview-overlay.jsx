@@ -762,7 +762,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
       return nextRotation;
     });
   };
-  const fileManagerLabel = resolveFileManagerLocaleLabel(messages, image.fileManagerLabel || "Folder");
+  const fileManagerLabel = resolveFileManagerLocaleLabel(messages, image.fileManagerLabel || messages.inspector.previewActions.fileManagers.folder);
   const handleWheel = (event) => {
     event.preventDefault();
     const delta = event.deltaY > 0 ? -0.1 : 0.1;
@@ -826,7 +826,7 @@ export function ImagePreviewOverlay({ image, onClose }) {
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Reveal in file manager failed");
+        throw new Error(payload.error || messages.inspector.previewErrors.revealInFileManagerFailed);
       }
     } catch {} finally {
       setOpeningInFileManager(false);
@@ -1077,7 +1077,7 @@ export function FilePreviewOverlay({
   const isDark = resolvedTheme === "dark";
   const vscodeHref = getVsCodeHref(title);
   const showVsCodeButton = isCodeLikePreviewTarget(title, preview?.kind);
-  const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || "Folder");
+  const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || messages.inspector.previewActions.fileManagers.folder);
   const isPdfPreview = preview?.kind === "pdf" && Boolean(preview.contentUrl);
   const editablePreview = isEditablePreview(preview);
   const effectivePreviewContent = editablePreview
@@ -1103,7 +1103,7 @@ export function FilePreviewOverlay({
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Reveal in file manager failed");
+        throw new Error(payload.error || messages.inspector.previewErrors.revealInFileManagerFailed);
       }
     } catch {} finally {
       setOpeningInFileManager(false);
@@ -1372,7 +1372,7 @@ export function FilePreviewOverlay({
       >
         <iframe
           src={preview.contentUrl}
-          title={preview.name || preview.item?.name || "PDF preview"}
+          title={preview.name || preview.item?.name || messages.inspector.previewActions.pdfPreviewTitle}
           className="block h-full w-full bg-transparent"
         />
       </div>

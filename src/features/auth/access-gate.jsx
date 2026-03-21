@@ -22,13 +22,13 @@ const accessTokenHelpUrls = {
 
 const accessGatePrimaryButtonClassName = "h-12 w-full rounded-2xl border-0 bg-primary text-base font-semibold text-primary-foreground shadow-none transition-colors hover:translate-y-0 hover:bg-primary/90";
 
-async function fetchAccessState() {
+async function fetchAccessState(fallbackError = "") {
   const response = await fetch("/api/auth/state", {
     credentials: "same-origin",
   });
   const payload = await response.json();
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || "Access state failed");
+    throw new Error(payload.error || fallbackError);
   }
   return payload;
 }
@@ -43,7 +43,7 @@ export function AccessGate({ children }) {
   const accessTokenHelpUrl = accessTokenHelpUrls[locale] || accessTokenHelpUrls.en;
 
   const refreshState = useCallback(async () => {
-    const payload = await fetchAccessState();
+    const payload = await fetchAccessState(messages.authGate.errors.loadState);
     setState({
       loading: false,
       accessMode: payload.accessMode || "off",
@@ -52,7 +52,7 @@ export function AccessGate({ children }) {
     });
     setLoggingOut(false);
     setError("");
-  }, []);
+  }, [messages.authGate.errors.loadState]);
 
   useEffect(() => {
     let cancelled = false;
