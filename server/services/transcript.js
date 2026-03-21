@@ -150,9 +150,40 @@ function createTranscriptProjector({
         lines.shift();
       }
     };
+    const isMetadataSentinelLine = (value = '') => {
+      const trimmed = String(value || '').trim();
+      return UNTRUSTED_METADATA_SENTINELS.some((pattern) => pattern.test(trimmed));
+    };
+    const stripLeadingSystemWrapperBlock = () => {
+      if (!/^System:/i.test(String(lines[0] || '').trim())) {
+        return false;
+      }
+
+      let index = 0;
+      while (index < lines.length) {
+        const trimmed = String(lines[index] || '').trim();
+        if (!trimmed || /^System:/i.test(trimmed)) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+
+      let nextIndex = index;
+      while (nextIndex < lines.length && !String(lines[nextIndex] || '').trim()) {
+        nextIndex += 1;
+      }
+
+      if (!isMetadataSentinelLine(lines[nextIndex])) {
+        return false;
+      }
+
+      lines.splice(0, nextIndex);
+      return true;
+    };
     const stripLeadingMetadataBlock = () => {
       const firstLine = String(lines[0] || '').trim();
-      if (!UNTRUSTED_METADATA_SENTINELS.some((pattern) => pattern.test(firstLine))) {
+      if (!isMetadataSentinelLine(firstLine)) {
         return false;
       }
 
@@ -180,6 +211,10 @@ function createTranscriptProjector({
       /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::/i.test(String(lines[0] || '').trim())
     ) {
       lines.shift();
+      stripLeadingBlankLines();
+    }
+
+    while (stripLeadingSystemWrapperBlock()) {
       stripLeadingBlankLines();
     }
 

@@ -17,6 +17,15 @@ export const defaultInspectorPanelWidth = 380;
 const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
+const UNTRUSTED_METADATA_SENTINELS = [
+  /^Conversation info \(untrusted metadata\):/i,
+  /^Sender \(untrusted metadata\):/i,
+  /^Thread starter \(untrusted, for context\):/i,
+  /^Replied message \(untrusted, for context\):/i,
+  /^Forwarded message context \(untrusted metadata\):/i,
+  /^Chat history since last reply \(untrusted, for context\):/i,
+];
+const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
 
 function normalizeAgentId(value = "main") {
   return String(value || "main").trim() || "main";
@@ -196,11 +205,115 @@ function normalizeConversationContent(content = "", role = "") {
       .replace(/\[\[reply_to_current\]\]/gi, "")
       .replace(/\*\*<small>[\s\S]*?<\/small>\*\*/gi, "")
       .replace(/<small>[\s\S]*?<\/small>/gi, "");
+  } else if (normalizedRole === "user") {
+    text = cleanWrappedUserMessage(text);
   }
 
   return text
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function cleanWrappedUserMessage(text = "") {
+  let lines = String(text || "").trim().split("\n");
+  const stripLeadingBlankLines = () => {
+    while (lines.length && !String(lines[0] || "").trim()) {
+      lines.shift();
+    }
+  };
+  const isMetadataSentinelLine = (value = "") => {
+    const trimmed = String(value || "").trim();
+    return UNTRUSTED_METADATA_SENTINELS.some((pattern) => pattern.test(trimmed));
+  };
+  const stripLeadingSystemWrapperBlock = () => {
+    if (!/^System:/i.test(String(lines[0] || "").trim())) {
+      return false;
+    }
+
+    let index = 0;
+    while (index < lines.length) {
+      const trimmed = String(lines[index] || "").trim();
+      if (!trimmed || /^System:/i.test(trimmed)) {
+        index += 1;
+        continue;
+      }
+      break;
+    }
+
+    let nextIndex = index;
+    while (nextIndex < lines.length && !String(lines[nextIndex] || "").trim()) {
+      nextIndex += 1;
+    }
+
+    if (!isMetadataSentinelLine(lines[nextIndex])) {
+      return false;
+    }
+
+    lines.splice(0, nextIndex);
+    return true;
+  };
+  const stripLeadingMetadataBlock = () => {
+    const firstLine = String(lines[0] || "").trim();
+    if (!isMetadataSentinelLine(firstLine)) {
+      return false;
+    }
+
+    lines.shift();
+    stripLeadingBlankLines();
+
+    if (/^```(?:json)?\s*$/i.test(String(lines[0] || "").trim())) {
+      lines.shift();
+      while (lines.length && !/^```\s*$/.test(String(lines[0] || "").trim())) {
+        lines.shift();
+      }
+      if (lines.length && /^```\s*$/.test(String(lines[0] || "").trim())) {
+        lines.shift();
+      }
+    }
+
+    stripLeadingBlankLines();
+    return true;
+  };
+
+  stripLeadingBlankLines();
+
+  while (
+    lines.length
+    && /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::/i.test(String(lines[0] || "").trim())
+  ) {
+    lines.shift();
+    stripLeadingBlankLines();
+  }
+
+  while (stripLeadingSystemWrapperBlock()) {
+    stripLeadingBlankLines();
+  }
+
+  while (stripLeadingMetadataBlock()) {
+    // Strip stacked metadata blocks at the head of inbound IM messages.
+  }
+
+  while (lines.length && MESSAGE_ID_LINE.test(String(lines[0] || "").trim())) {
+    lines.shift();
+    stripLeadingBlankLines();
+  }
+
+  let cleaned = lines.join("\n").trim();
+
+  cleaned = cleaned.replace(
+    /^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*/i,
+    "",
+  );
+  cleaned = cleaned.replace(/^(?:ou_[a-z0-9_-]+|on_[a-z0-9_-]+|oc_[a-z0-9_-]+)\s*:\s*/i, "");
+
+  if (
+    /^OpenClaw runtime context \(internal\):/i.test(cleaned)
+    && /runtime-generated,\s*not user-authored/i.test(cleaned)
+  ) {
+    return "";
+  }
+
+  return cleaned.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export function collapseDuplicateConversationTurns(entries = []) {
@@ -676,7 +789,7 @@ export function appendPromptHistory(historyMap, key, prompt) {
 export function extractUserPromptHistory(messages = []) {
   return messages
     .filter((message) => message?.role === "user")
-    .map((message) => String(message.content || "").trim())
+    .map((message) => cleanWrappedUserMessage(message.content))
     .filter(Boolean)
     .slice(-promptHistoryLimit);
 }
@@ -685,14 +798,22 @@ export function sanitizeMessagesForStorage(messages = []) {
   return messages
     .filter((message) => !message.pending)
     .slice(-80)
-    .map((message) => ({
-      ...(message.id ? { id: message.id } : {}),
-      role: message.role,
-      content: message.content,
-      timestamp: message.timestamp,
-      ...(message.attachments?.length ? { attachments: message.attachments } : {}),
-      ...(message.tokenBadge ? { tokenBadge: message.tokenBadge } : {}),
-    }));
+    .map((message) => {
+      const normalizedRole = String(message?.role || "").trim().toLowerCase();
+      const content = normalizedRole === "user"
+        ? cleanWrappedUserMessage(message.content)
+        : message.content;
+
+      return {
+        ...(message.id ? { id: message.id } : {}),
+        role: message.role,
+        content,
+        timestamp: message.timestamp,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+        ...(message.tokenBadge ? { tokenBadge: message.tokenBadge } : {}),
+      };
+    })
+    .filter((message) => Boolean(message.attachments?.length) || Boolean(String(message.content || "").trim()));
 }
 
 function areEquivalentConversationMessages(snapshotMessage, localMessage) {

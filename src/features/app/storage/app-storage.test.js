@@ -708,6 +708,38 @@ describe("sanitizeMessagesForStorage", () => {
       { id: "msg-assistant-100", role: "assistant", content: "你好，有什么事？", timestamp: 1100, tokenBadge: "↑17.7k ↓46" },
     ]);
   });
+
+  it("strips gateway restart wrappers from persisted user messages", () => {
+    expect(
+      sanitizeMessagesForStorage([
+        {
+          role: "user",
+          content: [
+            "System: [2026-03-21 14:47:22 GMT+8] Gateway restart restart ok (gateway.restart)",
+            "System: ✅ LalaClaw 已重启完成！已升级到 next 版本 2026.3.21-1。",
+            "System: Reason: LalaClaw upgraded to 2026.3.21-1 (next), user requested restart",
+            "System: Run: openclaw doctor --non-interactive",
+            "",
+            "Sender (untrusted metadata):",
+            "```json",
+            '{"label":"LalaClaw (gateway-client)","id":"gateway-client","name":"LalaClaw","username":"LalaClaw"}',
+            "```",
+            "",
+            "[Sat 2026-03-21 14:54 GMT+8] https://alidocs.example/link",
+            "",
+            "将上面的在线文档发给天翊",
+          ].join("\n"),
+          timestamp: 1000,
+        },
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content: "https://alidocs.example/link\n\n将上面的在线文档发给天翊",
+        timestamp: 1000,
+      },
+    ]);
+  });
 });
 
 describe("loadStoredState", () => {
@@ -787,6 +819,61 @@ describe("loadStoredState", () => {
     expect(loadStoredState()?.messagesByTabId?.["agent:main"]).toEqual([
       { id: "msg-user-1", role: "user", content: "hi", timestamp: 1 },
       { id: "msg-assistant-1", role: "assistant", content: "hello", timestamp: 2 },
+    ]);
+  });
+
+  it("sanitizes wrapped gateway restart messages when restoring stored user history", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        agentId: "main",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        messagesByTabId: {
+          "agent:main": [
+            {
+              id: "msg-user-1",
+              role: "user",
+              content: [
+                "System: [2026-03-21 14:47:22 GMT+8] Gateway restart restart ok (gateway.restart)",
+                "System: ✅ LalaClaw 已重启完成！已升级到 next 版本 2026.3.21-1。",
+                "System: Reason: LalaClaw upgraded to 2026.3.21-1 (next), user requested restart",
+                "System: Run: openclaw doctor --non-interactive",
+                "",
+                "Sender (untrusted metadata):",
+                "```json",
+                '{"label":"LalaClaw (gateway-client)","id":"gateway-client","name":"LalaClaw","username":"LalaClaw"}',
+                "```",
+                "",
+                "[Sat 2026-03-21 14:54 GMT+8] https://alidocs.example/link",
+                "",
+                "将上面的在线文档发给天翊",
+              ].join("\n"),
+              timestamp: 1,
+            },
+          ],
+        },
+        sessionUser: "command-center",
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    expect(loadStoredState()?.messagesByTabId?.["agent:main"]).toEqual([
+      {
+        id: "msg-user-1",
+        role: "user",
+        content: "https://alidocs.example/link\n\n将上面的在线文档发给天翊",
+        timestamp: 1,
+      },
     ]);
   });
 

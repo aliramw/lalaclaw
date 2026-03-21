@@ -138,6 +138,57 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("strips gateway restart system wrappers before the visible user text", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [
+            {
+              type: "text",
+              text: [
+                "System: [2026-03-21 14:47:22 GMT+8] Gateway restart restart ok (gateway.restart)",
+                "System: ✅ LalaClaw 已重启完成！已升级到 next 版本 2026.3.21-1。",
+                "System: Reason: LalaClaw upgraded to 2026.3.21-1 (next), user requested restart",
+                "System: Run: openclaw doctor --non-interactive",
+                "",
+                "Sender (untrusted metadata):",
+                "```json",
+                "{",
+                '  "label": "LalaClaw (gateway-client)",',
+                '  "id": "gateway-client",',
+                '  "name": "LalaClaw",',
+                '  "username": "LalaClaw"',
+                "}",
+                "```",
+                "",
+                "[Sat 2026-03-21 14:54 GMT+8] https://alidocs.dingtalk.com/i/nodes/oP0MALyR8kzGnoOwFQZ5byMdJ3bzYmDO?corpId=dingd8e1123006514592&utm_medium=im_card&rnd=0.18617403221523943&iframeQuery=utm_medium%3Dportal_recent%26utm_source%3Dportal&utm_scene=person_space&utm_source=im",
+                "",
+                "将上面的在线文档发给天翊（061940），并提醒天翊务必要在今天下午17:00前完成，文档填完后，下载为Excel保存在桌面",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      {
+        role: "user",
+        content: [
+          "https://alidocs.dingtalk.com/i/nodes/oP0MALyR8kzGnoOwFQZ5byMdJ3bzYmDO?corpId=dingd8e1123006514592&utm_medium=im_card&rnd=0.18617403221523943&iframeQuery=utm_medium%3Dportal_recent%26utm_source%3Dportal&utm_scene=person_space&utm_source=im",
+          "",
+          "将上面的在线文档发给天翊（061940），并提醒天翊务必要在今天下午17:00前完成，文档填完后，下载为Excel保存在桌面",
+        ].join("\n"),
+        timestamp: 1,
+      },
+    ]);
+  });
+
   it("collapses fallback-replayed user messages after a transient assistant failure", () => {
     const projector = createProjector();
     const wrappedPrompt = [
