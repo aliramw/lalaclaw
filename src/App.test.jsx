@@ -2181,12 +2181,12 @@ describe("App", () => {
     const user = userEvent.setup();
     const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
 
-    expect(screen.getByText("回车发送，Shift + 回车换行")).toBeInTheDocument();
+    expect(screen.getByText("↑↓输入历史 - 回车发送，Shift + 回车换行")).toBeInTheDocument();
     expect(screen.getByTestId("composer-placeholder-overlay")).toHaveTextContent("PS: 不用点击输入框，任何时候直接打字");
 
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
-    expect(screen.getByText("快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
+    expect(screen.getByText("↑↓输入历史 - 快速连按回车或 Shift + 回车发送，回车换行")).toBeInTheDocument();
     expect(screen.getByTestId("composer-placeholder-overlay")).toHaveTextContent("PS: 不用点击输入框，任何时候直接打字");
     expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
 

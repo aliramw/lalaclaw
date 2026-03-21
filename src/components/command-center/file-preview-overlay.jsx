@@ -11,7 +11,7 @@ import { isEditableElement } from "@/features/chat/utils";
 import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
-import { cn, formatShortcutForPlatform, isApplePlatform } from "@/lib/utils";
+import { cn, isApplePlatform } from "@/lib/utils";
 
 const homePrefix = "/Users/marila";
 const filePreviewDarkCodeTheme = themes.dracula;
