@@ -35,6 +35,7 @@ export function useAppPersistence({
   setMessagesSynced,
   setPendingChatTurns,
   tabMetaById,
+  userLabel,
 }) {
   const storageRequestRef = useRef(0);
   const persistenceTimerRef = useRef(0);
@@ -189,6 +190,7 @@ export function useAppPersistence({
       chatTabs,
       chatFontSize,
       composerSendMode,
+      userLabel,
       dismissedTaskRelationshipIdsByConversation,
       fastMode,
       inspectorPanelWidth,
@@ -236,6 +238,7 @@ export function useAppPersistence({
     activeTab,
     chatFontSize,
     composerSendMode,
+    userLabel,
     chatTabs,
     dismissedTaskRelationshipIdsByConversation,
     fastMode,

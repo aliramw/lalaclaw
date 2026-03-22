@@ -2461,6 +2461,7 @@ export function ChatPanel({
   onCloseChatTab,
   onComposerSendModeToggle,
   onReorderChatTab,
+  onUserLabelChange,
   onRemoveAttachment,
   onEditQueuedMessage,
   onPromptChange,
@@ -2483,9 +2484,10 @@ export function ChatPanel({
   brandControl = null,
   sessionOverview = null,
   showTabsStrip = true,
-  userLabel = "marila",
+  userLabel = "",
 }) {
   const { intlLocale, messages: i18n } = useI18n();
+  const userLabelInputId = useId();
   const attachmentInputRef = useRef(null);
   const composerTextareaRef = useRef(null);
   const composerCompositionActiveRef = useRef(false);
@@ -2552,6 +2554,7 @@ export function ChatPanel({
   const pinTopAllowedForTurnRef = useRef(false);
   const currentAgentName = session.agentId || agentLabel || "main";
   const currentConversationTitle = buildCurrentConversationTitle(currentAgentName, session.sessionUser, i18n.chat.title, intlLocale);
+  const resolvedUserLabel = String(userLabel || "").trim() || i18n.chat.userFallbackName;
   const promptPlaceholder = useMemo(() => {
     if (typeof i18n.chat.promptPlaceholder === "function") {
       return i18n.chat.promptPlaceholder(currentAgentName);
@@ -4010,7 +4013,7 @@ export function ChatPanel({
           staleWarning={message.pending && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
           separated={index > 0 && messages[index - 1]?.role !== message.role}
           chatFontSize={chatFontSize}
-          userLabel={userLabel}
+          userLabel={resolvedUserLabel}
         />
       );
     });
@@ -4025,6 +4028,8 @@ export function ChatPanel({
     highlightedMessageId,
     latestAssistantMessageId,
     latestMessageIsAssistant,
+    i18n.chat,
+    isStaleRunning,
     markUserScrollTakeover,
     messages,
     messageViewportRef,
@@ -4032,7 +4037,8 @@ export function ChatPanel({
     latchedStreamingTailMessageId,
     resolvedTheme,
     session?.sessionUser,
-    userLabel,
+    resolvedUserLabel,
+    staleSeconds,
   ]);
 
   const handleResetWithConfirm = () => {
@@ -4080,6 +4086,22 @@ export function ChatPanel({
               </div>
 
               <div className="flex shrink-0 items-center gap-1.5 self-start">
+                <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-0.5">
+                  <label htmlFor={userLabelInputId} className="sr-only">
+                    {i18n.chat.userLabel}
+                  </label>
+                  <input
+                    id={userLabelInputId}
+                    type="text"
+                    value={userLabel}
+                    placeholder={i18n.chat.userLabelPlaceholder}
+                    aria-label={i18n.chat.userLabel}
+                    title={i18n.chat.userLabelTooltip}
+                    disabled={interactionLocked}
+                    onChange={(event) => onUserLabelChange?.(event.target.value)}
+                    className="h-6 w-28 border-0 bg-transparent px-0 text-[12px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/75 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
                 <div className="flex items-center gap-0.5 rounded-md border border-border/70 bg-background/70 px-1 py-0.5">
                   {chatFontSizeOptions.map((item) => {
                     const active = item.value === chatFontSize;

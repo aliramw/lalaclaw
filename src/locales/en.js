@@ -302,6 +302,9 @@ const en = {
     fontSize: "Font size",
     fontSizeTooltip: "Adjust the message font size for all chats",
     fontSizeOptionTooltip: (label) => `Font size: ${label}`,
+    userLabel: "My name",
+    userLabelPlaceholder: "Choose your name",
+    userLabelTooltip: "Set the name shown on your chat cards",
     fontSizes: {
       small: "Small",
       medium: "Medium",

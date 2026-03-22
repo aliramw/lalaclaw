@@ -827,6 +827,34 @@ describe("loadStoredState", () => {
     });
   });
 
+  it("restores a custom user label from persisted ui state", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        agentId: "main",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        messagesByTabId: {
+          "agent:main": [],
+        },
+        sessionUser: "command-center",
+        userLabel: "  Lala Operator  ",
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    expect(loadStoredState()?.userLabel).toBe("Lala Operator");
+  });
+
   it("sanitizes invalid session file overlay shapes from stored tab metadata", () => {
     window.localStorage.setItem(
       storageKey,

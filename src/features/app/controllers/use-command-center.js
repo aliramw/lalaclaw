@@ -10,6 +10,7 @@ import {
   defaultComposerSendMode,
   defaultInspectorPanelWidth,
   defaultSessionUser,
+  defaultUserLabel,
   defaultTab,
   hasAuthoritativePendingAssistantReply,
   loadStoredChatScrollTops,
@@ -25,6 +26,7 @@ import {
   persistUiStateSnapshot,
   persistChatScrollTops,
   sanitizeInspectorPanelWidth,
+  sanitizeUserLabel,
 } from "@/features/app/storage";
 import { createBaseSession } from "@/features/app/state";
 import { useAppHotkeys } from "@/features/app/controllers/use-app-hotkeys";
@@ -621,7 +623,7 @@ export function deriveUnreadTabState({
   return nextUnreadCountByTabId;
 }
 
-export function useCommandCenter({ userLabel = "marila" } = {}) {
+export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabel } = {}) {
   const { intlLocale, messages: i18n } = useI18n();
   const stored = useMemo(() => loadStoredState(), []);
   const storedChatScrollTops = useMemo(() => loadStoredChatScrollTops(), []);
@@ -747,6 +749,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const [inspectorPanelWidth, setInspectorPanelWidth] = useState(stored?.inspectorPanelWidth || defaultInspectorPanelWidth);
   const [chatFontSize, setChatFontSize] = useState(stored?.chatFontSize || defaultChatFontSize);
   const [composerSendMode, setComposerSendMode] = useState(stored?.composerSendMode || defaultComposerSendMode);
+  const [userLabel, setUserLabel] = useState(sanitizeUserLabel(stored?.userLabel || initialUserLabel));
   const [dismissedTaskRelationshipIdsByConversation, setDismissedTaskRelationshipIdsByConversation] = useState(
     stored?.dismissedTaskRelationshipIdsByConversation || {},
   );
@@ -782,6 +785,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   const inspectorPanelWidthRef = useRef(inspectorPanelWidth);
   const chatFontSizeRef = useRef(chatFontSize);
   const composerSendModeRef = useRef(composerSendMode);
+  const userLabelRef = useRef(userLabel);
   const promptHeightMetricsRef = useRef({ node: null, maxHeight: 0 });
   const promptHeightFrameRef = useRef(0);
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
@@ -856,6 +860,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       chatTabs: chatTabsRef.current,
       chatFontSize: chatFontSizeRef.current,
       composerSendMode: composerSendModeRef.current,
+      userLabel: userLabelRef.current,
       dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
       fastMode: Boolean(activeMeta?.fastMode),
       inspectorPanelWidth: inspectorPanelWidthRef.current,
@@ -883,6 +888,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       chatTabs: chatTabsRef.current,
       chatFontSize: overrides.chatFontSize || chatFontSizeRef.current,
       composerSendMode: overrides.composerSendMode || composerSendModeRef.current,
+      userLabel: Object.prototype.hasOwnProperty.call(overrides, "userLabel") ? sanitizeUserLabel(overrides.userLabel) : userLabelRef.current,
       dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
       fastMode: Boolean(activeMeta?.fastMode),
       inspectorPanelWidth: inspectorPanelWidthRef.current,
@@ -1447,6 +1453,10 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
   useEffect(() => {
     composerSendModeRef.current = composerSendMode;
   }, [composerSendMode]);
+
+  useEffect(() => {
+    userLabelRef.current = userLabel;
+  }, [userLabel]);
 
   useEffect(() => {
     dismissedTaskRelationshipIdsByConversationRef.current = dismissedTaskRelationshipIdsByConversation;
@@ -2160,6 +2170,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     setMessagesSynced,
     setPendingChatTurns,
     tabMetaById,
+    userLabel,
   });
 
   const handleChatFontSizeChange = (nextSize) => {
@@ -2189,6 +2200,17 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     persistCurrentUiStateSnapshot({ composerSendMode: nextMode });
     setComposerSendMode(nextMode);
   }, [persistCurrentUiStateSnapshot, resetRapidEnterState]);
+
+  const handleUserLabelChange = useCallback((nextValue) => {
+    const normalizedValue = sanitizeUserLabel(nextValue);
+    if (userLabelRef.current === normalizedValue) {
+      return;
+    }
+
+    userLabelRef.current = normalizedValue;
+    setUserLabel(normalizedValue);
+    persistCurrentUiStateSnapshot({ userLabel: normalizedValue });
+  }, [persistCurrentUiStateSnapshot]);
 
   const handleInspectorPanelWidthChange = (nextWidth) => {
     const normalizedWidth = sanitizeInspectorPanelWidth(nextWidth);
@@ -2512,6 +2534,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
       chatFontSize: chatFontSizeRef.current,
       chatTabs: nextChatTabs,
       composerSendMode: composerSendModeRef.current,
+      userLabel: userLabelRef.current,
       dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
       fastMode: Boolean(sessionStateRef.current.fastMode),
       inspectorPanelWidth: inspectorPanelWidthRef.current,
@@ -3168,6 +3191,7 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     handleStop,
     handleTrackSessionFiles,
     handleThinkModeChange,
+    handleUserLabelChange,
     localizedFormatTime,
     messageViewportRef,
     messages,
@@ -3197,5 +3221,6 @@ export function useCommandCenter({ userLabel = "marila" } = {}) {
     taskRelationships: visibleTaskRelationships,
     taskTimeline,
     theme,
+    userLabel,
   };
 }

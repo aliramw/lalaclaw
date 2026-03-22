@@ -302,6 +302,9 @@ const zh = {
     fontSize: "字体大小",
     fontSizeTooltip: "调整所有会话的消息字体大小",
     fontSizeOptionTooltip: (label) => `字体大小：${label}`,
+    userLabel: "我的名字",
+    userLabelPlaceholder: "给自己起个名字",
+    userLabelTooltip: "设置聊天卡片上显示的你的名字",
     fontSizes: {
       small: "小",
       medium: "中",
