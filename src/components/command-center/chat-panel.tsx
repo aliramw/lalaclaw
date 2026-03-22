@@ -4084,8 +4084,6 @@ export function ChatPanel({
     isStaleRunning,
     latestAssistantMessageId,
     latestMessageIsAssistant,
-    i18n.chat,
-    isStaleRunning,
     markUserScrollTakeover,
     messages,
     messageViewportRef,
