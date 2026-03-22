@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createOpenClawManagementHandler } = require("./openclaw-management");
+import { createOpenClawManagementHandler } from "./openclaw-management.ts";
 
 describe("createOpenClawManagementHandler", () => {
   it("returns a structured action result payload", async () => {

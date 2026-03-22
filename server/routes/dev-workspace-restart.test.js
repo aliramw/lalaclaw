@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createDevWorkspaceRestartHandler } = require('./dev-workspace-restart');
+import { createDevWorkspaceRestartHandler } from './dev-workspace-restart.ts';
 
 describe('createDevWorkspaceRestartHandler', () => {
   it('returns the current dev workspace restart state for GET requests', async () => {

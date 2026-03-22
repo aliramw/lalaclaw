@@ -1,11 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createTranscriptProjector } = require("../server/services");
+import { createTranscriptProjector } from "../server/services/transcript.ts";
 
 function createProjector(overrides = {}) {
   return createTranscriptProjector({

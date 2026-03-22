@@ -1,5 +1,5 @@
-/* global describe, expect, it */
-const { createDevWorkspaceRestartService } = require('./dev-workspace-restart');
+import { describe, expect, it } from 'vitest';
+import { createDevWorkspaceRestartService } from './dev-workspace-restart.ts';
 
 describe('createDevWorkspaceRestartService', () => {
   it('returns current branch metadata, switchable branches, and worktrees in restart state', () => {

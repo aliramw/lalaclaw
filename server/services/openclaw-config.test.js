@@ -1,8 +1,8 @@
-/* global describe, expect, it */
-const fs = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const { createOpenClawConfigService } = require('./openclaw-config');
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { createOpenClawConfigService } from './openclaw-config.ts';
 
 function getValueAtPath(target, dotPath = '') {
   return String(dotPath || '')

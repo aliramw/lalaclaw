@@ -121,6 +121,7 @@ export default defineConfig({
   test: {
     exclude: [
       ...configDefaults.exclude,
+      ".server-build/**",
       "tests/e2e/**",
       "playwright.config.js",
     ],

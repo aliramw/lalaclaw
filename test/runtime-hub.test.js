@@ -1,8 +1,10 @@
-import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createRuntimeHub, applyRuntimePatchToSnapshot, channelKey, diffSnapshot } = require("../server/services/runtime-hub");
+import {
+  createRuntimeHub,
+  applyRuntimePatchToSnapshot,
+  channelKey,
+  diffSnapshot,
+} from "../server/services/runtime-hub.ts";
 
 function createMockWs() {
   const sent = [];

@@ -4592,8 +4592,8 @@ describe("InspectorPanel", () => {
     await user.type(filterInput, ".md");
 
     expect(await screen.findByRole("button", { name: "清空 workspace 过滤" })).toBeInTheDocument();
-    expect(await screen.findByText("README.md")).toBeInTheDocument();
     await waitFor(() => {
+      expect(screen.getByText("README.md")).toBeInTheDocument();
       expect(screen.queryByText("package.json")).not.toBeInTheDocument();
     });
 

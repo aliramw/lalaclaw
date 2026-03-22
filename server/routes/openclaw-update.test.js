@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createOpenClawUpdateHandler } = require('./openclaw-update');
+import { createOpenClawUpdateHandler } from './openclaw-update.ts';
 
 describe('createOpenClawUpdateHandler', () => {
   it('returns install/update state for GET requests', async () => {

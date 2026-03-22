@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getPufferEdgeResponse, resolveAquaticWalkDurationMs, resolvePufferPitchForVerticalEdge, resolveWalkerEndAtAfterReroute, SessionOverview } from "@/components/command-center/session-overview";
+import { SessionOverview } from "@/components/command-center/session-overview";
+import { getPufferEdgeResponse, resolveAquaticWalkDurationMs, resolvePufferPitchForVerticalEdge, resolveWalkerEndAtAfterReroute } from "@/components/command-center/session-overview-utils";
 import { lobsterWalkTuning, sampleLobsterCompanionCount, samplePufferPitchDegrees, shouldSpawnLobsterCompanions } from "@/components/command-center/lobster-walk-tuning";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";

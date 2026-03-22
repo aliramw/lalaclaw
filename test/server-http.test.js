@@ -1,13 +1,13 @@
 import { createRequire } from "node:module";
 import { URL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSessionHandlers } from "../server/routes/session.ts";
+import { createChatHandler, createChatStopHandler } from "../server/routes/chat.ts";
+import { parseRequestBody, sendJson } from "../server/http/http-utils.ts";
+import { DIST_DIR } from "../server/core/config.ts";
 
 const require = createRequire(import.meta.url);
 const { createAppServer } = require("../server");
-const { createChatHandler, createChatStopHandler } = require("../server/routes/chat");
-const { createSessionHandlers } = require("../server/routes/session");
-const { parseRequestBody, sendJson } = require("../server/http");
-const { DIST_DIR } = require("../server/core");
 
 function createServerHarness({ chatDependencyOverrides = {} } = {}) {
   const sessionPreferences = new Map();

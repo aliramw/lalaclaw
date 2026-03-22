@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createOpenClawOnboardingHandler } = require('./openclaw-onboarding');
+import { createOpenClawOnboardingHandler } from './openclaw-onboarding.ts';
 
 describe('createOpenClawOnboardingHandler', () => {
   it('returns onboarding state for GET requests', async () => {

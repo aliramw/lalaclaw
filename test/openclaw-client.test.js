@@ -1,9 +1,6 @@
-import { createRequire } from "node:module";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createOpenClawClient } = require("../server/services");
+import { createOpenClawClient } from "../server/services/openclaw-client.ts";
 
 function createClient(overrides = {}) {
   return createOpenClawClient({

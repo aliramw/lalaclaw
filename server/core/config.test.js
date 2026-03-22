@@ -4,10 +4,9 @@ const path = require('node:path');
 
 const ORIGINAL_ENV = { ...process.env };
 
-function reloadConfigModule() {
+async function reloadConfigModule() {
   vi.resetModules();
-  delete require.cache[require.resolve('./config')];
-  return require('./config');
+  return import('./config');
 }
 
 afterEach(() => {
@@ -16,7 +15,7 @@ afterEach(() => {
 });
 
 describe('buildRuntimeConfig', () => {
-  it('uses the user config directory for state by default', () => {
+  it('uses the user config directory for state by default', async () => {
     process.env = {
       ...ORIGINAL_ENV,
       HOME: '/Users/example',
@@ -24,14 +23,14 @@ describe('buildRuntimeConfig', () => {
       LALACLAW_CONFIG_FILE: '',
     };
 
-    const { buildRuntimeConfig } = reloadConfigModule();
+    const { buildRuntimeConfig } = await reloadConfigModule();
     const runtimeConfig = buildRuntimeConfig();
 
     expect(runtimeConfig.stateDir).toBe('/Users/example/.config/lalaclaw');
     expect(runtimeConfig.accessConfigFile).toBe('/Users/example/.config/lalaclaw/.env.local');
   });
 
-  it('never falls back to the repo root when HOME is unavailable', () => {
+  it('never falls back to the repo root when HOME is unavailable', async () => {
     process.env = {
       ...ORIGINAL_ENV,
       HOME: '',
@@ -41,7 +40,7 @@ describe('buildRuntimeConfig', () => {
       LALACLAW_CONFIG_FILE: '',
     };
 
-    const { buildRuntimeConfig, PROJECT_ROOT, resolveLalaclawStateDir } = reloadConfigModule();
+    const { buildRuntimeConfig, PROJECT_ROOT, resolveLalaclawStateDir } = await reloadConfigModule();
     const runtimeConfig = buildRuntimeConfig();
     const expectedFallbackDir = path.join(os.tmpdir(), 'lalaclaw');
 

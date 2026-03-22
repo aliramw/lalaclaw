@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": ".",
+    "outDir": ".server-build",
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "strict": false,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
+    "types": ["node"]
+  },
+  "include": ["server/**/*", "shared/**/*.cjs"],
+  "exclude": [".server-build", "dist", "coverage", "node_modules", "server/**/*.test.js", "server/**/*.test.ts"]
+}

@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createOpenClawConfigHandler } = require('./openclaw-config');
+import { createOpenClawConfigHandler } from './openclaw-config.ts';
 
 describe('createOpenClawConfigHandler', () => {
   it('returns the current structured config state for GET requests', async () => {

@@ -1,8 +1,5 @@
-import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createDashboardService } = require("../server/services");
+import { createDashboardService } from "../server/services/dashboard.ts";
 const { version: lalaclawVersion } = require("../package.json");
 
 function createService(overrides = {}) {

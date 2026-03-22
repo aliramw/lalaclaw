@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createRuntimeHandler } = require("./runtime");
+import { createRuntimeHandler } from "./runtime.ts";
 
 describe("createRuntimeHandler", () => {
   it("passes raw sessionUser values to the dashboard snapshot builder", async () => {
@@ -32,4 +32,3 @@ describe("createRuntimeHandler", () => {
     expect(responseBody.session.sessionUser).toBe('{"channel":"dingtalk-connector","peerid":"398058"}');
   });
 });
-

@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createSessionHandlers } = require("./session");
+import { createSessionHandlers } from "./session.ts";
 
 describe("createSessionHandlers", () => {
   it("preserves raw sessionUser values when reporting session identity", () => {

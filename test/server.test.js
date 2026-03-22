@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 process.env.COMMANDCENTER_FORCE_MOCK = "1";
 
 const require = createRequire(import.meta.url);
-const { createAppServer, __test } = require("../server");
-const { DIST_DIR } = require("../server/core");
+const { config, createAppServer, __test } = require("../server");
+const DIST_DIR = __test.getStaticDir();
 
 async function readJson(response) {
   return await response.json();
@@ -60,8 +60,14 @@ async function readStreamDonePayload(response) {
 }
 
 describe("server helpers", () => {
+  it("preserves the main server config export", () => {
+    expect(config).toBeTruthy();
+    expect(typeof config).toBe("object");
+    expect(typeof config.mode).toBe("string");
+  });
+
   it("uses dist as the only static app directory", async () => {
-    expect(__test.getStaticDir()).toBe(DIST_DIR);
+    expect(path.basename(DIST_DIR)).toBe("dist");
     expect(__test.isWebAppBuilt()).toBe(await pathExists(path.join(DIST_DIR, "index.html")));
   });
 

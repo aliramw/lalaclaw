@@ -1,5 +1,5 @@
-/* global describe, expect, it */
-const { createOpenClawFacade } = require('./openclaw-facade');
+import { describe, expect, it } from 'vitest';
+import { createOpenClawFacade } from './openclaw-facade.ts';
 
 describe('createOpenClawFacade', () => {
   it('blocks remote management mutations and records a blocked history entry', async () => {

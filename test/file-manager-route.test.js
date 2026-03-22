@@ -1,11 +1,8 @@
 import os from "node:os";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createFileManagerHandler, createFileManagerHandlers } = require("../server/routes/file-manager");
+import { createFileManagerHandler, createFileManagerHandlers } from "../server/routes/file-manager.ts";
 
 describe("createFileManagerHandler", () => {
   let tempDir = "";

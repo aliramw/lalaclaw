@@ -1,8 +1,5 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createSessionStore, normalizeSessionUser, normalizeThinkMode } = require("../server/core");
+import { createSessionStore, normalizeSessionUser, normalizeThinkMode } from "../server/core/session-store.ts";
 
 describe("session-store", () => {
   it("normalizes session users and think modes", () => {

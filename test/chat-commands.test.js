@@ -1,13 +1,10 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
-const {
+import {
   parseFastCommand,
   parseModelCommand,
   parseSessionResetCommand,
   parseSlashCommandState,
-} = require("../server/formatters");
+} from "../server/formatters/chat-commands.ts";
 
 describe("chat-commands", () => {
   it("parses fast and think slash commands", () => {

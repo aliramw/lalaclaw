@@ -1,5 +1,5 @@
-/* global describe, expect, it */
-const { createOpenClawManagementService } = require("./openclaw-management");
+import { describe, expect, it } from "vitest";
+import { createOpenClawManagementService } from "./openclaw-management.ts";
 
 describe("createOpenClawManagementService", () => {
   it("runs a restart action and reports a healthy follow-up check", async () => {

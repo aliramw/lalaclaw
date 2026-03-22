@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createOpenClawHistoryHandler } = require('./openclaw-history');
+import { createOpenClawHistoryHandler } from './openclaw-history.ts';
 
 describe('createOpenClawHistoryHandler', () => {
   it('returns the current operation history on GET', async () => {
