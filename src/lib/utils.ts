@@ -1,7 +1,9 @@
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-export function cn(...inputs) {
+type ClassValue = Parameters<typeof clsx>[0];
+
+export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
@@ -10,13 +12,20 @@ export function isApplePlatform() {
     return true;
   }
 
-  const platform = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "";
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform
+    || navigator.platform
+    || navigator.userAgent
+    || "";
   return /mac|iphone|ipad|ipod/i.test(platform);
 }
 
 export function formatShortcutForPlatform(shortcutLabel = "") {
   const normalized = String(shortcutLabel || "").trim();
-  if (!normalized) return "";
+  if (!normalized) {
+    return "";
+  }
+
   return isApplePlatform() ? normalized : normalized.replace(/\bCmd\b/g, "Ctrl").replace(/⌘/g, "Ctrl");
 }
 
@@ -49,14 +58,12 @@ export function stripMarkdownForDisplay(value = "") {
     let previous = "";
     while (previous !== text) {
       previous = text;
-      text = text.replace(pattern, (_, content) => content);
+      text = text.replace(pattern, (_match, content: string) => content);
     }
   }
 
-  text = text
+  return text
     .replace(/(\*\*|__|~~)/g, "")
     .replace(/\s+/g, " ")
     .trim();
-
-  return text;
 }

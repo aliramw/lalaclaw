@@ -1,6 +1,6 @@
 const authRequiredEventName = "command-center-auth-required";
 
-function dispatchAuthRequired(detail = {}) {
+function dispatchAuthRequired(detail: Record<string, unknown> = {}) {
   if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") {
     return;
   }
@@ -8,7 +8,7 @@ function dispatchAuthRequired(detail = {}) {
   window.dispatchEvent(new CustomEvent(authRequiredEventName, { detail }));
 }
 
-export async function apiFetch(input, init = {}) {
+export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const response = await fetch(input, {
     credentials: "same-origin",
     ...init,

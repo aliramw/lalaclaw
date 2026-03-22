@@ -3,6 +3,17 @@ const maxDebugEvents = 400;
 const maxSummaryMessages = 8;
 const maxSummaryContentLength = 48;
 
+type DebugEventPayload = Record<string, unknown>;
+
+type DebugMessage = {
+  content?: unknown;
+  id?: unknown;
+  pending?: boolean;
+  role?: unknown;
+  streaming?: boolean;
+  timestamp?: unknown;
+};
+
 function canUseWindow() {
   return typeof window !== "undefined";
 }
@@ -35,7 +46,7 @@ export function isCcDebugEventsEnabled() {
   return readEnabledFlag();
 }
 
-export function pushCcDebugEvent(type, payload = {}) {
+export function pushCcDebugEvent(type: string, payload: DebugEventPayload = {}) {
   if (!readEnabledFlag()) {
     return;
   }
@@ -61,10 +72,11 @@ export function clearCcDebugEvents() {
   if (!target) {
     return;
   }
+
   target.length = 0;
 }
 
-export function summarizeCcMessages(messages = [], limit = maxSummaryMessages) {
+export function summarizeCcMessages(messages: DebugMessage[] = [], limit = maxSummaryMessages) {
   if (!Array.isArray(messages)) {
     return [];
   }

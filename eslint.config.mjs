@@ -1,4 +1,6 @@
 import js from "@eslint/js";
+import tsParser from "@typescript-eslint/parser";
+import tsPlugin from "@typescript-eslint/eslint-plugin";
 import globals from "globals";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
@@ -37,6 +39,38 @@ export default [
     },
   },
   {
+    files: ["src/**/*.{ts,tsx}"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      parser: tsParser,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      globals: {
+        ...globals.browser,
+      },
+    },
+    plugins: {
+      "@typescript-eslint": tsPlugin,
+      react,
+      "react-hooks": reactHooks,
+      "react-refresh": reactRefresh,
+    },
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "react/jsx-uses-vars": "error",
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+    },
+  },
+  {
     files: ["test/**/*.{js,jsx}", "src/**/*.test.{js,jsx}"],
     languageOptions: {
       ecmaVersion: "latest",
@@ -57,6 +91,35 @@ export default [
     },
     rules: {
       "no-empty": ["error", { allowEmptyCatch: true }],
+      "react/jsx-uses-vars": "error",
+    },
+  },
+  {
+    files: ["test/**/*.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      parser: tsParser,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.jest,
+      },
+    },
+    plugins: {
+      "@typescript-eslint": tsPlugin,
+      react,
+    },
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       "react/jsx-uses-vars": "error",
     },
   },
@@ -97,7 +160,7 @@ export default [
     },
   },
   {
-    files: ["src/components/ui/**/*.jsx", "src/lib/i18n.jsx"],
+    files: ["src/components/ui/**/*.{jsx,tsx}", "src/lib/i18n.{jsx,tsx}"],
     rules: {
       "react-refresh/only-export-components": "off",
     },
