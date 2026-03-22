@@ -160,6 +160,7 @@ describe("InspectorPanel", () => {
           json: async () => ({
             ok: true,
             currentVersion: "2026.3.20-1",
+            workspaceVersion: "2026.3.20-1",
             currentRelease: { version: "2026.3.20-1", stable: true },
             targetRelease: { version: "2026.3.20-1", stable: true },
             stableTag: "stable",
@@ -261,6 +262,92 @@ describe("InspectorPanel", () => {
 
     await user.hover(labelRow);
     expect(within(labelRow).getByRole("button", { name: "复制代码" })).toBeInTheDocument();
+  });
+
+  it("prefers the workspace version label when it differs from the stable update state", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: "2026.3.13",
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: true,
+            needsOnboarding: false,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: true, valid: true, path: "/Users/marila/.openclaw/openclaw.json" },
+            defaults: {
+              authChoice: "openai-api-key",
+              gatewayBind: "loopback",
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["openai-api-key"],
+            supportedGatewayBinds: ["loopback"],
+          }),
+        };
+      }
+      if (url === "/api/lalaclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            currentVersion: "2026.3.21-1",
+            workspaceVersion: "2026.3.21-2",
+            currentRelease: { version: "2026.3.21-1", stable: true },
+            targetRelease: { version: "2026.3.21-1", stable: true },
+            stableTag: "stable",
+            updateAvailable: false,
+            capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+            check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+            job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [] }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(<TestHarness />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("tab", { name: "环境" }));
+    await ensureEnvironmentSectionExpanded(user, "LalaClaw");
+
+    expect(await screen.findByText("当前源码版本")).toBeInTheDocument();
+    expect(screen.getByText("2026.3.21-2")).toBeInTheDocument();
+    expect(screen.getByText("最新稳定版")).toBeInTheDocument();
+    expect(screen.getByText("2026.3.21-1")).toBeInTheDocument();
   });
 
   it("keeps a visible background badge for inactive inspector tabs", () => {

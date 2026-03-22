@@ -1048,6 +1048,7 @@ const en = {
       },
       labels: {
         currentVersion: "Current version",
+        workspaceVersion: "Current workspace version",
         targetVersion: "Latest stable version",
         stderr: "stderr",
       },

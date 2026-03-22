@@ -183,6 +183,7 @@ npm run lalaclaw:start
 - `npm run lalaclaw:init -- --write-example` copies [`.env.local.example`](./.env.local.example) to your target config path without prompts
 - `npm run lalaclaw:start` starts the built app after running doctor preflight checks and verifying `dist/`
 - `npm run build` creates the production bundle
+- `npm run pack:release` writes the validated release tarball to `artifacts/`
 - `npm test` runs the Vitest suite once
 - `npm run test:coverage` runs the Vitest suite with coverage
 - `npm run lint` runs ESLint across the workspace

@@ -1051,6 +1051,7 @@ const zh = {
       },
       labels: {
         currentVersion: "当前版本",
+        workspaceVersion: "当前源码版本",
         targetVersion: "最新稳定版",
         stderr: "错误输出",
       },

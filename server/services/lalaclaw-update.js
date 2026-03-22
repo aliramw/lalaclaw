@@ -313,11 +313,13 @@ function buildUpdateState({
   checkResult,
   checkedAt,
   currentVersion,
+  workspaceVersion = '',
   job,
   capability,
 }) {
   const distTags = checkResult?.metadata?.['dist-tags'] || {};
   const stableVersion = String(distTags.stable || distTags.latest || '').trim();
+  const normalizedWorkspaceVersion = String(workspaceVersion || '').trim();
   const currentRelease = buildReleaseInfo(currentVersion, stableVersion);
   const targetRelease = buildReleaseInfo(stableVersion, stableVersion);
 
@@ -325,6 +327,7 @@ function buildUpdateState({
     ok: true,
     packageName: PACKAGE_NAME,
     currentVersion,
+    workspaceVersion: normalizedWorkspaceVersion,
     currentRelease,
     targetRelease,
     stableTag: String(distTags.stable ? 'stable' : 'latest'),
@@ -469,6 +472,7 @@ function createLalaClawUpdateService({
       checkResult,
       checkedAt: now(),
       currentVersion: effectiveCurrentVersion,
+      workspaceVersion: PACKAGE_VERSION,
       job: nextJob,
       capability,
     });

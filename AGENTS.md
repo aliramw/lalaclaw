@@ -54,7 +54,7 @@ http://127.0.0.1:3000
 - 写 `CHANGELOG.md`，并同步更新 `README`、`documentation-quick-start` 等文档里的示例版本号。Update `CHANGELOG.md`, then sync example version numbers in `README`, `documentation-quick-start`, and related docs.
 - 跑一轮关键测试和构建，至少覆盖 release 前最关键的 lint、test、build。Run the key validation steps before release, at minimum the critical lint, test, and build commands.
 - 在 `npm publish` 之前，必须验证“将要发布的 npm 产物”，不能只验证源码工作区。Before `npm publish`, validate the actual npm artifact that will be released instead of only validating the source checkout.
-- 发布前必须执行 `npm pack`，并在干净临时目录里安装该 tarball 做一次安装态验证。Run `npm pack` before release and install that tarball in a clean temporary directory for installed-package validation.
+- 发布前必须执行 `npm run pack:release`，让 tarball 输出到 `artifacts/`，并在干净临时目录里安装该 tarball 做一次安装态验证。Run `npm run pack:release` before release so the tarball lands in `artifacts/`, then install that tarball in a clean temporary directory for installed-package validation.
 - 安装态验证至少要覆盖一次真实启动路径：能启动服务、首页不白屏、浏览器 console 无新的 runtime error。The installed-package validation must cover one real startup path: the app starts, the first screen is not blank, and the browser console shows no new runtime errors.
 - `vite build`、打包日志或安装态 smoke test 中出现 `Circular chunk`、chunk 初始化错误、首屏空白等信号时，视为 release blocker，不得继续发布。Treat `Circular chunk`, chunk-init failures, blank-first-screen symptoms, or similar build/install smoke signals as release blockers.
 - 任何修改 `vite.config.*`、`manualChunks`、构建产物入口、Mermaid/Monaco/预览器等打包敏感区域的改动，发布前都必须补跑一次安装态 smoke test。Any change touching `vite.config.*`, `manualChunks`, bundle entry behavior, or packaging-sensitive areas such as Mermaid, Monaco, or preview pipelines must rerun the installed-package smoke test before release.
@@ -72,9 +72,9 @@ http://127.0.0.1:3000
   - `npm run lint`
   - `npm test`
   - `npm run build`
-  - `npm pack`
+  - `npm run pack:release`
 - 之后在干净目录中至少执行一次：
-  - `npm install ./lalaclaw-<version>.tgz`
+  - `npm install ./artifacts/lalaclaw-<version>.tgz`
   - 通过发布包的真实入口启动应用，而不是回到源码目录复用开发环境
 - 验收时至少确认：
   - 安装后的应用能成功启动
@@ -217,7 +217,7 @@ http://127.0.0.1:3000
   - 必跑 `npm run lint`
   - 必跑 `npm test`
   - 必跑 `npm run build`
-  - 必跑 `npm pack`
+  - 必跑 `npm run pack:release`
   - 必做一次基于 tarball 的干净目录安装验证
   - 必确认安装态首页渲染与 console 状态正常
   - 对 release-facing 或高风险大改动，优先再跑 `npm run test:coverage`

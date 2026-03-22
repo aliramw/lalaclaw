@@ -55,7 +55,7 @@ For a mature open source project, release policy should never be ambiguous.
 
 Repository rules set a high bar for release validation:
 
-- `npm pack`
+- `npm run pack:release`
 - clean temp install
 - real installed startup path
 - first-screen render verification
@@ -66,7 +66,7 @@ But CI currently focuses on lint, coverage, build, e2e, and onboarding smoke. Th
 ### Recommendation
 
 - Add a dedicated release-artifact validation workflow
-- Run `npm pack` in CI for release-facing or packaging-sensitive changes
+- Run `npm run pack:release` in CI for release-facing or packaging-sensitive changes
 - Install the tarball in a clean temporary directory
 - Start the installed package through its real production entry
 - Fail CI on startup regressions, chunk-init failures, or blank-screen symptoms
@@ -192,7 +192,7 @@ In AI-assisted maintenance, hidden contracts are expensive. They cause regressio
 
 1. Write a single "startup modes and ports" reference and link all contributor docs to it.
 2. Update README, CONTRIBUTING, and localized quick-start docs to remove port/version-policy drift.
-3. Add a CI workflow for `npm pack` plus clean-directory install/start smoke.
+3. Add a CI workflow for `npm run pack:release` plus clean-directory install/start smoke.
 4. Open refactor issues for `inspector-panel`, `chat-panel`, and `use-command-center`.
 5. Define a staged coverage-ratcheting plan for runtime, session, chat, and OpenClaw-critical code.
 6. Add a small architecture/contracts doc focused on runtime events, session keys, and persistence schema ownership.

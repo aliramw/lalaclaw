@@ -1093,9 +1093,18 @@ function LalaClawPanel({
 }) {
   const metadata = metadataItems.filter((item) => item?.value);
   const badgeVariant = getLalaClawUpdateBadgeVariant(state);
-  const currentVersion = state?.currentRelease?.version || state?.currentVersion || messages.inspector.lalaclawUpdate.emptyValue;
+  const installedVersion = state?.currentRelease?.version || state?.currentVersion || "";
+  const workspaceVersion = String(state?.workspaceVersion || "").trim();
+  const shouldPreferWorkspaceVersion = Boolean(
+    workspaceVersion
+    && installedVersion
+    && workspaceVersion !== installedVersion
+  );
+  const currentVersion = shouldPreferWorkspaceVersion
+    ? workspaceVersion
+    : (installedVersion || messages.inspector.lalaclawUpdate.emptyValue);
   const targetVersion = state?.targetRelease?.version || "";
-  const currentStable = Boolean(state?.currentRelease?.stable);
+  const currentStable = !shouldPreferWorkspaceVersion && Boolean(state?.currentRelease?.stable);
   const targetStable = Boolean(state?.targetRelease?.stable);
   const updateAvailable = Boolean(state?.updateAvailable);
   const jobActive = Boolean(state?.job?.active);
@@ -1124,7 +1133,9 @@ function LalaClawPanel({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                  {messages.inspector.lalaclawUpdate.labels.currentVersion}
+                  {shouldPreferWorkspaceVersion
+                    ? messages.inspector.lalaclawUpdate.labels.workspaceVersion
+                    : messages.inspector.lalaclawUpdate.labels.currentVersion}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
                   <span>{currentVersion}</span>
