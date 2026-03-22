@@ -35,6 +35,7 @@
     "lalaclaw:init": "node ./bin/lalaclaw.js init",
     "lalaclaw:start": "node ./bin/lalaclaw.js start",
     "lint": "eslint .",
+    "pack:release": "mkdir -p artifacts && npm pack --pack-destination artifacts",
     "prepack": "npm run build",
     "start": "node server.js",
     "test": "vitest run",

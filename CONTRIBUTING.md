@@ -88,7 +88,7 @@ Notes:
 
 If your change depends on built output, run `npm run build` and verify against `npm run lalaclaw:start` or `npm start`.
 
-If you are preparing a release or changing packaging behavior, do not stop at validating the source checkout. Also validate the actual npm artifact with `npm pack`, install that tarball in a clean temporary directory, and verify one real installed startup path before publishing.
+If you are preparing a release or changing packaging behavior, do not stop at validating the source checkout. Also validate the actual npm artifact with `npm run pack:release` so the tarball lands in `artifacts/`, then install that tarball in a clean temporary directory and verify one real installed startup path before publishing.
 
 ## Branch Hygiene
 
@@ -141,9 +141,9 @@ If you are preparing a release or changing packaging behavior, do not stop at va
   - Docs-only or copy-only changes may skip tests, but say so explicitly in the PR.
   - Typical UI or small backend logic changes should run affected tests, or `npm test` if the impact is unclear.
   - Runtime, session, storage, streaming, hydration, pending recovery, or concurrency changes should run affected tests and prefer `App`-level or controller-level regressions.
-  - Release-facing changes, dependency upgrades, build pipeline changes, or version bumps should run `npm run lint`, `npm test`, `npm run build`, and `npm pack`, plus `npm run test:coverage` when the risk is broad.
+  - Release-facing changes, dependency upgrades, build pipeline changes, or version bumps should run `npm run lint`, `npm test`, `npm run build`, and `npm run pack:release`, plus `npm run test:coverage` when the risk is broad.
 - If your change depends on built output, run `npm run build` and verify against `npm run lalaclaw:start` or `npm start`.
-- If you are validating a release artifact, install the `npm pack` tarball in a clean temporary directory and check the installed app itself, not only the source workspace.
+- If you are validating a release artifact, install the tarball generated under `artifacts/` in a clean temporary directory and check the installed app itself, not only the source workspace.
 - Treat build warnings or install-time smoke failures such as circular chunks, chunk initialization errors, or a blank first screen as release blockers until resolved.
 - If you only ran targeted tests, mention the exact commands and why that narrower scope was sufficient.
 - If any validation was skipped or failed, call that out explicitly together with the remaining risk.
@@ -173,7 +173,7 @@ Before `npm publish`, validate the package that users will actually install:
 - Run `npm run lint`
 - Run `npm test`
 - Run `npm run build`
-- Run `npm pack`
+- Run `npm run pack:release`
 - Install the generated tarball in a clean temporary directory
 - Start the installed package through its real production entry
 - Confirm the first screen renders and the browser console has no new runtime or chunk-init errors
