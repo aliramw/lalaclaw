@@ -12,6 +12,10 @@ const SEND_BUTTON_NAME = /^(发送|Send)$/;
 const CLEAR_QUEUED_BUTTON_NAME = /^(清空待发送|Clear queued)$/;
 const QUEUED_COUNT_LABEL = (count) => new RegExp(`^(待发送|Queued) ${count}$`);
 
+function composerLocator(page) {
+  return page.locator("textarea");
+}
+
 async function installBaseRoutes(page, runtimeSnapshot = createSnapshot()) {
   await page.route("**/api/auth/state", (route) =>
     jsonRoute(route, {
@@ -73,7 +77,7 @@ test.describe("Command center e2e", () => {
     await page.goto("/");
     await expect(page.getByText(CURRENT_SESSION_TITLE)).toBeVisible();
 
-    const textbox = page.getByRole("textbox");
+    const textbox = composerLocator(page);
     await expect(textbox).toBeEnabled();
     await textbox.fill("浏览器冒烟测试");
     await page.getByRole("button", { name: SEND_BUTTON_NAME }).click();
@@ -119,7 +123,7 @@ test.describe("Command center e2e", () => {
     await page.goto("/");
     await expect(page.getByText(CURRENT_SESSION_TITLE)).toBeVisible();
 
-    const textbox = page.getByRole("textbox");
+    const textbox = composerLocator(page);
     await expect(textbox).toBeEnabled();
     const conversation = page.locator("[data-message-bottom-sentinel]").locator("..");
 
