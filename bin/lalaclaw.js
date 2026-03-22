@@ -11,7 +11,7 @@ const {
   version: PACKAGE_VERSION,
   engines: PACKAGE_ENGINES = {},
 } = require('../package.json');
-const { getLalaClawServiceStatus } = require('../server/services/lalaclaw-service-status');
+const { getLalaClawServiceStatus } = require('../shared/lalaclaw-service-status.cjs');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_HOST = '127.0.0.1';

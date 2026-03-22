@@ -2,7 +2,7 @@
 const http = require('node:http');
 const { once } = require('node:events');
 const WebSocket = require('ws');
-const { attachRuntimeWebSocket } = require('./runtime-ws');
+import { attachRuntimeWebSocket } from './runtime-ws.ts';
 
 describe('attachRuntimeWebSocket', () => {
   let server = null;

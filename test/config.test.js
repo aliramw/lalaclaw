@@ -1,21 +1,16 @@
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const configModule = require("../server/core");
-const packageJson = require("../package.json");
-
-const {
+import packageJson from "../package.json";
+import {
   LOCAL_OPENCLAW_DIR,
   buildRuntimeConfig,
-  collectAvailableAgents,
-  collectAvailableSkills,
   collectAllowedSubagents,
+  collectAvailableAgents,
   collectAvailableModels,
+  collectAvailableSkills,
   resolveAgentModel,
   resolveCanonicalModelId,
-} = configModule;
+} from "../server/core/config.ts";
 
 function withEnv(nextEnv, run) {
   const previous = {

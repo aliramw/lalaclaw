@@ -1,9 +1,6 @@
-import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { attachRuntimeWebSocket } = require("../server/routes/runtime-ws");
+import { attachRuntimeWebSocket } from "../server/routes/runtime-ws.ts";
 
 function createMockHttpServer() {
   const emitter = new EventEmitter();

@@ -1,10 +1,10 @@
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createAccessController } from "../server/auth/access-control.ts";
+import { parseRequestBody, sendJson } from "../server/http/http-utils.ts";
 
 const require = createRequire(import.meta.url);
 const { createAppServer } = require("../server");
-const { createAccessController } = require("../server/auth/access-control");
-const { parseRequestBody, sendJson } = require("../server/http");
 
 describe("token access mode", () => {
   let server;

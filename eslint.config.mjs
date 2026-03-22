@@ -8,7 +8,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**"],
+    ignores: ["dist/**", ".server-build/**", "node_modules/**", "coverage/**"],
   },
   js.configs.recommended,
   {
@@ -124,7 +124,23 @@ export default [
     },
   },
   {
+    files: ["server/**/*.test.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+      },
+    },
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-redeclare": "off",
+    },
+  },
+  {
     files: ["server.js", "server/**/*.js"],
+    ignores: ["server/**/*.test.js"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "commonjs",
@@ -137,7 +153,7 @@ export default [
     },
   },
   {
-    files: ["bin/**/*.js", "scripts/**/*.cjs"],
+    files: ["bin/**/*.js", "scripts/**/*.cjs", "shared/**/*.cjs"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "commonjs",

@@ -1,14 +1,11 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
-const {
+import {
   buildOpenClawMessageContent,
   describeAttachmentForModel,
   getMessageAttachments,
   normalizeChatMessage,
   summarizeMessages,
-} = require("../server/formatters");
+} from "../server/formatters/chat-format.ts";
 
 describe("chat-format", () => {
   it("normalizes chat messages and sanitizes attachments", () => {

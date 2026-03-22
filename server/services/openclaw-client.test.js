@@ -1,5 +1,5 @@
-/* global describe, expect, it */
-const { createOpenClawClient } = require('./openclaw-client');
+import { describe, expect, it } from 'vitest';
+import { createOpenClawClient } from './openclaw-client.ts';
 const unavailableGatewaySdk = async () => {
   throw new Error('Gateway SDK unavailable in this test');
 };

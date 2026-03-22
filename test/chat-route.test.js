@@ -1,9 +1,6 @@
-import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createChatHandler } = require("../server/routes/chat");
+import { createChatHandler } from "../server/routes/chat.ts";
 
 function createResponseRecorder() {
   const calls = [];

@@ -1,5 +1,5 @@
-/* global describe, expect, it */
-const { createChatHandler } = require('./chat');
+import { describe, expect, it } from 'vitest';
+import { createChatHandler } from './chat.ts';
 
 describe('createChatHandler', () => {
   it('passes raw sessionUser values through to OpenClaw dispatch', async () => {

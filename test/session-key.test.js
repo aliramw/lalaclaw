@@ -1,8 +1,5 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { parseAgentSessionKey } = require("../server/core/session-key");
+import { parseAgentSessionKey } from "../server/core/session-key.ts";
 
 describe("parseAgentSessionKey", () => {
   it("extracts agentId and raw sessionUser from openai-user session keys", () => {

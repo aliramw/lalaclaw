@@ -1,14 +1,14 @@
-/* global describe, expect, it */
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const {
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import {
   createOpenClawBackupStore,
   createOpenClawOperationHistory,
   createRemoteAuthorizationRequiredError,
   createRemoteMutationError,
   isRemoteOpenClawTarget,
-} = require('./openclaw-operations');
+} from './openclaw-operations.ts';
 
 describe('isRemoteOpenClawTarget', () => {
   it('treats loopback gateways as local when auto-detected', () => {

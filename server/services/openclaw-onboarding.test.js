@@ -1,10 +1,10 @@
-/* global describe, expect, it, vi */
-const {
+import { describe, expect, it, vi } from 'vitest';
+import {
   buildOnboardingArgs,
   createOpenClawOnboardingService,
   parseNoisyJson,
   parseOnboardingHelpCapabilities,
-} = require('./openclaw-onboarding');
+} from './openclaw-onboarding.ts';
 
 describe('parseNoisyJson', () => {
   it('extracts trailing JSON from noisy onboarding output', () => {

@@ -1,11 +1,8 @@
-import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createWorkspaceTreeHandler } = require("../server/routes/workspace-tree");
+import { createWorkspaceTreeHandler } from "../server/routes/workspace-tree.ts";
 
 const createdRoots = [];
 

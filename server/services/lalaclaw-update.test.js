@@ -1,8 +1,8 @@
-/* global afterEach, describe, expect, it */
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { createLalaClawUpdateService } = require('./lalaclaw-update');
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createLalaClawUpdateService } from './lalaclaw-update.ts';
 
 describe('createLalaClawUpdateService', () => {
   const tempDirs = [];

@@ -1,12 +1,9 @@
 import os from "node:os";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createFilePreviewHandlers } = require("../server/routes/file-preview");
-const XLSX = require("xlsx");
+import XLSX from "xlsx";
+import { createFilePreviewHandlers } from "../server/routes/file-preview.ts";
 
 describe("createFilePreviewHandlers", () => {
   let tempDir = "";

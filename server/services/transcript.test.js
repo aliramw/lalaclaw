@@ -2,8 +2,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-
-const { createTranscriptProjector } = require("./transcript");
+import { createTranscriptProjector } from "./transcript.ts";
 
 function createTestProjector(rootDir) {
   return createTranscriptProjector({

@@ -1,8 +1,5 @@
-import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const require = createRequire(import.meta.url);
-const { createSessionHandlers } = require("../server/routes/session");
+import { createSessionHandlers } from "../server/routes/session.ts";
 
 function createResponseRecorder() {
   const calls = [];

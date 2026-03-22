@@ -1,5 +1,5 @@
 /* global describe, expect, it */
-const { createLalaClawUpdateHandler } = require('./lalaclaw-update');
+import { createLalaClawUpdateHandler } from './lalaclaw-update.ts';
 
 describe('createLalaClawUpdateHandler', () => {
   it('returns the stable update state for GET requests', async () => {

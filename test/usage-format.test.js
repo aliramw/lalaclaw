@@ -1,8 +1,5 @@
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-
-const require = createRequire(import.meta.url);
-const {
+import {
   clip,
   collectLatestRunUsage,
   formatTokenBadge,
@@ -10,7 +7,7 @@ const {
   parseCompactNumber,
   parseTokenDisplay,
   tailLines,
-} = require("../server/formatters");
+} from "../server/formatters/usage-format.ts";
 
 describe("usage-format", () => {
   it("clips values and parses compact numbers/tokens", () => {

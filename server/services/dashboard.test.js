@@ -1,10 +1,10 @@
-/* global afterEach, describe, expect, it */
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 
-const { createDashboardService } = require("./dashboard");
-const { createTranscriptProjector } = require("./transcript");
+import { createDashboardService } from "./dashboard.ts";
+import { createTranscriptProjector } from "./transcript.ts";
 
 function buildTestTranscriptProjector(rootDir) {
   return createTranscriptProjector({

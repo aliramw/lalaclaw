@@ -1,5 +1,5 @@
-/* global describe, expect, it */
-const { createOpenClawUpdateService, parseNoisyJson } = require('./openclaw-update');
+import { describe, expect, it } from 'vitest';
+import { createOpenClawUpdateService, parseNoisyJson } from './openclaw-update.ts';
 
 describe('parseNoisyJson', () => {
   it('extracts the trailing JSON payload from noisy stdout', () => {
