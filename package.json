@@ -10,6 +10,7 @@
     "lalaclaw": "bin/lalaclaw.js"
   },
   "files": [
+    ".server-build/",
     "bin/",
     "deploy/macos/",
     "dist/",
@@ -27,6 +28,7 @@
   ],
   "scripts": {
     "build": "vite build",
+    "build:server": "node ./scripts/build-server.cjs",
     "dev": "vite",
     "dev:all": "node ./bin/lalaclaw.js dev",
     "dev:backend": "node ./bin/lalaclaw.js backend",
@@ -36,7 +38,7 @@
     "lalaclaw:start": "node ./bin/lalaclaw.js start",
     "lint": "eslint .",
     "pack:release": "mkdir -p artifacts && npm pack --pack-destination artifacts",
-    "prepack": "npm run build",
+    "prepack": "npm run build && npm run build:server",
     "start": "node server.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -46,7 +48,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:openclaw:onboarding:smoke": "node ./scripts/openclaw-onboarding-smoke.cjs",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:server": "tsc -p tsconfig.server.json --noEmit"
   },
   "repository": {
     "type": "git",
