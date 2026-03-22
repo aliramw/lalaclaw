@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as AppModule from "@/App";
+import { devWorkspacePageReloader } from "@/lib/dev-workspace-page-reloader";
 import { I18nProvider } from "@/lib/i18n";
 import { localeStorageKey } from "@/lib/i18n";
 
@@ -583,7 +584,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    const reloadSpy = vi.spyOn(AppModule.devWorkspacePageReloader, "reload").mockImplementation(() => {});
+    const reloadSpy = vi.spyOn(devWorkspacePageReloader, "reload").mockImplementation(() => {});
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
@@ -695,7 +696,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    const reloadSpy = vi.spyOn(AppModule.devWorkspacePageReloader, "reload").mockImplementation(() => {});
+    const reloadSpy = vi.spyOn(devWorkspacePageReloader, "reload").mockImplementation(() => {});
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);

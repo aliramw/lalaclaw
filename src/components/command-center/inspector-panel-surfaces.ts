@@ -1,0 +1,22 @@
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+export const ButtonSurface: any = Button;
+export const CardSurface: any = Card;
+export const CardContentSurface: any = CardContent;
+export const CardDescriptionSurface: any = CardDescription;
+export const CardHeaderSurface: any = CardHeader;
+export const CardTitleSurface: any = CardTitle;
+export const ScrollAreaSurface: any = ScrollArea;
+export const SwitchSurface: any = Switch;
+export const TabsSurface: any = Tabs;
+export const TabsContentSurface: any = TabsContent;
+export const TabsListSurface: any = TabsList;
+export const TabsTriggerSurface: any = TabsTrigger;
+export const TooltipSurface: any = Tooltip;
+export const TooltipContentSurface: any = TooltipContent;
+export const TooltipTriggerSurface: any = TooltipTrigger;
