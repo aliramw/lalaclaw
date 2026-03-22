@@ -799,7 +799,6 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
 }
 
 function AppContent() {
-  const userLabel = "marila";
   const { messages: i18nMessages } = useI18n();
   const { accessMode, loggingOut, logout } = useAccessGate();
   const {
@@ -846,6 +845,7 @@ function AppContent() {
     handleStop,
     handleTrackSessionFiles,
     handleThinkModeChange,
+    handleUserLabelChange,
     dismissTaskRelationship,
     localizedFormatTime,
     messageViewportRef,
@@ -875,7 +875,8 @@ function AppContent() {
     taskRelationships,
     taskTimeline,
     theme,
-  } = useCommandCenter({ userLabel });
+    userLabel,
+  } = useCommandCenter();
   const splitLayoutRef = useRef(null);
   const resizeCleanupRef = useRef(null);
   const [isWideLayout, setIsWideLayout] = useState(
@@ -1425,6 +1426,7 @@ function AppContent() {
                 onCloseChatTab={handleCloseChatTab}
                 onComposerSendModeToggle={handleComposerSendModeToggle}
                 onReorderChatTab={handleReorderChatTabs}
+                onUserLabelChange={handleUserLabelChange}
                 interactionLocked={Boolean(switchingAgentOverlay || switchingModelOverlay)}
                 queuedMessages={activeQueuedMessages}
                 onRemoveAttachment={handleRemoveAttachment}

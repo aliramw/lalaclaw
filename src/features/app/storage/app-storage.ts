@@ -23,9 +23,11 @@ export const defaultChatTabId = "agent:main";
 export const promptHistoryLimit = 50;
 export const defaultChatFontSize = "small";
 export const defaultComposerSendMode = "enter-send";
+export const defaultUserLabel = "";
 export const minInspectorPanelWidth = 300;
 export const maxInspectorPanelWidth = 720;
 export const defaultInspectorPanelWidth = 380;
+const maxUserLabelLength = 40;
 const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
@@ -96,6 +98,13 @@ function sanitizeChatFontSize(value) {
 
 function sanitizeComposerSendMode(value) {
   return value === "double-enter-send" ? "double-enter-send" : defaultComposerSendMode;
+}
+
+export function sanitizeUserLabel(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxUserLabelLength);
 }
 
 export function sanitizeInspectorPanelWidth(value) {
@@ -642,6 +651,7 @@ function loadParsedStorageState(raw: string | null): StoredUiState | null {
     inspectorPanelWidth: sanitizeInspectorPanelWidth(parsed?.inspectorPanelWidth),
     chatFontSize: resolveStoredChatFontSize(parsed),
     composerSendMode: sanitizeComposerSendMode(parsed?.composerSendMode),
+    userLabel: sanitizeUserLabel(parsed?.userLabel),
     dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(parsed?.dismissedTaskRelationshipIdsByConversation),
     promptDraftsByConversation: sanitizePromptDraftsMap(parsed?.promptDraftsByConversation),
   };
@@ -692,6 +702,7 @@ export function persistUiStateSnapshot(
       chatTabs: Array.isArray(state.chatTabs) ? state.chatTabs : [],
       chatFontSize: sanitizeChatFontSize(state.chatFontSize),
       composerSendMode: sanitizeComposerSendMode(state.composerSendMode),
+      userLabel: sanitizeUserLabel(state.userLabel),
       dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(state.dismissedTaskRelationshipIdsByConversation),
       fastMode: Boolean(state.fastMode),
       inspectorPanelWidth: sanitizeInspectorPanelWidth(state.inspectorPanelWidth),

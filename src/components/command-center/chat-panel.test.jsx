@@ -249,6 +249,48 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "向左滚动会话标签" })).not.toBeDisabled();
   });
 
+  it("lets the user rename their chat card label from the chat header", async () => {
+    const user = userEvent.setup();
+    const handleUserLabelChange = vi.fn();
+    function UserLabelHarness() {
+      const [label, setLabel] = useState("Lala");
+
+      return (
+        <TooltipProvider>
+          <ChatPanel
+            busy={false}
+            formatTime={() => "10:00:00"}
+            messageViewportRef={null}
+            messages={[{ id: "msg-user-1", role: "user", content: "你好", timestamp: 1 }]}
+            onPromptChange={() => {}}
+            onPromptKeyDown={() => {}}
+            onReset={() => {}}
+            onSend={() => {}}
+            onUserLabelChange={(value) => {
+              handleUserLabelChange(value);
+              setLabel(value);
+            }}
+            prompt=""
+            promptRef={null}
+            session={createSession()}
+            userLabel={label}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    render(<UserLabelHarness />);
+
+    const input = screen.getByRole("textbox", { name: "我的名字" });
+    expect(input).toHaveValue("Lala");
+    expect(screen.getByText("Lala")).toBeInTheDocument();
+
+    await user.clear(input);
+    await user.type(input, "小爪");
+
+    expect(handleUserLabelChange).toHaveBeenLastCalledWith("小爪");
+  });
+
   it("keeps the trailing control inside the tab rail after the session tabs", () => {
     const { container } = render(
       <TooltipProvider>

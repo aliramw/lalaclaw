@@ -15,6 +15,21 @@ const chatScrollStorageKey = "command-center-chat-scroll-v1";
 const promptDraftStorageKey = "command-center-prompt-drafts-v1";
 const defaultPromptPlaceholder = "💡 想要和 main 一起做点什么？";
 
+function getComposer() {
+  const composer = document.querySelector("textarea");
+  if (!(composer instanceof HTMLTextAreaElement)) {
+    throw new Error("Expected chat composer textarea");
+  }
+  return composer;
+}
+
+async function findComposer() {
+  await waitFor(() => {
+    expect(document.querySelector("textarea")).not.toBeNull();
+  });
+  return getComposer();
+}
+
 function createSnapshot(overrides = {}) {
   return {
     ok: true,
@@ -408,7 +423,7 @@ describe("App", () => {
     expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.type(await screen.findByRole("textbox"), "帮我检查状态");
+    await user.type(await findComposer(), "帮我检查状态");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
@@ -745,7 +760,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Switch language" })).toBeInTheDocument();
     expect(screen.getByText("main - Current session")).toBeInTheDocument();
-    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(getComposer()).toBeInTheDocument();
   });
 
   it("keeps Trace & Observe docked as a narrow icon rail on narrow screens", async () => {
@@ -766,7 +781,7 @@ describe("App", () => {
     expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "文件" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "回复摘要" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(getComposer()).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "拖动调整聊天区与追踪区宽度" })).not.toBeInTheDocument();
     expect(screen.queryByText("追踪与观察")).not.toBeInTheDocument();
@@ -855,7 +870,7 @@ describe("App", () => {
     expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
 
     const user = userEvent.setup();
-    await user.type(await screen.findByRole("textbox"), "请开始");
+    await user.type(await findComposer(), "请开始");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByRole("button", { name: "停止" })).toBeInTheDocument();
@@ -922,7 +937,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const composer = await screen.findByRole("textbox");
+    const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "甲");
@@ -1009,7 +1024,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const composer = await screen.findByRole("textbox");
+    const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "甲");
@@ -1101,7 +1116,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const composer = await screen.findByRole("textbox");
+    const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "甲");
@@ -1187,7 +1202,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const composer = await screen.findByRole("textbox");
+    const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "甲");
@@ -1293,7 +1308,7 @@ describe("App", () => {
     MockWebSocket.instances[0].simulateOpen();
 
     const user = userEvent.setup();
-    const composer = await screen.findByRole("textbox");
+    const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "甲");
@@ -1389,7 +1404,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const composer = await screen.findByRole("textbox");
+    const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "1");
@@ -1447,7 +1462,7 @@ describe("App", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    const composer = await screen.findByRole("textbox");
+    const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
 
     await user.type(composer, "1");
@@ -3628,9 +3643,9 @@ describe("App", () => {
     await screen.findByText("worker - 当前会话");
 
     await waitFor(() => {
-      expect(screen.getByRole("textbox")).toBeEnabled();
+      expect(getComposer()).toBeEnabled();
     });
-    await user.type(screen.getByRole("textbox"), "继续处理 worker 任务");
+    await user.type(getComposer(), "继续处理 worker 任务");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("已处理：继续处理 worker 任务")).toBeInTheDocument();
@@ -3772,7 +3787,7 @@ describe("App", () => {
     await user.click(screen.getByRole("menuitem", { name: "飞书" }));
     expect(await screen.findByRole("button", { name: "飞书 main" })).toBeInTheDocument();
 
-    await user.type(screen.getByRole("textbox"), "hi");
+    await user.type(getComposer(), "hi");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
@@ -3846,7 +3861,7 @@ describe("App", () => {
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "飞书" }));
 
-    const textarea = await screen.findByRole("textbox");
+    const textarea = await findComposer();
     await user.type(textarea, "hi");
     await user.keyboard("{Enter}{Enter}{Enter}");
 

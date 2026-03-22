@@ -52,6 +52,7 @@ type UseAppPersistenceInput = {
   setMessagesSynced: (messages: PersistedMessage[]) => void;
   setPendingChatTurns: (updater: PendingChatTurns | ((current: PendingChatTurns) => PendingChatTurns)) => void;
   tabMetaById?: TabMetaById;
+  userLabel?: string;
 };
 
 type PendingPersistencePayload = {
@@ -93,6 +94,7 @@ export function useAppPersistence({
   setMessagesSynced,
   setPendingChatTurns,
   tabMetaById,
+  userLabel,
 }: UseAppPersistenceInput) {
   const storageRequestRef = useRef(0);
   const persistenceTimerRef = useRef<number | null>(null);
@@ -251,6 +253,7 @@ export function useAppPersistence({
       chatTabs,
       chatFontSize,
       composerSendMode,
+      userLabel,
       dismissedTaskRelationshipIdsByConversation,
       fastMode,
       inspectorPanelWidth,
@@ -302,6 +305,7 @@ export function useAppPersistence({
     activeTab,
     chatFontSize,
     composerSendMode,
+    userLabel,
     chatTabs,
     dismissedTaskRelationshipIdsByConversation,
     fastMode,
