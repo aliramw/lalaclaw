@@ -1,39 +1,7 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createOpenClawClient = createOpenClawClient;
+exports.importOpenClawFileModule = importOpenClawFileModule;
 exports.resolveOpenClawGatewaySdkArtifactsForPackageRoot = resolveOpenClawGatewaySdkArtifactsForPackageRoot;
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -216,10 +184,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             gatewaySdkPromise = (async () => {
                 const artifacts = await resolveOpenClawGatewaySdkArtifacts();
                 if (artifacts.kind === 'stable' && artifacts.gatewayRuntimePath) {
-                    const gatewayRuntimeUrl = pathToFileURL(artifacts.gatewayRuntimePath);
-                    const gatewayRuntimeModule = await Promise.resolve(`${gatewayRuntimeUrl.href}`).then(s => __importStar(require(s)));
+                    const gatewayRuntimeModule = await importOpenClawFileModule(artifacts.gatewayRuntimePath);
                     const cliRuntimeModule = artifacts.cliRuntimePath
-                        ? await Promise.resolve(`${pathToFileURL(artifacts.cliRuntimePath).href}`).then(s => __importStar(require(s)))
+                        ? await importOpenClawFileModule(artifacts.cliRuntimePath)
                         : {};
                     return {
                         GatewayClient: gatewayRuntimeModule.GatewayClient,
@@ -233,8 +200,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
                     };
                 }
                 const replyModulePath = artifacts.replyModulePath || '';
-                const replyModuleUrl = pathToFileURL(replyModulePath);
-                const module = await Promise.resolve(`${replyModuleUrl.href}`).then(s => __importStar(require(s)));
+                const module = await importOpenClawFileModule(replyModulePath);
                 return {
                     GatewayClient: module.zs,
                     GATEWAY_CLIENT_NAMES: module.wm,
@@ -1515,6 +1481,16 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         parseOpenClawResponse,
         subscribeGatewayEvents,
     };
+}
+async function importOpenClawFileModule(modulePath = '') {
+    const normalizedModulePath = String(modulePath || '').trim();
+    if (!normalizedModulePath) {
+        throw new Error('Module path is required');
+    }
+    const specifier = normalizedModulePath.startsWith('file:')
+        ? normalizedModulePath
+        : pathToFileURL(normalizedModulePath).href;
+    return await (0, eval)(`import(${JSON.stringify(specifier)})`);
 }
 function resolveOpenClawGatewaySdkArtifactsForPackageRoot(packageRoot = '') {
     const normalizedPackageRoot = String(packageRoot || '').trim();

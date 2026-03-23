@@ -43,6 +43,7 @@ type UpdateStatusShape = {
   availability?: Record<string, unknown> | null;
   channel?: Record<string, unknown> | null;
   update?: {
+    currentVersion?: string | null;
     registry?: {
       currentVersion?: string | null;
     } | null;
@@ -187,20 +188,26 @@ function isLatestTagSpecifier(value: string | null) {
 
 function buildStateFromStatus(status: UpdateStatusShape = {}, preview: UpdatePreviewShape | null = null): OpenClawUpdateState {
   const channelValue = String(status?.channel?.value || '').trim() || null;
+  const currentVersion = String(preview?.currentVersion || status?.update?.registry?.currentVersion || status?.update?.currentVersion || '').trim() || null;
   const previewTargetVersion = String(preview?.targetVersion || '').trim() || null;
   const previewTag = String(preview?.tag || '').trim() || null;
   const previewRequestedChannel = String(preview?.requestedChannel || '').trim() || null;
   const previewStoredChannel = String(preview?.storedChannel || '').trim() || null;
   const previewEffectiveChannel = String(preview?.effectiveChannel || '').trim() || null;
   const previewUsesLatestTag = isLatestTagSpecifier(previewTag);
+  const isStableDefaultLatestPreview = Boolean(
+    channelValue === 'stable'
+      && previewUsesLatestTag
+      && !previewRequestedChannel
+      && !previewStoredChannel
+      && previewEffectiveChannel !== 'dev',
+  );
   const shouldExposePreviewTarget = Boolean(
     previewTargetVersion
       && (
-        !channelValue
-        || !previewUsesLatestTag
-        || previewRequestedChannel
-        || previewStoredChannel
-        || previewEffectiveChannel === 'dev'
+        !isStableDefaultLatestPreview
+        || !currentVersion
+        || previewTargetVersion !== currentVersion
       ),
   );
 
@@ -213,7 +220,7 @@ function buildStateFromStatus(status: UpdateStatusShape = {}, preview: UpdatePre
     availability: status?.availability || preview?.availability || null,
     channel: status?.channel || null,
     update: status?.update || null,
-    currentVersion: preview?.currentVersion || status?.update?.registry?.currentVersion || null,
+    currentVersion,
     targetVersion: shouldExposePreviewTarget ? previewTargetVersion : null,
   };
 }

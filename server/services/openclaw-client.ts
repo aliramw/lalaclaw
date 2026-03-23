@@ -346,10 +346,9 @@ export function createOpenClawClient({
       gatewaySdkPromise = (async () => {
         const artifacts = await resolveOpenClawGatewaySdkArtifacts();
         if (artifacts.kind === 'stable' && artifacts.gatewayRuntimePath) {
-          const gatewayRuntimeUrl = pathToFileURL(artifacts.gatewayRuntimePath);
-          const gatewayRuntimeModule = await import(gatewayRuntimeUrl.href);
+          const gatewayRuntimeModule = await importOpenClawFileModule(artifacts.gatewayRuntimePath);
           const cliRuntimeModule = artifacts.cliRuntimePath
-            ? await import(pathToFileURL(artifacts.cliRuntimePath).href)
+            ? await importOpenClawFileModule(artifacts.cliRuntimePath)
             : {};
           return {
             GatewayClient: gatewayRuntimeModule.GatewayClient,
@@ -364,8 +363,7 @@ export function createOpenClawClient({
         }
 
         const replyModulePath = artifacts.replyModulePath || '';
-        const replyModuleUrl = pathToFileURL(replyModulePath);
-        const module = await import(replyModuleUrl.href);
+        const module = await importOpenClawFileModule(replyModulePath);
         return {
           GatewayClient: module.zs,
           GATEWAY_CLIENT_NAMES: module.wm,
@@ -1917,6 +1915,17 @@ export function createOpenClawClient({
     parseOpenClawResponse,
     subscribeGatewayEvents,
   };
+}
+
+export async function importOpenClawFileModule(modulePath = ''): Promise<LooseRecord> {
+  const normalizedModulePath = String(modulePath || '').trim();
+  if (!normalizedModulePath) {
+    throw new Error('Module path is required');
+  }
+  const specifier = normalizedModulePath.startsWith('file:')
+    ? normalizedModulePath
+    : pathToFileURL(normalizedModulePath).href;
+  return await (0, eval)(`import(${JSON.stringify(specifier)})`);
 }
 
 export function resolveOpenClawGatewaySdkArtifactsForPackageRoot(packageRoot = ''): GatewaySdkArtifacts | null {
