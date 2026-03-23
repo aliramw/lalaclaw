@@ -4172,7 +4172,7 @@ describe("App", () => {
     await user.click(collapsedWorkspaceButton);
 
     expect(await screen.findByRole("button", { name: "workspace 文件 收起详情" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(await screen.findByText("package.json")).toBeInTheDocument();
     await waitFor(() => {
       expect(JSON.parse(window.localStorage.getItem(currentStorageKey) || "{}")?.workspaceFilesOpenByConversation).toEqual({
         "command-center:main": true,
@@ -4184,7 +4184,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "workspace 文件 收起详情" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(await screen.findByText("package.json")).toBeInTheDocument();
   });
 
   it("opens IM tabs under the agent configured by OpenClaw bindings even when the current tab is a different agent", async () => {
