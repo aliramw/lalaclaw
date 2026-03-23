@@ -13,6 +13,7 @@ const { chromium } = require("@playwright/test");
 const DEFAULT_HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 120_000;
 const PAGE_TIMEOUT_MS = 45_000;
+const PLAYWRIGHT_INSTALL_TIMEOUT_MS = 10 * 60_000;
 
 function logStep(message, json = false) {
   if (!json) {
@@ -124,6 +125,32 @@ function npmCommand() {
   return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
+function buildIsolatedAppEnv({
+  tempRoot,
+  configDir,
+  baseEnv = process.env,
+  platform = process.platform,
+} = {}) {
+  const resolvedTempRoot = path.resolve(String(tempRoot || os.tmpdir()));
+  const resolvedConfigDir = path.resolve(String(configDir || path.join(resolvedTempRoot, "config")));
+  const isolatedEnv = {
+    ...baseEnv,
+    HOME: resolvedTempRoot,
+    USERPROFILE: resolvedTempRoot,
+    XDG_CONFIG_HOME: path.join(resolvedTempRoot, ".config"),
+    LALACLAW_CONFIG_DIR: resolvedConfigDir,
+  };
+
+  if (platform === "win32") {
+    isolatedEnv.APPDATA = path.join(resolvedTempRoot, "AppData", "Roaming");
+    isolatedEnv.LOCALAPPDATA = path.join(resolvedTempRoot, "AppData", "Local");
+    isolatedEnv.HOMEDRIVE = path.parse(resolvedTempRoot).root.replace(/[\\/]+$/, "") || "C:";
+    isolatedEnv.HOMEPATH = resolvedTempRoot.slice((isolatedEnv.HOMEDRIVE || "").length) || "\\";
+  }
+
+  return isolatedEnv;
+}
+
 function waitForChildExit(child) {
   if (!child || child.exitCode !== null) {
     return Promise.resolve();
@@ -174,8 +201,32 @@ function runCommand(command, args, options = {}) {
   });
 
   return new Promise((resolve, reject) => {
+    let timedOut = false;
+    const timeoutMs = Number(options.timeoutMs);
+    const timeoutId = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => {
+        timedOut = true;
+        if (process.platform === "win32") {
+          spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+          return;
+        }
+        child.kill("SIGKILL");
+      }, timeoutMs)
+      : null;
+
+    const clearTimer = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+
     child.once("error", reject);
     child.once("exit", (code, signal) => {
+      clearTimer();
+      if (timedOut) {
+        reject(new Error(`${command} ${args.join(" ")} timed out after ${timeoutMs}ms\n${stdout}${stderr}`.trim()));
+        return;
+      }
       if (code === 0) {
         resolve({ code, signal, stdout, stderr });
         return;
@@ -225,6 +276,41 @@ function findAvailablePort(host = DEFAULT_HOST) {
   });
 }
 
+async function ensurePlaywrightChromiumInstalled({
+  cwd = process.cwd(),
+  env = process.env,
+  executablePath = "",
+} = {}) {
+  const resolvedExecutablePath = String(executablePath || "").trim()
+    || String(typeof chromium.executablePath === "function" ? chromium.executablePath() : "").trim();
+
+  if (resolvedExecutablePath && fs.existsSync(resolvedExecutablePath)) {
+    return {
+      installed: true,
+      executablePath: resolvedExecutablePath,
+      installedNow: false,
+    };
+  }
+
+  await runCommand(npmCommand(), ["run", "test:e2e:install"], {
+    cwd,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeoutMs: PLAYWRIGHT_INSTALL_TIMEOUT_MS,
+  });
+
+  const postInstallExecutablePath = String(typeof chromium.executablePath === "function" ? chromium.executablePath() : "").trim();
+  if (!postInstallExecutablePath || !fs.existsSync(postInstallExecutablePath)) {
+    throw new Error("Playwright Chromium is still unavailable after `npm run test:e2e:install`.");
+  }
+
+  return {
+    installed: true,
+    executablePath: postInstallExecutablePath,
+    installedNow: true,
+  };
+}
+
 function createReportSkeleton({ startedAt, tarballPath, tempRoot, installDir, configDir, baseUrl, options }) {
   return {
     ok: false,
@@ -240,6 +326,7 @@ function createReportSkeleton({ startedAt, tarballPath, tempRoot, installDir, co
     install: null,
     startup: null,
     browser: null,
+    browserInstall: null,
     error: "",
   };
 }
@@ -327,6 +414,10 @@ async function main() {
     }
 
     logStep(`starting packaged app on ${baseUrl}`, options.json);
+    const childEnv = buildIsolatedAppEnv({
+      tempRoot,
+      configDir,
+    });
     appChild = spawn(process.execPath, [
       cliEntry,
       "start",
@@ -338,10 +429,7 @@ async function main() {
       String(options.port),
     ], {
       cwd: installDir,
-      env: {
-        ...process.env,
-        LALACLAW_CONFIG_DIR: configDir,
-      },
+      env: childEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -375,6 +463,12 @@ async function main() {
       stderr: stderr.trim(),
       exit: "",
     };
+
+    logStep("ensuring Playwright Chromium is installed", options.json);
+    report.browserInstall = await ensurePlaywrightChromiumInstalled({
+      cwd: process.cwd(),
+      env: process.env,
+    });
 
     logStep("opening Chromium smoke page", options.json);
     const browserResult = await runBrowserSmoke(baseUrl, { noChat: options.noChat });
@@ -436,6 +530,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildIsolatedAppEnv,
+  ensurePlaywrightChromiumInstalled,
   parseArgs,
   resolveTarballPath,
 };

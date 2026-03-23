@@ -5,7 +5,11 @@ import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { parseArgs, resolveTarballPath } = require("../scripts/release-install-smoke.cjs");
+const {
+  buildIsolatedAppEnv,
+  parseArgs,
+  resolveTarballPath,
+} = require("../scripts/release-install-smoke.cjs");
 const tempDirs = [];
 
 afterEach(() => {
@@ -54,5 +58,30 @@ describe("release install smoke script", () => {
     fs.utimesSync(newerTarball, newerTime, newerTime);
 
     expect(resolveTarballPath({ cwd: tempRoot })).toBe(newerTarball);
+  });
+
+  it("builds an isolated app environment rooted in the temp workspace", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-release-install-env-"));
+    tempDirs.push(tempRoot);
+
+    const configDir = path.join(tempRoot, "config");
+    const env = buildIsolatedAppEnv({
+      tempRoot,
+      configDir,
+      baseEnv: {
+        PATH: "/usr/bin",
+        HOME: "/Users/existing",
+        APPDATA: "C:\\Users\\existing\\AppData\\Roaming",
+      },
+      platform: "win32",
+    });
+
+    expect(env.PATH).toBe("/usr/bin");
+    expect(env.HOME).toBe(tempRoot);
+    expect(env.USERPROFILE).toBe(tempRoot);
+    expect(env.LALACLAW_CONFIG_DIR).toBe(configDir);
+    expect(env.XDG_CONFIG_HOME).toBe(path.join(tempRoot, ".config"));
+    expect(env.APPDATA).toBe(path.join(tempRoot, "AppData", "Roaming"));
+    expect(env.LOCALAPPDATA).toBe(path.join(tempRoot, "AppData", "Local"));
   });
 });
