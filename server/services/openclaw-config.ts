@@ -395,6 +395,19 @@ async function readConfigSnapshot(configPath = '') {
   };
 }
 
+function isConfigFileMissingError(error: any) {
+  return Boolean(error?.cause && typeof error.cause === 'object' && error.cause?.code === 'ENOENT');
+}
+
+function createEmptyConfigSnapshot() {
+  const raw = '{}';
+  return {
+    raw,
+    parsed: {},
+    hash: hashContent(raw),
+  };
+}
+
 function buildBackupPath(configPath = '', now = () => Date.now()) {
   const timestamp = new Date(now()).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   return `${configPath}.backup.${timestamp}`;
@@ -590,7 +603,15 @@ export function createOpenClawConfigService({
       };
     }
 
-    const snapshot = await readConfigSnapshot(configPath);
+    let snapshot = null;
+    try {
+      snapshot = await readConfigSnapshot(configPath);
+    } catch (error) {
+      if (!isConfigFileMissingError(error)) {
+        throw error;
+      }
+      snapshot = createEmptyConfigSnapshot();
+    }
     const validation = await validateConfig();
     const currentAgentId = String(options?.agentId || '').trim();
 

@@ -53,6 +53,12 @@ function isSourceCheckout(projectRoot = node_path_1.default.resolve(__dirname, '
     ];
     return sourceMarkers.every((filePath) => node_fs_1.default.existsSync(filePath));
 }
+function resolveProjectRoot(projectRoot = node_path_1.default.resolve(__dirname, '..', '..')) {
+    const normalizedProjectRoot = node_path_1.default.resolve(String(projectRoot || node_path_1.default.resolve(__dirname, '..', '..')));
+    return node_path_1.default.basename(normalizedProjectRoot) === '.server-build'
+        ? node_path_1.default.dirname(normalizedProjectRoot)
+        : normalizedProjectRoot;
+}
 function resolveLaunchdPlistPath(homeDir = node_os_1.default.homedir()) {
     return node_path_1.default.join(homeDir, 'Library', 'LaunchAgents', 'ai.lalaclaw.app.plist');
 }
@@ -257,8 +263,9 @@ async function fetchRegistryMetadata({ fetchImpl, packageName, registryBaseUrl =
         };
     }
 }
-function detectCapability({ accessConfigFile = '', serviceStatus = null, mockStableVersion = '', platform = process.platform, projectRoot = node_path_1.default.resolve(__dirname, '..', '..'), } = {}) {
-    const sourceCheckout = isSourceCheckout(projectRoot);
+function detectCapability({ accessConfigFile = '', serviceStatus = null, mockStableVersion = '', platform = process.platform, projectRoot = resolveProjectRoot(), } = {}) {
+    const resolvedProjectRoot = resolveProjectRoot(projectRoot);
+    const sourceCheckout = isSourceCheckout(resolvedProjectRoot);
     const launchdInstalled = platform === 'darwin' && (serviceStatus?.kind === 'launchd'
         ? Boolean(serviceStatus.installed && serviceStatus.running)
         : node_fs_1.default.existsSync(resolveLaunchdPlistPath(node_os_1.default.homedir())));
@@ -343,11 +350,12 @@ function buildUpdateState({ checkResult, checkedAt, currentVersion, workspaceVer
         job: normalizeJob(job),
     };
 }
-function createLalaClawUpdateService({ config = {}, currentVersion = PACKAGE_VERSION, fetchImpl = global.fetch, getServiceStatus = lalaclaw_service_status_1.getLalaClawServiceStatus, now = () => Date.now(), platform = process.platform, processPid = process.pid, projectRoot = node_path_1.default.resolve(__dirname, '..', '..'), runnerPath = RUNNER_PATH, spawnImpl = node_child_process_1.spawn, } = {}) {
+function createLalaClawUpdateService({ config = {}, currentVersion = PACKAGE_VERSION, fetchImpl = global.fetch, getServiceStatus = lalaclaw_service_status_1.getLalaClawServiceStatus, now = () => Date.now(), platform = process.platform, processPid = process.pid, projectRoot = resolveProjectRoot(), runnerPath = RUNNER_PATH, spawnImpl = node_child_process_1.spawn, } = {}) {
+    const resolvedProjectRoot = resolveProjectRoot(projectRoot);
     const stateDir = String(config?.stateDir || '').trim() || node_path_1.default.join(node_os_1.default.tmpdir(), 'lalaclaw');
     const statusFile = node_path_1.default.join(stateDir, exports.UPDATE_STATUS_FILENAME);
     const devMockStateFile = node_path_1.default.join(stateDir, exports.DEV_MOCK_STATE_FILENAME);
-    const sourceCheckout = isSourceCheckout(projectRoot);
+    const sourceCheckout = isSourceCheckout(resolvedProjectRoot);
     function readJobState() {
         return normalizeJob(readJsonFile(statusFile));
     }
@@ -409,7 +417,7 @@ function createLalaClawUpdateService({ config = {}, currentVersion = PACKAGE_VER
             serviceStatus: typeof getServiceStatus === 'function' ? getServiceStatus() : null,
             mockStableVersion,
             platform,
-            projectRoot,
+            projectRoot: resolvedProjectRoot,
         });
         const currentJob = maybeCompleteMockJob({
             currentJob: readJobState(),
@@ -512,9 +520,9 @@ function createLalaClawUpdateService({ config = {}, currentVersion = PACKAGE_VER
                 '--host', String(process.env.HOST || '127.0.0.1').trim(),
                 '--port', String(process.env.PORT || '3000').trim(),
                 '--server-pid', String(processPid),
-                '--project-root', projectRoot,
+                '--project-root', resolvedProjectRoot,
             ], {
-                cwd: projectRoot,
+                cwd: resolvedProjectRoot,
                 detached: true,
                 env: process.env,
                 stdio: 'ignore',

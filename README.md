@@ -109,6 +109,15 @@ Windows notes:
 - `lalaclaw start` runs in the current terminal session, so closing that terminal stops the app
 - If `lalaclaw` is not recognized, restart PowerShell or make sure the npm global bin directory is on `PATH`
 
+Windows release validation with a local tarball:
+
+```powershell
+npm run pack:release
+npm run test:release:smoke -- --tarball .\artifacts\lalaclaw-<version>.tgz
+```
+
+This smoke installs the tarball into a clean temp directory, starts the packaged app on a free loopback port, opens Chromium, and fails if the first screen stays blank or new browser runtime errors appear.
+
 Notes:
 
 - `lalaclaw init` writes local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
@@ -203,6 +212,7 @@ npm run lalaclaw:start
 - `npm run lalaclaw:start` starts the built app after running doctor preflight checks and verifying `dist/`
 - `npm run build` creates the production bundle
 - `npm run pack:release` writes the validated release tarball to `artifacts/`
+- `npm run test:release:smoke -- --tarball ./artifacts/lalaclaw-<version>.tgz` installs the tarball into a clean temp directory, starts the packaged app in `mock` mode on a free loopback port, opens the first screen in Chromium, and fails on new runtime or console errors
 - `npm test` runs the Vitest suite once
 - `npm run test:coverage` runs the Vitest suite with coverage
 - `npm run lint` runs ESLint across the workspace

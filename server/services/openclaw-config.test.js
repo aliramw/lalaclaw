@@ -634,6 +634,53 @@ describe('createOpenClawConfigService', () => {
     });
   });
 
+  it('returns an empty local config state when the config file does not exist yet', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lalaclaw-openclaw-config-missing-'));
+    const configPath = path.join(tempDir, 'openclaw.json');
+    const service = createOpenClawConfigService({
+      config: { localConfigPath: configPath, openclawBin: 'openclaw' },
+      execFileAsync: async (_command, args) => {
+        if (args[0] === 'config' && args[1] === 'validate') {
+          return {
+            stdout: JSON.stringify({
+              valid: false,
+              path: configPath,
+              errors: [{ path: '', message: 'Config file does not exist yet' }],
+            }),
+            stderr: '',
+          };
+        }
+
+        throw new Error(`Unexpected command: ${args.join(' ')}`);
+      },
+    });
+
+    const result = await service.getOpenClawConfigState({ agentId: 'main' });
+
+    expect(result).toMatchObject({
+      ok: true,
+      configPath,
+      baseHash: expect.stringMatching(/[a-f0-9]{64}/),
+      validation: {
+        ok: false,
+        valid: false,
+        path: configPath,
+      },
+    });
+    expect(result.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'modelPrimary', value: undefined }),
+      expect.objectContaining({ key: 'gatewayBind', value: undefined }),
+      expect.objectContaining({ key: 'chatCompletionsEnabled', value: undefined }),
+    ]));
+    expect(result.modelOptions).toEqual([]);
+    expect(result.imChannels).toMatchObject({
+      'dingtalk-connector': expect.objectContaining({ enabled: false, defaultAgentId: '' }),
+      feishu: expect.objectContaining({ enabled: false, defaultAgentId: '' }),
+      wecom: expect.objectContaining({ enabled: false, defaultAgentId: '' }),
+      'openclaw-weixin': expect.objectContaining({ enabled: false, defaultAgentId: '' }),
+    });
+  });
+
   it('applies a safe config patch, saves a backup, and restarts the gateway when requested', async () => {
     const { configPath } = await createTempConfigFixture({
       agents: {

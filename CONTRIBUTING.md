@@ -90,6 +90,15 @@ If your change depends on built output, run `npm run build` and verify against `
 
 If you are preparing a release or changing packaging behavior, do not stop at validating the source checkout. Also validate the actual npm artifact with `npm run pack:release` so the tarball lands in `artifacts/`, then install that tarball in a clean temporary directory and verify one real installed startup path before publishing.
 
+For a repeatable installed-package smoke, run:
+
+```bash
+npm run pack:release
+npm run test:release:smoke -- --tarball ./artifacts/lalaclaw-<version>.tgz
+```
+
+That smoke installs the published tarball into a clean temp directory, starts `lalaclaw` through the packaged CLI in `mock` mode on a free loopback port, opens the first screen in Chromium, and fails if the homepage stays blank or new browser runtime errors appear.
+
 ## Branch Hygiene
 
 - Start each task on a dedicated feature branch instead of working directly on `main`.

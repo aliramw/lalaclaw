@@ -709,6 +709,7 @@ describe("App", () => {
                   { path: "/Users/marila/projects/lalaclaw2", name: "lalaclaw2", branch: "feat/init-autostart", detached: false },
                   { path: "/Users/marila/.codex/worktrees/c11c/lalaclaw2", name: "lalaclaw2", branch: "", detached: true },
                 ],
+                targetWorktreePath: "/Users/marila/projects/lalaclaw2",
               }
             : {
                 ok: true,
@@ -742,11 +743,12 @@ describe("App", () => {
       expect(worktreeSelect).toHaveValue("/Users/marila/projects/lalaclaw2");
       expect(worktreeSelect).not.toBeDisabled();
       expect(Array.from(worktreeSelect.options).map((option) => option.value)).toContain("/Users/marila/.codex/worktrees/c11c/lalaclaw2");
-      expect(branchSelect).toHaveValue("main");
+      expect(branchSelect).toHaveValue("feat/init-autostart");
       expect(branchSelect).not.toBeDisabled();
     });
 
     await user.selectOptions(worktreeSelect, "/Users/marila/.codex/worktrees/c11c/lalaclaw2");
+    await user.selectOptions(branchSelect, "main");
 
     expect(screen.getByTestId("dev-workspace-restart-button")).toHaveTextContent("切分支并重启");
 
@@ -755,6 +757,160 @@ describe("App", () => {
     await waitFor(() => {
       expect(reloadSpy).toHaveBeenCalled();
     });
+  });
+
+  it("shows detached worktrees as detached in the current badge summary and details", async () => {
+    globalThis.__LALACLAW_DEV_INFO__ = {
+      branch: "detached@791b33c",
+      commit: "791b33c",
+      cwd: "/Users/marila/.codex/worktrees/19b6/lalaclaw",
+      worktree: "lalaclaw",
+    };
+
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/auth/state") {
+        return mockJsonResponse({
+          ok: true,
+          accessMode: "off",
+          authenticated: true,
+        });
+      }
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+      if (url === "/api/config") {
+        return mockJsonResponse({ openClawConnected: false });
+      }
+      if (url === "/api/launcher/config") {
+        return mockJsonResponse({
+          ok: true,
+          config: null,
+          onboardingState: { dismissed: false, completedAt: 0, autoConnect: false },
+          diagnostics: { supportedAuthChoices: [], hasSavedAuthChoice: false },
+        });
+      }
+      if (url === "/api/lalaclaw/update") {
+        return mockJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.24",
+          currentRelease: { version: "2026.3.24", stable: true },
+          targetRelease: { version: "2026.3.24", stable: true },
+          stableTag: "stable",
+          updateAvailable: false,
+          capability: { installKind: "source-checkout", restartMode: "manual", updateSupported: false, reason: "lalaclaw_update_source_checkout_unsupported" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+        });
+      }
+      if (url === "/api/dev/workspace-restart") {
+        return mockJsonResponse({
+          ok: true,
+          available: true,
+          active: false,
+          restartId: "",
+          status: "idle",
+          currentBranch: "",
+          branches: ["main"],
+          currentWorktreePath: "/Users/marila/.codex/worktrees/19b6/lalaclaw",
+          worktrees: [
+            { path: "/Users/marila/projects/lalaclaw", name: "lalaclaw", branch: "main", detached: false },
+            { path: "/Users/marila/.codex/worktrees/19b6/lalaclaw", name: "lalaclaw", branch: "", detached: true },
+          ],
+          targetWorktreePath: "/Users/marila/.codex/worktrees/19b6/lalaclaw",
+          targetBranch: "",
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const badge = await screen.findByTestId("dev-workspace-badge");
+    expect(badge).toHaveTextContent("detached@791b33c");
+    expect(badge).toHaveTextContent("lalaclaw");
+
+    const worktreeSelect = await screen.findByTestId("dev-workspace-worktree-select");
+    expect(worktreeSelect).toHaveValue("/Users/marila/.codex/worktrees/19b6/lalaclaw");
+    expect(screen.getByTestId("dev-workspace-badge")).toHaveTextContent("detached@791b33c");
+    expect(screen.getByTestId("dev-workspace-badge")).toHaveTextContent("端口");
+  });
+
+  it("disambiguates duplicate detached worktree options with a path suffix", async () => {
+    globalThis.__LALACLAW_DEV_INFO__ = {
+      branch: "detached@791b33c",
+      commit: "791b33c",
+      cwd: "/Users/marila/.codex/worktrees/19b6/lalaclaw",
+      worktree: "lalaclaw",
+    };
+
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/auth/state") {
+        return mockJsonResponse({
+          ok: true,
+          accessMode: "off",
+          authenticated: true,
+        });
+      }
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+      if (url === "/api/config") {
+        return mockJsonResponse({ openClawConnected: false });
+      }
+      if (url === "/api/launcher/config") {
+        return mockJsonResponse({
+          ok: true,
+          config: null,
+          onboardingState: { dismissed: false, completedAt: 0, autoConnect: false },
+          diagnostics: { supportedAuthChoices: [], hasSavedAuthChoice: false },
+        });
+      }
+      if (url === "/api/lalaclaw/update") {
+        return mockJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.24",
+          currentRelease: { version: "2026.3.24", stable: true },
+          targetRelease: { version: "2026.3.24", stable: true },
+          stableTag: "stable",
+          updateAvailable: false,
+          capability: { installKind: "source-checkout", restartMode: "manual", updateSupported: false, reason: "lalaclaw_update_source_checkout_unsupported" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+        });
+      }
+      if (url === "/api/dev/workspace-restart") {
+        return mockJsonResponse({
+          ok: true,
+          available: true,
+          active: false,
+          restartId: "",
+          status: "idle",
+          currentBranch: "",
+          branches: ["main"],
+          currentWorktreePath: "/Users/marila/.codex/worktrees/19b6/lalaclaw",
+          worktrees: [
+            { path: "/Users/marila/projects/lalaclaw", name: "lalaclaw", branch: "main", detached: false },
+            { path: "/Users/marila/.codex/worktrees/19b6/lalaclaw", name: "lalaclaw", branch: "", detached: true },
+            { path: "/Users/marila/.codex/worktrees/6b70/lalaclaw", name: "lalaclaw", branch: "", detached: true },
+          ],
+          targetWorktreePath: "/Users/marila/.codex/worktrees/19b6/lalaclaw",
+          targetBranch: "",
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByTestId("dev-workspace-worktree-select");
+    expect(screen.getByRole("option", { name: "lalaclaw · detached · 19b6/lalaclaw" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "lalaclaw · detached · 6b70/lalaclaw" })).toBeInTheDocument();
   });
 
   it("keeps the full app interactive after switching to a non-Chinese locale", async () => {
@@ -4178,7 +4334,7 @@ describe("App", () => {
     await user.click(collapsedWorkspaceButton);
 
     expect(await screen.findByRole("button", { name: "workspace 文件 收起详情" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(await screen.findByText("package.json")).toBeInTheDocument();
     await waitFor(() => {
       expect(JSON.parse(window.localStorage.getItem(currentStorageKey) || "{}")?.workspaceFilesOpenByConversation).toEqual({
         "command-center:main": true,
@@ -4190,7 +4346,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "workspace 文件 收起详情" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(await screen.findByText("package.json")).toBeInTheDocument();
   });
 
   it("opens IM tabs under the agent configured by OpenClaw bindings even when the current tab is a different agent", async () => {
