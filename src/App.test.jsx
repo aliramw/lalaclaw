@@ -736,9 +736,15 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const worktreeSelect = await screen.findByTestId("dev-workspace-worktree-select");
-    expect(worktreeSelect).toHaveValue("/Users/marila/projects/lalaclaw2");
     const branchSelect = await screen.findByTestId("dev-workspace-branch-select");
-    expect(branchSelect).toHaveValue("main");
+
+    await waitFor(() => {
+      expect(worktreeSelect).toHaveValue("/Users/marila/projects/lalaclaw2");
+      expect(worktreeSelect).not.toBeDisabled();
+      expect(Array.from(worktreeSelect.options).map((option) => option.value)).toContain("/Users/marila/.codex/worktrees/c11c/lalaclaw2");
+      expect(branchSelect).toHaveValue("main");
+      expect(branchSelect).not.toBeDisabled();
+    });
 
     await user.selectOptions(worktreeSelect, "/Users/marila/.codex/worktrees/c11c/lalaclaw2");
 
