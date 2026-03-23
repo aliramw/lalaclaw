@@ -51,6 +51,25 @@ lalaclaw init
 
 பிறகு [http://127.0.0.1:5678](http://127.0.0.1:5678) ஐ திறக்கவும்.
 
+#### Windows
+
+Windows இல் அதே கட்டளைகளை PowerShell-ல் இயக்கவும்:
+
+```powershell
+npm install -g lalaclaw@latest
+lalaclaw init
+```
+
+பிறகு [http://127.0.0.1:5678](http://127.0.0.1:5678) ஐ திறக்கவும்.
+
+Windows குறிப்புகள்:
+
+- `lalaclaw init` பொதுவாக உள்ளூர் configuration-ஐ `%APPDATA%\LalaClaw\.env.local` இல் எழுதும்
+- சேவைகளை தானாக தொடங்காமல் configuration மட்டும் எழுத வேண்டுமெனில் `lalaclaw init --no-background` ஐ பயன்படுத்தவும்
+- `--no-background` க்கு பிறகு `lalaclaw doctor` இயக்கி, package install க்கு `lalaclaw start` ஐ பயன்படுத்தவும்
+- `lalaclaw start` தற்போதைய PowerShell அமர்வில் இயங்கும்; அந்த window-ஐ மூடினால் app-மும் நிற்கும்
+- `lalaclaw` command கிடைக்கவில்லை என்றால் PowerShell-ஐ மீண்டும் திறக்கவும், அல்லது npm global bin directory `PATH` இல் உள்ளதா என்று சரிபார்க்கவும்
+
 குறிப்புகள்:
 
 - `lalaclaw init` macOS மற்றும் Linux இல் உள்ளூர் configuration-ஐ `~/.config/lalaclaw/.env.local` இல் எழுதும்

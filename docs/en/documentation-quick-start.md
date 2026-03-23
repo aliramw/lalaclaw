@@ -53,6 +53,25 @@ lalaclaw init
 
 Then open [http://127.0.0.1:5678](http://127.0.0.1:5678).
 
+### Windows
+
+On Windows, run the same commands in PowerShell:
+
+```powershell
+npm install -g lalaclaw@latest
+lalaclaw init
+```
+
+Then open [http://127.0.0.1:5678](http://127.0.0.1:5678).
+
+Windows notes:
+
+- `lalaclaw init` usually writes local config to `%APPDATA%\LalaClaw\.env.local`
+- Use `lalaclaw init --no-background` if you only want to write config without auto-starting services
+- After `--no-background`, run `lalaclaw doctor`, then use `lalaclaw start` for packaged installs
+- `lalaclaw start` runs in the current terminal session, so closing that terminal stops the app
+- If `lalaclaw` is not recognized, restart PowerShell or make sure the npm global bin directory is on `PATH`
+
 Notes:
 
 - `lalaclaw init` writes local config to `~/.config/lalaclaw/.env.local` on macOS and Linux

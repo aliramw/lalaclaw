@@ -49,6 +49,25 @@ lalaclaw init
 
 그다음 [http://127.0.0.1:5678](http://127.0.0.1:5678) 을 엽니다.
 
+### Windows
+
+Windows에서는 PowerShell에서 같은 명령을 실행하세요.
+
+```powershell
+npm install -g lalaclaw@latest
+lalaclaw init
+```
+
+그다음 [http://127.0.0.1:5678](http://127.0.0.1:5678) 을 엽니다.
+
+Windows 참고:
+
+- `lalaclaw init` 은 보통 로컬 설정을 `%APPDATA%\LalaClaw\.env.local` 에 기록합니다
+- 설정만 저장하고 서비스를 자동 시작하지 않으려면 `lalaclaw init --no-background` 를 사용하세요
+- `--no-background` 이후에는 `lalaclaw doctor` 를 실행하고, 패키지 설치면 `lalaclaw start` 를 사용하세요
+- `lalaclaw start` 는 현재 PowerShell 세션에서 실행되므로 창을 닫으면 앱도 함께 종료됩니다
+- `lalaclaw` 명령을 찾지 못하면 PowerShell을 다시 열거나 npm 전역 bin 디렉터리가 `PATH` 에 들어 있는지 확인하세요
+
 참고:
 
 - `lalaclaw init` 은 macOS와 Linux에서 로컬 설정을 `~/.config/lalaclaw/.env.local` 에 기록합니다

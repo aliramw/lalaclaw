@@ -51,6 +51,25 @@ lalaclaw init
 
 然后打开 [http://127.0.0.1:5678](http://127.0.0.1:5678)。
 
+#### Windows
+
+在 Windows 上，请在 PowerShell 中执行相同命令：
+
+```powershell
+npm install -g lalaclaw@latest
+lalaclaw init
+```
+
+然后打开 [http://127.0.0.1:5678](http://127.0.0.1:5678)。
+
+Windows 补充说明：
+
+- `lalaclaw init` 通常会把本地配置写到 `%APPDATA%\LalaClaw\.env.local`
+- 如果你只想写配置、不自动启动服务，可以使用 `lalaclaw init --no-background`
+- 使用 `--no-background` 后，先运行 `lalaclaw doctor`，然后对发布包安装使用 `lalaclaw start`
+- `lalaclaw start` 会占用当前 PowerShell 会话，关闭窗口后应用也会停止
+- 如果系统提示找不到 `lalaclaw`，请重开 PowerShell，或确认 npm 全局 bin 目录已经加入 `PATH`
+
 说明：
 
 - `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
