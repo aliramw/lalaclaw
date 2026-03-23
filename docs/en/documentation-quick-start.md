@@ -72,6 +72,15 @@ Windows notes:
 - `lalaclaw start` runs in the current terminal session, so closing that terminal stops the app
 - If `lalaclaw` is not recognized, restart PowerShell or make sure the npm global bin directory is on `PATH`
 
+Windows release-tarball validation:
+
+```powershell
+npm run pack:release
+npm run test:release:smoke -- --tarball .\artifacts\lalaclaw-<version>.tgz
+```
+
+That smoke installs the tarball into a clean temp directory, starts the packaged app on a free loopback port, opens Chromium, and fails if the first screen stays blank or new browser runtime errors appear.
+
 Notes:
 
 - `lalaclaw init` writes local config to `~/.config/lalaclaw/.env.local` on macOS and Linux
