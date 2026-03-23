@@ -49,6 +49,51 @@ function getDevWorkspaceInfo() {
   return info && typeof info === "object" ? info : null;
 }
 
+function formatDetachedWorkspaceLabel(commit = "") {
+  const normalizedCommit = String(commit || "").trim();
+  return normalizedCommit ? `detached@${normalizedCommit}` : "detached";
+}
+
+function resolveCurrentWorkspaceBranchLabel({ branch = "", commit = "", detached = false } = {}) {
+  const normalizedBranch = String(branch || "").trim();
+  if (normalizedBranch) {
+    return normalizedBranch;
+  }
+
+  return detached ? formatDetachedWorkspaceLabel(commit) : "";
+}
+
+function getWorktreePathSuffix(worktreePath = "") {
+  const normalizedPath = String(worktreePath || "").trim().replace(/\\/g, "/");
+  if (!normalizedPath) {
+    return "";
+  }
+
+  const segments = normalizedPath.split("/").filter(Boolean);
+  if (segments.length >= 2) {
+    return segments.slice(-2).join("/");
+  }
+  return segments[0] || normalizedPath;
+}
+
+function buildWorktreeOptionLabel(worktree, duplicateLabelCounts = new Map()) {
+  const branchLabel = resolveCurrentWorkspaceBranchLabel({
+    branch: worktree?.branch,
+    detached: worktree?.detached,
+  });
+  const baseLabel = [worktree?.name || worktree?.path || "", branchLabel].filter(Boolean).join(" · ");
+  if (!baseLabel) {
+    return getWorktreePathSuffix(worktree?.path);
+  }
+
+  if ((duplicateLabelCounts.get(baseLabel) || 0) < 2) {
+    return baseLabel;
+  }
+
+  const pathSuffix = getWorktreePathSuffix(worktree?.path);
+  return pathSuffix ? `${baseLabel} · ${pathSuffix}` : baseLabel;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -166,6 +211,11 @@ function ModelSwitchOverlay({ modelLabel }) {
 function DevWorkspaceBadge() {
   const { messages } = useI18n();
   const devWorkspaceInfo = getDevWorkspaceInfo();
+  const fallbackCurrentBranch = resolveCurrentWorkspaceBranchLabel({
+    branch: devWorkspaceInfo?.branch,
+    commit: devWorkspaceInfo?.commit,
+    detached: String(devWorkspaceInfo?.branch || "").trim().startsWith("detached@"),
+  });
   const showDevWorkspaceBadge = Boolean(
     (import.meta.env?.DEV || import.meta.env?.MODE === "test" || import.meta.env?.VITEST) && devWorkspaceInfo,
   );
@@ -181,12 +231,9 @@ function DevWorkspaceBadge() {
   });
   const [restartError, setRestartError] = useState("");
   const [restarting, setRestarting] = useState(false);
-  const [availableBranches, setAvailableBranches] = useState(() => {
-    const currentBranch = String(devWorkspaceInfo?.branch || "").trim();
-    return currentBranch ? [currentBranch] : [];
-  });
-  const [currentBranch, setCurrentBranch] = useState(() => String(devWorkspaceInfo?.branch || "").trim());
-  const [targetBranch, setTargetBranch] = useState(() => String(devWorkspaceInfo?.branch || "").trim());
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+  const [currentBranch, setCurrentBranch] = useState(() => fallbackCurrentBranch);
+  const [targetBranch, setTargetBranch] = useState("");
   const [availableWorktrees, setAvailableWorktrees] = useState(() => {
     const currentPath = String(devWorkspaceInfo?.cwd || "").trim();
     if (!currentPath) {
@@ -214,7 +261,24 @@ function DevWorkspaceBadge() {
 
   const port = typeof window !== "undefined" ? window.location.port : "";
   const host = typeof window !== "undefined" ? window.location.hostname : "";
-  const label = buildDevWorkspaceLabel(devWorkspaceInfo, port);
+  const worktreeOptionLabelCounts = useMemo(() => {
+    const counts = new Map();
+    availableWorktrees.forEach((worktree) => {
+      const baseLabel = [worktree.name || worktree.path || "", resolveCurrentWorkspaceBranchLabel({
+        branch: worktree.branch,
+        detached: worktree.detached,
+      })].filter(Boolean).join(" · ");
+      counts.set(baseLabel, (counts.get(baseLabel) || 0) + 1);
+    });
+    return counts;
+  }, [availableWorktrees]);
+  const currentWorktreeName = availableWorktrees.find((entry) => entry.path === currentWorktreePath)?.name
+    || devWorkspaceInfo?.worktree
+    || "";
+  const label = buildDevWorkspaceLabel({
+    branch: currentBranch || fallbackCurrentBranch || devWorkspaceInfo?.commit || "",
+    worktree: currentWorktreeName,
+  }, port);
   const toggleLabel = collapsed ? messages.common.devWorkspaceExpand : messages.common.devWorkspaceCollapse;
   const isSwitchingBranch = Boolean(targetBranch) && targetBranch !== currentBranch;
   const restartButtonLabel = restarting
@@ -253,8 +317,13 @@ function DevWorkspaceBadge() {
             detached: Boolean(entry?.detached),
           })).filter((entry) => entry.path)
           : [];
-        const nextCurrentBranch = String(payload?.currentBranch || "").trim() || String(devWorkspaceInfo?.branch || "").trim();
         const nextCurrentWorktreePath = String(payload?.currentWorktreePath || "").trim() || String(devWorkspaceInfo?.cwd || "").trim();
+        const currentWorktreeEntry = nextWorktrees.find((entry) => entry.path === nextCurrentWorktreePath);
+        const nextCurrentBranch = resolveCurrentWorkspaceBranchLabel({
+          branch: String(payload?.currentBranch || "").trim() || currentWorktreeEntry?.branch || "",
+          commit: devWorkspaceInfo?.commit,
+          detached: Boolean(currentWorktreeEntry?.detached),
+        }) || fallbackCurrentBranch;
 
         setAvailableBranches(nextBranches);
         setAvailableWorktrees(nextWorktrees);
@@ -267,16 +336,14 @@ function DevWorkspaceBadge() {
           return nextCurrentWorktreePath || current;
         });
         setTargetBranch((current) => {
-          if (nextBranches.includes("main")) {
-            return "main";
-          }
           if (current && nextBranches.includes(current)) {
             return current;
           }
-          if (nextCurrentBranch && nextBranches.includes(nextCurrentBranch)) {
-            return nextCurrentBranch;
+          const normalizedPayloadBranch = String(payload?.currentBranch || "").trim();
+          if (normalizedPayloadBranch && nextBranches.includes(normalizedPayloadBranch)) {
+            return normalizedPayloadBranch;
           }
-          return nextBranches[0] || nextCurrentBranch || current;
+          return "";
         });
       } finally {
         if (!cancelled) {
@@ -438,9 +505,7 @@ function DevWorkspaceBadge() {
                 ) : availableWorktrees.length ? (
                   availableWorktrees.map((worktree) => (
                     <option key={worktree.path} value={worktree.path}>
-                      {[worktree.name || worktree.path, worktree.branch || (worktree.detached ? "detached" : "")]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      {buildWorktreeOptionLabel(worktree, worktreeOptionLabelCounts)}
                     </option>
                   ))
                 ) : (
