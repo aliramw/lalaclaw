@@ -126,6 +126,37 @@ describe('createLalaClawUpdateService', () => {
     });
   });
 
+  it('treats the compiled .server-build runtime as a source checkout when the repo root is one level up', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lalaclaw-update-'));
+    tempDirs.push(stateDir);
+    const service = createLalaClawUpdateService({
+      currentVersion: '2026.3.20-1',
+      config: {
+        stateDir,
+        accessConfigFile: '/tmp/lalaclaw/.env.local',
+      },
+      projectRoot: path.join(process.cwd(), '.server-build'),
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          'dist-tags': {
+            stable: '2026.3.21-1',
+          },
+        }),
+      }),
+      spawnImpl: () => ({ unref() {} }),
+    });
+
+    await expect(service.getLalaClawUpdateState()).resolves.toMatchObject({
+      capability: {
+        installKind: 'source-checkout',
+        updateSupported: false,
+        reason: 'lalaclaw_update_source_checkout_unsupported',
+      },
+      updateAvailable: false,
+    });
+  });
+
   it('starts a detached update worker when a newer stable version is available', async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lalaclaw-update-'));
     tempDirs.push(stateDir);

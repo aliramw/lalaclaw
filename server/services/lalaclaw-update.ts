@@ -134,6 +134,13 @@ function isSourceCheckout(projectRoot = path.resolve(__dirname, '..', '..')) {
   return sourceMarkers.every((filePath) => fs.existsSync(filePath));
 }
 
+function resolveProjectRoot(projectRoot = path.resolve(__dirname, '..', '..')) {
+  const normalizedProjectRoot = path.resolve(String(projectRoot || path.resolve(__dirname, '..', '..')));
+  return path.basename(normalizedProjectRoot) === '.server-build'
+    ? path.dirname(normalizedProjectRoot)
+    : normalizedProjectRoot;
+}
+
 function resolveLaunchdPlistPath(homeDir = os.homedir()) {
   return path.join(homeDir, 'Library', 'LaunchAgents', 'ai.lalaclaw.app.plist');
 }
@@ -375,7 +382,7 @@ export function detectCapability({
   serviceStatus = null,
   mockStableVersion = '',
   platform = process.platform,
-  projectRoot = path.resolve(__dirname, '..', '..'),
+  projectRoot = resolveProjectRoot(),
 }: {
   accessConfigFile?: string;
   serviceStatus?: LalaClawServiceStatusSnapshot;
@@ -383,7 +390,8 @@ export function detectCapability({
   platform?: NodeJS.Platform;
   projectRoot?: string;
 } = {}) {
-  const sourceCheckout = isSourceCheckout(projectRoot);
+  const resolvedProjectRoot = resolveProjectRoot(projectRoot);
+  const sourceCheckout = isSourceCheckout(resolvedProjectRoot);
   const launchdInstalled = platform === 'darwin' && (
     serviceStatus?.kind === 'launchd'
       ? Boolean(serviceStatus.installed && serviceStatus.running)
@@ -505,14 +513,15 @@ export function createLalaClawUpdateService({
   now = () => Date.now(),
   platform = process.platform,
   processPid = process.pid,
-  projectRoot = path.resolve(__dirname, '..', '..'),
+  projectRoot = resolveProjectRoot(),
   runnerPath = RUNNER_PATH,
   spawnImpl = spawn,
 }: LalaClawUpdateServiceOptions = {}) {
+  const resolvedProjectRoot = resolveProjectRoot(projectRoot);
   const stateDir = String(config?.stateDir || '').trim() || path.join(os.tmpdir(), 'lalaclaw');
   const statusFile = path.join(stateDir, UPDATE_STATUS_FILENAME);
   const devMockStateFile = path.join(stateDir, DEV_MOCK_STATE_FILENAME);
-  const sourceCheckout = isSourceCheckout(projectRoot);
+  const sourceCheckout = isSourceCheckout(resolvedProjectRoot);
 
   function readJobState() {
     return normalizeJob(readJsonFile(statusFile));
@@ -587,7 +596,7 @@ export function createLalaClawUpdateService({
       serviceStatus: typeof getServiceStatus === 'function' ? getServiceStatus() : null,
       mockStableVersion,
       platform,
-      projectRoot,
+      projectRoot: resolvedProjectRoot,
     });
     const currentJob = maybeCompleteMockJob({
       currentJob: readJobState(),
@@ -701,9 +710,9 @@ export function createLalaClawUpdateService({
         '--host', String(process.env.HOST || '127.0.0.1').trim(),
         '--port', String(process.env.PORT || '3000').trim(),
         '--server-pid', String(processPid),
-        '--project-root', projectRoot,
+        '--project-root', resolvedProjectRoot,
       ], {
-        cwd: projectRoot,
+        cwd: resolvedProjectRoot,
         detached: true,
         env: process.env,
         stdio: 'ignore',
