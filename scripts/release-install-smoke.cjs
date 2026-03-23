@@ -263,8 +263,8 @@ async function runBrowserSmoke(baseUrl, { noChat = false } = {}) {
     await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: PAGE_TIMEOUT_MS });
     await page.locator("#root").waitFor({ state: "attached", timeout: PAGE_TIMEOUT_MS });
     await page.locator("textarea").waitFor({ state: "visible", timeout: PAGE_TIMEOUT_MS });
-    await page.waitForFunction(() => document.title.includes("LalaClaw"), undefined, { timeout: PAGE_TIMEOUT_MS });
-    await page.waitForFunction(() => document.body.innerText.trim().length > 20, undefined, { timeout: PAGE_TIMEOUT_MS });
+    await page.waitForFunction(() => globalThis.document?.title?.includes("LalaClaw"), undefined, { timeout: PAGE_TIMEOUT_MS });
+    await page.waitForFunction(() => (globalThis.document?.body?.innerText || "").trim().length > 20, undefined, { timeout: PAGE_TIMEOUT_MS });
 
     let chatReplySeen = false;
     if (!noChat) {
