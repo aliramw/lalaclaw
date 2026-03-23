@@ -51,7 +51,52 @@ export function sendJson(
   res.end(body);
 }
 
-export function sendFile(res: Pick<ServerResponse, 'writeHead' | 'end'>, filePath: string) {
+function parseRangeHeader(rangeHeader: string, fileSize: number) {
+  const normalized = String(rangeHeader || '').trim();
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(normalized);
+  if (!match) {
+    return null;
+  }
+
+  const startText = match[1] || '';
+  const endText = match[2] || '';
+
+  if (!startText && !endText) {
+    return null;
+  }
+
+  if (!startText) {
+    const suffixLength = Number.parseInt(endText, 10);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+      return null;
+    }
+    const start = Math.max(0, fileSize - suffixLength);
+    return { start, end: Math.max(start, fileSize - 1) };
+  }
+
+  const start = Number.parseInt(startText, 10);
+  if (!Number.isFinite(start) || start < 0 || start >= fileSize) {
+    return null;
+  }
+
+  const parsedEnd = endText ? Number.parseInt(endText, 10) : fileSize - 1;
+  if (!Number.isFinite(parsedEnd)) {
+    return null;
+  }
+
+  const end = Math.min(parsedEnd, fileSize - 1);
+  if (end < start) {
+    return null;
+  }
+
+  return { start, end };
+}
+
+export function sendFile(
+  res: Pick<ServerResponse, 'writeHead' | 'end'>,
+  filePath: string,
+  req?: Pick<IncomingMessage, 'headers'>,
+) {
   fs.readFile(filePath, (error: NodeJS.ErrnoException | null, data: Buffer) => {
     if (error) {
       sendJson(res, 404, { error: 'Not found' });
@@ -59,8 +104,38 @@ export function sendFile(res: Pick<ServerResponse, 'writeHead' | 'end'>, filePat
     }
 
     const ext = path.extname(filePath).toLowerCase();
+    const contentType = CONTENT_TYPES[ext] || 'application/octet-stream';
+    const rangeHeader = String(req?.headers?.range || '').trim();
+    const range = rangeHeader ? parseRangeHeader(rangeHeader, data.length) : null;
+
+    if (rangeHeader && !range) {
+      res.writeHead(416, {
+        'Content-Type': contentType,
+        'Content-Range': `bytes */${data.length}`,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+      });
+      res.end();
+      return;
+    }
+
+    if (range) {
+      const body = data.subarray(range.start, range.end + 1);
+      res.writeHead(206, {
+        'Content-Type': contentType,
+        'Content-Length': body.length,
+        'Content-Range': `bytes ${range.start}-${range.end}/${data.length}`,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+      });
+      res.end(body);
+      return;
+    }
+
     res.writeHead(200, {
       'Content-Type': CONTENT_TYPES[ext] || 'application/octet-stream',
+      'Content-Length': data.length,
+      'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-store',
     });
     res.end(data);

@@ -498,6 +498,7 @@ export function useRuntimeSnapshot({
   const INITIAL_RUNTIME_RETRY_DELAY_MS = 1200;
   const STOP_OVERRIDE_DURATION_MS = 10_000;
   const RECOVERED_PENDING_SETTLE_DELAY_MS = 900;
+  const [runtimeOverviewReady, setRuntimeOverviewReady] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [availableAgents, setAvailableAgents] = useState<string[]>([]);
   const [taskTimeline, setTaskTimeline] = useState<unknown[]>([]);
@@ -608,10 +609,12 @@ export function useRuntimeSnapshot({
     setIfChanged(setSnapshots, nextState.snapshots || []);
     setIfChanged(setAgents, nextState.agents || []);
     setIfChanged(setPeeks, nextState.peeks || EMPTY_RUNTIME_PEEKS);
+    setRuntimeOverviewReady(Boolean(state && state.overviewReady !== false));
   }, []);
 
   const applySnapshot = useCallback((snapshot: RuntimeSnapshot, options: RuntimeSnapshotApplyOptions = {}) => {
     if (!snapshot) return;
+    setRuntimeOverviewReady(true);
 
     const currentSession = sessionRef.current;
     const currentPendingChatTurns = pendingChatTurnsRef.current;
@@ -1229,6 +1232,7 @@ export function useRuntimeSnapshot({
   };
 
   const clearSnapshotData = () => {
+    setRuntimeOverviewReady(false);
     setAvailableModels([]);
     setAvailableAgents([]);
     setTaskRelationships([]);
@@ -1258,6 +1262,7 @@ export function useRuntimeSnapshot({
     hydrateRuntimeState,
     loadRuntime,
     peeks,
+    runtimeOverviewReady,
     runtimeFallbackReason,
     runtimeReconnectAttempts: reconnectAttempts,
     runtimeSocketStatus,

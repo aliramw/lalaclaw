@@ -855,6 +855,40 @@ describe("loadStoredState", () => {
     expect(loadStoredState()?.userLabel).toBe("Lala Operator");
   });
 
+  it("restores per-conversation workspace file open preferences", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "files",
+        agentId: "main",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        messagesByTabId: {
+          "agent:main": [],
+        },
+        sessionUser: "command-center",
+        workspaceFilesOpenByConversation: {
+          "command-center:main": false,
+          "command-center-expert:expert": true,
+        },
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    expect(loadStoredState()?.workspaceFilesOpenByConversation).toEqual({
+      "command-center:main": false,
+      "command-center-expert:expert": true,
+    });
+  });
+
   it("sanitizes invalid session file overlay shapes from stored tab metadata", () => {
     window.localStorage.setItem(
       storageKey,
@@ -1036,6 +1070,35 @@ describe("loadStoredState", () => {
           timestamp: 100,
         },
       },
+    });
+  });
+
+  it("persists workspace file open preferences in the ui snapshot", () => {
+    persistUiStateSnapshot({
+      activeChatTabId: "agent:main",
+      activeTab: "files",
+      agentId: "main",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      sessionUser: "command-center",
+      workspaceFilesOpenByConversation: {
+        "command-center:main": false,
+      },
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-5.4",
+          sessionUser: "command-center",
+          thinkMode: "off",
+        },
+      },
+      messagesByTabId: {
+        "agent:main": [],
+      },
+    });
+
+    expect(loadStoredState()?.workspaceFilesOpenByConversation).toEqual({
+      "command-center:main": false,
     });
   });
 

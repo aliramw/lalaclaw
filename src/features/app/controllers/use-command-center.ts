@@ -239,6 +239,7 @@ type PersistCurrentUiOverrides = {
   chatFontSize?: StoredUiState["chatFontSize"];
   composerSendMode?: StoredUiState["composerSendMode"];
   userLabel?: string;
+  workspaceFilesOpenByConversation?: StoredUiState["workspaceFilesOpenByConversation"];
 };
 
 type PromptConversationOptions = {
@@ -256,11 +257,20 @@ type RuntimeCacheEntry = {
   availableAgents: string[];
   availableModels: string[];
   files: ChatTabMeta["sessionFiles"];
+  overviewReady?: boolean;
   peeks: RuntimePeeks;
   snapshots: unknown[];
   taskRelationships: unknown[];
   taskTimeline: unknown[];
 };
+
+type ImChannelConfigEntry = {
+  channel?: string;
+  enabled?: boolean;
+  defaultAgentId?: string;
+};
+
+type ImChannelConfigMap = Record<string, ImChannelConfigEntry>;
 
 type SwitchingAgentOverlay = {
   agentLabel: string;
@@ -298,6 +308,55 @@ export function buildChatTabTitle(agentId = "main", sessionUser = "", options: B
     return `${imLabel} ${normalizedAgentId}`;
   }
   return normalizedAgentId;
+}
+
+export function resolveRuntimeTabAgentId({
+  requestedAgentId = "main",
+  currentAgentId = "",
+  snapshotAgentId = "",
+  sessionUser = "",
+} = {}) {
+  const normalizedRequestedAgentId = String(requestedAgentId || "main").trim() || "main";
+  const normalizedCurrentAgentId = String(currentAgentId || "").trim();
+  const normalizedSnapshotAgentId = String(snapshotAgentId || "").trim();
+  const normalizedSessionUser = String(sessionUser || "").trim();
+
+  if (isImSessionUser(normalizedSessionUser)) {
+    return normalizedCurrentAgentId || normalizedRequestedAgentId;
+  }
+
+  return normalizedSnapshotAgentId || normalizedCurrentAgentId || normalizedRequestedAgentId;
+}
+
+function resolveImChannelKey(channelOrSessionUser = "") {
+  const normalizedChannel = String(channelOrSessionUser || "").trim();
+  if (!normalizedChannel) {
+    return "";
+  }
+
+  if (normalizedChannel === "dingtalk-connector" || normalizedChannel.includes("dingtalk-connector")) {
+    return "dingtalk-connector";
+  }
+
+  const imType = resolveImSessionType(normalizedChannel);
+  if (imType === "feishu") {
+    return "feishu";
+  }
+  if (imType === "wecom") {
+    return "wecom";
+  }
+
+  return normalizedChannel;
+}
+
+function resolveConfiguredImAgentId(imChannelConfigs: ImChannelConfigMap | null, channelOrSessionUser = "", fallbackAgentId = "main") {
+  const normalizedFallbackAgentId = String(fallbackAgentId || "main").trim() || "main";
+  const channelKey = resolveImChannelKey(channelOrSessionUser);
+  if (!channelKey) {
+    return normalizedFallbackAgentId;
+  }
+
+  return String(imChannelConfigs?.[channelKey]?.defaultAgentId || "").trim() || normalizedFallbackAgentId;
 }
 
 function createSessionScopedTabId(agentId = "main", sessionUser = "") {
@@ -830,6 +889,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const [busyByTabId, setBusyByTabId] = useState(initialBusyByTabId);
   const [unreadCountByTabId, setUnreadCountByTabId] = useState<Record<string, number>>({});
   const [runtimeCacheByTabId, setRuntimeCacheByTabId] = useState<Record<string, RuntimeCacheEntry>>({});
+  const [imChannelConfigs, setImChannelConfigs] = useState<ImChannelConfigMap | null>(null);
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
   const [promptDraftsByConversation, setPromptDraftsByConversation] = useState(storedPromptDrafts);
   const [pendingChatTurns, setPendingChatTurnsState] = useState<ConversationPendingMap>(storedPendingChatTurns);
@@ -843,6 +903,9 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const [userLabel, setUserLabel] = useState(sanitizeUserLabel(stored?.userLabel || initialUserLabel));
   const [dismissedTaskRelationshipIdsByConversation, setDismissedTaskRelationshipIdsByConversation] = useState(
     stored?.dismissedTaskRelationshipIdsByConversation || {},
+  );
+  const [workspaceFilesOpenByConversation, setWorkspaceFilesOpenByConversation] = useState(
+    stored?.workspaceFilesOpenByConversation || {},
   );
   const [focusMessageRequest, setFocusMessageRequest] = useState<FocusMessageRequest>(null);
   const { resolvedTheme, setTheme, theme } = useTheme();
@@ -870,6 +933,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const busyByTabIdRef = useRef(busyByTabId);
   const unreadCountByTabIdRef = useRef(unreadCountByTabId);
   const runtimeCacheByTabIdRef = useRef<Record<string, RuntimeCacheEntry>>(runtimeCacheByTabId);
+  const imChannelConfigsRef = useRef<ImChannelConfigMap | null>(imChannelConfigs);
   const pendingChatTurnsRef = useRef(pendingChatTurns);
   const promptDraftsByConversationRef = useRef(promptDraftsByConversation);
   const activeTabRef = useRef(activeTab);
@@ -880,6 +944,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const promptHeightMetricsRef = useRef<{ node: HTMLTextAreaElement | null; maxHeight: number }>({ node: null, maxHeight: 0 });
   const promptHeightFrameRef = useRef(0);
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
+  const workspaceFilesOpenByConversationRef = useRef(workspaceFilesOpenByConversation);
   const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
   const runtimeRequestByTabIdRef = useRef<Record<string, number>>({});
   const backgroundRuntimeAbortByTabIdRef = useRef<Record<string, AbortController>>({});
@@ -961,6 +1026,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       sessionUser: activeMeta?.sessionUser || defaultSessionUser,
       tabMetaById: tabMetaByIdRef.current,
       promptDraftsByConversation: promptDraftsByConversationRef.current,
+      workspaceFilesOpenByConversation: workspaceFilesOpenByConversationRef.current,
       messages: activeMessages,
       messagesByTabId: nextMessagesByTabId,
       pendingChatTurns: nextPendingChatTurns,
@@ -989,6 +1055,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       sessionUser: activeMeta?.sessionUser || defaultSessionUser,
       tabMetaById: tabMetaByIdRef.current,
       promptDraftsByConversation: promptDraftsByConversationRef.current,
+      workspaceFilesOpenByConversation: overrides.workspaceFilesOpenByConversation || workspaceFilesOpenByConversationRef.current,
       messages: activeMessages,
       messagesByTabId: messagesByTabIdRef.current,
       pendingChatTurns: pendingChatTurnsRef.current,
@@ -1046,6 +1113,14 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     () => dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [],
     [activeConversationKey, dismissedTaskRelationshipIdsByConversation],
   );
+  const workspaceFilesOpen = useMemo(
+    () => workspaceFilesOpenByConversation[activeConversationKey] ?? true,
+    [activeConversationKey, workspaceFilesOpenByConversation],
+  );
+  const sessionOverviewPending = useMemo(
+    () => !Boolean(runtimeCacheByTabId[activeChatTabId]?.overviewReady),
+    [activeChatTabId, runtimeCacheByTabId],
+  );
   const setActiveTarget = useCallback((value) => {
     activeTargetRef.current = value;
   }, []);
@@ -1065,6 +1140,37 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   useEffect(() => {
     runtimeCacheByTabIdRef.current = runtimeCacheByTabId;
   }, [runtimeCacheByTabId]);
+
+  useEffect(() => {
+    imChannelConfigsRef.current = imChannelConfigs;
+  }, [imChannelConfigs]);
+
+  const loadImChannelConfigs = useCallback(async ({ force = false } = {}) => {
+    if (!force && imChannelConfigsRef.current) {
+      return imChannelConfigsRef.current;
+    }
+
+    try {
+      const response = await apiFetch("/api/openclaw/config", { method: "GET" });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) {
+        return imChannelConfigsRef.current;
+      }
+
+      const nextConfigs = payload?.imChannels && typeof payload.imChannels === "object"
+        ? payload.imChannels
+        : {};
+      imChannelConfigsRef.current = nextConfigs;
+      setImChannelConfigs((current) => (areJsonEqual(current, nextConfigs) ? current : nextConfigs));
+      return nextConfigs;
+    } catch {
+      return imChannelConfigsRef.current;
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadImChannelConfigs();
+  }, [loadImChannelConfigs]);
 
   const setMessagesForTab = useCallback((tabId, value) => {
     setMessagesByTabId((current) => {
@@ -1241,6 +1347,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     loadRuntime,
     peeks,
     runtimeFallbackReason,
+    runtimeOverviewReady,
     runtimeReconnectAttempts,
     runtimeSocketStatus,
     runtimeTransport,
@@ -1558,6 +1665,9 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   useEffect(() => {
     dismissedTaskRelationshipIdsByConversationRef.current = dismissedTaskRelationshipIdsByConversation;
   }, [dismissedTaskRelationshipIdsByConversation]);
+  useEffect(() => {
+    workspaceFilesOpenByConversationRef.current = workspaceFilesOpenByConversation;
+  }, [workspaceFilesOpenByConversation]);
 
   useEffect(() => {
     schedulePromptHeightAdjustment();
@@ -1776,6 +1886,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         && previous.availableAgents === availableAgents
         && previous.availableModels === availableModels
         && previous.files === files
+        && previous.overviewReady === runtimeOverviewReady
         && previous.peeks === peeks
         && previous.snapshots === snapshots
         && previous.taskRelationships === taskRelationships
@@ -1792,6 +1903,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
           availableAgents,
           availableModels,
           files,
+          overviewReady: runtimeOverviewReady,
           peeks,
           snapshots,
           taskRelationships,
@@ -1799,7 +1911,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         },
       };
     });
-  }, [activeChatTabId, agents, artifacts, availableAgents, availableModels, files, peeks, snapshots, taskRelationships, taskTimeline]);
+  }, [activeChatTabId, agents, artifacts, availableAgents, availableModels, files, peeks, runtimeOverviewReady, snapshots, taskRelationships, taskTimeline]);
 
   useEffect(() => {
     const backgroundTabs = chatTabs.filter((tab) => tab.id !== activeChatTabId && isImSessionUser(tab.sessionUser));
@@ -1885,6 +1997,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
             availableAgents: snapshotSession.availableAgents || payload.availableAgents || [],
             availableModels: snapshotSession.availableModels || payload.availableModels || [],
             files: mergeRuntimeFiles(previous.files || [], payload.files || []),
+            overviewReady: true,
             peeks: payload.peeks || { workspace: null, terminal: null, browser: null, environment: null },
             snapshots: payload.snapshots || [],
             taskRelationships: payload.taskRelationships || [],
@@ -1901,11 +2014,20 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
           };
         });
 
+        const currentTabMeta = tabMetaByIdRef.current[tabId] || createTabMeta({ id: tabId, agentId, sessionUser });
+
         if (Array.isArray(payload.conversation)) {
           const currentMessages = messagesByTabIdRef.current[tabId] || [];
+          const nextTabSessionUser = resolvedSessionUser || sessionUser;
+          const nextTabAgentId = resolveRuntimeTabAgentId({
+            requestedAgentId: agentId,
+            currentAgentId: currentTabMeta.agentId,
+            snapshotAgentId: snapshotSession.agentId,
+            sessionUser: nextTabSessionUser,
+          });
           const nextConversationKey = createConversationKey(
-            resolvedSessionUser || sessionUser,
-            snapshotSession.agentId || agentId,
+            nextTabSessionUser,
+            nextTabAgentId,
           );
           const pendingEntry =
             pendingChatTurnsRef.current[nextConversationKey]
@@ -1933,36 +2055,44 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
           setMessagesForTab(tabId, mergedBackgroundConversation);
         }
 
+        const nextTabSessionUser = resolvedSessionUser || currentTabMeta.sessionUser || sessionUser;
+        const nextTabAgentId = resolveRuntimeTabAgentId({
+          requestedAgentId: agentId,
+          currentAgentId: currentTabMeta.agentId,
+          snapshotAgentId: snapshotSession.agentId,
+          sessionUser: nextTabSessionUser,
+        });
+
         updateTabMeta(tabId, (current) => ({
           ...current,
-          agentId: snapshotSession.agentId || current.agentId || agentId,
-          sessionUser: resolvedSessionUser || current.sessionUser || sessionUser,
+          agentId: nextTabAgentId,
+          sessionUser: nextTabSessionUser,
           model: snapshotSession.selectedModel || payload.model || current.model || "",
           fastMode: nextFastMode,
           thinkMode: snapshotSession.thinkMode || current.thinkMode || "off",
-          title: buildChatTabTitle(snapshotSession.agentId || current.agentId || agentId, resolvedSessionUser || current.sessionUser || sessionUser, { locale: intlLocale }),
+          title: buildChatTabTitle(nextTabAgentId, nextTabSessionUser, { locale: intlLocale }),
         }));
 
         updateTabSession(tabId, (current) => ({
           ...current,
           ...snapshotSession,
-          agentId: snapshotSession.agentId || current.agentId || agentId,
-          selectedAgentId: snapshotSession.agentId || current.selectedAgentId || agentId,
-          sessionUser: resolvedSessionUser || current.sessionUser || sessionUser,
+          agentId: nextTabAgentId,
+          selectedAgentId: nextTabAgentId,
+          sessionUser: nextTabSessionUser,
           mode: snapshotSession.mode || current.mode,
         }));
 
         if (resolvedSessionUser && resolvedSessionUser !== sessionUser) {
           updateTabIdentity(tabId, {
-            agentId: snapshotSession.agentId || agentId,
+            agentId: nextTabAgentId,
             sessionUser: resolvedSessionUser,
           });
         }
 
         const currentMessages = messagesByTabIdRef.current[tabId] || [];
         const nextConversationKey = createConversationKey(
-          resolvedSessionUser || sessionUser,
-          snapshotSession.agentId || agentId,
+          nextTabSessionUser,
+          nextTabAgentId,
         );
         const hasTrackedPendingTurn = Boolean(
           pendingChatTurnsRef.current[nextConversationKey]
@@ -2645,6 +2775,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         Object.entries(pendingChatTurnsRef.current || {}).filter(([key]) => key !== previousConversationKey),
       ),
       promptDraftsByConversation: promptDraftsByConversationRef.current,
+      workspaceFilesOpenByConversation: workspaceFilesOpenByConversationRef.current,
       sessionUser: nextSessionUser,
       tabMetaById: nextTabMetaById,
       thinkMode: sessionStateRef.current.thinkMode || "off",
@@ -2847,8 +2978,17 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   };
 
   const handleSearchSessions = useCallback(async (searchTerm = "", options: SearchSessionsOptions = {}) => {
-    const agentId = String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main";
     const channel = String(options.channel || "dingtalk-connector").trim() || "dingtalk-connector";
+    const imConfigs = await loadImChannelConfigs();
+    if (imConfigs?.[channel] && imConfigs[channel].enabled === false) {
+      return [];
+    }
+
+    const agentId = resolveConfiguredImAgentId(
+      imConfigs,
+      channel,
+      String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main",
+    );
     const params = new URLSearchParams({
       agentId,
       channel,
@@ -2866,11 +3006,16 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     }
 
     return Array.isArray(data.sessions) ? data.sessions : [];
-  }, [i18n.common.requestFailed, session.agentId]);
+  }, [i18n.common.requestFailed, loadImChannelConfigs, session.agentId]);
 
   const handleSelectSearchedSession = useCallback(async (sessionMatch) => {
     const nextSessionUser = String(sessionMatch?.sessionUser || "").trim();
-    const nextAgentId = String(sessionMatch?.agentId || sessionStateRef.current.agentId || "main").trim() || "main";
+    const fallbackAgentId = String(sessionStateRef.current.agentId || "main").trim() || "main";
+    const imConfigs = isImSessionUser(nextSessionUser) ? await loadImChannelConfigs() : imChannelConfigsRef.current;
+    const configuredImAgentId = isImSessionUser(nextSessionUser)
+      ? resolveConfiguredImAgentId(imConfigs, nextSessionUser, fallbackAgentId)
+      : fallbackAgentId;
+    const nextAgentId = String(sessionMatch?.agentId || configuredImAgentId || fallbackAgentId).trim() || "main";
     const { create, tabId: plannedTabId, title: plannedTitle } = planSearchedSessionTabTarget({
       activeTabId: activeChatTabIdRef.current,
       agentId: nextAgentId,
@@ -2982,6 +3127,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     clearSnapshotData,
     flushVisibleConversationScrollTop,
     focusPrompt,
+    loadImChannelConfigs,
     i18n,
     intlLocale,
     loadRuntime,
@@ -2996,7 +3142,16 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   ]);
 
   const handleOpenImSession = useCallback(async (channel) => {
-    const nextAgentId = String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main";
+    const imConfigs = await loadImChannelConfigs();
+    if (imConfigs?.[channel] && imConfigs[channel].enabled === false) {
+      return;
+    }
+
+    const nextAgentId = resolveConfiguredImAgentId(
+      imConfigs,
+      channel,
+      String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main",
+    );
     const bootstrapSessionUser = createImBootstrapSessionUser(channel);
     const targetImType = resolveImSessionType(bootstrapSessionUser);
 
@@ -3021,7 +3176,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       sessionUser: bootstrapSessionUser,
       title: buildChatTabTitle(nextAgentId, bootstrapSessionUser, { locale: intlLocale }),
     });
-  }, [flushVisibleConversationScrollTop, handleSelectSearchedSession, intlLocale, session.agentId, setActiveChatTabId]);
+  }, [flushVisibleConversationScrollTop, handleSelectSearchedSession, intlLocale, loadImChannelConfigs, session.agentId, setActiveChatTabId]);
 
   const handleActivateChatTab = useCallback((tabId) => {
     if (!tabId || tabId === activeChatTabIdRef.current) {
@@ -3246,10 +3401,34 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     [activeChatTab?.sessionUser, activeChatTabId, busyByTabId, messagesByTabId, pendingChatTurns, session.status],
   );
   const handleRefreshEnvironment = useCallback(async () => {
-    await loadRuntime(sessionStateRef.current.sessionUser, {
-      agentId: sessionStateRef.current.agentId || session.agentId || "main",
+    await Promise.all([
+      loadRuntime(sessionStateRef.current.sessionUser, {
+        agentId: sessionStateRef.current.agentId || session.agentId || "main",
+      }),
+      loadImChannelConfigs({ force: true }),
+    ]);
+  }, [loadImChannelConfigs, loadRuntime, session.agentId]);
+  const handleWorkspaceFilesOpenChange = useCallback((open) => {
+    const normalizedConversationKey = String(activeConversationKey || "").trim();
+    if (!normalizedConversationKey) {
+      return;
+    }
+
+    const nextOpen = Boolean(open);
+    if (workspaceFilesOpenByConversationRef.current[normalizedConversationKey] === nextOpen) {
+      return;
+    }
+
+    const nextWorkspaceFilesOpenByConversation = {
+      ...workspaceFilesOpenByConversationRef.current,
+      [normalizedConversationKey]: nextOpen,
+    };
+    workspaceFilesOpenByConversationRef.current = nextWorkspaceFilesOpenByConversation;
+    setWorkspaceFilesOpenByConversation(nextWorkspaceFilesOpenByConversation);
+    persistCurrentUiStateSnapshot({
+      workspaceFilesOpenByConversation: nextWorkspaceFilesOpenByConversation,
     });
-  }, [loadRuntime, session.agentId]);
+  }, [activeConversationKey, persistCurrentUiStateSnapshot]);
   return {
     activeChatTabId,
     activeQueuedMessages,
@@ -3275,6 +3454,8 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     handleComposerSendModeToggle,
     handleCloseChatTab,
     handleOpenImSession,
+    imChannelConfigs,
+    loadImChannelConfigs,
     handleReorderChatTabs,
     handleRefreshEnvironment,
     handleSearchSessions,
@@ -3295,6 +3476,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     handleTrackSessionFiles,
     handleThinkModeChange,
     handleUserLabelChange,
+    handleWorkspaceFilesOpenChange,
     localizedFormatTime,
     messageViewportRef,
     messages,
@@ -3318,6 +3500,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     runtimeSocketStatus,
     runtimeTransport,
     setTheme,
+    sessionOverviewPending,
     snapshots,
     switchingAgentOverlay,
     switchingModelOverlay,
@@ -3325,5 +3508,6 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     taskTimeline,
     theme,
     userLabel,
+    workspaceFilesOpen,
   };
 }

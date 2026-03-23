@@ -165,4 +165,5 @@ export type StoredUiState = {
   userLabel?: string;
   dismissedTaskRelationshipIdsByConversation: Record<string, string[]>;
   promptDraftsByConversation: Record<string, string>;
+  workspaceFilesOpenByConversation: Record<string, boolean>;
 };

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { ArrowRight, RotateCw, X } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ArrowRight, CircleUserRound, RotateCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { SessionOverview } from "@/components/command-center/session-overview";
 import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
+import { SettingsDialog } from "@/components/command-center/settings-dialog";
 import { useCommandCenter } from "@/features/app/controllers";
 import { AccessGate } from "@/features/auth/access-gate";
 import { useAccessGate } from "@/features/auth/access-context";
 import { defaultInspectorPanelWidth, maxInspectorPanelWidth, minInspectorPanelWidth } from "@/features/app/storage";
+import { isImSessionUser } from "@/features/session/im-session";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, normalizeStatusKey } from "@/features/session/status-display";
 import { I18nProvider } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
@@ -809,6 +811,7 @@ function AppContent() {
     agents,
     artifacts,
     availableAgents,
+    imChannelConfigs,
     availableModels,
     busy,
     chatFontSize,
@@ -832,6 +835,7 @@ function AppContent() {
     handleRefreshEnvironment,
     handleInspectorPanelWidthChange,
     handleModelChange,
+    loadImChannelConfigs,
     handleSyncCurrentSessionModel,
     handleSearchSessions,
     handlePromptChange,
@@ -847,6 +851,7 @@ function AppContent() {
     handleTrackSessionFiles,
     handleThinkModeChange,
     handleUserLabelChange,
+    handleWorkspaceFilesOpenChange,
     dismissTaskRelationship,
     localizedFormatTime,
     messageViewportRef,
@@ -868,6 +873,7 @@ function AppContent() {
     runtimeSocketStatus,
     runtimeTransport,
     session,
+    sessionOverviewPending,
     setActiveTab,
     setTheme,
     snapshots,
@@ -877,6 +883,7 @@ function AppContent() {
     taskTimeline,
     theme,
     userLabel,
+    workspaceFilesOpen,
   } = useCommandCenter();
   const splitLayoutRef = useRef<HTMLElement | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
@@ -884,6 +891,7 @@ function AppContent() {
     () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(desktopBreakpointQuery).matches : false),
   );
   const [isResizingPanels, setIsResizingPanels] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [splitLayoutWidth, setSplitLayoutWidth] = useState(0);
 
   useEffect(() => {
@@ -1093,6 +1101,51 @@ function AppContent() {
     () => getCompactInspectorPanelWidth(splitLayoutWidth),
     [getCompactInspectorPanelWidth, splitLayoutWidth],
   );
+  const settingsEnvironmentItems = useMemo(() => [
+    {
+      label: i18nMessages.inspector.environment.runtimeTransport,
+      value: i18nMessages.sessionOverview.runtimeTransport?.[runtimeTransport] || runtimeTransport,
+    },
+    {
+      label: i18nMessages.inspector.environment.runtimeSocket,
+      value: i18nMessages.sessionOverview.runtimeSocket?.[runtimeSocketStatus] || runtimeSocketStatus,
+    },
+    ...(runtimeReconnectAttempts > 0
+      ? [{
+          label: i18nMessages.inspector.environment.runtimeReconnectAttempts,
+          value: String(runtimeReconnectAttempts),
+        }]
+      : []),
+    ...(runtimeFallbackReason
+      ? [{
+          label: i18nMessages.inspector.environment.runtimeFallbackReason,
+          value: runtimeFallbackReason,
+        }]
+      : []),
+    ...(peeks?.environment?.items || []),
+  ], [
+    i18nMessages,
+    peeks?.environment?.items,
+    runtimeFallbackReason,
+    runtimeReconnectAttempts,
+    runtimeSocketStatus,
+    runtimeTransport,
+  ]);
+  const settingsTrigger = useMemo(() => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={i18nMessages.settingsDialog.openLabel}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/70 text-muted-foreground transition hover:border-border hover:bg-accent/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          onClick={() => setSettingsDialogOpen(true)}
+        >
+          <CircleUserRound className="h-[1.1rem] w-[1.1rem]" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{i18nMessages.settingsDialog.openLabel}</TooltipContent>
+    </Tooltip>
+  ), [i18nMessages.settingsDialog.openLabel]);
   const splitLayoutStyle = useMemo(
     () => (isWideLayout
         ? {
@@ -1103,7 +1156,12 @@ function AppContent() {
         }),
     [compactInspectorPanelWidth, isWideLayout, resolvedInspectorPanelWidth],
   );
-  const openAgentIds = useMemo(() => chatTabs.map((tab) => tab.agentId), [chatTabs]);
+  const openAgentIds = useMemo(
+    () => chatTabs
+      .filter((tab) => !isImSessionUser(tab.sessionUser))
+      .map((tab) => tab.agentId),
+    [chatTabs],
+  );
   const openSessionUsers = useMemo(() => chatTabs.map((tab) => tab.sessionUser), [chatTabs]);
   const tabBrandOverview = useMemo<ReactElement>(() => (
     <SessionOverview
@@ -1111,8 +1169,10 @@ function AppContent() {
       accessLoggingOut={loggingOut}
       accessMode={accessMode}
       availableAgents={availableAgents}
+      availableImChannels={imChannelConfigs}
       availableModels={availableModels}
       composerSendMode={composerSendMode}
+      extraControls={settingsTrigger}
       fastMode={fastMode}
       formatCompactK={formatCompactK}
       model={model}
@@ -1120,6 +1180,7 @@ function AppContent() {
       onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
+      onLoadImChannels={loadImChannelConfigs}
       onSearchSessions={handleSearchSessions}
       onSelectSearchedSession={handleSelectSearchedSession}
       onThinkModeChange={handleThinkModeChange}
@@ -1129,14 +1190,17 @@ function AppContent() {
       runtimeReconnectAttempts={runtimeReconnectAttempts}
       runtimeSocketStatus={runtimeSocketStatus}
       runtimeTransport={runtimeTransport}
+      sessionOverviewPending={sessionOverviewPending}
       session={session}
       theme={theme}
     />
   ), [
     accessMode,
     availableAgents,
+    imChannelConfigs,
     availableModels,
     composerSendMode,
+    settingsTrigger,
     fastMode,
     formatCompactK,
     handleAgentChange,
@@ -1144,6 +1208,7 @@ function AppContent() {
     logout,
     handleFastModeChange,
     handleModelChange,
+    loadImChannelConfigs,
     handleSearchSessions,
     handleSelectSearchedSession,
     handleThinkModeChange,
@@ -1153,6 +1218,7 @@ function AppContent() {
     runtimeReconnectAttempts,
     runtimeSocketStatus,
     runtimeTransport,
+    sessionOverviewPending,
     session,
     setTheme,
     theme,
@@ -1163,8 +1229,10 @@ function AppContent() {
       accessLoggingOut={loggingOut}
       accessMode={accessMode}
       availableAgents={availableAgents}
+      availableImChannels={imChannelConfigs}
       availableModels={availableModels}
       composerSendMode={composerSendMode}
+      extraControls={settingsTrigger}
       fastMode={fastMode}
       formatCompactK={formatCompactK}
       model={model}
@@ -1172,6 +1240,7 @@ function AppContent() {
       onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
+      onLoadImChannels={loadImChannelConfigs}
       onOpenImSession={handleOpenImSession}
       onSearchSessions={handleSearchSessions}
       onSelectSearchedSession={handleSelectSearchedSession}
@@ -1184,14 +1253,17 @@ function AppContent() {
       runtimeReconnectAttempts={runtimeReconnectAttempts}
       runtimeSocketStatus={runtimeSocketStatus}
       runtimeTransport={runtimeTransport}
+      sessionOverviewPending={sessionOverviewPending}
       session={session}
       theme={theme}
     />
   ), [
     accessMode,
     availableAgents,
+    imChannelConfigs,
     availableModels,
     composerSendMode,
+    settingsTrigger,
     fastMode,
     formatCompactK,
     handleAgentChange,
@@ -1200,6 +1272,7 @@ function AppContent() {
     handleFastModeChange,
     handleModelChange,
     handleOpenImSession,
+    loadImChannelConfigs,
     handleSearchSessions,
     handleSelectSearchedSession,
     handleThinkModeChange,
@@ -1211,6 +1284,7 @@ function AppContent() {
     runtimeReconnectAttempts,
     runtimeSocketStatus,
     runtimeTransport,
+    sessionOverviewPending,
     session,
     setTheme,
     theme,
@@ -1221,8 +1295,10 @@ function AppContent() {
       accessLoggingOut={loggingOut}
       accessMode={accessMode}
       availableAgents={availableAgents}
+      availableImChannels={imChannelConfigs}
       availableModels={availableModels}
       composerSendMode={composerSendMode}
+      extraControls={settingsTrigger}
       fastMode={fastMode}
       formatCompactK={formatCompactK}
       model={model}
@@ -1230,6 +1306,7 @@ function AppContent() {
       onAccessLogout={logout}
       onFastModeChange={handleFastModeChange}
       onModelChange={handleModelChange}
+      onLoadImChannels={loadImChannelConfigs}
       onSearchSessions={handleSearchSessions}
       onSelectSearchedSession={handleSelectSearchedSession}
       onThinkModeChange={handleThinkModeChange}
@@ -1239,14 +1316,17 @@ function AppContent() {
       runtimeReconnectAttempts={runtimeReconnectAttempts}
       runtimeSocketStatus={runtimeSocketStatus}
       runtimeTransport={runtimeTransport}
+      sessionOverviewPending={sessionOverviewPending}
       session={session}
       theme={theme}
     />
   ), [
     accessMode,
     availableAgents,
+    imChannelConfigs,
     availableModels,
     composerSendMode,
+    settingsTrigger,
     fastMode,
     formatCompactK,
     handleAgentChange,
@@ -1254,6 +1334,7 @@ function AppContent() {
     logout,
     handleFastModeChange,
     handleModelChange,
+    loadImChannelConfigs,
     handleSearchSessions,
     handleSelectSearchedSession,
     handleThinkModeChange,
@@ -1263,6 +1344,7 @@ function AppContent() {
     runtimeReconnectAttempts,
     runtimeSocketStatus,
     runtimeTransport,
+    sessionOverviewPending,
     session,
     setTheme,
     theme,
@@ -1291,6 +1373,7 @@ function AppContent() {
       runtimeReconnectAttempts={runtimeReconnectAttempts}
       runtimeSocketStatus={runtimeSocketStatus}
       runtimeTransport={runtimeTransport}
+      sessionOverviewPending={sessionOverviewPending}
       session={session}
       theme={theme}
     />
@@ -1315,6 +1398,7 @@ function AppContent() {
     runtimeReconnectAttempts,
     runtimeSocketStatus,
     runtimeTransport,
+    sessionOverviewPending,
     session,
     setTheme,
     theme,
@@ -1341,6 +1425,7 @@ function AppContent() {
       onRefreshEnvironment={handleRefreshEnvironment}
       onTrackSessionFiles={handleTrackSessionFiles}
       onSyncCurrentSessionModel={handleSyncCurrentSessionModel}
+      onWorkspaceFilesOpenChange={handleWorkspaceFilesOpenChange}
       peeks={peeks}
       renderPeek={renderPeek}
       resolvedTheme={resolvedTheme}
@@ -1351,6 +1436,7 @@ function AppContent() {
       setActiveTab={setActiveTab}
       snapshots={snapshots}
       taskTimeline={taskTimeline}
+      workspaceFilesOpen={workspaceFilesOpen}
     />
   ), [
     activeTab,
@@ -1361,6 +1447,7 @@ function AppContent() {
     handleRefreshEnvironment,
     handleTrackSessionFiles,
     handleSyncCurrentSessionModel,
+    handleWorkspaceFilesOpenChange,
     isWideLayout,
     peeks,
     renderPeek,
@@ -1375,7 +1462,11 @@ function AppContent() {
     setActiveTab,
     snapshots,
     taskTimeline,
+    workspaceFilesOpen,
   ]);
+  const chatWorkspaceFiles = peeks?.workspace?.entries || [];
+  const chatWorkspaceCount = Number(peeks?.workspace?.totalCount);
+  const chatWorkspaceLoaded = Array.isArray(peeks?.workspace?.entries);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -1427,7 +1518,6 @@ function AppContent() {
                 onCloseChatTab={handleCloseChatTab}
                 onComposerSendModeToggle={handleComposerSendModeToggle}
                 onReorderChatTab={handleReorderChatTabs}
-                onUserLabelChange={handleUserLabelChange}
                 interactionLocked={Boolean(switchingAgentOverlay || switchingModelOverlay)}
                 queuedMessages={activeQueuedMessages}
                 onRemoveAttachment={handleRemoveAttachment}
@@ -1450,6 +1540,9 @@ function AppContent() {
                 sessionOverview={statusOverview}
                 showTabsStrip={false}
                 userLabel={userLabel}
+                workspaceCount={chatWorkspaceCount}
+                workspaceFiles={chatWorkspaceFiles}
+                workspaceLoaded={chatWorkspaceLoaded}
               />
             </div>
 
@@ -1492,6 +1585,15 @@ function AppContent() {
             </div>
           </main>
         </div>
+        <SettingsDialog
+          currentAgentId={session.agentId}
+          environmentItems={settingsEnvironmentItems}
+          onClose={() => setSettingsDialogOpen(false)}
+          onRefreshEnvironment={handleRefreshEnvironment}
+          onUserLabelChange={handleUserLabelChange}
+          open={settingsDialogOpen}
+          userLabel={userLabel}
+        />
         <AgentSwitchOverlay
           agentLabel={switchingAgentOverlay?.agentLabel || ""}
           mode={switchingAgentOverlay?.mode || "switching"}

@@ -165,6 +165,7 @@ const pt = {
     menus: {
       switchAgent: "Escolher conversa do Agent",
       switchAgentTrigger: "Trocar Agent",
+      imPluginDisabled: "Plugin desativado",
       noAgents: "Nenhum agent disponível",
       noAvailableAgentSessionsHint: "Converse com o Agent principal para criar um novo Agent, por exemplo: Ajude-me a criar um novo Agent chamado Developer (nome em chines: 程序员). As responsabilidades dele sao...",
       switchModel: "Mudar modelo",

@@ -39,6 +39,26 @@ const en = {
     },
     shortcutHint: (shortcut) => `Shortcut: ${shortcut}`,
   },
+  settingsDialog: {
+    openLabel: "Open personal settings",
+    title: "Personal settings",
+    description: "Manage your display name and view information about this LalaClaw app.",
+    close: "Close personal settings",
+    sections: {
+      profile: "Personal settings",
+      about: "About",
+    },
+    profile: {
+      title: "Personal settings",
+      description: "Set the name shown beside your chat messages.",
+      previewLabel: "Current display name",
+      nameHint: "The updated name will be used for your next outgoing messages.",
+    },
+    about: {
+      title: "About LalaClaw",
+      description: "Check the current version, look for updates, and run the same in-app update flow shown in Environment.",
+    },
+  },
   shortcuts: {
     tooltipTitle: "Keyboard shortcuts",
     platformShortcutHint: "(mac) Cmd + / (win) Ctrl + /",
@@ -212,6 +232,7 @@ const en = {
       switchAgentTrigger: "Switch Agent",
       agentConversations: "Agent Conversations",
       imConversations: "IM Conversations",
+      imPluginDisabled: "Plugin disabled",
       noAgents: "No agents available",
       noAvailableAgentSessionsHint: "Chat with the main Agent to create a new Agent, for example: Help me create a new Agent named Developer (Chinese name: 程序员). Their responsibilities are...",
       switchModel: "Switch model",
@@ -295,6 +316,7 @@ const en = {
       reconnecting: "Reconnecting",
       disconnected: "Disconnected",
     },
+    pendingValue: "--",
   },
   chat: {
     title: "Current session",

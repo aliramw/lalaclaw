@@ -91,6 +91,22 @@ function stubFetchWithAccessState(fetchImpl) {
       try {
         return await fetchImpl(input, init);
       } catch (error) {
+        if (String(input) === "/api/openclaw/config" || String(input).startsWith("/api/openclaw/config?")) {
+          return mockJsonResponse({
+            ok: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            baseHash: "openclaw-config-hash",
+            fields: [],
+            modelOptions: ["openclaw"],
+            currentAgentId: "",
+            validation: { ok: true, valid: true, path: "/Users/marila/.openclaw/openclaw.json" },
+            imChannels: {
+              "dingtalk-connector": { channel: "dingtalk-connector", enabled: true, defaultAgentId: "main" },
+              feishu: { channel: "feishu", enabled: true, defaultAgentId: "main" },
+              wecom: { channel: "wecom", enabled: true, defaultAgentId: "main" },
+            },
+          });
+        }
         if (String(input) === "/api/lalaclaw/update") {
           return mockJsonResponse({
             ok: true,
@@ -3481,6 +3497,96 @@ describe("App", () => {
     expect(screen.getByText("2026.3.21-1")).toBeInTheDocument();
   });
 
+  it("moves the user-name editor into personal settings and keeps it out of the chat header", async () => {
+    mockDesktopLayout();
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    expect(screen.queryByRole("textbox", { name: "我的名字" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "打开个人设置" }));
+
+    const input = await screen.findByRole("textbox", { name: "我的名字" });
+    await user.clear(input);
+    await user.type(input, "小爪");
+    expect(input).toHaveValue("小爪");
+
+    await user.click(screen.getByRole("button", { name: "关闭个人设置" }));
+    expect(screen.queryByRole("textbox", { name: "我的名字" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "打开个人设置" }));
+    expect(await screen.findByRole("textbox", { name: "我的名字" })).toHaveValue("小爪");
+  });
+
+  it("shows LalaClaw update info in the About section of personal settings", async () => {
+    mockDesktopLayout();
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot({
+          peeks: {
+            workspace: null,
+            terminal: null,
+            browser: null,
+            environment: {
+              summary: "这里汇总 OpenClaw 诊断、管理动作与当前会话环境信息，便于排查与检阅。",
+              items: [
+                { label: "LALACLAW.VERSION", value: "2026.3.20-1" },
+                { label: "LALACLAW.FRONTEND_URL", value: "http://127.0.0.1:5173" },
+                { label: "LALACLAW.SERVER_URL", value: "http://127.0.0.1:3000" },
+                { label: "LALACLAW.ACCESS_MODE", value: "off" },
+                { label: "LALACLAW.GATEWAY_AUTH", value: "none" },
+              ],
+            },
+          },
+        }));
+      }
+
+      if (url === "/api/lalaclaw/update" && (!init || init.method === "GET")) {
+        return mockJsonResponse({
+          ok: true,
+          currentVersion: "2026.3.20-1",
+          currentRelease: { version: "2026.3.20-1", stable: true },
+          targetRelease: { version: "2026.3.21-1", stable: true },
+          stableTag: "stable",
+          updateAvailable: true,
+          capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+          check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+          job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await user.click(screen.getByRole("button", { name: "打开个人设置" }));
+    await user.click(screen.getByRole("button", { name: "关于" }));
+
+    expect(await screen.findByText("关于 LalaClaw")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "立即更新" })).toBeInTheDocument();
+    expect(screen.getByText("有可用更新")).toBeInTheDocument();
+    expect(screen.getByText("2026.3.21-1")).toBeInTheDocument();
+    expect(screen.getByText("http://127.0.0.1:3000")).toBeInTheDocument();
+  });
+
   it("keeps prompt history isolated after resetting into a new session", async () => {
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);
@@ -3520,6 +3626,65 @@ describe("App", () => {
     await user.click(textarea);
     await user.keyboard("{ArrowUp}");
     expect(textarea).toHaveValue("");
+  });
+
+  it("shows -- summary placeholders while a reset session is still loading its runtime overview", async () => {
+    const resetRuntimeDeferred = createDeferred();
+    let runtimeRequestCount = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        runtimeRequestCount += 1;
+        if (runtimeRequestCount === 1) {
+          return mockJsonResponse(createSnapshot({
+            mode: "openclaw",
+            model: "openai-codex/gpt-5.4",
+            session: {
+              ...createSnapshot().session,
+              mode: "openclaw",
+              model: "openai-codex/gpt-5.4",
+              selectedModel: "openai-codex/gpt-5.4",
+              fastMode: "已关闭",
+              thinkMode: "off",
+              contextUsed: 27000,
+              contextMax: 272000,
+              runtime: "online",
+              status: "待命",
+            },
+          }));
+        }
+        return resetRuntimeDeferred.promise;
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        return mockJsonResponse({
+          ...createSessionSnapshot(),
+          outputText: "已记录。",
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    const textarea = await screen.findByPlaceholderText(defaultPromptPlaceholder);
+
+    await user.type(textarea, "旧会话消息");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(await screen.findByText("已记录。")).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("开启新会话"));
+    await user.click(await screen.findByRole("button", { name: "确定" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("WS / 在线")).not.toBeInTheDocument();
+      expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(5);
+    });
   });
 
   it("applies model, fast mode, and think mode changes before sending the next turn", async () => {
@@ -3702,6 +3867,77 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps main selectable when only an IM tab for main remains open", async () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:paint",
+        activeTab: "timeline",
+        chatTabs: [
+          { id: "agent:paint", agentId: "paint", sessionUser: "command-center-paint-1" },
+          { id: "agent:main::dingtalk", agentId: "main", sessionUser: "agent:main:dingtalk-connector:direct:ou_test" },
+        ],
+        tabMetaById: {
+          "agent:paint": {
+            agentId: "paint",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "command-center-paint-1",
+            thinkMode: "off",
+          },
+          "agent:main::dingtalk": {
+            agentId: "main",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: "agent:main:dingtalk-connector:direct:ou_test",
+            thinkMode: "off",
+          },
+        },
+        messagesByTabId: {
+          "agent:paint": [{ role: "assistant", content: "paint 会话消息", timestamp: 1 }],
+          "agent:main::dingtalk": [{ role: "assistant", content: "钉钉旧消息", timestamp: 2 }],
+        },
+      }),
+    );
+
+    stubFetchWithAccessState((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center-paint-1";
+        const agentId = params.get("agentId") || (sessionUser === "command-center-paint-1" ? "paint" : "main");
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId,
+              selectedAgentId: agentId,
+              availableAgents: ["main", "paint", "writer"],
+              sessionUser,
+              sessionKey: `agent:${agentId}:openai-user:${sessionUser}`,
+            },
+            conversation: sessionUser === "command-center-paint-1"
+              ? [{ role: "assistant", content: "paint 会话消息", timestamp: 1 }]
+              : [{ role: "assistant", content: "钉钉旧消息", timestamp: 2 }],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("paint - 当前会话");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+
+    expect(screen.getByRole("menuitem", { name: "main" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "paint" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "writer" })).toBeInTheDocument();
+  });
+
   it("opens an IM tab directly from the switcher menu without requiring session search", async () => {
     const harness = createInteractiveFetchMock({
       availableAgents: ["main"],
@@ -3726,6 +3962,167 @@ describe("App", () => {
     expect(screen.queryByRole("menuitem", { name: "飞书" })).not.toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "企微" })).toBeInTheDocument();
+  });
+
+  it("preloads IM channel availability before the switcher menu opens", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSessionSnapshot("command-center"));
+      }
+
+      if (url === "/api/openclaw/config") {
+        return mockJsonResponse({
+          ok: true,
+          configPath: "/Users/marila/.openclaw/openclaw.json",
+          baseHash: "openclaw-config-hash",
+          fields: [],
+          modelOptions: ["openclaw"],
+          currentAgentId: "",
+          validation: { ok: true, valid: true, path: "/Users/marila/.openclaw/openclaw.json" },
+          imChannels: {
+            "dingtalk-connector": { channel: "dingtalk-connector", enabled: true, defaultAgentId: "main" },
+            feishu: { channel: "feishu", enabled: false, defaultAgentId: "main" },
+            wecom: { channel: "wecom", enabled: true, defaultAgentId: "main" },
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("LalaClaw");
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/openclaw/config", expect.anything());
+    });
+  });
+
+  it("persists the workspace files section open state per conversation across refresh", async () => {
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "files",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      workspaceFilesOpenByConversation: {
+        "command-center:main": false,
+      },
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [],
+      messagesByTabId: {
+        "agent:main": [],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              workspaceRoot: "/Users/marila/projects/lalaclaw",
+            },
+            peeks: {
+              workspace: {
+                summary: "工作区摘要",
+                items: [],
+                entries: [
+                  { path: "/Users/marila/projects/lalaclaw/src", fullPath: "/Users/marila/projects/lalaclaw/src", kind: "目录", hasChildren: true },
+                  { path: "/Users/marila/projects/lalaclaw/package.json", fullPath: "/Users/marila/projects/lalaclaw/package.json", kind: "文件" },
+                ],
+              },
+              terminal: null,
+              browser: null,
+              environment: null,
+            },
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+    mockDesktopLayout();
+
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+
+    const collapsedWorkspaceButton = await screen.findByRole("button", { name: "workspace 文件 查看详情" });
+    expect(collapsedWorkspaceButton).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("package.json")).not.toBeInTheDocument();
+
+    await user.click(collapsedWorkspaceButton);
+
+    expect(await screen.findByRole("button", { name: "workspace 文件 收起详情" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(currentStorageKey) || "{}")?.workspaceFilesOpenByConversation).toEqual({
+        "command-center:main": true,
+      });
+    });
+
+    firstRender.unmount();
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "workspace 文件 收起详情" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+  });
+
+  it("opens IM tabs under the agent configured by OpenClaw bindings even when the current tab is a different agent", async () => {
+    const harness = createInteractiveFetchMock({
+      availableAgents: ["main", "paint"],
+      availableModels: ["openai-codex/gpt-5.4"],
+      agentModels: {
+        main: "openai-codex/gpt-5.4",
+        paint: "openai-codex/gpt-5.4",
+      },
+      model: "openai-codex/gpt-5.4",
+    });
+
+    stubFetchWithAccessState(harness.fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await waitForAgentSwitcherReady();
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "paint" }));
+    await screen.findByText("paint - 当前会话");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
+
+    expect(await screen.findByRole("button", { name: "钉钉 main" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "钉钉 paint" })).not.toBeInTheDocument();
   });
 
   it("resolves a bootstrap Feishu tab before sending the first message", async () => {

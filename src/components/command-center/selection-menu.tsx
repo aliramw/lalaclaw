@@ -24,6 +24,7 @@ type SelectionMenuProps = {
   getItemLabel?: (item: SelectionMenuItem) => ReactNode;
   items?: SelectionMenuItem[];
   label: ReactNode;
+  onOpenChange?: (open: boolean) => void;
   onSelect: (item: SelectionMenuItem) => void;
   renderContent?: (options: {
     handleSelect: (item: SelectionMenuItem) => void;
@@ -55,6 +56,7 @@ export function SelectionMenu({
   getItemLabel,
   items = [],
   label,
+  onOpenChange,
   onSelect,
   renderContent,
   showSelectionIndicator = true,
@@ -90,10 +92,11 @@ export function SelectionMenu({
     }
 
     setMenuOpen(nextOpen);
+    onOpenChange?.(nextOpen);
     if (nextOpen) {
       suppressTooltip();
     }
-  }, [disabled, suppressTooltip]);
+  }, [disabled, onOpenChange, suppressTooltip]);
 
   const handleTooltipOpenChange = useCallback((nextOpen: boolean) => {
     if (menuOpen || tooltipSuppressed) {

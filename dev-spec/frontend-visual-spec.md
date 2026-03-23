@@ -1,6 +1,6 @@
 # Frontend Visual Spec
 
-Last updated: 2026-03-21
+Last updated: 2026-03-23
 
 ## Purpose
 
@@ -25,8 +25,13 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Checkbox controls inside inspector forms should align to the vertical center of their text label. Do not use ad-hoc top margins to visually fake alignment.
 - Dropdown and popover menus must keep a visible safe margin from the viewport edge. Do not let menu surfaces visually stick to the window boundary when collision handling repositions them.
 - Dropdown menus triggered from summary cards or compact controls should align to the trigger edge that faces the nearest viewport side: use left-edge alignment for left-side triggers and right-edge alignment for right-side triggers.
+- The top-right utility cluster must expose a dedicated personal-settings entry as a compact person icon button. User profile fields such as the display-name editor belong inside that settings surface, not inline in the chat header.
+- The personal-settings surface should use a stable left-side section nav with at least `Personal settings` and `About`, so identity controls and app/update information stay grouped under one discoverable entry instead of being scattered across the main workspace.
+- The `About` section inside personal settings should reuse the same LalaClaw version/update logic shown in the `Environment` panel, so operators do not see conflicting update affordances between the two surfaces.
+- In the Agent/IM switcher menu, unavailable IM channels should remain visible instead of disappearing. Render them in a muted disabled state, keep their platform icon and name readable, and append a subtle gray status pill such as `未启用插件` / `Plugin disabled` so operators can immediately tell why the entry cannot be selected.
 - In compact session summary cards, abbreviated protocol labels are allowed when they materially improve scanability. The transport card should display `WS` in the card body for WebSocket, while tooltips keep the full `WebSocket` wording in every locale.
 - Socket steady-state wording in compact transport summaries should read like an ongoing status instead of a one-time completion event. Prefer terms like `在线` / `Online` over `已连接` / `Connected` for the stable connected state.
+- When switching to another conversation or opening a fresh session, if the session overview values have not been resolved yet, all compact summary cards in that row must render a muted gray `--` placeholder instead of showing stale values from the previous conversation. This applies consistently to model, context, fast mode, think mode, and transport until the new runtime overview is ready.
 - In chat panel headers, compact utility groups such as font-size toggles must keep a low visual height. When horizontal space gets tight, prefer shrinking the control group's own height and padding before letting it collide with the summary card row below.
 - For streaming assistant replies, keep exactly one stable in-progress treatment across the chat surface. Do not show competing labels such as a separate `Generating` badge in message meta when the tab badge and top session badge already communicate the running state.
 - While an assistant reply is still streaming, the chat header status and the chat-tab busy dot must stay continuously in the busy state for the whole turn instead of blinking per token or intermediate snapshot.
@@ -60,7 +65,8 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Expanded sections may add a top divider between header and content, but collapsed and expanded states should keep a stable outer shape.
 - In dialogs, sheets, and cards, dividers with inset spacing must stay inside the container width. Do not combine `w-full`-style separators with horizontal margins in a way that makes the rule visually protrude past the surface edge.
 - For inspector-style collapsible lists, header and content padding should stay compact enough that many sections can be scanned without excessive vertical scrolling.
-- In the files inspector, the `Workspace files` group should be collapsed by default while the current-session file group may stay expanded. Workspace inventory is secondary context and should not push active session changes below the fold on first render.
+- In the files inspector, the `Workspace files` group should be expanded by default on first visit so workspace inventory is immediately visible. After the user manually expands or collapses that group, remember the choice per conversation and restore the same state after refresh or when returning to that same session.
+- In file-group count badges, show `--` instead of `0` while the underlying file count is still unknown or has not been loaded yet. Reserve `0` for confirmed empty results only.
 - In the files inspector tree, clicking a folder must apply a persistent selected state that stays visually distinct from both hover and keyboard focus. That selection is the target for paste shortcuts, and directory context menus must expose a disabled/enabled paste action based on whether the clipboard currently contains files or images.
 - Directory context menus should preserve the core file-management actions available on file rows when they still make sense for a folder. For system file-manager integration, files may use a reveal action, while folders should directly open that directory in `Finder` / `Explorer`.
 

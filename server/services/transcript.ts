@@ -592,7 +592,7 @@ export function createTranscriptProjector({
   }
 
   function normalizeCandidatePath(candidate: unknown, roots: string[]): string | null {
-    const cleaned = String(candidate || '').replace(/[),.;:]+$/g, '');
+    const cleaned = String(candidate || '').replace(/[),.;:]+$/g, '').trim();
     if (!cleaned || /^https?:/i.test(cleaned) || cleaned.includes('://')) {
       return null;
     }
@@ -729,7 +729,7 @@ export function createTranscriptProjector({
   }
 
   function extractResolvedPathsFromSource(source: unknown, roots: string[]): string[] {
-    const pathPattern = /(?:~\/[^\s"'`]+|\/Users\/[^\s"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
+    const pathPattern = /(?:~\/[^\n"'`]+|\/Users\/[^\n"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._ \-[\]()]+\/)+[A-Za-z0-9._ \-[\]()]+\.[A-Za-z0-9._-]+)/g;
     const matches = String(source || '').match(pathPattern) || [];
     const resolvedPaths: string[] = [];
 
@@ -742,6 +742,83 @@ export function createTranscriptProjector({
     }
 
     return resolvedPaths;
+  }
+
+  function extractResolvedDirectoriesFromSource(source: unknown, roots: string[]): string[] {
+    const text = String(source || '');
+    if (!text) {
+      return [];
+    }
+
+    const directoryMatches = new Set<string>();
+    const codeSpanPattern = /`([^`\n]+)`/g;
+    let codeSpanMatch: RegExpExecArray | null = null;
+
+    while ((codeSpanMatch = codeSpanPattern.exec(text))) {
+      directoryMatches.add(String(codeSpanMatch[1] || '').trim());
+    }
+
+    const pathPattern = /(?:~\/[^\n"'`]+|\/Users\/[^\n"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._ \-[\]()]+\/)+[A-Za-z0-9._ \-[\]()]+)/g;
+    const pathMatches = text.match(pathPattern) || [];
+    for (const match of pathMatches) {
+      directoryMatches.add(match);
+    }
+
+    return [...directoryMatches]
+      .map((candidate) => normalizeCandidatePath(candidate, roots))
+      .filter((resolved): resolved is string => Boolean(resolved) && !isIgnoredWorkspacePath(resolved))
+      .filter((resolved) => {
+        try {
+          return fs.statSync(resolved).isDirectory();
+        } catch {
+          return false;
+        }
+      });
+  }
+
+  function extractMentionedBasenamesFromSource(source: unknown): string[] {
+    const text = String(source || '');
+    if (!text) {
+      return [];
+    }
+
+    const basenames = new Set<string>();
+    const codeSpanPattern = /`([^`\n]+)`/g;
+    let codeSpanMatch: RegExpExecArray | null = null;
+
+    while ((codeSpanMatch = codeSpanPattern.exec(text))) {
+      const candidate = String(codeSpanMatch[1] || '').trim().replace(/^['"]+|['"]+$/g, '');
+      if (!candidate || candidate.includes('/') || candidate.includes('\\')) {
+        continue;
+      }
+      if (!/^[^/\\\n]+\.[A-Za-z0-9._-]+$/.test(candidate)) {
+        continue;
+      }
+      basenames.add(candidate);
+    }
+
+    return [...basenames];
+  }
+
+  function collectDirectoryContextFilePaths(source: unknown, roots: string[]): string[] {
+    const directories = extractResolvedDirectoriesFromSource(source, roots);
+    const basenames = extractMentionedBasenamesFromSource(source);
+    if (!directories.length || !basenames.length) {
+      return [];
+    }
+
+    const resolvedPaths = new Set<string>();
+    for (const directory of directories) {
+      for (const basename of basenames) {
+        const candidatePath = path.join(directory, basename);
+        if (!fileExists(candidatePath) || isIgnoredWorkspacePath(candidatePath)) {
+          continue;
+        }
+        resolvedPaths.add(candidatePath);
+      }
+    }
+
+    return [...resolvedPaths];
   }
 
   function collectMentionedInjectedPaths(source: unknown, injectedFiles: LooseRecord[] = []): string[] {
@@ -807,6 +884,7 @@ export function createTranscriptProjector({
       const plainText = extractPlainTextSegments(content).join('\n');
       const mentionedPaths = [
         ...extractResolvedPathsFromSource(plainText, roots),
+        ...collectDirectoryContextFilePaths(plainText, roots),
         ...(payload.role === 'toolResult' ? [] : collectMentionedInjectedPaths(plainText, injectedFiles)),
       ];
 

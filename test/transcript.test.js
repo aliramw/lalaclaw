@@ -791,6 +791,65 @@ describe("createTranscriptProjector", () => {
     });
   });
 
+  it("collects same-message files from a referenced directory even when basenames contain spaces", () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-transcript-videos-"));
+    try {
+      const videosDir = path.join(tmpRoot, "videos");
+      const longVideoFile = path.join(videosDir, "Genspark AI Workspace 3.0 [NdtsVS5SCh0].mp4");
+      const shortVideoFile = path.join(videosDir, "Genspark.mp4");
+      fs.mkdirSync(videosDir, { recursive: true });
+      fs.writeFileSync(longVideoFile, "video");
+      fs.writeFileSync(shortVideoFile, "video");
+
+      const projector = createProjector({
+        PROJECT_ROOT: tmpRoot,
+      });
+
+      const files = projector.collectFiles(
+        [
+          {
+            type: "message",
+            timestamp: 1,
+            message: {
+              role: "assistant",
+              timestamp: 1,
+              content: [
+                {
+                  type: "text",
+                  text: [
+                    "看完了：",
+                    `目录在 \`${videosDir.replace(/\\/g, "/")}\``,
+                    `- \`Genspark AI Workspace 3.0 [NdtsVS5SCh0].mp4\``,
+                    `- \`Genspark.mp4\``,
+                  ].join("\n"),
+                },
+              ],
+            },
+          },
+        ],
+        [tmpRoot],
+      );
+
+      expect(files).toHaveLength(2);
+      expect(files).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: "videos/Genspark AI Workspace 3.0 [NdtsVS5SCh0].mp4",
+            fullPath: longVideoFile,
+            primaryAction: "viewed",
+          }),
+          expect.objectContaining({
+            path: "videos/Genspark.mp4",
+            fullPath: shortVideoFile,
+            primaryAction: "viewed",
+          }),
+        ]),
+      );
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
   it("builds agent graph from local config and session index activity", () => {
     const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
     const sessionsDir = path.join(tmpRoot, "agents", "worker", "sessions");

@@ -85,10 +85,35 @@ describe('server/http/http-utils', () => {
     await vi.waitFor(() => {
       expect(res.writeHead).toHaveBeenCalledWith(200, {
         'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Length': Buffer.byteLength(content),
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'no-store',
       });
     });
     expect(res.end).toHaveBeenCalledWith(Buffer.from(content));
+
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('serves byte ranges for media metadata requests', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lalaclaw-http-utils-range-'));
+    const filePath = path.join(tempDir, 'sample.wav');
+    const content = Buffer.from('0123456789abcdef', 'utf8');
+    const res = createResponseRecorder();
+
+    await fs.writeFile(filePath, content);
+    sendFile(res, filePath, { headers: { range: 'bytes=0-3' } });
+
+    await vi.waitFor(() => {
+      expect(res.writeHead).toHaveBeenCalledWith(206, {
+        'Content-Type': 'audio/wav',
+        'Content-Length': 4,
+        'Content-Range': 'bytes 0-3/16',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+      });
+    });
+    expect(res.end).toHaveBeenCalledWith(Buffer.from('0123'));
 
     await fs.rm(tempDir, { recursive: true, force: true });
   });

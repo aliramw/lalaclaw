@@ -150,6 +150,7 @@ const ta = {
     menus: {
       switchAgent: "ஏஜென்ட் உரையாடலை தேர்வு செய்",
       switchAgentTrigger: "ஏஜென்டை மாற்று",
+      imPluginDisabled: "பிளகின் இயங்கவில்லை",
       noAgents: "ஏஜென்டுகள் இல்லை",
       noAvailableAgentSessionsHint: "புதிய ஏஜென்டை உருவாக்க முதன்மை ஏஜென்டுடன் பேசலாம், உதாரணம்: Help me create a new Agent named Developer (Chinese name: 程序员). Their responsibilities are...",
       switchModel: "மாதிரியை மாற்று",

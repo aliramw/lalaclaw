@@ -109,6 +109,14 @@ async function ensureEnvironmentSectionExpanded(user, label) {
   expect(screen.getByRole("button", { name: `${label} 收起详情` })).toBeInTheDocument();
 }
 
+async function ensureWorkspaceFilesSectionExpanded(user) {
+  const expandButton = screen.queryByRole("button", { name: "workspace 文件 查看详情" });
+  if (expandButton) {
+    await user.click(expandButton);
+  }
+  expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toBeInTheDocument();
+}
+
 describe("InspectorPanel", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn(async (input) => {
@@ -3794,9 +3802,8 @@ describe("InspectorPanel", () => {
 
     expect(screen.queryByRole("button", { name: /本次会话文件/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "过滤本次会话文件" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /workspace 文件/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "过滤 workspace 文件" })).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
     expect(screen.getByText("package.json")).toBeInTheDocument();
   });
 
@@ -4172,10 +4179,35 @@ describe("InspectorPanel", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "workspace 文件 查看详情" })).toHaveTextContent("42");
-    expect(screen.getByRole("button", { name: "workspace 文件 查看详情" })).toBeInTheDocument();
-    expect(screen.queryByText("package.json")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "src 查看详情" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toHaveTextContent("42");
+    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toBeInTheDocument();
+    expect(screen.getByText("package.json")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
+  });
+
+  it("shows -- in the workspace files count badge before the file count is available", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+
+    const [activeTab, setActiveTab] = ["files", () => {}];
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab={activeTab}
+        agents={[]}
+        artifacts={[]}
+        currentAgentId="main"
+        currentSessionUser="command-center"
+        currentWorkspaceRoot="/Users/marila/projects/lalaclaw"
+        files={[]}
+        peeks={{ workspace: { summary: "工作区摘要", items: [] }, terminal: null, browser: null, environment: null }}
+        renderPeek={(_, fallback) => fallback}
+        setActiveTab={setActiveTab}
+        taskTimeline={[]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "workspace 文件 收起详情" })).toHaveTextContent("--");
+    expect(screen.queryByRole("button", { name: "workspace 文件 收起详情" })).toBeInTheDocument();
   });
 
   it("renders workspace files as a collapsible tree", async () => {
@@ -4255,7 +4287,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
 
     expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
     expect(screen.getByText("package.json")).toBeInTheDocument();
@@ -4495,7 +4527,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.click(screen.getByRole("button", { name: "docs 查看详情" }));
     await user.click(screen.getByRole("button", { name: "tests 查看详情" }));
 
@@ -4585,7 +4617,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     const filterInput = screen.getByRole("textbox", { name: "过滤 workspace 文件" });
     expect(screen.queryByRole("button", { name: "清空 workspace 过滤" })).not.toBeInTheDocument();
 
@@ -4647,7 +4679,10 @@ describe("InspectorPanel", () => {
 
     const filterInput = screen.getByRole("textbox", { name: "过滤 workspace 文件" });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+      const workspaceExpandButton = screen.queryByRole("button", { name: "workspace 文件 查看详情" });
+      if (workspaceExpandButton) {
+        fireEvent.click(workspaceExpandButton);
+      }
     });
     await act(async () => {
       fireEvent.change(filterInput, { target: { value: "lesson" } });
@@ -4702,7 +4737,7 @@ describe("InspectorPanel", () => {
       />,
     );
 
-    await userEvent.setup().click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(userEvent.setup());
     expect(await screen.findByText("package.json")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "src 查看详情" })).toBeInTheDocument();
   });
@@ -4759,7 +4794,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.click(screen.getByRole("button", { name: "src 查看详情" }));
 
     expect(await screen.findByText("App.jsx")).toBeInTheDocument();
@@ -4850,7 +4885,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.click(screen.getByRole("button", { name: "src 查看详情" }));
 
     expect(await screen.findByText("App.jsx")).toBeInTheDocument();
@@ -4904,7 +4939,7 @@ describe("InspectorPanel", () => {
       />,
     );
 
-    await userEvent.setup().click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(userEvent.setup());
     expect(screen.getByText("当前 workspace 中检测到的文件会显示在这里。")).toBeInTheDocument();
   });
 
@@ -5346,7 +5381,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.click(screen.getByRole("button", { name: "src 查看详情" }));
     await user.pointer([
       {
@@ -5538,7 +5573,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.pointer([{ target: screen.getByRole("button", { name: "src 查看详情" }), keys: "[MouseRight]" }]);
     await user.click(await screen.findByRole("menuitem", { name: "重命名" }));
     const input = screen.getByLabelText("新名称");
@@ -5613,7 +5648,7 @@ describe("InspectorPanel", () => {
       );
 
       const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+      await ensureWorkspaceFilesSectionExpanded(user);
       await user.click(screen.getByRole("button", { name: "src 查看详情" }));
       await user.pointer([
         {
@@ -5691,7 +5726,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.click(screen.getByRole("button", { name: "src 查看详情" }));
     expect(await screen.findByText("old.txt")).toBeInTheDocument();
 
@@ -5776,7 +5811,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     const srcButton = screen.getByRole("button", { name: "src 查看详情" });
     await user.click(srcButton);
 
@@ -5878,7 +5913,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.pointer([
       {
         target: screen.getByRole("button", { name: "src 查看详情" }),
@@ -5939,7 +5974,7 @@ describe("InspectorPanel", () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "workspace 文件 查看详情" }));
+    await ensureWorkspaceFilesSectionExpanded(user);
     await user.pointer([
       {
         target: screen.getByRole("button", { name: "src 查看详情" }),

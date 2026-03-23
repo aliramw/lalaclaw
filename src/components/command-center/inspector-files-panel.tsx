@@ -242,6 +242,7 @@ export function FileLink({
   onOpenPreview,
   onOpenContextMenu,
 }: FileLinkProps) {
+  const [disabledTooltipOpen, setDisabledTooltipOpen] = useState(false);
   const canOpen = Boolean((item.fullPath || item.path) && item.kind !== "目录");
   const isInteractive = canOpen && !disabledReason;
   const displayPath = label || formatDisplayPath(item, currentWorkspaceRoot);
@@ -286,8 +287,14 @@ export function FileLink({
   }
 
   return (
-    <FilesTooltip open onOpenChange={() => {}}>
-      <FilesTooltipTrigger asChild>
+    <FilesTooltip open={disabledTooltipOpen} onOpenChange={setDisabledTooltipOpen}>
+      <FilesTooltipTrigger
+        asChild
+        onFocus={() => setDisabledTooltipOpen(true)}
+        onBlur={() => setDisabledTooltipOpen(false)}
+        onPointerEnter={() => setDisabledTooltipOpen(true)}
+        onPointerLeave={() => setDisabledTooltipOpen(false)}
+      >
         <span className="block">
           {button}
         </span>

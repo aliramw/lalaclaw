@@ -30,6 +30,30 @@ const zhHk = {
     },
     shortcutHint: (shortcut) => `快捷鍵：${shortcut}`,
   },
+  settingsDialog: {
+    ...zh.settingsDialog,
+    openLabel: "打開個人設定",
+    title: "個人設定",
+    description: "在這裡管理你的顯示名稱，並查看目前 LalaClaw 應用資訊。",
+    close: "關閉個人設定",
+    sections: {
+      ...zh.settingsDialog.sections,
+      profile: "個人設定",
+      about: "關於",
+    },
+    profile: {
+      ...zh.settingsDialog.profile,
+      title: "個人設定",
+      description: "設定顯示在你的聊天訊息旁邊的名稱。",
+      previewLabel: "目前顯示名稱",
+      nameHint: "新名稱會用於你接下來發送的訊息。",
+    },
+    about: {
+      ...zh.settingsDialog.about,
+      title: "關於 LalaClaw",
+      description: "在這裡查看目前版本、檢查更新，並執行與「環境」面板一致的應用內更新。",
+    },
+  },
   shortcuts: {
     ...zh.shortcuts,
     tooltipTitle: "鍵盤快捷鍵",
@@ -158,6 +182,7 @@ const zhHk = {
       switchAgentTrigger: "切換 Agent",
       agentConversations: "Agent 對話",
       imConversations: "IM 對話",
+      imPluginDisabled: "未啟用插件",
       noAgents: "沒有可用 Agent",
       noAvailableAgentSessionsHint: "你可以與主 Agent 對話，請他幫你建立新的 Agent，例如：\n\n幫我建立一個新的 Agent，名字叫 Developer（中文名：程式員），他的職責是...",
       switchModel: "切換模型",

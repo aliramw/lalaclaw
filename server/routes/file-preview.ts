@@ -42,8 +42,8 @@ type ValidatedTargetPath =
     };
 
 type JsonSender = (res: unknown, status: number, body: Record<string, unknown>) => void;
-type FileSender = (res: unknown, filePath: string) => void;
-type RequestLike = { url?: string; headers?: { host?: string } };
+type FileSender = (res: unknown, filePath: string, req?: RequestLike) => void;
+type RequestLike = { url?: string; headers?: { host?: string; range?: string } };
 type SpawnSyncLike = typeof defaultSpawnSync;
 
 const extTypeMap: Record<string, PreviewType> = {
@@ -536,7 +536,7 @@ export function createFilePreviewHandlers({
       return;
     }
 
-    sendFile(res, validated.path);
+    sendFile(res, validated.path, req);
   }
 
   async function handleFilePreviewSave(req: unknown, res: unknown) {

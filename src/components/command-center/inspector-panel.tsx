@@ -378,7 +378,7 @@ const OPENCLAW_MANAGED_AUTH_CHOICES = new Set([
   "google-gemini-cli",
 ]);
 
-function LalaClawPanel({
+export function LalaClawPanel({
   busy = false,
   error = "",
   loading = false,
@@ -2426,6 +2426,8 @@ function FilesTab({
   onOpenEdit,
   onOpenPreview,
   onTrackSessionFiles,
+  onWorkspaceFilesOpenChange,
+  workspaceFilesOpen = true,
   workspaceCount,
   workspaceItems = [],
   workspaceLoaded = false,
@@ -2439,6 +2441,8 @@ function FilesTab({
   onOpenEdit?: InspectorPreviewHandler;
   onOpenPreview?: InspectorPreviewHandler;
   onTrackSessionFiles?: (payload: { files: any[]; rewrites?: InspectorRewrite[] }) => void;
+  onWorkspaceFilesOpenChange?: (open: boolean) => void;
+  workspaceFilesOpen?: boolean;
   workspaceCount?: number;
   workspaceItems?: any[];
   workspaceLoaded?: boolean;
@@ -2494,7 +2498,7 @@ function FilesTab({
   const hasWorkspaceFilter = Boolean(String(workspaceFilter || "").trim());
   const visibleWorkspaceCount = hasWorkspaceFilter
     ? countWorkspaceFiles(workspaceNodes)
-    : (Number.isFinite(workspaceCount) ? workspaceCount : workspaceNodes.length);
+    : (Number.isFinite(workspaceCount) ? workspaceCount : (workspaceState.loaded ? workspaceNodes.length : "--"));
   const pasteUnavailableMessage = messages.inspector.workspaceTree.pasteUnavailable || messages.inspector.workspaceTree.loadFailed;
 
   useEffect(() => {
@@ -3124,13 +3128,15 @@ function FilesTab({
             messages={messages}
             onOpenPreview={onOpenPreview}
             onOpenWorkspaceDirectory={handleWorkspaceDirectoryOpen}
+            open={workspaceFilesOpen}
+            onOpenChange={onWorkspaceFilesOpenChange}
             onSetContextMenu={setContextMenu}
             onSetSelectedDirectoryPath={setSelectedDirectoryPath}
             onToggleOpen={() => {
               loadWorkspaceRoot().catch(() => {});
             }}
             selectedDirectoryPath={selectedDirectoryPath}
-            visibleWorkspaceCount={visibleWorkspaceCount ?? 0}
+            visibleWorkspaceCount={visibleWorkspaceCount}
             workspaceFilterInput={workspaceFilterInput}
             workspaceNodes={workspaceNodes}
             workspaceState={workspaceState}
@@ -3495,6 +3501,7 @@ export function InspectorPanel({
   onRefreshEnvironment,
   onTrackSessionFiles,
   onSyncCurrentSessionModel,
+  onWorkspaceFilesOpenChange,
   peeks,
   renderPeek,
   resolvedTheme = "light",
@@ -3505,6 +3512,7 @@ export function InspectorPanel({
   setActiveTab,
   snapshots,
   taskTimeline,
+  workspaceFilesOpen = true,
 }) {
   void agents;
   void renderPeek;
@@ -3719,7 +3727,9 @@ export function InspectorPanel({
       onOpenEdit={(item) => handleOpenPreview(item, { startInEditMode: true })}
       onOpenPreview={handleOpenPreview}
       onTrackSessionFiles={onTrackSessionFiles}
+      onWorkspaceFilesOpenChange={onWorkspaceFilesOpenChange}
       currentWorkspaceRoot={currentWorkspaceRoot}
+      workspaceFilesOpen={workspaceFilesOpen}
       workspaceCount={workspaceCount}
       workspaceItems={workspaceFiles}
       workspaceLoaded={workspaceLoaded}

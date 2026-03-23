@@ -147,6 +147,7 @@ const ko = {
     menus: {
       switchAgent: "에이전트 대화 선택",
       switchAgentTrigger: "에이전트 전환",
+      imPluginDisabled: "플러그인 비활성화",
       noAgents: "사용 가능한 에이전트가 없습니다",
       noAvailableAgentSessionsHint: "메인 에이전트와 대화해서 새 에이전트를 만들 수 있습니다. 예: Help me create a new Agent named Developer (Chinese name: 程序员). Their responsibilities are...",
       switchModel: "모델 전환",

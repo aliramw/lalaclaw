@@ -150,6 +150,7 @@ const ms = {
     menus: {
       switchAgent: "Pilih perbualan ejen",
       switchAgentTrigger: "Tukar ejen",
+      imPluginDisabled: "Plugin tidak diaktifkan",
       noAgents: "Tiada ejen tersedia",
       noAvailableAgentSessionsHint: "Berbual dengan ejen utama untuk mencipta ejen baharu, contohnya: Help me create a new Agent named Developer (Chinese name: 程序员). Their responsibilities are...",
       switchModel: "Tukar model",

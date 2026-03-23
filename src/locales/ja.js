@@ -165,6 +165,7 @@ const ja = {
     menus: {
       switchAgent: "Agent 会話を選択",
       switchAgentTrigger: "Agent を切り替え",
+      imPluginDisabled: "プラグイン未有効",
       noAgents: "利用可能な Agent がありません",
       noAvailableAgentSessionsHint: "メイン Agent と会話して新しい Agent を作成できます。例えば: 新しい Agent を作ってください。名前は Developer（中国語名: 程序员）で、役割は...",
       switchModel: "モデルを切り替え",

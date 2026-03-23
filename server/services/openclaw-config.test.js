@@ -97,7 +97,22 @@ describe('createOpenClawConfigService', () => {
           raw: '{"agents":{"defaults":{"model":{"primary":"openai/gpt-5.4"}}},"gateway":{"bind":"loopback","http":{"endpoints":{"chatCompletions":{"enabled":true}}}}}',
           parsed: {
             agents: { defaults: { model: { primary: 'openai/gpt-5.4' } } },
+            bindings: [
+              { agentId: 'main', match: { channel: 'dingtalk-connector', accountId: '__default__' } },
+            ],
+            channels: {
+              'dingtalk-connector': { enabled: true },
+              feishu: { enabled: true },
+              wecom: { enabled: false },
+            },
             gateway: { bind: 'loopback', http: { endpoints: { chatCompletions: { enabled: true } } } },
+            plugins: {
+              entries: {
+                'dingtalk-connector': { enabled: true },
+                feishu: { enabled: true },
+                'wecom-openclaw-plugin': { enabled: true },
+              },
+            },
           },
           hash: 'remote-hash-1',
           valid: true,
@@ -125,6 +140,11 @@ describe('createOpenClawConfigService', () => {
       baseHash: 'remote-hash-1',
       modelOptions: ['openai/gpt-5.4'],
       validation: { ok: true, valid: true },
+    });
+    expect(result.imChannels).toMatchObject({
+      'dingtalk-connector': expect.objectContaining({ enabled: true, defaultAgentId: 'main' }),
+      feishu: expect.objectContaining({ enabled: true, defaultAgentId: '' }),
+      wecom: expect.objectContaining({ enabled: false }),
     });
     expect(result.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: 'modelPrimary', value: 'openai/gpt-5.4' }),
@@ -415,6 +435,9 @@ describe('createOpenClawConfigService', () => {
 
   it('loads the structured config state with field values and validation', async () => {
     const { configPath } = await createTempConfigFixture({
+      bindings: [
+        { agentId: 'main', match: { channel: 'dingtalk-connector', accountId: '__default__' } },
+      ],
       agents: {
         defaults: {
           model: { primary: 'openai/gpt-5.4' },
@@ -430,6 +453,18 @@ describe('createOpenClawConfigService', () => {
           endpoints: {
             chatCompletions: { enabled: true },
           },
+        },
+      },
+      channels: {
+        'dingtalk-connector': { enabled: true },
+        feishu: { enabled: false },
+        wecom: { enabled: true },
+      },
+      plugins: {
+        entries: {
+          'dingtalk-connector': { enabled: true },
+          feishu: { enabled: true },
+          'wecom-openclaw-plugin': { enabled: false },
         },
       },
     });
@@ -455,6 +490,11 @@ describe('createOpenClawConfigService', () => {
       expect.objectContaining({ key: 'gatewayBind', value: 'loopback' }),
       expect.objectContaining({ key: 'chatCompletionsEnabled', value: true }),
     ]));
+    expect(result.imChannels).toMatchObject({
+      'dingtalk-connector': expect.objectContaining({ enabled: true, defaultAgentId: 'main' }),
+      feishu: expect.objectContaining({ enabled: false }),
+      wecom: expect.objectContaining({ enabled: false }),
+    });
   });
 
   it('applies a safe config patch, saves a backup, and restarts the gateway when requested', async () => {

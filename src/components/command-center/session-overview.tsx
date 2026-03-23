@@ -55,8 +55,10 @@ type SessionOverviewProps = {
   accessLoggingOut?: boolean;
   accessMode?: string;
   availableAgents?: string[];
+  availableImChannels?: Record<string, { enabled?: boolean; defaultAgentId?: string }> | null;
   availableModels?: string[];
   composerSendMode?: string;
+  extraControls?: ReactNode;
   fastMode?: boolean;
   formatCompactK: (value: unknown) => string;
   layout?: string;
@@ -66,6 +68,7 @@ type SessionOverviewProps = {
   onFastModeChange?: (nextFastMode: boolean) => void;
   onModelChange?: (modelId: string) => void;
   onOpenImSession?: (channel: string) => Promise<unknown> | unknown;
+  onLoadImChannels?: () => Promise<unknown> | unknown;
   onSearchSessions?: (term: string, options?: { channel?: string }) => Promise<SessionSearchResult[] | unknown> | unknown;
   onSelectSearchedSession?: (result: SessionSearchResult) => Promise<unknown> | unknown;
   onThinkModeChange?: (mode: string) => void;
@@ -77,6 +80,7 @@ type SessionOverviewProps = {
   runtimeReconnectAttempts?: number;
   runtimeSocketStatus?: string;
   runtimeTransport?: string;
+  sessionOverviewPending?: boolean;
   session: SessionOverviewSession;
   theme?: string;
 };
@@ -196,14 +200,17 @@ const OCTOPUS_WIDTH_SQUASH_SCALE = 0.1;
 const OCTOPUS_BREATH_CYCLE_MS = 1500;
 const IM_PLATFORM_LOGOS = {
   "dingtalk-connector": {
+    fallbackLabel: "D",
     imageClassName: "h-full w-full",
     src: "/im-logo-dingtalk.svg",
   },
   feishu: {
+    fallbackLabel: "F",
     imageClassName: "h-full w-full",
     src: "/im-logo-feishu.svg",
   },
   wecom: {
+    fallbackLabel: "W",
     imageClassName: "h-full w-full",
     src: "/im-logo-wecom.svg",
   },
@@ -2210,6 +2217,7 @@ function LobsterBrand({ compact = false, subtitle = "" }: { compact?: boolean; s
 
 function ImPlatformLogo({ channel }) {
   const brand = IM_PLATFORM_LOGOS[channel];
+  const [imageFailed, setImageFailed] = useState(false);
 
   if (!brand) {
     return null;
@@ -2219,10 +2227,20 @@ function ImPlatformLogo({ channel }) {
     <span
       aria-hidden="true"
       className={cn(
-        "flex h-5 w-5 shrink-0 items-center justify-center self-center overflow-hidden rounded-[6px]",
+        "flex h-5 w-5 shrink-0 items-center justify-center self-center overflow-hidden rounded-[6px] bg-muted/65 text-[10px] font-semibold leading-none text-muted-foreground",
       )}
     >
-      <img alt="" aria-hidden="true" className={cn("h-full w-full object-contain", brand.imageClassName)} src={brand.src} />
+      {imageFailed ? (
+        <span aria-hidden="true">{brand.fallbackLabel}</span>
+      ) : (
+        <img
+          alt=""
+          aria-hidden="true"
+          className={cn("h-full w-full object-contain", brand.imageClassName)}
+          src={brand.src}
+          onError={() => setImageFailed(true)}
+        />
+      )}
     </span>
   );
 }
@@ -2231,6 +2249,7 @@ export function SessionOverview({
   accessLoggingOut = false,
   accessMode = "off",
   availableAgents,
+  availableImChannels = null,
   availableModels,
   composerSendMode = "enter-send",
   fastMode,
@@ -2242,6 +2261,7 @@ export function SessionOverview({
   onFastModeChange,
   onModelChange,
   onOpenImSession,
+  onLoadImChannels,
   onSearchSessions,
   onSelectSearchedSession,
   onThinkModeChange,
@@ -2253,8 +2273,10 @@ export function SessionOverview({
   runtimeReconnectAttempts = 0,
   runtimeSocketStatus = "disconnected",
   runtimeTransport = "polling",
+  sessionOverviewPending = false,
   session,
   theme,
+  extraControls,
 }: SessionOverviewProps) {
   const { intlLocale, messages } = useI18n();
   const normalizedAvailableModels = availableModels || [];
@@ -2265,6 +2287,8 @@ export function SessionOverview({
   const getThinkModeDescription = (mode) => splitModeLabel(thinkModeLabels[mode] || mode).description;
   const isThinkModeEnabled = (session.thinkMode || "off") !== "off";
   const isLightTheme = resolvedTheme === "light";
+  const pendingSummaryValue = messages.sessionOverview.pendingValue || "--";
+  const pendingSummaryValueClassName = isLightTheme ? "text-slate-400" : "text-muted-foreground/70";
   const openClawConnected = session.mode === "openclaw" && !isOfflineStatus(session.status);
   const selectedModel = model || session.selectedModel || session.model || "";
   const displayedModel = formatModelLabel(selectedModel) || messages.common.unknown;
@@ -2275,6 +2299,21 @@ export function SessionOverview({
   const runtimeSocketLabel =
     messages.sessionOverview.runtimeSocket?.[runtimeSocketStatus]
     || runtimeSocketStatus;
+  const displayedModelValue = sessionOverviewPending ? pendingSummaryValue : displayedModel;
+  const displayedContextValue = sessionOverviewPending
+    ? pendingSummaryValue
+    : `${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`;
+  const displayedFastModeValue = sessionOverviewPending
+    ? pendingSummaryValue
+    : (fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off);
+  const displayedThinkModeValue = sessionOverviewPending
+    ? pendingSummaryValue
+    : getThinkModeDescription(session.thinkMode || "off");
+  const displayedTransportValue = sessionOverviewPending
+    ? pendingSummaryValue
+    : `${runtimeTransportDisplayLabel} / ${runtimeSocketLabel}`;
+  const runtimeTransportTooltipLabel = sessionOverviewPending ? pendingSummaryValue : runtimeTransportLabel;
+  const runtimeSocketTooltipLabel = sessionOverviewPending ? pendingSummaryValue : runtimeSocketLabel;
   const normalizedOpenAgentIds = new Set(
     (openAgentIds || [])
       .map((agentId) => String(agentId || "").trim())
@@ -2321,19 +2360,22 @@ export function SessionOverview({
         channel: "dingtalk-connector",
         label: dingTalkLabel,
         type: "dingtalk",
+        enabled: availableImChannels == null || availableImChannels["dingtalk-connector"]?.enabled !== false,
       },
       {
         channel: "feishu",
         label: feishuLabel,
         type: "feishu",
+        enabled: availableImChannels == null || availableImChannels.feishu?.enabled !== false,
       },
       {
         channel: "wecom",
         label: wecomLabel,
         type: "wecom",
+        enabled: availableImChannels == null || availableImChannels.wecom?.enabled !== false,
       },
     ].filter((item) => !normalizedOpenImChannels.has(item.type))
-  ), [dingTalkLabel, feishuLabel, normalizedOpenImChannels, wecomLabel]);
+  ), [availableImChannels, dingTalkLabel, feishuLabel, normalizedOpenImChannels, wecomLabel]);
   const handleImMenuSelect = useCallback((channel: string, suppressTooltip?: () => void) => {
     if (onOpenImSession) {
       suppressTooltip?.();
@@ -2350,7 +2392,7 @@ export function SessionOverview({
         <SelectStatusPill
           disabled={!openClawConnected}
           label={messages.sessionOverview.labels.model}
-          value={displayedModel}
+          value={displayedModelValue}
           resolvedTheme={resolvedTheme}
           items={normalizedAvailableModels}
           onSelect={onModelChange}
@@ -2359,21 +2401,25 @@ export function SessionOverview({
           getItemLabel={getModelItemLabel}
           menuLabel={messages.sessionOverview.menus.switchModel}
           tooltipContent={messages.sessionOverview.tooltips.switchModel}
+          valueClassName={sessionOverviewPending ? pendingSummaryValueClassName : undefined}
         />
 
         <StatusPill
           label={messages.sessionOverview.labels.context}
-          value={`${formatCompactK(session.contextUsed)} / ${formatCompactK(session.contextMax)}`}
-          valueNode={(
-            <span className="inline-flex items-center gap-1.5">
-              <span style={{ color: contextUsageColor }}>{formatCompactK(session.contextUsed)}</span>
-              <span className={cn(isLightTheme ? "text-slate-900" : "text-foreground")}>
-                {" / "}
-                {formatCompactK(session.contextMax)}
+          value={displayedContextValue}
+          valueClassName={sessionOverviewPending ? pendingSummaryValueClassName : undefined}
+          valueNode={sessionOverviewPending
+            ? <span className={pendingSummaryValueClassName}>{pendingSummaryValue}</span>
+            : (
+              <span className="inline-flex items-center gap-1.5">
+                <span style={{ color: contextUsageColor }}>{formatCompactK(session.contextUsed)}</span>
+                <span className={cn(isLightTheme ? "text-slate-900" : "text-foreground")}>
+                  {" / "}
+                  {formatCompactK(session.contextMax)}
+                </span>
+                <ContextUsageRing color={contextUsageColor} ratio={contextUsageRatio} resolvedTheme={resolvedTheme} />
               </span>
-              <ContextUsageRing color={contextUsageColor} ratio={contextUsageRatio} resolvedTheme={resolvedTheme} />
-            </span>
-          )}
+            )}
           resolvedTheme={resolvedTheme}
           tooltipContent={<ContextTooltipContent messages={messages} />}
         />
@@ -2393,10 +2439,19 @@ export function SessionOverview({
               <div className="min-w-0">
                 <div className="text-[10px] font-medium uppercase text-muted-foreground">{messages.sessionOverview.labels.fastMode}</div>
                 <div
-                  className={cn("text-sm font-normal", fastMode && "dark:text-emerald-400")}
-                  style={fastMode && resolvedTheme === "light" ? { color: "#009559" } : undefined}
+                  className={cn(
+                    "text-sm font-normal",
+                    sessionOverviewPending
+                      ? pendingSummaryValueClassName
+                      : (fastMode && "dark:text-emerald-400"),
+                  )}
+                  style={
+                    sessionOverviewPending
+                      ? undefined
+                      : (fastMode && resolvedTheme === "light" ? { color: "#009559" } : undefined)
+                  }
                 >
-                  {fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off}
+                  {displayedFastModeValue}
                 </div>
               </div>
             </button>
@@ -2414,10 +2469,14 @@ export function SessionOverview({
         <SelectStatusPill
           disabled={!openClawConnected}
           label={messages.sessionOverview.labels.thinkMode}
-          value={getThinkModeDescription(session.thinkMode || "off")}
+          value={displayedThinkModeValue}
           resolvedTheme={resolvedTheme}
-          valueClassName={cn(isThinkModeEnabled && "dark:text-emerald-400")}
-          valueStyle={isThinkModeEnabled && resolvedTheme === "light" ? { color: "#009559" } : undefined}
+          valueClassName={cn(sessionOverviewPending ? pendingSummaryValueClassName : (isThinkModeEnabled && "dark:text-emerald-400"))}
+          valueStyle={
+            sessionOverviewPending
+              ? undefined
+              : (isThinkModeEnabled && resolvedTheme === "light" ? { color: "#009559" } : undefined)
+          }
           items={thinkModeOptions}
           onSelect={onThinkModeChange}
           selectedValue={session.thinkMode || "off"}
@@ -2438,15 +2497,16 @@ export function SessionOverview({
         {session.mode === "openclaw" ? (
           <StatusPill
             label={messages.sessionOverview.labels.transport}
-            value={`${runtimeTransportDisplayLabel} / ${runtimeSocketLabel}`}
+            value={displayedTransportValue}
+            valueClassName={sessionOverviewPending ? pendingSummaryValueClassName : undefined}
             resolvedTheme={resolvedTheme}
             tooltipContent={(
               <TransportTooltipContent
                 messages={messages}
-                runtimeFallbackReason={runtimeFallbackReason}
-                runtimeReconnectAttempts={runtimeReconnectAttempts}
-                runtimeSocketLabel={runtimeSocketLabel}
-                runtimeTransportLabel={runtimeTransportLabel}
+                runtimeFallbackReason={sessionOverviewPending ? "" : runtimeFallbackReason}
+                runtimeReconnectAttempts={sessionOverviewPending ? 0 : runtimeReconnectAttempts}
+                runtimeSocketLabel={runtimeSocketTooltipLabel}
+                runtimeTransportLabel={runtimeTransportTooltipLabel}
               />
             )}
           />
@@ -2463,6 +2523,7 @@ export function SessionOverview({
         <ThemeToggle value={theme} resolvedTheme={resolvedTheme} onChange={onThemeChange} />
         <ShortcutHelpButton composerSendMode={composerSendMode} />
         {accessMode === "token" && onAccessLogout ? <AccessLogoutButton loggingOut={accessLoggingOut} onLogout={onAccessLogout} /> : null}
+        {extraControls}
       </div>
     </div>
   );
@@ -2501,6 +2562,11 @@ export function SessionOverview({
           <SelectionMenu
             disabled={!openClawConnected}
             label={messages.sessionOverview.menus.switchAgent}
+            onOpenChange={(nextOpen) => {
+              if (nextOpen) {
+                void onLoadImChannels?.();
+              }
+            }}
             triggerLabel={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
             value={session.agentId}
             onSelect={(item) => onAgentChange?.(String(item))}
@@ -2533,10 +2599,26 @@ export function SessionOverview({
                       {messages.sessionOverview.menus.imConversations || messages.sessionOverview.sessionSearch?.title || messages.sessionOverview.menus.switchAgent}
                     </OverviewDropdownMenuLabel>
                     {availableImMenuItems.map((item) => (
-                      <OverviewDropdownMenuItem key={item.channel} onSelect={() => handleImMenuSelect(item.channel, suppressTooltip)}>
-                        <div className="flex items-center gap-2 leading-none">
+                      <OverviewDropdownMenuItem
+                        key={item.channel}
+                        disabled={!item.enabled}
+                        onSelect={() => {
+                          if (item.enabled) {
+                            handleImMenuSelect(item.channel, suppressTooltip);
+                          }
+                        }}
+                        className={cn(
+                          !item.enabled && "cursor-not-allowed opacity-55 focus:bg-transparent focus:text-inherit",
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-2 leading-none">
                           <ImPlatformLogo channel={item.channel} />
                           <span className="self-center leading-none">{item.label}</span>
+                          {!item.enabled ? (
+                            <span className="ml-auto inline-flex shrink-0 items-center rounded-full border border-border/70 bg-muted/55 px-2 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+                              {messages.sessionOverview.menus.imPluginDisabled}
+                            </span>
+                          ) : null}
                         </div>
                       </OverviewDropdownMenuItem>
                     ))}

@@ -63,11 +63,12 @@ type EnvironmentSectionCardProps = {
 type FileGroupSectionProps = {
   action?: ReactNode;
   children?: ReactNode;
-  count?: number;
+  count?: ReactNode;
   defaultOpen?: boolean;
   label?: ReactNode;
   messages: any;
   onToggle?: (open: boolean) => void;
+  open?: boolean;
   spacingClassName?: string;
 };
 
@@ -321,9 +322,12 @@ export function FileGroupSection({
   label,
   messages,
   onToggle,
+  open,
   spacingClassName = "space-y-2",
 }: FileGroupSectionProps) {
   const [collapsed, setCollapsed] = useState(!defaultOpen);
+  const isControlled = typeof open === "boolean";
+  const isCollapsed = isControlled ? !open : collapsed;
 
   return (
     <section className={cn(spacingClassName)}>
@@ -331,17 +335,19 @@ export function FileGroupSection({
         <button
           type="button"
           className="grid min-w-0 flex-1 grid-cols-[1rem_auto_auto_1fr] items-center gap-2 rounded-md py-0.5 text-left transition hover:bg-muted/20"
-          aria-expanded={!collapsed}
-          aria-label={`${label} ${collapsed ? messages.inspector.timeline.expand : messages.inspector.timeline.collapse}`}
-          onClick={() => setCollapsed((current) => {
-            const nextCollapsed = !current;
+          aria-expanded={!isCollapsed}
+          aria-label={`${label} ${isCollapsed ? messages.inspector.timeline.expand : messages.inspector.timeline.collapse}`}
+          onClick={() => {
+            const nextCollapsed = !isCollapsed;
+            if (!isControlled) {
+              setCollapsed(nextCollapsed);
+            }
             onToggle?.(!nextCollapsed);
-            return nextCollapsed;
-          })}
+          }}
         >
           <span
             aria-hidden="true"
-            className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", collapsed ? "-rotate-90" : "rotate-0")}
+            className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", isCollapsed ? "-rotate-90" : "rotate-0")}
           >
             <svg viewBox="0 0 16 16" fill="none" className="h-full w-full">
               <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -354,7 +360,7 @@ export function FileGroupSection({
         </button>
         {action ? <div className="min-w-0 w-[10.5rem] max-w-[44%] shrink">{action}</div> : null}
       </div>
-      {!collapsed ? children : null}
+      {!isCollapsed ? children : null}
     </section>
   );
 }

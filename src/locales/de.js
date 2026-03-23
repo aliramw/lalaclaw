@@ -150,6 +150,7 @@ const de = {
     menus: {
       switchAgent: "Agent-Unterhaltung auswählen",
       switchAgentTrigger: "Agent wechseln",
+      imPluginDisabled: "Plugin deaktiviert",
       noAgents: "Keine Agenten verfügbar",
       noAvailableAgentSessionsHint: "Sprich mit dem Haupt-Agenten, um einen neuen Agenten zu erstellen, zum Beispiel: Help me create a new Agent named Developer (Chinese name: 程序员). Their responsibilities are...",
       switchModel: "Modell wechseln",

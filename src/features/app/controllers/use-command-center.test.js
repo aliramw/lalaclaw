@@ -10,6 +10,7 @@ import {
   hasActiveAssistantReply,
   isChatTabBusy,
   planSearchedSessionTabTarget,
+  resolveRuntimeTabAgentId,
   resolveViewportAnchorCandidate,
   resolveImRuntimeSessionUser,
   shouldReuseTabState,
@@ -411,6 +412,30 @@ describe("planSearchedSessionTabTarget", () => {
         title: "企微 main",
       }),
     );
+  });
+});
+
+describe("resolveRuntimeTabAgentId", () => {
+  it("keeps IM tabs bound to their existing agent even when runtime snapshots report another agent", () => {
+    expect(
+      resolveRuntimeTabAgentId({
+        requestedAgentId: "main",
+        currentAgentId: "main",
+        snapshotAgentId: "paint",
+        sessionUser: '{"channel":"dingtalk-connector","peerid":"398058"}',
+      }),
+    ).toBe("main");
+  });
+
+  it("still adopts snapshot agent ids for non-IM sessions", () => {
+    expect(
+      resolveRuntimeTabAgentId({
+        requestedAgentId: "main",
+        currentAgentId: "main",
+        snapshotAgentId: "paint",
+        sessionUser: "command-center",
+      }),
+    ).toBe("paint");
   });
 });
 

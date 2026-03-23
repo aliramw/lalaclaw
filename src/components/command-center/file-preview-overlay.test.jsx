@@ -100,6 +100,44 @@ describe("FilePreviewOverlay", () => {
     expect(screen.queryByText("该文件类型暂不支持内联预览。")).not.toBeInTheDocument();
   });
 
+  it("shows the files sidebar for pdf previews with a real file path", async () => {
+    const onOpenFilePreview = vi.fn();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        sessionFiles={[
+          {
+            path: "/Users/marila/projects/lalaclaw/src/alpha.md",
+            fullPath: "/Users/marila/projects/lalaclaw/src/alpha.md",
+            primaryAction: "modified",
+          },
+        ]}
+        preview={{
+          kind: "pdf",
+          name: "report.pdf",
+          path: "/Users/marila/projects/lalaclaw/report.pdf",
+          contentUrl: "/api/file-preview/content?path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Freport.pdf",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={onOpenFilePreview}
+      />,
+    );
+
+    const sidebar = screen.getByTestId("file-preview-files-sidebar");
+    expect(sidebar).toBeInTheDocument();
+    expect(within(sidebar).getByText(/Session files|本次会话文件/)).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(within(sidebar).getByTitle("/Users/marila/projects/lalaclaw/src/alpha.md"));
+
+    expect(onOpenFilePreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/Users/marila/projects/lalaclaw/src/alpha.md",
+      }),
+    );
+  });
+
   it("lets fullscreen pdf previews use the full available height", async () => {
     renderPreview(
       <FilePreviewOverlay
@@ -674,7 +712,7 @@ describe("FilePreviewOverlay", () => {
     input.remove();
   });
 
-  it("shows the inspector files sidebar for editable previews and opens files from it", async () => {
+  it("shows the inspector files sidebar for previewable files and opens files from it", async () => {
     const onOpenFilePreview = vi.fn();
 
     renderPreview(
@@ -717,11 +755,53 @@ describe("FilePreviewOverlay", () => {
       expect.objectContaining({
         path: "/Users/marila/projects/lalaclaw/src/alpha.js",
       }),
-      { startInEditMode: true },
     );
   });
 
-  it("disables non-editable files in the preview sidebar and shows a tooltip", async () => {
+  it("keeps non-editable files selectable in the preview sidebar before editing starts", async () => {
+    const onOpenFilePreview = vi.fn();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        sessionFiles={[
+          {
+            path: "/Users/marila/projects/lalaclaw/src/demo.pdf",
+            fullPath: "/Users/marila/projects/lalaclaw/src/demo.pdf",
+            primaryAction: "viewed",
+          },
+        ]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={onOpenFilePreview}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const disabledFile = within(screen.getByTestId("file-preview-files-sidebar")).getByTitle("/Users/marila/projects/lalaclaw/src/demo.pdf");
+    const tooltipText = /This file type can't be selected while editing\.|编辑时无法选择此类文件/;
+
+    expect(disabledFile).toHaveAttribute("aria-disabled", "false");
+
+    await user.hover(disabledFile.parentElement || disabledFile);
+
+    expect(screen.queryByText(tooltipText, { selector: "[data-side]" })).not.toBeInTheDocument();
+
+    await user.click(disabledFile);
+
+    expect(onOpenFilePreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/Users/marila/projects/lalaclaw/src/demo.pdf",
+      }),
+    );
+  });
+
+  it("disables non-editable files in the preview sidebar and shows a tooltip while editing", async () => {
     renderPreview(
       <FilePreviewOverlay
         files={[]}
@@ -744,13 +824,22 @@ describe("FilePreviewOverlay", () => {
     );
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+
     const disabledFile = within(screen.getByTestId("file-preview-files-sidebar")).getByTitle("/Users/marila/projects/lalaclaw/src/demo.pdf");
+    const tooltipText = /This file type can't be selected while editing\.|编辑时无法选择此类文件/;
 
     expect(disabledFile).toHaveAttribute("aria-disabled", "true");
 
     await user.hover(disabledFile.parentElement || disabledFile);
 
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(/This file type can't be selected while editing\.|编辑时无法选择此类文件/);
+    expect(await screen.findByText(tooltipText, { selector: "[data-side]" })).toBeInTheDocument();
+
+    await user.unhover(disabledFile.parentElement || disabledFile);
+
+    await waitFor(() => {
+      expect(screen.queryByText(tooltipText, { selector: "[data-side]" })).not.toBeInTheDocument();
+    });
   });
 
   it("uses Monaco for code-like text previews and lets cancel restore the original content", async () => {
@@ -928,6 +1017,42 @@ describe("FilePreviewOverlay", () => {
     });
     expect(await screen.findByText("Rendered DOCX preview")).toBeInTheDocument();
     expect(screen.getByTestId("docx-preview-content")).toBeInTheDocument();
+  });
+
+  it("shows current and total duration for audio previews even when duration becomes available after metadata", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "audio",
+          name: "sample.wav",
+          path: "/Users/marila/projects/lalaclaw/sample.wav",
+          contentUrl: "/api/file-preview/content?path=%2FUsers%2Fmarila%2Fprojects%2Flalaclaw%2Fsample.wav",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const audio = document.querySelector("audio");
+    expect(audio).toBeTruthy();
+
+    Object.defineProperty(audio, "duration", { configurable: true, value: 0 });
+    Object.defineProperty(audio, "currentTime", { configurable: true, value: 0 });
+    fireEvent.loadedMetadata(audio);
+
+    expect(screen.getByTestId("audio-preview-timestamps")).toHaveTextContent("0:00 / 0:00");
+
+    Object.defineProperty(audio, "duration", { configurable: true, value: 65 });
+    Object.defineProperty(audio, "currentTime", { configurable: true, value: 3 });
+    fireEvent.timeUpdate(audio);
+
+    expect(screen.getByTestId("audio-preview-timestamps")).toHaveTextContent("0:03 / 1:05");
+
+    Object.defineProperty(audio, "currentTime", { configurable: true, value: 12 });
+    fireEvent.timeUpdate(audio);
+
+    expect(screen.getByTestId("audio-preview-timestamps")).toHaveTextContent("0:12 / 1:05");
   });
 
   it("renders csv previews as a table", () => {

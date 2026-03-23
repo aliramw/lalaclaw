@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
@@ -249,46 +248,28 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "向左滚动会话标签" })).not.toBeDisabled();
   });
 
-  it("lets the user rename their chat card label from the chat header", async () => {
-    const user = userEvent.setup();
-    const handleUserLabelChange = vi.fn();
-    function UserLabelHarness() {
-      const [label, setLabel] = useState("Lala");
+  it("does not render a user-name editor in the chat header anymore", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[{ id: "msg-user-1", role: "user", content: "你好", timestamp: 1 }]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          userLabel="Lala"
+        />
+      </TooltipProvider>,
+    );
 
-      return (
-        <TooltipProvider>
-          <ChatPanel
-            busy={false}
-            formatTime={() => "10:00:00"}
-            messageViewportRef={null}
-            messages={[{ id: "msg-user-1", role: "user", content: "你好", timestamp: 1 }]}
-            onPromptChange={() => {}}
-            onPromptKeyDown={() => {}}
-            onReset={() => {}}
-            onSend={() => {}}
-            onUserLabelChange={(value) => {
-              handleUserLabelChange(value);
-              setLabel(value);
-            }}
-            prompt=""
-            promptRef={null}
-            session={createSession()}
-            userLabel={label}
-          />
-        </TooltipProvider>
-      );
-    }
-
-    render(<UserLabelHarness />);
-
-    const input = screen.getByRole("textbox", { name: "我的名字" });
-    expect(input).toHaveValue("Lala");
-    expect(screen.getByText("Lala")).toBeInTheDocument();
-
-    await user.clear(input);
-    await user.type(input, "小爪");
-
-    expect(handleUserLabelChange).toHaveBeenLastCalledWith("小爪");
+    expect(screen.queryByRole("textbox", { name: "我的名字" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Lala").length).toBeGreaterThan(0);
   });
 
   it("keeps the trailing control inside the tab rail after the session tabs", () => {
@@ -3055,16 +3036,41 @@ describe("ChatPanel", () => {
   it("opens file previews when clicking tracked files in assistant bubbles", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.startsWith("/api/workspace-tree")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              items: [
+                {
+                  path: "/Users/marila/projects/lalaclaw/workspace/videos",
+                  fullPath: "/Users/marila/projects/lalaclaw/workspace/videos",
+                  kind: "目录",
+                  hasChildren: true,
+                },
+                {
+                  path: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+                  fullPath: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+                  kind: "文件",
+                },
+              ],
+            }),
+          };
+        }
+
+        return {
           ok: true,
-          kind: "text",
-          path: "/Users/marila/projects/lalaclaw/workspace/sample.py",
-          name: "sample.py",
-          content: "print('preview works')\n",
-        }),
-      })),
+          json: async () => ({
+            ok: true,
+            kind: "text",
+            path: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+            name: "sample.py",
+            content: "print('preview works')\n",
+          }),
+        };
+      }),
     );
 
     render(
@@ -3090,7 +3096,25 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           resolvedTheme="dark"
-          session={createSession()}
+          session={createSession({
+            sessionUser: "command-center",
+            workspaceRoot: "/Users/marila/projects/lalaclaw/workspace",
+          })}
+          workspaceCount={128}
+          workspaceFiles={[
+            {
+              path: "/Users/marila/projects/lalaclaw/workspace/videos",
+              fullPath: "/Users/marila/projects/lalaclaw/workspace/videos",
+              kind: "目录",
+              hasChildren: true,
+            },
+            {
+              path: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+              fullPath: "/Users/marila/projects/lalaclaw/workspace/sample.py",
+              kind: "文件",
+            },
+          ]}
+          workspaceLoaded
         />
       </TooltipProvider>,
     );
@@ -3100,6 +3124,17 @@ describe("ChatPanel", () => {
 
     expect(await screen.findByText("python")).toBeInTheDocument();
     expect(document.querySelector("pre")?.textContent).toContain("print('preview works')");
+    const sidebar = screen.getByTestId("file-preview-files-sidebar");
+    expect(sidebar).toBeInTheDocument();
+    expect(within(sidebar).getByText(/^Session files$|^本次会话文件$/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "sample.py" }).length).toBeGreaterThan(1);
+
+    const workspaceButton = within(sidebar).getByRole("button", { name: /^workspace 文件 / });
+    expect(workspaceButton).toHaveTextContent("128");
+
+    const videosButton = await within(sidebar).findByRole("button", { name: /^videos / });
+    expect(videosButton).toBeInTheDocument();
+    expect(within(sidebar).getAllByRole("button", { name: "sample.py" }).length).toBeGreaterThan(0);
   });
 
   it("routes message and composer images through the shared image preview overlay", async () => {

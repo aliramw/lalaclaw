@@ -255,7 +255,7 @@ export function createRequestHandler(appContext = defaultAppContext) {
       return;
     }
 
-    sendFile(res, filePath);
+    sendFile(res, filePath, req);
   };
 }
 

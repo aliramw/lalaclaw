@@ -1,0 +1,307 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OPENCLAW_BIN = exports.LOCAL_OPENCLAW_DIR = exports.DIST_DIR = exports.PUBLIC_DIR = exports.PROJECT_ROOT = exports.PORT = exports.HOST = void 0;
+exports.resolveLalaclawStateDir = resolveLalaclawStateDir;
+exports.readJsonIfExists = readJsonIfExists;
+exports.readTextIfExists = readTextIfExists;
+exports.fileExists = fileExists;
+exports.resolveCanonicalModelId = resolveCanonicalModelId;
+exports.resolveAgentModel = resolveAgentModel;
+exports.collectAvailableModels = collectAvailableModels;
+exports.collectAvailableAgents = collectAvailableAgents;
+exports.collectAvailableSkills = collectAvailableSkills;
+exports.collectAllowedSubagents = collectAllowedSubagents;
+exports.buildRuntimeConfig = buildRuntimeConfig;
+const node_fs_1 = __importDefault(require("node:fs"));
+const node_os_1 = __importDefault(require("node:os"));
+const node_path_1 = __importDefault(require("node:path"));
+const openclaw_operations_1 = require("../services/openclaw-operations");
+exports.HOST = process.env.HOST || '127.0.0.1';
+exports.PORT = Number(process.env.PORT || 3000);
+const projectRootCandidate = node_path_1.default.resolve(__dirname, '..', '..');
+exports.PROJECT_ROOT = node_path_1.default.basename(projectRootCandidate) === '.server-build'
+    ? node_path_1.default.dirname(projectRootCandidate)
+    : projectRootCandidate;
+exports.PUBLIC_DIR = node_path_1.default.join(exports.PROJECT_ROOT, 'public');
+exports.DIST_DIR = node_path_1.default.join(exports.PROJECT_ROOT, 'dist');
+const HOME_DIR = process.env.HOME || '';
+const LOCAL_OPENCLAW_CONFIG = node_path_1.default.join(HOME_DIR, '.openclaw', 'openclaw.json');
+exports.LOCAL_OPENCLAW_DIR = node_path_1.default.join(HOME_DIR, '.openclaw');
+exports.OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw';
+const NPM_GLOBAL_DIR = node_path_1.default.join(HOME_DIR, '.npm-global');
+function resolveDefaultConfigDir() {
+    const explicitConfigDir = String(process.env.LALACLAW_CONFIG_DIR || '').trim();
+    if (explicitConfigDir) {
+        return node_path_1.default.resolve(explicitConfigDir);
+    }
+    if (process.platform === 'win32') {
+        const appDataDir = String(process.env.APPDATA || '').trim();
+        if (appDataDir) {
+            return node_path_1.default.join(appDataDir, 'LalaClaw');
+        }
+    }
+    if (HOME_DIR) {
+        return node_path_1.default.join(HOME_DIR, '.config', 'lalaclaw');
+    }
+    return node_path_1.default.join(node_os_1.default.tmpdir(), 'lalaclaw');
+}
+function resolveServerConfigFile() {
+    const explicitConfigFile = String(process.env.LALACLAW_CONFIG_FILE || '').trim();
+    if (explicitConfigFile) {
+        return node_path_1.default.resolve(explicitConfigFile);
+    }
+    return node_path_1.default.join(resolveDefaultConfigDir(), '.env.local');
+}
+function resolveLalaclawStateDir() {
+    return resolveDefaultConfigDir();
+}
+function readJsonIfExists(filePath) {
+    try {
+        if (!filePath || !node_fs_1.default.existsSync(filePath)) {
+            return null;
+        }
+        return JSON.parse(node_fs_1.default.readFileSync(filePath, 'utf8'));
+    }
+    catch {
+        return null;
+    }
+}
+function readTextIfExists(filePath) {
+    try {
+        if (!filePath || !node_fs_1.default.existsSync(filePath)) {
+            return '';
+        }
+        return node_fs_1.default.readFileSync(filePath, 'utf8');
+    }
+    catch {
+        return '';
+    }
+}
+function fileExists(filePath) {
+    try {
+        return node_fs_1.default.existsSync(filePath);
+    }
+    catch {
+        return false;
+    }
+}
+function resolveDefaultAgentId(localConfig) {
+    const defaultAgent = localConfig?.agents?.list?.find((agent) => agent?.default);
+    return process.env.OPENCLAW_AGENT_ID || defaultAgent?.id || 'main';
+}
+function getConfiguredModelEntries(localConfig = null) {
+    const models = localConfig?.agents?.defaults?.models;
+    if (!models || typeof models !== 'object') {
+        return [];
+    }
+    return Object.entries(models).reduce((entries, [modelId, meta]) => {
+        const normalizedModelId = String(modelId || '').trim();
+        if (!normalizedModelId || !meta || typeof meta !== 'object') {
+            return entries;
+        }
+        entries.push([normalizedModelId, meta]);
+        return entries;
+    }, []);
+}
+function resolveCanonicalModelId(value = '', localConfig = null) {
+    const requestedModel = String(value || '').trim();
+    if (!requestedModel) {
+        return '';
+    }
+    const configuredModels = getConfiguredModelEntries(localConfig);
+    if (!configuredModels.length) {
+        return requestedModel;
+    }
+    const normalizedRequestedModel = requestedModel.toLowerCase();
+    const exactMatch = configuredModels.find(([modelId]) => modelId.toLowerCase() === normalizedRequestedModel);
+    if (exactMatch) {
+        return exactMatch[0];
+    }
+    const aliasMatch = configuredModels.find(([, meta]) => String(meta?.alias || '').trim().toLowerCase() === normalizedRequestedModel);
+    if (aliasMatch) {
+        return aliasMatch[0];
+    }
+    const suffixMatches = configuredModels.filter(([modelId]) => modelId.toLowerCase().endsWith(`/${normalizedRequestedModel}`));
+    if (suffixMatches.length === 1) {
+        return suffixMatches[0]?.[0] || requestedModel;
+    }
+    return requestedModel;
+}
+function resolveAgentModel(agent, localConfig = null) {
+    const primary = agent?.model?.primary || (typeof agent?.model === 'string' ? agent.model : '');
+    return resolveCanonicalModelId(primary, localConfig);
+}
+function collectAvailableModels(localConfig, preferred = []) {
+    const seen = new Set();
+    const ordered = [];
+    const configuredModels = getConfiguredModelEntries(localConfig);
+    function addModel(value) {
+        const model = resolveCanonicalModelId(value, localConfig);
+        if (!model || seen.has(model)) {
+            return;
+        }
+        seen.add(model);
+        ordered.push(model);
+    }
+    preferred.forEach(addModel);
+    addModel(localConfig?.agents?.defaults?.model?.primary);
+    configuredModels.forEach(([modelId]) => addModel(modelId));
+    (localConfig?.agents?.list || []).forEach((agent) => addModel(resolveAgentModel(agent, localConfig)));
+    return ordered;
+}
+function collectAvailableAgents(localConfig, preferred = []) {
+    const seen = new Set();
+    const ordered = [];
+    function addAgent(value) {
+        const agentId = String(value || '').trim();
+        if (!agentId || seen.has(agentId)) {
+            return;
+        }
+        seen.add(agentId);
+        ordered.push(agentId);
+    }
+    preferred.forEach(addAgent);
+    (localConfig?.agents?.list || []).forEach((agent) => addAgent(agent?.id));
+    return ordered;
+}
+function collectAvailableSkills(localConfig, agentId) {
+    const configuredAgents = Array.isArray(localConfig?.agents?.list) ? localConfig.agents.list : [];
+    const currentAgent = configuredAgents.find((agent) => String(agent?.id || '').trim() === String(agentId || '').trim());
+    if (!currentAgent) {
+        return [];
+    }
+    const allowedAgentIds = [
+        String(currentAgent.id || '').trim(),
+        ...(Array.isArray(currentAgent?.subagents?.allowAgents) ? currentAgent.subagents.allowAgents : []),
+    ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+    const allowedAgents = allowedAgentIds
+        .map((allowedId) => configuredAgents.find((agent) => String(agent?.id || '').trim() === allowedId))
+        .filter(Boolean);
+    const seen = new Set();
+    const ordered = [];
+    function addSkill(name, ownerAgentId = '') {
+        const normalizedName = String(name || '').trim();
+        if (!normalizedName || seen.has(normalizedName)) {
+            return;
+        }
+        seen.add(normalizedName);
+        ordered.push({
+            name: normalizedName,
+            ownerAgentId: String(ownerAgentId || '').trim(),
+        });
+    }
+    allowedAgents.forEach((agent) => {
+        const ownerAgentId = String(agent?.id || '').trim();
+        const skills = Array.isArray(agent?.skills) ? agent.skills : [];
+        skills.forEach((value) => {
+            addSkill(value, ownerAgentId);
+        });
+    });
+    const workspaceRoot = localConfig?.agents?.defaults?.workspace || node_path_1.default.join(exports.LOCAL_OPENCLAW_DIR, 'workspace');
+    const skillDirectories = [
+        node_path_1.default.join(workspaceRoot, 'skills'),
+        node_path_1.default.join(exports.LOCAL_OPENCLAW_DIR, 'skills'),
+        node_path_1.default.join(NPM_GLOBAL_DIR, 'lib', 'node_modules', 'openclaw', 'skills'),
+    ];
+    skillDirectories.forEach((directoryPath) => {
+        try {
+            if (!directoryPath || !node_fs_1.default.existsSync(directoryPath)) {
+                return;
+            }
+            node_fs_1.default.readdirSync(directoryPath, { withFileTypes: true })
+                .filter((entry) => entry?.isDirectory?.())
+                .forEach((entry) => {
+                const skillPath = node_path_1.default.join(directoryPath, entry.name, 'SKILL.md');
+                if (node_fs_1.default.existsSync(skillPath)) {
+                    addSkill(entry.name);
+                }
+            });
+        }
+        catch { }
+    });
+    const skillLockFiles = [
+        node_path_1.default.join(workspaceRoot, 'skills-lock.json'),
+        node_path_1.default.join(workspaceRoot, '.clawhub', 'lock.json'),
+    ];
+    skillLockFiles.forEach((filePath) => {
+        const payload = readJsonIfExists(filePath);
+        Object.keys(payload?.skills || {}).forEach((name) => addSkill(name));
+    });
+    return ordered;
+}
+function collectAllowedSubagents(localConfig, agentId) {
+    const configuredAgents = Array.isArray(localConfig?.agents?.list) ? localConfig.agents.list : [];
+    const configuredAgentIds = new Set(configuredAgents
+        .map((agent) => String(agent?.id || '').trim())
+        .filter(Boolean));
+    const currentAgent = configuredAgents.find((agent) => String(agent?.id || '').trim() === String(agentId || '').trim());
+    const allowAgents = Array.isArray(currentAgent?.subagents?.allowAgents) ? currentAgent.subagents.allowAgents : [];
+    const seen = new Set();
+    const ordered = [];
+    allowAgents.forEach((value) => {
+        const nextAgentId = String(value || '').trim();
+        if (!nextAgentId || seen.has(nextAgentId) || !configuredAgentIds.has(nextAgentId)) {
+            return;
+        }
+        seen.add(nextAgentId);
+        ordered.push(nextAgentId);
+    });
+    return ordered;
+}
+function buildRuntimeConfig() {
+    const localConfig = readJsonIfExists(LOCAL_OPENCLAW_CONFIG);
+    const stateDir = resolveLalaclawStateDir();
+    const forceMockMode = ['1', 'true', 'yes', 'on'].includes(String(process.env.COMMANDCENTER_FORCE_MOCK || '').trim().toLowerCase());
+    const localGatewayPort = Number(localConfig?.gateway?.port || 18789);
+    const localToken = localConfig?.gateway?.auth?.token || '';
+    const localAgentId = resolveDefaultAgentId(localConfig);
+    const envBaseUrl = process.env.OPENCLAW_BASE_URL || '';
+    const envModel = resolveCanonicalModelId(process.env.OPENCLAW_MODEL || '', localConfig);
+    const envAgentId = process.env.OPENCLAW_AGENT_ID || '';
+    const detectedBaseUrl = envBaseUrl || (localToken ? `http://127.0.0.1:${localGatewayPort}` : '');
+    const baseUrl = forceMockMode ? '' : detectedBaseUrl;
+    const agentId = envAgentId || localAgentId;
+    const defaultModel = resolveCanonicalModelId(localConfig?.agents?.defaults?.model?.primary || resolveAgentModel(localConfig?.agents?.list?.find((agent) => agent?.id === agentId), localConfig), localConfig);
+    const workspaceRoot = localConfig?.agents?.defaults?.workspace || node_path_1.default.join(exports.LOCAL_OPENCLAW_DIR, 'workspace');
+    const availableModels = collectAvailableModels(localConfig, [envModel]);
+    const availableAgents = collectAvailableAgents(localConfig, [agentId]);
+    const availableSkills = collectAvailableSkills(localConfig, agentId);
+    const runtimeConfig = {
+        mode: baseUrl ? 'openclaw' : 'mock',
+        model: envModel || defaultModel || 'openclaw',
+        agentId,
+        baseUrl,
+        apiKey: process.env.OPENCLAW_API_KEY || localToken,
+        apiStyle: process.env.OPENCLAW_API_STYLE || 'chat',
+        apiPath: process.env.OPENCLAW_API_PATH || '/v1/chat/completions',
+        localDetected: !forceMockMode && Boolean(localToken),
+        forceMockMode,
+        localConfig,
+        localConfigPath: LOCAL_OPENCLAW_CONFIG,
+        openclawDir: exports.LOCAL_OPENCLAW_DIR,
+        openclawBin: exports.OPENCLAW_BIN,
+        gatewayPort: localGatewayPort,
+        browserControlPort: localGatewayPort + 2,
+        healthPort: localGatewayPort + 3,
+        workspaceRoot,
+        logsDir: node_path_1.default.join(exports.LOCAL_OPENCLAW_DIR, 'logs'),
+        availableModels,
+        availableAgents,
+        availableSkills,
+        accessMode: process.env.COMMANDCENTER_ACCESS_MODE || 'off',
+        accessTokensRaw: process.env.COMMANDCENTER_ACCESS_TOKENS || '',
+        accessTokensFile: process.env.COMMANDCENTER_ACCESS_TOKENS_FILE || '',
+        accessCookieName: process.env.COMMANDCENTER_ACCESS_COOKIE_NAME || '',
+        accessSessionTtlMs: Number(process.env.COMMANDCENTER_ACCESS_SESSION_TTL_MS || 0),
+        accessConfigFile: resolveServerConfigFile(),
+        remoteOpenClawTarget: false,
+        stateDir,
+    };
+    runtimeConfig.remoteOpenClawTarget = (0, openclaw_operations_1.isRemoteOpenClawTarget)(runtimeConfig);
+    return runtimeConfig;
+}

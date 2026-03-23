@@ -3,7 +3,12 @@ import { cn } from "@/lib/utils";
 import { createContext, forwardRef, useCallback, useContext, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, ElementRef, PointerEvent } from "react";
 
-export const TooltipProvider = TooltipPrimitive.Provider;
+export function TooltipProvider({
+  disableHoverableContent = true,
+  ...props
+}: ComponentPropsWithoutRef<typeof TooltipPrimitive.Provider>) {
+  return <TooltipPrimitive.Provider disableHoverableContent={disableHoverableContent} {...props} />;
+}
 
 type TooltipDismissContextValue = {
   clearSuppression: () => void;

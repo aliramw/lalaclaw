@@ -189,6 +189,18 @@ function sanitizePromptDraftsMap(value: unknown): Record<string, string> {
   );
 }
 
+function sanitizeBooleanMap(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, flag]) => [String(key || "").trim(), Boolean(flag)])
+      .filter(([key]) => Boolean(key)),
+  );
+}
+
 function sanitizeChatScrollTopMap(value: unknown): Record<string, ChatScrollState> {
   if (!value || typeof value !== "object") {
     return {};
@@ -678,6 +690,7 @@ function loadParsedStorageState(raw: string | null): StoredUiState | null {
     userLabel: sanitizeUserLabel(parsed?.userLabel),
     dismissedTaskRelationshipIdsByConversation: sanitizeDismissedTaskRelationshipsMap(parsed?.dismissedTaskRelationshipIdsByConversation),
     promptDraftsByConversation: sanitizePromptDraftsMap(parsed?.promptDraftsByConversation),
+    workspaceFilesOpenByConversation: sanitizeBooleanMap(parsed?.workspaceFilesOpenByConversation),
   };
 }
 
@@ -736,6 +749,7 @@ export function persistUiStateSnapshot(
       sessionUser: sanitizeSessionUser(state.sessionUser || defaultSessionUser),
       tabMetaById: sanitizeTabMetaMap(state.tabMetaById, sanitizeChatTabs(state.chatTabs, state.sessionUser, state.agentId)),
       promptDraftsByConversation: sanitizePromptDraftsMap(state.promptDraftsByConversation),
+      workspaceFilesOpenByConversation: sanitizeBooleanMap(state.workspaceFilesOpenByConversation),
       messages: sanitizeMessagesForStorage(state.messages || []),
       messagesByTabId: sanitizeMessagesByTabId(state.messagesByTabId || {}),
     };

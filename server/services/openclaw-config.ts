@@ -41,6 +41,20 @@ type ChangedField = {
   restartRequired: boolean;
   meta?: LooseRecord;
 };
+type ImChannelSummary = {
+  channel: string;
+  pluginId: string;
+  channelEnabled: boolean;
+  pluginEnabled: boolean;
+  enabled: boolean;
+  defaultAgentId: string;
+};
+
+const IM_CHANNEL_DEFINITIONS = [
+  { channel: 'dingtalk-connector', pluginId: 'dingtalk-connector', channelPath: 'channels.dingtalk-connector.enabled' },
+  { channel: 'feishu', pluginId: 'feishu', channelPath: 'channels.feishu.enabled' },
+  { channel: 'wecom', pluginId: 'wecom-openclaw-plugin', channelPath: 'channels.wecom.enabled' },
+] as const;
 export const MODEL_PRIMARY_PATH = 'agents.defaults.model.primary';
 export const AGENT_MODEL_KEY = 'agentModel';
 export const GATEWAY_BIND_PATH = 'gateway.bind';
@@ -265,6 +279,58 @@ function collectConfiguredModelOptions(configJson: LooseRecord = {}) {
   });
 
   return ordered;
+}
+
+function isConfigFlagEnabled(value: unknown) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return !['0', 'false', 'off', 'disabled', 'no'].includes(normalized);
+  }
+  return Boolean(value);
+}
+
+function resolveImChannelDefaultAgentId(configJson: LooseRecord = {}, channel = '') {
+  const normalizedChannel = String(channel || '').trim();
+  if (!normalizedChannel) {
+    return '';
+  }
+
+  const bindings = Array.isArray(configJson?.bindings) ? configJson.bindings : [];
+  const defaultBinding = bindings.find((binding: LooseRecord) => {
+    const matchChannel = String(binding?.match?.channel || '').trim();
+    const accountId = String(binding?.match?.accountId || '').trim();
+    return matchChannel === normalizedChannel && (!accountId || accountId === '__default__');
+  });
+  if (defaultBinding?.agentId) {
+    return String(defaultBinding.agentId).trim();
+  }
+
+  const fallbackBinding = bindings.find((binding: LooseRecord) => String(binding?.match?.channel || '').trim() === normalizedChannel);
+  return String(fallbackBinding?.agentId || '').trim();
+}
+
+function buildImChannelSummary(configJson: LooseRecord = {}) {
+  return Object.fromEntries(
+    IM_CHANNEL_DEFINITIONS.map(({ channel, pluginId, channelPath }) => {
+      const channelEnabled = isConfigFlagEnabled(getValueAtPath(configJson, channelPath));
+      const pluginEnabled = isConfigFlagEnabled(getValueAtPath(configJson, `plugins.entries.${pluginId}.enabled`));
+      const summary: ImChannelSummary = {
+        channel,
+        pluginId,
+        channelEnabled,
+        pluginEnabled,
+        enabled: channelEnabled && pluginEnabled,
+        defaultAgentId: resolveImChannelDefaultAgentId(configJson, channel),
+      };
+      return [channel, summary];
+    }),
+  );
 }
 
 function buildLocalTargetKey(configPath = '') {
@@ -502,6 +568,7 @@ export function createOpenClawConfigService({
         configPath: snapshot.path,
         baseHash: snapshot.hash,
         fields: buildFieldStateForConfig(snapshot.parsed, { agentId: currentAgentId }),
+        imChannels: buildImChannelSummary(snapshot.parsed),
         modelOptions: collectConfiguredModelOptions(snapshot.parsed),
         currentAgentId,
         validation: buildRemoteValidation(snapshot),
@@ -517,6 +584,7 @@ export function createOpenClawConfigService({
       configPath,
       baseHash: snapshot.hash,
       fields: buildFieldStateForConfig(snapshot.parsed, { agentId: currentAgentId }),
+      imChannels: buildImChannelSummary(snapshot.parsed),
       modelOptions: collectConfiguredModelOptions(snapshot.parsed),
       currentAgentId,
       validation,

@@ -39,6 +39,26 @@ const zh = {
     },
     shortcutHint: (shortcut) => `快捷键：${shortcut}`,
   },
+  settingsDialog: {
+    openLabel: "打开个人设置",
+    title: "个人设置",
+    description: "在这里管理你的显示名字，并查看当前 LalaClaw 应用信息。",
+    close: "关闭个人设置",
+    sections: {
+      profile: "个人设置",
+      about: "关于",
+    },
+    profile: {
+      title: "个人设置",
+      description: "设置显示在你的聊天消息旁边的名字。",
+      previewLabel: "当前显示名字",
+      nameHint: "新名字会用于你接下来发送的消息。",
+    },
+    about: {
+      title: "关于 LalaClaw",
+      description: "在这里查看当前版本、检查更新，并执行与“环境”面板一致的应用内更新。",
+    },
+  },
   shortcuts: {
     tooltipTitle: "快捷键提示",
     platformShortcutHint: "(mac) Cmd + / (win) Ctrl + /",
@@ -212,6 +232,7 @@ const zh = {
       switchAgentTrigger: "切换 Agent",
       agentConversations: "Agent 对话",
       imConversations: "IM 对话",
+      imPluginDisabled: "未启用插件",
       noAgents: "暂无可选 Agent",
       noAvailableAgentSessionsHint: "可以和主 Agent 对话让他帮你创建新的 Agent，比如：\n\n帮我创建一个新的 Agent，名字叫 Developer（中文名：程序员），他的职责是...",
       switchModel: "切换模型",
@@ -295,6 +316,7 @@ const zh = {
       reconnecting: "重连中",
       disconnected: "已断开",
     },
+    pendingValue: "--",
   },
   chat: {
     title: "当前会话",

@@ -30,11 +30,13 @@ type WorkspaceFilesSectionProps = {
   messages: any;
   onOpenPreview?: (item: Record<string, any>) => void;
   onOpenWorkspaceDirectory: (node: Record<string, any>) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   onSetContextMenu: Dispatch<SetStateAction<any>>;
   onSetSelectedDirectoryPath: (path: string) => void;
   onToggleOpen: () => void;
   selectedDirectoryPath?: string;
-  visibleWorkspaceCount: number;
+  visibleWorkspaceCount: number | string;
   workspaceFilterInput?: string;
   workspaceNodes: Record<string, any>[];
   workspaceState: { error?: string; loading?: boolean };
@@ -147,6 +149,8 @@ export function WorkspaceFilesSection({
   messages,
   onOpenPreview,
   onOpenWorkspaceDirectory,
+  open = true,
+  onOpenChange,
   onSetContextMenu,
   onSetSelectedDirectoryPath,
   onToggleOpen,
@@ -161,9 +165,10 @@ export function WorkspaceFilesSection({
   return (
     <FileGroupSection
       count={visibleWorkspaceCount}
-      defaultOpen={false}
+      defaultOpen
       label={messages.inspector.fileCollections.workspace}
       messages={messages}
+      open={open}
       action={(
         <FileFilterInput
           filterInput={workspaceFilterInput}
@@ -173,6 +178,7 @@ export function WorkspaceFilesSection({
         />
       )}
       onToggle={(expanded) => {
+        onOpenChange?.(expanded);
         if (expanded) {
           onToggleOpen();
         }

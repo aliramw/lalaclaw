@@ -163,7 +163,6 @@ type ChatPanelProps = {
   onCloseChatTab?: (tabId: string) => void;
   onComposerSendModeToggle?: () => void;
   onReorderChatTab?: (dragTabId: string, targetTabId: string, placement: "before" | "after") => void;
-  onUserLabelChange?: (value: string) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onEditQueuedMessage?: (messageId: string) => void;
   onPromptChange?: (value: string) => void;
@@ -187,6 +186,9 @@ type ChatPanelProps = {
   sessionOverview?: ReactNode;
   showTabsStrip?: boolean;
   userLabel?: string;
+  workspaceCount?: number;
+  workspaceFiles?: Array<Record<string, unknown>>;
+  workspaceLoaded?: boolean;
 };
 
 const LazyFilePreviewOverlay = lazy(() =>
@@ -2654,7 +2656,6 @@ export function ChatPanel({
   onCloseChatTab,
   onComposerSendModeToggle,
   onReorderChatTab,
-  onUserLabelChange,
   onRemoveAttachment,
   onEditQueuedMessage,
   onPromptChange = () => {},
@@ -2678,9 +2679,11 @@ export function ChatPanel({
   sessionOverview = null,
   showTabsStrip = true,
   userLabel = "",
+  workspaceCount,
+  workspaceFiles = [],
+  workspaceLoaded = false,
 }: ChatPanelProps) {
   const { intlLocale, messages: i18n } = useI18n();
-  const userLabelInputId = useId();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerCompositionActiveRef = useRef(false);
@@ -4285,22 +4288,6 @@ export function ChatPanel({
               </div>
 
               <div className="flex shrink-0 items-center gap-1.5 self-start">
-                <div className="flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-2 py-0.5">
-                  <label htmlFor={userLabelInputId} className="sr-only">
-                    {i18n.chat.userLabel}
-                  </label>
-                  <input
-                    id={userLabelInputId}
-                    type="text"
-                    value={userLabel}
-                    placeholder={i18n.chat.userLabelPlaceholder}
-                    aria-label={i18n.chat.userLabel}
-                    title={i18n.chat.userLabelTooltip}
-                    disabled={interactionLocked}
-                    onChange={(event) => onUserLabelChange?.(event.target.value)}
-                    className="h-6 w-28 border-0 bg-transparent px-0 text-[12px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/75 disabled:cursor-not-allowed disabled:opacity-60"
-                  />
-                </div>
                 <div className="flex items-center gap-0.5 rounded-md border border-border/70 bg-background/70 px-1 py-0.5">
                   {chatFontSizeOptions.map((item) => {
                     const active = item.value === chatFontSize;
@@ -4748,12 +4735,18 @@ export function ChatPanel({
       {filePreview ? (
         <Suspense fallback={null}>
           <LazyFilePreviewOverlay
+            currentAgentId={session?.agentId || ""}
+            currentSessionUser={session?.sessionUser || ""}
+            currentWorkspaceRoot={typeof session?.workspaceRoot === "string" ? session.workspaceRoot : ""}
             files={files}
             preview={filePreview}
             resolvedTheme={resolvedTheme}
+            sessionFiles={files}
             onClose={closeFilePreview}
             onOpenFilePreview={handleOpenPreview}
-            workspaceCount={0}
+            workspaceCount={workspaceCount}
+            workspaceFiles={workspaceFiles}
+            workspaceLoaded={workspaceLoaded}
           />
         </Suspense>
       ) : null}

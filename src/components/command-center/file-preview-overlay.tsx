@@ -208,6 +208,23 @@ function getVsCodeHref(filePath) {
   return `vscode://file/${encodeURIComponent(filePath)}`;
 }
 
+function formatMediaTimestamp(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    return "0:00";
+  }
+
+  const totalSeconds = Math.floor(value);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function isCodeLikePreviewTarget(filePath = "", kind = "") {
   const normalizedKind = String(kind || "").toLowerCase();
   if (normalizedKind === "json" || normalizedKind === "markdown") {
@@ -692,6 +709,70 @@ function SpreadsheetPreview({ preview, resolvedTheme = "light" }: { preview: Pre
           {messages.inspector.spreadsheet.truncated(previewRowLimit, previewColumnLimit)}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function AudioPreview({ preview, resolvedTheme = "light" }: { preview: PreviewLike; resolvedTheme?: string }) {
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const isDark = resolvedTheme === "dark";
+  const syncAudioMetrics = useCallback((node: HTMLAudioElement | null) => {
+    if (!node) {
+      return;
+    }
+
+    const nextCurrentTime = Number.isFinite(node.currentTime) && node.currentTime >= 0 ? node.currentTime : 0;
+    const nextDuration = Number.isFinite(node.duration) && node.duration > 0 ? node.duration : null;
+
+    setCurrentTime(nextCurrentTime);
+    setDuration((previous) => (nextDuration === null ? previous : nextDuration));
+  }, []);
+
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+  }, [preview?.contentUrl]);
+
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div
+        className={cn(
+          "w-full max-w-3xl rounded-2xl border px-5 py-4 shadow-sm",
+          isDark ? "border-white/10 bg-white/[0.04]" : "border-slate-200 bg-slate-50/70",
+        )}
+      >
+        <div
+          className={cn(
+            "mb-3 text-right font-mono text-sm tabular-nums",
+            isDark ? "text-zinc-300" : "text-slate-600",
+          )}
+          data-testid="audio-preview-timestamps"
+        >
+          {formatMediaTimestamp(currentTime)} / {formatMediaTimestamp(duration)}
+        </div>
+        <audio
+          src={preview.contentUrl}
+          controls
+          preload="metadata"
+          className="w-full"
+          onLoadedMetadata={(event) => {
+            syncAudioMetrics(event.currentTarget);
+          }}
+          onLoadedData={(event) => {
+            syncAudioMetrics(event.currentTarget);
+          }}
+          onCanPlay={(event) => {
+            syncAudioMetrics(event.currentTarget);
+          }}
+          onDurationChange={(event) => {
+            syncAudioMetrics(event.currentTarget);
+          }}
+          onTimeUpdate={(event) => {
+            syncAudioMetrics(event.currentTarget);
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -1194,7 +1275,7 @@ export function FilePreviewOverlay({
     ? (previewContentOverride !== null ? previewContentOverride : String(preview?.content || ""))
     : "";
   const canEditPreview = editablePreview && !preview?.loading && !preview?.error && !preview?.truncated && Boolean(title);
-  const showFilesSidebar = editablePreview && Boolean(title);
+  const showFilesSidebar = Boolean(title);
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
   const showPreviewFontSizeControls = preview?.kind === "markdown" || preview?.kind === "text" || preview?.kind === "json";
   const editShortcutLabel = "E";
@@ -1467,11 +1548,7 @@ export function FilePreviewOverlay({
   } else if (preview.kind === "video" && preview.contentUrl) {
     body = <video src={preview.contentUrl} controls className="mx-auto max-h-[78vh] max-w-full rounded-xl bg-black" />;
   } else if (preview.kind === "audio" && preview.contentUrl) {
-    body = (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <audio src={preview.contentUrl} controls className="w-full max-w-3xl" />
-      </div>
-    );
+    body = <AudioPreview preview={preview} resolvedTheme={resolvedTheme} />;
   } else if (isPdfPreview) {
     body = (
       <div
@@ -1766,7 +1843,7 @@ export function FilePreviewOverlay({
                       currentAgentId={currentAgentId}
                       currentSessionUser={currentSessionUser}
                       currentWorkspaceRoot={currentWorkspaceRoot}
-                      fileSelectionMode="edit"
+                      fileSelectionMode={isEditing ? "edit" : "preview"}
                       items={sessionFiles}
                       messages={messages}
                       onOpenEdit={(item) => onOpenFilePreview?.(item, { startInEditMode: true })}

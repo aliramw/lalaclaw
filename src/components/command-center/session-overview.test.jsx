@@ -347,6 +347,95 @@ describe("SessionOverview", () => {
     expect(screen.queryByRole("menuitem", { name: "企微" })).not.toBeInTheDocument();
   });
 
+  it("shows disabled IM channels with a muted plugin-disabled badge", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    const onOpenImSession = vi.fn();
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableImChannels={{
+              "dingtalk-connector": { enabled: true, defaultAgentId: "main" },
+              feishu: { enabled: false, defaultAgentId: "expert" },
+              wecom: { enabled: false, defaultAgentId: "writer" },
+            }}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onOpenImSession={onOpenImSession}
+            onSearchSessions={vi.fn()}
+            onSelectSearchedSession={vi.fn()}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
+
+    expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
+    const feishuItem = screen.getByText("飞书").closest('[role="menuitem"]');
+    const wecomItem = screen.getByText("企微").closest('[role="menuitem"]');
+
+    expect(feishuItem).toBeTruthy();
+    expect(wecomItem).toBeTruthy();
+    expect(within(feishuItem).getByText("未启用插件")).toBeInTheDocument();
+    expect(within(wecomItem).getByText("未启用插件")).toBeInTheDocument();
+
+    await user.click(feishuItem);
+    expect(onOpenImSession).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a text badge when an IM logo image fails to load", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main", "writer"]}
+            availableModels={["openclaw"]}
+            formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onOpenImSession={() => {}}
+            onSearchSessions={() => []}
+            onSelectSearchedSession={() => {}}
+            onThinkModeChange={() => {}}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
+
+    const dingTalkItem = screen.getByRole("menuitem", { name: "钉钉" });
+    const dingTalkLogo = dingTalkItem.querySelector('img[src="/im-logo-dingtalk.svg"]');
+
+    expect(dingTalkLogo).not.toBeNull();
+
+    dingTalkLogo.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(dingTalkItem.querySelector('img[src="/im-logo-dingtalk.svg"]')).toBeNull();
+    });
+    expect(within(dingTalkItem).getByText("D")).toBeInTheDocument();
+  });
+
   it("disables model, fast mode, think mode, and agent-session controls until OpenClaw is connected", () => {
     window.localStorage.setItem(localeStorageKey, "zh");
     const onAgentChange = vi.fn();
@@ -461,6 +550,43 @@ describe("SessionOverview", () => {
     expect(screen.getAllByText("连接: 重连中").length).toBeGreaterThan(0);
     expect(screen.getAllByText("重连: 2").length).toBeGreaterThan(0);
     expect(screen.getAllByText("回退: Ping timeout").length).toBeGreaterThan(0);
+  });
+
+  it("shows muted -- placeholders while session overview values are still pending", () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    const { container } = render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="status"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            runtimeSocketStatus="connected"
+            runtimeTransport="ws"
+            session={createSession({ mode: "openclaw", status: "待命" })}
+            sessionOverviewPending
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(5);
+    const mutedPlaceholders = Array.from(container.querySelectorAll("*")).filter((node) => {
+      const className = typeof node.className === "string" ? node.className : "";
+      return node.textContent === "--" && /text-slate-400|text-muted-foreground\/70/.test(className);
+    });
+    expect(mutedPlaceholders.length).toBeGreaterThanOrEqual(5);
+    expect(screen.queryByText("WS / 在线")).not.toBeInTheDocument();
+    expect(screen.queryByText("1200 / 16000")).not.toBeInTheDocument();
+    expect(screen.queryByText("已关闭")).not.toBeInTheDocument();
   });
 
   it("uses an ongoing-state label for a connected runtime socket", async () => {
