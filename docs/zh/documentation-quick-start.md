@@ -72,6 +72,15 @@ Windows 补充说明：
 - `lalaclaw start` 会占用当前 PowerShell 会话，关闭窗口后应用也会停止
 - 如果系统提示找不到 `lalaclaw`，请重开 PowerShell，或确认 npm 全局 bin 目录已经加入 `PATH`
 
+Windows 发布包验收可直接执行：
+
+```powershell
+npm run pack:release
+npm run test:release:smoke -- --tarball .\artifacts\lalaclaw-<version>.tgz
+```
+
+这条 smoke 会把 tarball 安装到干净临时目录，使用空闲本地端口启动打包后的应用，自动打开 Chromium，并在首页白屏或出现新的浏览器 runtime error 时直接失败。
+
 说明：
 
 - `lalaclaw init` 会在 macOS 和 Linux 上把本地配置写到 `~/.config/lalaclaw/.env.local`
