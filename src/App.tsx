@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactElement } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArrowRight, RotateCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -532,7 +533,7 @@ function SessionNotice({ notice }) {
 }
 
 function FailedRelationshipContextMenu({ menu, messages, onClose, onDismiss }) {
-  const menuRef = useRef(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!menu) {
@@ -597,12 +598,12 @@ function FailedRelationshipContextMenu({ menu, messages, onClose, onDismiss }) {
 
 export function TaskRelationshipsPanel({ onDismissRelationship, relationships, sessionAgentId = "main", visible }) {
   const { messages } = useI18n();
-  const [completedAtById, setCompletedAtById] = useState({});
+  const [completedAtById, setCompletedAtById] = useState<Record<string, number>>({});
   const [now, setNow] = useState(() => Date.now());
   const nowRef = useRef(now);
-  const previousStatusesRef = useRef({});
-  const seenActiveIdsRef = useRef(new Set());
-  const [contextMenu, setContextMenu] = useState(null);
+  const previousStatusesRef = useRef<Record<string, string>>({});
+  const seenActiveIdsRef = useRef<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ relationshipId: string; x: number; y: number } | null>(null);
 
   useEffect(() => {
     nowRef.current = now;
@@ -612,9 +613,9 @@ export function TaskRelationshipsPanel({ onDismissRelationship, relationships, s
     let startedCountdown = false;
 
     setCompletedAtById((current) => {
-      const next = {};
+      const next: Record<string, number> = {};
       const previousStatuses = previousStatusesRef.current || {};
-      const nextStatuses = {};
+      const nextStatuses: Record<string, string> = {};
       const nextSeenActiveIds = new Set(seenActiveIdsRef.current);
 
       for (const relationship of relationships || []) {
@@ -877,8 +878,8 @@ function AppContent() {
     theme,
     userLabel,
   } = useCommandCenter();
-  const splitLayoutRef = useRef(null);
-  const resizeCleanupRef = useRef(null);
+  const splitLayoutRef = useRef<HTMLElement | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [isWideLayout, setIsWideLayout] = useState(
     () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(desktopBreakpointQuery).matches : false),
   );
@@ -1104,7 +1105,7 @@ function AppContent() {
   );
   const openAgentIds = useMemo(() => chatTabs.map((tab) => tab.agentId), [chatTabs]);
   const openSessionUsers = useMemo(() => chatTabs.map((tab) => tab.sessionUser), [chatTabs]);
-  const tabBrandOverview = useMemo(() => (
+  const tabBrandOverview = useMemo<ReactElement>(() => (
     <SessionOverview
       layout="tab-brand"
       accessLoggingOut={loggingOut}
@@ -1156,7 +1157,7 @@ function AppContent() {
     setTheme,
     theme,
   ]);
-  const agentTabOverview = useMemo(() => (
+  const agentTabOverview = useMemo<ReactElement>(() => (
     <SessionOverview
       layout="agent-tab"
       accessLoggingOut={loggingOut}
@@ -1214,7 +1215,7 @@ function AppContent() {
     setTheme,
     theme,
   ]);
-  const controlsOverview = useMemo(() => (
+  const controlsOverview = useMemo<ReactElement>(() => (
     <SessionOverview
       layout="controls"
       accessLoggingOut={loggingOut}
@@ -1266,7 +1267,7 @@ function AppContent() {
     setTheme,
     theme,
   ]);
-  const statusOverview = useMemo(() => (
+  const statusOverview = useMemo<ReactElement>(() => (
     <SessionOverview
       layout="status"
       accessLoggingOut={loggingOut}
@@ -1334,7 +1335,7 @@ function AppContent() {
       compact={!isWideLayout}
       currentAgentId={session.agentId}
       currentSessionUser={session.sessionUser}
-      currentWorkspaceRoot={session.workspaceRoot}
+      currentWorkspaceRoot={typeof session.workspaceRoot === "string" ? session.workspaceRoot : undefined}
       files={files}
       onSelectArtifact={handleArtifactSelect}
       onRefreshEnvironment={handleRefreshEnvironment}

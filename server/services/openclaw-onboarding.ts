@@ -721,7 +721,7 @@ export function createOpenClawOnboardingService({
         stderr: response?.stderr || '',
       });
     } catch (error) {
-      return summarizeCommandError(openclawBin, args, error);
+      return summarizeCommandError(openclawBin, args, error as LooseRecord);
     }
   }
 

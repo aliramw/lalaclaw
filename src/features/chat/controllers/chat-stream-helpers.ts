@@ -82,10 +82,13 @@ export async function consumeChatStream(
     pendingTimestamp: number;
     setMessagesForTab: SetMessagesForTab;
   },
-): Promise<ChatStreamPayload | null> {
+): Promise<ChatStreamPayload> {
   const reader = response.body?.getReader?.();
   if (!reader) {
-    return null;
+    return {
+      ok: response.ok,
+      metadata: {},
+    };
   }
 
   const decoder = new TextDecoder();
@@ -237,16 +240,16 @@ export async function consumeChatStream(
     processLine(buffer);
   }
 
-  return payload
-    ? {
-        ...payload,
-        ...(sessionSync ? { sessionSync } : {}),
-      }
-    : {
-        ok: true,
-        outputText: streamedText,
-        tokenBadge,
-        metadata: {},
-        ...(sessionSync ? { sessionSync } : {}),
-      };
+  const finalizedPayload: ChatStreamPayload = payload || {
+    ok: response.ok,
+    outputText: streamedText,
+    tokenBadge,
+    assistantMessageId,
+    metadata: {},
+  };
+
+  return {
+    ...finalizedPayload,
+    ...(sessionSync ? { sessionSync } : {}),
+  };
 }

@@ -128,10 +128,13 @@ export function parseNoisyJson(text = '') {
 }
 
 function createCommandSummary(command: string, args: string[] = [], response: CommandSummaryResponse = {}): CommandSummary {
+  const exitCode = typeof response?.exitCode === 'number' && Number.isInteger(response.exitCode)
+    ? response.exitCode
+    : (response?.ok ? 0 : null);
   return {
     ok: Boolean(response?.ok),
     timedOut: Boolean(response?.timedOut),
-    exitCode: Number.isInteger(response?.exitCode) ? response.exitCode : (response?.ok ? 0 : null),
+    exitCode,
     signal: response?.signal || '',
     stdout: clipOutput(response?.stdout || ''),
     stderr: clipOutput(response?.stderr || ''),
@@ -198,12 +201,14 @@ export function createOpenClawUpdateService({
   if (typeof execFileAsync !== 'function') {
     throw new Error('execFileAsync is required');
   }
+  const execFile = execFileAsync;
+  const runtimeConfig: RuntimeConfig = config ?? {};
 
-  const openclawBin = String(config?.openclawBin || 'openclaw').trim() || 'openclaw';
+  const openclawBin = String(runtimeConfig.openclawBin || 'openclaw').trim() || 'openclaw';
 
   async function runOpenClawCommand(args: string[] = []): Promise<CommandSummary> {
     try {
-      const response = await execFileAsync(openclawBin, args, {
+      const response = await execFile(openclawBin, args, {
         timeout: DEFAULT_UPDATE_TIMEOUT_MS,
         maxBuffer: 8 * 1024 * 1024,
         env: process.env,
@@ -220,7 +225,7 @@ export function createOpenClawUpdateService({
 
   async function runShellCommand(commandString = '') {
     try {
-      const response = await execFileAsync('bash', ['-lc', commandString], {
+      const response = await execFile('bash', ['-lc', commandString], {
         timeout: DEFAULT_UPDATE_TIMEOUT_MS,
         maxBuffer: 8 * 1024 * 1024,
         env: process.env,
@@ -305,7 +310,7 @@ export function createOpenClawUpdateService({
 
     const commandResult = await runOpenClawCommand(args);
     const resultPayload = parseNoisyJson(commandResult.stdout) || parseNoisyJson(commandResult.stderr);
-    const healthCheck = restartGateway ? await performHealthCheck(config, { fetchImpl }) : null;
+    const healthCheck = restartGateway ? await performHealthCheck(runtimeConfig, { fetchImpl }) : null;
     const { state: nextState, stateError } = await loadNextStateAfterCommand();
     const ok = Boolean(commandResult.ok)
       && (!restartGateway || healthCheck?.status === 'healthy')

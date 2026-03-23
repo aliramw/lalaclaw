@@ -92,7 +92,7 @@ export function parseSessionResetCommand(message = ''): SessionResetCommand | nu
   }
 
   return {
-    kind: match[1].toLowerCase() === 'reset' ? 'reset' : 'new',
+    kind: String(match[1] || '').toLowerCase() === 'reset' ? 'reset' : 'new',
     tail: (match[2] || '').trim(),
   };
 }

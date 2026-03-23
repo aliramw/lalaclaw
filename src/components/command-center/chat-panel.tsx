@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,6 +23,7 @@ import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useStaleRunningDetector } from "@/features/session/runtime/use-stale-running-detector";
 import { useI18n } from "@/lib/i18n";
+import type { ChatScrollState } from "@/types/chat";
 
 type AttachmentLike = {
   dataUrl?: string;
@@ -46,6 +48,14 @@ type MessageLike = {
   tokenBadge?: string;
 };
 
+type MutableNodeRef<T> = { current: T | null };
+
+type NodeRefTarget<T> =
+  | RefObject<T | null>
+  | MutableNodeRef<T>
+  | ((node: T | null) => void)
+  | null;
+
 type MessageBubbleProps = {
   agentLabel?: string;
   animateViewportScroll?: (viewport: HTMLElement | null, top: number, duration?: number) => void;
@@ -60,7 +70,7 @@ type MessageBubbleProps = {
   markUserScrollTakeover?: (options?: { force?: boolean; lockAutoFollow?: boolean; viewport?: HTMLElement | null }) => void;
   message: MessageLike;
   messageId?: string;
-  messageViewportRef?: { current: HTMLElement | null } | null;
+  messageViewportRef?: NodeRefTarget<HTMLElement>;
   onJumpPreviousMessage?: (messageId: string) => void;
   previousMessageId?: string;
   resolvedTheme?: string;
@@ -69,6 +79,113 @@ type MessageBubbleProps = {
   showStreamingTail?: boolean;
   staleWarning?: string | null;
   chatFontSize?: string;
+  userLabel?: string;
+};
+
+type ChatTabItem = {
+  id: string;
+  agentId: string;
+  sessionUser: string;
+  title?: string;
+  active?: boolean;
+  busy?: boolean;
+  unreadCount?: number;
+};
+
+type ChatTabsStripProps = {
+  activeChatTabId?: string;
+  className?: string;
+  items?: ChatTabItem[];
+  leadingControl?: ReactNode;
+  onActivate?: (tabId: string) => void;
+  onClose?: (tabId: string) => void;
+  onReorder?: (dragTabId: string, targetTabId: string, placement: "before" | "after") => void;
+  resolvedTheme?: string;
+  trailingControl?: ReactNode;
+};
+
+type TabDragSession = {
+  active: boolean;
+  currentLeft: number;
+  height: number;
+  pointerId: number;
+  rectLeft: number;
+  rectTop: number;
+  startX: number;
+  startY: number;
+  tabId: string;
+  width: number;
+  xOffset: number;
+} | null;
+
+type MentionMatch = {
+  start: number;
+  end: number;
+  query: string;
+} | null;
+
+type MentionComposerPosition = {
+  left: number;
+  top: number;
+} | null;
+
+type FocusMessageRequest = {
+  id: string;
+  messageId?: string;
+  role?: string;
+  source?: string;
+  timestamp?: number;
+} | null;
+
+type MessageOutlineItem = {
+  id: string;
+  level: number;
+  text: string;
+};
+
+type ChatPanelProps = {
+  agentLabel?: string;
+  activeChatTabId?: string;
+  busy?: boolean;
+  chatFontSize?: string;
+  chatTabs?: ChatTabItem[];
+  composerSendMode?: string;
+  composerAttachments?: AttachmentLike[];
+  files?: Array<Record<string, unknown>>;
+  focusMessageRequest?: FocusMessageRequest;
+  formatTime: (value: unknown) => string;
+  interactionLocked?: boolean;
+  messageViewportRef?: NodeRefTarget<HTMLElement>;
+  messages?: MessageLike[];
+  onAddAttachments?: (fileList?: ArrayLike<unknown> | null) => void | Promise<void>;
+  onActivateChatTab?: (tabId: string) => void;
+  onChatFontSizeChange?: (value: string) => void;
+  onCloseChatTab?: (tabId: string) => void;
+  onComposerSendModeToggle?: () => void;
+  onReorderChatTab?: (dragTabId: string, targetTabId: string, placement: "before" | "after") => void;
+  onUserLabelChange?: (value: string) => void;
+  onRemoveAttachment?: (attachmentId: string) => void;
+  onEditQueuedMessage?: (messageId: string) => void;
+  onPromptChange?: (value: string) => void;
+  onPromptKeyDown?: (event: unknown) => void;
+  onClearQueuedMessages?: () => void;
+  onRemoveQueuedMessage?: (messageId: string) => void;
+  onReset?: () => void;
+  onSend?: () => void;
+  onStop?: () => void;
+  prompt?: string;
+  promptSyncVersion?: number;
+  promptRef?: NodeRefTarget<HTMLTextAreaElement>;
+  queuedMessages?: Array<Record<string, unknown>>;
+  resolvedTheme?: string;
+  restoredScrollKey?: string;
+  restoredScrollRevision?: number;
+  restoredScrollState?: ChatScrollState | null;
+  session?: any;
+  agentSwitcher?: ReactNode;
+  brandControl?: ReactNode;
+  sessionOverview?: ReactNode;
+  showTabsStrip?: boolean;
   userLabel?: string;
 };
 
@@ -177,7 +294,7 @@ function unwrapAssistantEnvelope(content = "", role = "") {
     return text;
   }
 
-  const unwrapped = match[1].trim();
+  const unwrapped = String(match[1] || "").trim();
   return unwrapped || text;
 }
 
@@ -240,7 +357,7 @@ function buildCurrentConversationTitle(agentId = "", sessionUser = "", currentCo
 function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
   const titleId = useId();
   const descriptionId = useId();
-  const cancelButtonRef = useRef(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -459,7 +576,7 @@ function stripInlineMarkdown(value = "") {
     .trim();
 }
 
-function extractHeadingOutline(content = "") {
+function extractHeadingOutline(content = ""): MessageOutlineItem[] {
   const seen = new Map();
   return String(content || "")
     .split("\n")
@@ -468,7 +585,7 @@ function extractHeadingOutline(content = "") {
       if (!match) {
         return null;
       }
-      const text = stripInlineMarkdown(match[2].replace(/\s+#+\s*$/, ""));
+      const text = stripInlineMarkdown(String(match[2] || "").replace(/\s+#+\s*$/, ""));
       if (!text) {
         return null;
       }
@@ -477,11 +594,11 @@ function extractHeadingOutline(content = "") {
       seen.set(baseSlug, currentCount);
       return {
         id: currentCount === 1 ? baseSlug : `${baseSlug}-${currentCount}`,
-        level: match[1].length,
+        level: String(match[1] || "").length,
         text,
       };
     })
-    .filter(Boolean);
+    .filter((item): item is MessageOutlineItem => Boolean(item));
 }
 
 function measureMessageDensity(content = "") {
@@ -550,7 +667,7 @@ function getAgentMentionMatch(value = "", caret = 0) {
   }
 
   return {
-    start: beforeCaret.length - match[2].length - 1,
+    start: beforeCaret.length - String(match[2] || "").length - 1,
     end: safeCaret,
     query: match[2] || "",
   };
@@ -629,7 +746,7 @@ function normalizeSkillMention(skill) {
   };
 }
 
-function findLatestAssistantMessageId(messages = []) {
+function findLatestAssistantMessageId(messages: MessageLike[] = []) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const entry = messages[index];
     if (entry?.role === "assistant") {
@@ -732,7 +849,7 @@ function joinPromptWithSpeechTranscript(basePrompt = "", transcript = "") {
     : `${normalizedBase} ${normalizedTranscript}`;
 }
 
-function buildSpeechTranscriptFromResults(results = []) {
+function buildSpeechTranscriptFromResults(results: Array<{ 0?: { transcript?: string } }> = []) {
   const normalizeComparable = (value = "") => String(value || "").replace(/[\s,.;:!?，。！？；：、]/g, "").trim();
   const getCommonPrefixLength = (left = "", right = "") => {
     const maxLength = Math.min(left.length, right.length);
@@ -797,6 +914,17 @@ function buildSpeechTranscriptFromResults(results = []) {
   }
 
   return transcript;
+}
+
+function getRefCurrent<T>(
+  ref:
+    | NodeRefTarget<T>
+    | undefined,
+): T | null {
+  if (!ref || typeof ref === "function") {
+    return null;
+  }
+  return ref.current;
 }
 
 function CopyMessageButton({ content }) {
@@ -937,9 +1065,14 @@ function StreamingTailDots() {
   );
 }
 
-function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }) {
+function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }: {
+  headingScopeId: string;
+  items: MessageOutlineItem[];
+  onSelect: (anchorId: string) => void;
+  messageViewportRef?: NodeRefTarget<HTMLElement>;
+}) {
   const { messages } = useI18n();
-  const outlineRef = useRef(null);
+  const outlineRef = useRef<HTMLElement | null>(null);
   const appliedMaxHeightRef = useRef(0);
 
   useLayoutEffect(() => {
@@ -951,7 +1084,7 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
 
     const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
     let frameId = 0;
-    let resizeObserver = null;
+    let resizeObserver: ResizeObserver | null = null;
     let attachRetryTimeoutId = 0;
     let attachRetryCount = 0;
 
@@ -962,7 +1095,7 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
     };
 
     const updateOutlineMaxHeight = () => {
-      const latestViewport = messageViewportRef?.current;
+      const latestViewport = getRefCurrent(messageViewportRef);
       const latestOutline = outlineRef.current;
       if (!latestViewport || !latestOutline) {
         return;
@@ -986,7 +1119,7 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
     };
 
     const attachViewportObservers = () => {
-      const latestViewport = messageViewportRef?.current;
+      const latestViewport = getRefCurrent(messageViewportRef);
       const latestOutline = outlineRef.current;
       if (!latestViewport || !latestOutline) {
         if (attachRetryCount < 12) {
@@ -1006,9 +1139,11 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef })
 
         // The outline height only depends on the viewport bounds and the meta stack's top position.
         // Observing the whole scroll content tree makes this update fire too often during message growth.
-        [latestViewport, latestOutline.parentElement]
-          .filter(Boolean)
-          .forEach((node) => resizeObserver.observe(node));
+        [latestViewport, latestOutline.parentElement].forEach((node) => {
+          if (node) {
+            resizeObserver?.observe(node);
+          }
+        });
       }
     };
 
@@ -1150,9 +1285,9 @@ const MessageBubble = memo(function MessageBubble({
   userLabel,
 }: MessageBubbleProps) {
   const [showBubbleTopJump, setShowBubbleTopJump] = useState(false);
-  const bubbleRef = useRef(null);
-  const bubbleSurfaceRef = useRef(null);
-  const bubbleTopSentinelRef = useRef(null);
+  const bubbleRef = useRef<HTMLElement | null>(null);
+  const bubbleSurfaceRef = useRef<HTMLElement | null>(null);
+  const bubbleTopSentinelRef = useRef<HTMLDivElement | null>(null);
   const isUser = message.role === "user";
   const isPending = Boolean(message.pending);
   const renderedContent = useMemo(
@@ -1195,7 +1330,7 @@ const MessageBubble = memo(function MessageBubble({
     if (!element) {
       return;
     }
-    markUserScrollTakeover();
+    markUserScrollTakeover?.();
     element.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -1227,13 +1362,13 @@ const MessageBubble = memo(function MessageBubble({
   };
 
   const handleJumpBubbleTop = () => {
-    const viewport = messageViewportRef?.current;
+    const viewport = getRefCurrent(messageViewportRef);
     const bubble = bubbleSurfaceRef.current || bubbleRef.current;
     if (!viewport || !bubble) {
       return;
     }
 
-    markUserScrollTakeover({ force: true, lockAutoFollow: true });
+    markUserScrollTakeover?.({ force: true, lockAutoFollow: true });
     const top = calculateBubbleTopFocusScrollTop(viewport, bubble);
     animateViewportScroll?.(viewport, top, artifactFocusScrollDurationMs);
   };
@@ -1256,7 +1391,7 @@ const MessageBubble = memo(function MessageBubble({
       return undefined;
     }
 
-    const viewport = messageViewportRef?.current;
+    const viewport = getRefCurrent(messageViewportRef);
     const bubble = bubbleSurfaceRef.current || bubbleRef.current;
     const bubbleTopSentinel = bubbleTopSentinelRef.current;
     if (!viewport || !bubble) {
@@ -1306,7 +1441,7 @@ const MessageBubble = memo(function MessageBubble({
     }
 
     const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
-    let resizeObserver = null;
+    let resizeObserver: ResizeObserver | null = null;
     let frameId = 0;
 
     const measureBubbleTopJump = () => {
@@ -1327,7 +1462,11 @@ const MessageBubble = memo(function MessageBubble({
         frameId = window.requestAnimationFrame(measureBubbleTopJump);
       });
 
-      [viewport, bubble, viewport.firstElementChild].filter(Boolean).forEach((node) => resizeObserver.observe(node));
+      [viewport, bubble, viewport.firstElementChild].forEach((node) => {
+        if (node) {
+          resizeObserver?.observe(node);
+        }
+      });
     }
 
     return () => {
@@ -1806,26 +1945,26 @@ export function ChatTabsStrip({
   onReorder,
   resolvedTheme = "light",
   trailingControl = null,
-}) {
+}: ChatTabsStripProps) {
   const { messages } = useI18n();
   const [draggingTabId, setDraggingTabId] = useState("");
-  const [dragSession, setDragSession] = useState(null);
+  const [dragSession, setDragSession] = useState<TabDragSession>(null);
   const [tabScrollState, setTabScrollState] = useState({
     canScrollLeft: false,
     canScrollRight: false,
     hasOverflow: false,
   });
-  const tabNodeMapRef = useRef(new Map());
-  const previousTabRectsRef = useRef(new Map());
+  const tabNodeMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const previousTabRectsRef = useRef<Map<string, DOMRect>>(new Map());
   const previousOrderSignatureRef = useRef("");
   const draggingTabIdRef = useRef("");
   const lastReorderIntentRef = useRef("");
   const suppressTabClickRef = useRef(false);
-  const scrollViewportRef = useRef(null);
-  const scrollContentRef = useRef(null);
-  const dragSessionRef = useRef(null);
-  const dragOverlayRef = useRef(null);
-  const cachedTabRectsRef = useRef(new Map());
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const scrollContentRef = useRef<HTMLDivElement | null>(null);
+  const dragSessionRef = useRef<TabDragSession>(null);
+  const dragOverlayRef = useRef<HTMLDivElement | null>(null);
+  const cachedTabRectsRef = useRef<Map<string, DOMRect>>(new Map());
   const itemsRef = useRef(items);
   const onReorderRef = useRef(onReorder);
 
@@ -2343,12 +2482,12 @@ export function ChatTabsStrip({
                             </>
                           ) : tabTitle}
                         </span>
-                        {item.unreadCount > 0 && !item.active ? (
+                        {Number(item.unreadCount || 0) > 0 && !item.active ? (
                           <span
                             aria-hidden="true"
                             className="cc-chat-tab-unread-badge inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
                           >
-                            {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                            {Number(item.unreadCount || 0) > 99 ? "99+" : Number(item.unreadCount || 0)}
                           </span>
                         ) : null}
 	                      </button>
@@ -2450,12 +2589,12 @@ export function ChatTabsStrip({
                     </>
                   ) : tabTitle}
                 </span>
-                {draggedItem.unreadCount > 0 && !draggedItem.active ? (
+                {Number(draggedItem.unreadCount || 0) > 0 && !draggedItem.active ? (
                   <span
                     aria-hidden="true"
                     className="cc-chat-tab-unread-badge inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
                   >
-                    {draggedItem.unreadCount > 99 ? "99+" : draggedItem.unreadCount}
+                    {Number(draggedItem.unreadCount || 0) > 99 ? "99+" : Number(draggedItem.unreadCount || 0)}
                   </span>
                 ) : null}
               </div>
@@ -2502,14 +2641,14 @@ export function ChatPanel({
   chatFontSize = "small",
   chatTabs = [],
   composerSendMode = "enter-send",
-  composerAttachments,
-  files,
-  focusMessageRequest,
+  composerAttachments = [],
+  files = [],
+  focusMessageRequest = null,
   formatTime,
   interactionLocked = false,
   messageViewportRef,
-  messages,
-  onAddAttachments,
+  messages = [],
+  onAddAttachments = () => {},
   onActivateChatTab,
   onChatFontSizeChange,
   onCloseChatTab,
@@ -2518,34 +2657,34 @@ export function ChatPanel({
   onUserLabelChange,
   onRemoveAttachment,
   onEditQueuedMessage,
-  onPromptChange,
-  onPromptKeyDown,
-  onClearQueuedMessages,
-  onRemoveQueuedMessage,
-  onReset,
-  onSend,
-  onStop,
-  prompt,
+  onPromptChange = () => {},
+  onPromptKeyDown = () => {},
+  onClearQueuedMessages = () => {},
+  onRemoveQueuedMessage = () => {},
+  onReset = () => {},
+  onSend = () => {},
+  onStop = () => {},
+  prompt = "",
   promptSyncVersion = 0,
   promptRef,
-  queuedMessages,
+  queuedMessages = [],
   resolvedTheme,
   restoredScrollKey = "",
   restoredScrollRevision = 0,
   restoredScrollState = null,
-  session,
+  session = {},
   agentSwitcher = null,
   brandControl = null,
   sessionOverview = null,
   showTabsStrip = true,
   userLabel = "",
-}) {
+}: ChatPanelProps) {
   const { intlLocale, messages: i18n } = useI18n();
   const userLabelInputId = useId();
-  const attachmentInputRef = useRef(null);
-  const composerTextareaRef = useRef(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerCompositionActiveRef = useRef(false);
-  const speechRecognitionRef = useRef(null);
+  const speechRecognitionRef = useRef<any>(null);
   const speechStatusResetTimeoutRef = useRef(0);
   const speechSessionBasePromptRef = useRef("");
   const speechSessionTranscriptRef = useRef("");
@@ -2559,21 +2698,21 @@ export function ChatPanel({
   const ignoreNextComposerCompositionCommitRef = useRef(false);
   const guardedComposerReplaySourceRef = useRef("");
   const { filePreview, imagePreview, handleOpenPreview, openImagePreview, closeFilePreview, closeImagePreview } = useFilePreview();
-  const [agentMention, setAgentMention] = useState(null);
-  const [manualMention, setManualMention] = useState(null);
+  const [agentMention, setAgentMention] = useState<MentionMatch>(null);
+  const [manualMention, setManualMention] = useState<MentionMatch>(null);
   const [mentionAnchor, setMentionAnchor] = useState("composer");
-  const [mentionComposerPosition, setMentionComposerPosition] = useState(null);
-  const [messageViewportNode, setMessageViewportNode] = useState(null);
+  const [mentionComposerPosition, setMentionComposerPosition] = useState<MentionComposerPosition>(null);
+  const [messageViewportNode, setMessageViewportNode] = useState<HTMLElement | null>(null);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const [highlightedMessageId, setHighlightedMessageId] = useState("");
   const [showLatestReplyButton, setShowLatestReplyButton] = useState(false);
   const [composerPrompt, setComposerPrompt] = useState(prompt);
   const [voiceInputState, setVoiceInputState] = useState("idle");
   const [latchedStreamingTailMessageId, setLatchedStreamingTailMessageId] = useState("");
-  const mentionMenuRef = useRef(null);
-  const composerMentionLayerRef = useRef(null);
-  const latestAssistantBubbleRef = useRef(null);
-  const bottomSentinelRef = useRef(null);
+  const mentionMenuRef = useRef<HTMLDivElement | null>(null);
+  const composerMentionLayerRef = useRef<HTMLDivElement | null>(null);
+  const latestAssistantBubbleRef = useRef<HTMLElement | null>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement | null>(null);
   const streamingTailIndicatorClearTimeoutRef = useRef(0);
   const fontSizeStyles = resolveChatFontSizeStyles(chatFontSize);
   const mentionOptionStateClassName = resolvedTheme === "dark" ? "bg-[#373737] text-foreground" : "bg-[#e5e5e5] text-foreground";
@@ -2596,7 +2735,7 @@ export function ChatPanel({
   const animatedScrollFrameRef = useRef(0);
   const restoredScrollKeyRef = useRef("");
   const restoredScrollRetryRef = useRef(0);
-  const restoredScrollStabilizerRefs = useRef([]);
+  const restoredScrollStabilizerRefs = useRef<number[]>([]);
   const restoreStabilizingRef = useRef(false);
   const suppressRestoredBottomButtonRef = useRef(false);
   const suppressedBottomButtonAssistantKeyRef = useRef("");
@@ -2834,7 +2973,7 @@ export function ChatPanel({
       promptRef.current = node;
     }
   }, [promptRef]);
-  const resolvedMessageViewport = messageViewportNode || messageViewportRef?.current || null;
+  const resolvedMessageViewport = messageViewportNode || getRefCurrent(messageViewportRef) || null;
   const handleMessageViewportRef = useCallback((node) => {
     setMessageViewportNode((current) => (current === node ? current : node));
     if (typeof messageViewportRef === "function") {
@@ -3608,8 +3747,8 @@ export function ChatPanel({
     restoredScrollKeyRef.current = restoreSignature;
     restoreStabilizingRef.current = true;
     setShowLatestReplyButton(false);
-    const cleanupImageListeners = [];
-    let resizeObserver = null;
+    const cleanupImageListeners: Array<() => void> = [];
+    let resizeObserver: ResizeObserver | null = null;
     let resizeFrameId = 0;
 
     if (!restoreToBottom && (anchorNodeId || anchorMessageId) && !usedAnchor) {
@@ -3666,7 +3805,7 @@ export function ChatPanel({
       const observedNodes = [
         latestViewport.firstElementChild,
         anchorSelector ? latestViewport.querySelector(anchorSelector) : null,
-      ].filter(Boolean);
+      ].filter((node): node is Element => Boolean(node));
 
       if (ResizeObserverCtor && observedNodes.length) {
         resizeObserver = new ResizeObserverCtor(() => {
@@ -3679,7 +3818,7 @@ export function ChatPanel({
           });
         });
 
-        observedNodes.forEach((node) => resizeObserver.observe(node));
+        observedNodes.forEach((node) => resizeObserver?.observe(node));
       }
     }
 
@@ -3755,9 +3894,9 @@ export function ChatPanel({
     };
 
     updateWasNearBottom(false);
-    let removeViewportScrollListener = null;
-    let bottomObserver = null;
-    let resizeObserver = null;
+    let removeViewportScrollListener: (() => void) | null = null;
+    let bottomObserver: IntersectionObserver | null = null;
+    let resizeObserver: ResizeObserver | null = null;
     let resizeFrameId = 0;
     const delayedRefreshIds = [0, 120, 320].map((delay) =>
       window.setTimeout(() => {
@@ -3771,8 +3910,8 @@ export function ChatPanel({
     if (IntersectionObserverCtor && sentinel) {
       bottomObserver = new IntersectionObserverCtor(
         (entries) => {
-          const entry = entries.find((candidate) => candidate.target === sentinel) || entries[0];
-          updateViewportBottomState(Boolean(entry?.isIntersecting || entry?.intersectionRatio > 0), {
+          const entry = entries.find((candidate) => candidate.target === sentinel) || entries[0] || null;
+          updateViewportBottomState(Boolean(entry?.isIntersecting || (entry?.intersectionRatio || 0) > 0), {
             markManual: pointerScrollIntentRef.current,
             viewport,
           });
@@ -3789,7 +3928,11 @@ export function ChatPanel({
       resizeObserver = new ResizeObserverCtor(() => {
         scheduleBottomStateRefresh();
       });
-      [viewport, viewport.firstElementChild].filter(Boolean).forEach((node) => resizeObserver.observe(node));
+      [viewport, viewport.firstElementChild].forEach((node) => {
+        if (node) {
+          resizeObserver?.observe(node);
+        }
+      });
     }
     viewport.addEventListener("wheel", markManualTakeover, { passive: true });
     viewport.addEventListener("touchmove", markManualTakeover, { passive: true });
@@ -3904,7 +4047,9 @@ export function ChatPanel({
       });
     });
 
-    [latestBubble, viewport.firstElementChild].filter(Boolean).forEach((node) => resizeObserver.observe(node));
+    [latestBubble, viewport.firstElementChild]
+      .filter((node): node is Element => Boolean(node))
+      .forEach((node) => resizeObserver.observe(node));
 
     return () => {
       window.cancelAnimationFrame(frameId);
@@ -3932,7 +4077,7 @@ export function ChatPanel({
       return undefined;
     }
 
-    const viewport = messageViewportRef?.current;
+    const viewport = getRefCurrent(messageViewportRef);
     if (!viewport) {
       return undefined;
     }

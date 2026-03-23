@@ -394,7 +394,7 @@ export function createChatHandler({
         setSessionPreferences(nextSessionUser, { ...currentPreferences });
 
         let outputText = '新会话已开始。直接说你要我干什么。';
-        let usage = null;
+        let usage: ChatUsage = null;
 
         if (resetCommand.tail) {
           const resetReply =

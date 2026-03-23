@@ -60,11 +60,12 @@ export function usePromptHistory({
 }: UsePromptHistoryInput) {
   const [promptHistoryNavigation, setPromptHistoryNavigation] = useState<PromptHistoryNavigationState | null>(null);
   const lastPlainEnterRef = useRef({ timestamp: 0, expectedValue: "" });
+  const resolvedConversationKey = String(activeConversationKey || "").trim();
 
   const handlePromptKeyDown = (event: PromptKeyboardEventLike) => {
     const textarea = event.currentTarget;
     const currentPrompt = String(textarea.value || "");
-    const history = promptHistoryByConversation?.[activeConversationKey || ""] || [];
+    const history = promptHistoryByConversation?.[resolvedConversationKey] || [];
     const hasComposerAttachments = (composerAttachments || []).length > 0;
     const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
     const caretAtStart = textarea.selectionStart === 0 && textarea.selectionEnd === 0;
@@ -87,11 +88,11 @@ export function usePromptHistory({
     if (canBrowseUp || canBrowseDown) {
       event.preventDefault();
 
-      if (!promptHistoryNavigation || promptHistoryNavigation.key !== activeConversationKey) {
+      if (!promptHistoryNavigation || promptHistoryNavigation.key !== resolvedConversationKey) {
         if (event.key === "ArrowUp") {
           const nextIndex = history.length - 1;
           setPromptHistoryNavigation({
-            key: activeConversationKey,
+            key: resolvedConversationKey,
             index: nextIndex,
             draft: currentPrompt,
           });

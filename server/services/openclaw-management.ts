@@ -119,7 +119,7 @@ type OpenClawActionKey = keyof typeof openClawActionDefinitions;
 function summarizeCommandError(error: CommandError): CommandSummary {
   const message = String(error?.message || 'OpenClaw command failed');
   const timedOut = Boolean(error?.killed) && /timed out/i.test(message);
-  const exitCode = Number.isInteger(error?.code) ? error.code : null;
+  const exitCode = typeof error?.code === 'number' && Number.isInteger(error.code) ? error.code : null;
 
   return {
     ok: false,
@@ -256,6 +256,8 @@ export function createOpenClawManagementService({
   if (typeof execFileAsync !== 'function') {
     throw new Error('execFileAsync is required');
   }
+  const execFile = execFileAsync;
+  const runtimeConfig: RuntimeConfig = config ?? {};
 
   async function runOpenClawAction(actionKey = '') {
     const normalizedAction = String(actionKey || '').trim();
@@ -268,12 +270,12 @@ export function createOpenClawManagementService({
       throw error;
     }
 
-    const command = String(config?.openclawBin || 'openclaw').trim() || 'openclaw';
+    const command = String(runtimeConfig.openclawBin || 'openclaw').trim() || 'openclaw';
     const startedAt = now();
     let commandResult;
 
     try {
-      const response = await execFileAsync(command, definition.args, {
+      const response = await execFile(command, definition.args, {
         timeout: DEFAULT_ACTION_TIMEOUT_MS,
         maxBuffer: 8 * 1024 * 1024,
         env: process.env,
@@ -291,7 +293,7 @@ export function createOpenClawManagementService({
       commandResult = summarizeCommandError(error as CommandError);
     }
 
-    const healthCheck = await performHealthCheck(config, { fetchImpl });
+    const healthCheck = await performHealthCheck(runtimeConfig, { fetchImpl });
     const healthMatchesExpectation = evaluateHealthExpectation(definition.expectedHealth, healthCheck);
     const ok = Boolean(commandResult.ok) && healthMatchesExpectation;
 

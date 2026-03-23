@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { ChevronDown, FolderOpen } from "lucide-react";
 
 import {
@@ -111,7 +111,7 @@ function renderCompactDirectoryLabel(chain: Record<string, any>[] = []) {
     return <span className="truncate">{names[0]}</span>;
   }
 
-  const parts = [];
+  const parts: ReactNode[] = [];
   names.forEach((name, index) => {
     if (index > 0) {
       parts.push(

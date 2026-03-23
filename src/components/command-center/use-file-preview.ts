@@ -50,6 +50,7 @@ export function useFilePreview() {
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null);
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
   const previewRequestRef = useRef(0);
+  const emptyPreviewItem: PreviewItem = {};
 
   const resolvePreviewErrorMessage = useCallback((payload: PreviewErrorPayload = {}, fallbackMessage = "") => {
     if (payload?.errorCode === "office_preview_requires_libreoffice") {
@@ -104,7 +105,7 @@ export function useFilePreview() {
     const requestId = previewRequestRef.current + 1;
     previewRequestRef.current = requestId;
     setFilePreview({
-      item,
+      item: item || emptyPreviewItem,
       path: targetPath,
       name: targetPath.split("/").filter(Boolean).pop() || targetPath,
       startInEditMode,
@@ -140,7 +141,7 @@ export function useFilePreview() {
       const resolvedPath = String(payload.path || targetPath);
       setFilePreview({
         ...payload,
-        item,
+        item: item || emptyPreviewItem,
         path: resolvedPath,
         name: String(payload.name || resolvedPath.split("/").filter(Boolean).pop() || resolvedPath),
         startInEditMode,
@@ -153,7 +154,7 @@ export function useFilePreview() {
       }
       const errorMessage = error instanceof Error ? error.message : "";
       setFilePreview({
-        item,
+        item: item || emptyPreviewItem,
         path: targetPath,
         name: targetPath.split("/").filter(Boolean).pop() || targetPath,
         startInEditMode,

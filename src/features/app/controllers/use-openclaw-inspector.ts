@@ -20,6 +20,17 @@ type UseOpenClawInspectorInput = {
   onSyncCurrentSessionModel?: (model: string) => Promise<unknown> | unknown;
 };
 
+type InspectorAuthorizationState = {
+  confirmed: boolean;
+  note: string;
+};
+
+type InspectorFormValues = Record<string, unknown>;
+type InspectorResultState = Record<string, any> | null;
+type InspectorRemoteGuideEntry = Record<string, any> | null;
+type InspectorHistoryEntry = Record<string, any>;
+type InspectorRollbackIntent = { backupId?: string; [key: string]: unknown } | null;
+
 function resolveOpenClawConfigErrorMessage(errorCode = "", messages) {
   if (!errorCode) {
     return messages.inspector.openClawConfig.errors.requestFailed;
@@ -62,41 +73,41 @@ export function useOpenClawInspector({
   onRefreshEnvironment,
   onSyncCurrentSessionModel,
 }: UseOpenClawInspectorInput) {
-  const [openClawActionIntent, setOpenClawActionIntent] = useState(null);
+  const [openClawActionIntent, setOpenClawActionIntent] = useState<Record<string, any> | null>(null);
   const [openClawActionBusyKey, setOpenClawActionBusyKey] = useState("");
-  const [openClawActionResult, setOpenClawActionResult] = useState(null);
+  const [openClawActionResult, setOpenClawActionResult] = useState<InspectorResultState>(null);
   const [lalaclawUpdateBusy, setLalaclawUpdateBusy] = useState(false);
   const [lalaclawUpdateError, setLalaclawUpdateError] = useState("");
   const [lalaclawUpdateLoading, setLalaclawUpdateLoading] = useState(false);
   const [lalaclawUpdateRequested, setLalaclawUpdateRequested] = useState(false);
-  const [lalaclawUpdateState, setLalaclawUpdateState] = useState(null);
+  const [lalaclawUpdateState, setLalaclawUpdateState] = useState<InspectorResultState>(null);
   const [openClawConfigBusy, setOpenClawConfigBusy] = useState(false);
   const [openClawConfigError, setOpenClawConfigError] = useState("");
   const [openClawConfigLoading, setOpenClawConfigLoading] = useState(false);
   const [openClawConfigRequested, setOpenClawConfigRequested] = useState(false);
-  const [openClawConfigRemoteAuthorization, setOpenClawConfigRemoteAuthorization] = useState({ confirmed: false, note: "" });
-  const [openClawConfigResult, setOpenClawConfigResult] = useState(null);
-  const [openClawConfigState, setOpenClawConfigState] = useState(null);
-  const [openClawConfigValues, setOpenClawConfigValues] = useState({});
+  const [openClawConfigRemoteAuthorization, setOpenClawConfigRemoteAuthorization] = useState<InspectorAuthorizationState>({ confirmed: false, note: "" });
+  const [openClawConfigResult, setOpenClawConfigResult] = useState<InspectorResultState>(null);
+  const [openClawConfigState, setOpenClawConfigState] = useState<InspectorResultState>(null);
+  const [openClawConfigValues, setOpenClawConfigValues] = useState<InspectorFormValues>({});
   const [openClawOnboardingBusy, setOpenClawOnboardingBusy] = useState(false);
   const [openClawOnboardingError, setOpenClawOnboardingError] = useState("");
   const [openClawOnboardingLoading, setOpenClawOnboardingLoading] = useState(false);
   const [openClawOnboardingRequested, setOpenClawOnboardingRequested] = useState(false);
-  const [openClawOnboardingRefreshResult, setOpenClawOnboardingRefreshResult] = useState(null);
-  const [openClawOnboardingResult, setOpenClawOnboardingResult] = useState(null);
-  const [openClawOnboardingState, setOpenClawOnboardingState] = useState(null);
-  const [openClawOnboardingValues, setOpenClawOnboardingValues] = useState({});
+  const [openClawOnboardingRefreshResult, setOpenClawOnboardingRefreshResult] = useState<InspectorResultState>(null);
+  const [openClawOnboardingResult, setOpenClawOnboardingResult] = useState<InspectorResultState>(null);
+  const [openClawOnboardingState, setOpenClawOnboardingState] = useState<InspectorResultState>(null);
+  const [openClawOnboardingValues, setOpenClawOnboardingValues] = useState<InspectorFormValues>({});
   const [openClawUpdateBusy, setOpenClawUpdateBusy] = useState(false);
   const [openClawUpdateError, setOpenClawUpdateError] = useState("");
   const [openClawUpdateLoading, setOpenClawUpdateLoading] = useState(false);
   const [openClawUpdateRequested, setOpenClawUpdateRequested] = useState(false);
-  const [openClawUpdateHelpEntry, setOpenClawUpdateHelpEntry] = useState(null);
+  const [openClawUpdateHelpEntry, setOpenClawUpdateHelpEntry] = useState<InspectorRemoteGuideEntry>(null);
   const [openClawRemoteGuideOpen, setOpenClawRemoteGuideOpen] = useState(false);
-  const [openClawRollbackAuthorization, setOpenClawRollbackAuthorization] = useState({ confirmed: false, note: "" });
-  const [openClawRollbackIntent, setOpenClawRollbackIntent] = useState(null);
-  const [openClawUpdateResult, setOpenClawUpdateResult] = useState(null);
-  const [openClawUpdateState, setOpenClawUpdateState] = useState(null);
-  const [openClawHistoryEntries, setOpenClawHistoryEntries] = useState([]);
+  const [openClawRollbackAuthorization, setOpenClawRollbackAuthorization] = useState<InspectorAuthorizationState>({ confirmed: false, note: "" });
+  const [openClawRollbackIntent, setOpenClawRollbackIntent] = useState<InspectorRollbackIntent>(null);
+  const [openClawUpdateResult, setOpenClawUpdateResult] = useState<InspectorResultState>(null);
+  const [openClawUpdateState, setOpenClawUpdateState] = useState<InspectorResultState>(null);
+  const [openClawHistoryEntries, setOpenClawHistoryEntries] = useState<InspectorHistoryEntry[]>([]);
   const [openClawHistoryError, setOpenClawHistoryError] = useState("");
   const [openClawHistoryLoading, setOpenClawHistoryLoading] = useState(false);
   const [openClawHistoryRequested, setOpenClawHistoryRequested] = useState(false);

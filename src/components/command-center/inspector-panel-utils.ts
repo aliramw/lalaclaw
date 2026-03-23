@@ -448,7 +448,7 @@ function normalizeOpenClawUpdateIssueKey(value = "") {
 }
 
 export function buildOpenClawUpdateTroubleshootingEntries(result: Record<string, any> | null = null, messages: any) {
-  const issueKeys = [];
+  const issueKeys: string[] = [];
   const errorCode = normalizeOpenClawUpdateIssueKey(result?.errorCode);
   const commandResult = result?.commandResult || {};
   const diagnosticText = [

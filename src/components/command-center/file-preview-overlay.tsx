@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { FolderOpen, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { InspectorFilesPanel } from "@/components/command-center/inspector-files-panel";
@@ -29,10 +30,13 @@ const defaultSpreadsheetPreviewLimitColumns = 50;
 const filePreviewFontSizeStorageKey = "file-preview-font-size";
 const filePreviewExpandedStorageKey = "file-preview-expanded";
 const filePreviewFontSizeOptions = [
-  { value: "small", glyphClassName: "text-[14px]" },
-  { value: "medium", glyphClassName: "text-[18px]" },
-  { value: "large", glyphClassName: "text-[22px]" },
+  { value: "small" as const, glyphClassName: "text-[14px]" },
+  { value: "medium" as const, glyphClassName: "text-[18px]" },
+  { value: "large" as const, glyphClassName: "text-[22px]" },
 ];
+type FilePreviewFontSize = "small" | "medium" | "large";
+type SaveNotice = { id: number; message: string } | null;
+type PreviewLike = any;
 const richTextPreviewFontSizeClassNames = {
   small: "text-[12px] leading-5 [&_p]:!leading-5 [&_li]:!leading-5 [&_blockquote]:!leading-5 [&_td]:!leading-5 [&_th]:!leading-5 [&_p]:!mb-1.5 [&_ul]:!my-1.5 [&_ol]:!my-1.5",
   medium: "text-[14px] leading-6 [&_p]:!leading-6 [&_li]:!leading-6 [&_blockquote]:!leading-6 [&_td]:!leading-6 [&_th]:!leading-6 [&_p]:!mb-2 [&_ul]:!my-2 [&_ol]:!my-2",
@@ -155,7 +159,7 @@ const previewLanguageByExtension = {
   log: "text",
 };
 
-let monacoEditorComponentPromise = null;
+let monacoEditorComponentPromise: Promise<any> | null = null;
 
 function loadMonacoEditorComponent() {
   if (!monacoEditorComponentPromise) {
@@ -220,7 +224,7 @@ function isCodeLikePreviewTarget(filePath = "", kind = "") {
     return true;
   }
 
-  const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+  const extension = fileName.includes(".") ? String(fileName.split(".").pop() || "") : "";
   return Boolean(extension) && previewLanguageByExtension[extension] && previewLanguageByExtension[extension] !== "text";
 }
 
@@ -242,7 +246,7 @@ function inferPreviewLanguage(filePath = "", kind = "") {
     return "makefile";
   }
 
-  const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+  const extension = fileName.includes(".") ? String(fileName.split(".").pop() || "") : "";
   return previewLanguageByExtension[extension] || "text";
 }
 
@@ -304,6 +308,14 @@ function FilePreviewCodeBlock({
   variant = "default",
   fontSize = "medium",
   fillHeight = false,
+}: {
+  content?: string;
+  language?: string;
+  resolvedTheme?: string;
+  syntaxTheme?: any;
+  variant?: "default" | "subtle";
+  fontSize?: FilePreviewFontSize;
+  fillHeight?: boolean;
 }) {
   const isSubtle = variant === "subtle";
   const isDarkTheme = resolvedTheme === "dark";
@@ -384,9 +396,19 @@ function EditableFilePreview({
   fontSize = "medium",
   isDark = false,
   messages,
+}: {
+  path?: string;
+  kind?: string;
+  initialScrollRatio?: number | null;
+  value?: string;
+  onChange: (value: string) => void;
+  resolvedTheme?: string;
+  fontSize?: FilePreviewFontSize;
+  isDark?: boolean;
+  messages: any;
 }) {
-  const [EditorComponent, setEditorComponent] = useState(null);
-  const initialScrollRatioRef = useRef(initialScrollRatio);
+  const [EditorComponent, setEditorComponent] = useState<any>(null);
+  const initialScrollRatioRef = useRef<number | null>(initialScrollRatio);
   const focusFrameRef = useRef(0);
   const focusTimeoutRef = useRef(0);
 
@@ -499,10 +521,10 @@ function EditableFilePreview({
   );
 }
 
-function DocxPreviewContent({ preview, resolvedTheme = "light" }) {
+function DocxPreviewContent({ preview, resolvedTheme = "light" }: { preview: PreviewLike; resolvedTheme?: string }) {
   const { messages } = useI18n();
-  const containerRef = useRef(null);
-  const [status, setStatus] = useState("loading");
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     let cancelled = false;
@@ -603,7 +625,7 @@ function DocxPreviewContent({ preview, resolvedTheme = "light" }) {
   );
 }
 
-function SpreadsheetPreview({ preview, resolvedTheme = "light" }) {
+function SpreadsheetPreview({ preview, resolvedTheme = "light" }: { preview: PreviewLike; resolvedTheme?: string }) {
   const { messages } = useI18n();
   const isDark = resolvedTheme === "dark";
   const rows = preview?.spreadsheet?.rows || [];
@@ -674,7 +696,7 @@ function SpreadsheetPreview({ preview, resolvedTheme = "light" }) {
   );
 }
 
-export function ImagePreviewOverlay({ image, onClose }) {
+export function ImagePreviewOverlay({ image, onClose }: { image: PreviewLike; onClose?: () => void }) {
   const { messages } = useI18n();
   const hasImageSrc = Boolean(image?.src);
   const [scale, setScale] = useState(1);
@@ -682,10 +704,10 @@ export function ImagePreviewOverlay({ image, onClose }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
-  const imageRef = useRef(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const dragStateRef = useRef({
     active: false,
-    pointerId: null,
+    pointerId: null as number | null,
     lastX: 0,
     lastY: 0,
   });
@@ -1046,22 +1068,35 @@ export function FilePreviewOverlay({
   workspaceCount,
   workspaceFiles = [],
   workspaceLoaded = false,
+}: {
+  currentAgentId?: string;
+  currentSessionUser?: string;
+  currentWorkspaceRoot?: string;
+  files?: any[];
+  preview?: PreviewLike;
+  resolvedTheme?: string;
+  sessionFiles?: any[];
+  onClose?: () => void;
+  onOpenFilePreview?: (item: any, options?: any) => void;
+  workspaceCount?: number;
+  workspaceFiles?: any[];
+  workspaceLoaded?: boolean;
 }) {
   const { messages } = useI18n();
   const applePlatform = isApplePlatform();
   const [isFullscreen, setIsFullscreen] = useState(() => loadStoredFilePreviewExpanded());
   const [openingInFileManager, setOpeningInFileManager] = useState(false);
-  const [filePreviewFontSize, setFilePreviewFontSize] = useState(() => loadStoredFilePreviewFontSize());
+  const [filePreviewFontSize, setFilePreviewFontSize] = useState<FilePreviewFontSize>(() => loadStoredFilePreviewFontSize() as FilePreviewFontSize);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editSessionDirty, setEditSessionDirty] = useState(false);
   const [editableContent, setEditableContent] = useState("");
-  const [previewContentOverride, setPreviewContentOverride] = useState(null);
+  const [previewContentOverride, setPreviewContentOverride] = useState<string | null>(null);
   const [saveError, setSaveError] = useState("");
-  const [saveNotice, setSaveNotice] = useState(null);
+  const [saveNotice, setSaveNotice] = useState<SaveNotice>(null);
   const [pendingLeaveAction, setPendingLeaveAction] = useState("");
-  const previewViewportRef = useRef(null);
-  const pendingEditorScrollRatioRef = useRef(null);
+  const previewViewportRef = useRef<HTMLElement | null>(null);
+  const pendingEditorScrollRatioRef = useRef<number | null>(null);
   const editSessionInitialContentRef = useRef("");
   const previewIdentity = `${preview?.path || preview?.item?.path || preview?.name || ""}:${preview?.kind || ""}`;
 
@@ -1257,7 +1292,7 @@ export function FilePreviewOverlay({
           content: editableContent,
         }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({} as Record<string, unknown>));
       if (response.status === 405 && payload?.error === "Method not allowed") {
         throw new Error(messages.inspector.previewErrors.saveRequiresRestart);
       }
@@ -1275,7 +1310,8 @@ export function FilePreviewOverlay({
         message: messages.inspector.previewActions.saveSucceeded,
       });
     } catch (error) {
-      setSaveError(error.message || messages.inspector.previewErrors.saveFailed);
+      const resolvedError = error as { message?: string } | null;
+      setSaveError(resolvedError?.message || messages.inspector.previewErrors.saveFailed);
     } finally {
       setIsSaving(false);
     }
@@ -1350,7 +1386,7 @@ export function FilePreviewOverlay({
     return null;
   }
 
-  let body = null;
+  let body: ReactNode = null;
   if (preview.loading) {
     body = (
       <div className={cn("flex min-h-[40vh] items-center justify-center text-sm", isDark ? "text-zinc-300" : "text-slate-600")}>
@@ -1402,7 +1438,7 @@ export function FilePreviewOverlay({
           <div data-testid="markdown-preview-content" className="min-w-0 max-w-full overflow-x-auto">
             <MarkdownContent
               content={markdownBody}
-              files={files}
+              files={files || []}
               headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
               resolvedTheme={resolvedTheme}
               className={cn("min-w-0 max-w-full", richTextPreviewFontSizeClassName)}
@@ -1446,7 +1482,7 @@ export function FilePreviewOverlay({
         )}
       >
         <iframe
-          src={preview.contentUrl}
+          src={String(preview.contentUrl || "")}
           title={preview.name || preview.item?.name || messages.inspector.previewActions.pdfPreviewTitle}
           className="block h-full w-full bg-transparent"
         />

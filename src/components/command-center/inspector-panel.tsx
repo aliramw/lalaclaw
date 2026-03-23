@@ -122,6 +122,123 @@ const LazyContextPreviewDialog = lazy(() =>
 const inspectorTabKeys = ["files", "artifacts", "timeline", "environment"];
 const WORKSPACE_FILTER_DEBOUNCE_MS = 150;
 
+type InspectorRecord = Record<string, any>;
+type InspectorMessages = ReturnType<typeof useI18n>["messages"];
+type InspectorRemoteGuard = InspectorRecord | null;
+type InspectorPanelItem = InspectorRecord;
+type InspectorFlowHandler = (...args: any[]) => any;
+type InspectorPreviewHandler = (item: any, options?: any) => void;
+type InspectorRevealHandler = (item: any) => Promise<void>;
+type InspectorFormValues = Record<string, unknown>;
+type InspectorRewrite = {
+  previousPath: string;
+  nextPath: string;
+};
+type InspectorRenameState = {
+  source: string;
+  item: any;
+  value: string;
+  submitting: boolean;
+  error: string;
+} | null;
+type InspectorRenameExtensionState = {
+  fromExtension: string;
+  toExtension: string;
+} | null;
+type InspectorPasteFeedback = {
+  kind: "success" | "error";
+  text: string;
+} | null;
+type LalaClawFlowState = InspectorRecord | null;
+type OpenClawUpdateHelpEntry = InspectorRecord | null;
+type InspectorAuthorizationState = Record<string, any> | null;
+type InspectorRollbackIntent = Record<string, any> | null;
+type InspectorHistoryEntry = Record<string, any>;
+type InspectorWorkspaceState = {
+  loaded: boolean;
+  loading: boolean;
+  error: string;
+};
+type InspectorEnvironmentFlow = {
+  enabled: boolean;
+  busy?: boolean;
+  defaultOpen?: boolean;
+  error?: string;
+  forceOpen?: boolean;
+  loading?: boolean;
+  onReload?: InspectorFlowHandler;
+  onRunUpdate?: InspectorFlowHandler;
+  state?: InspectorRecord | null;
+} | null;
+type InspectorUpdateFlow = {
+  enabled: boolean;
+  busy?: boolean;
+  error?: string;
+  loading?: boolean;
+  onOpenTroubleshooting?: (entry: InspectorTroubleshootingEntry) => void;
+  onReload?: InspectorFlowHandler;
+  onRunUpdate?: InspectorFlowHandler;
+  result?: InspectorRecord | null;
+  state?: InspectorRecord | null;
+} | null;
+type InspectorOnboardingFlow = {
+  enabled: boolean;
+  busy?: boolean;
+  defaultOpen?: boolean;
+  error?: string;
+  forceOpen?: boolean;
+  loading?: boolean;
+  onChange?: (fieldKey: any, value: any) => void;
+  onRefreshCapabilities?: InspectorFlowHandler;
+  onReload?: InspectorFlowHandler;
+  onSubmit?: InspectorFlowHandler;
+  refreshResult?: InspectorRecord | null;
+  result?: InspectorRecord | null;
+  state?: InspectorRecord | null;
+  values?: InspectorFormValues;
+} | null;
+type InspectorHistoryFlow = {
+  enabled: boolean;
+  entries?: InspectorHistoryEntry[];
+  error?: string;
+  loading?: boolean;
+  onRequestRollback?: (entry: InspectorHistoryEntry) => void;
+  onReload?: InspectorFlowHandler;
+  rollbackBusy?: boolean;
+} | null;
+type InspectorConfigEditorFlow = {
+  enabled: boolean;
+  busy?: boolean;
+  error?: string;
+  loading?: boolean;
+  onChange?: (fieldKey: any, value: any) => void;
+  onChangeRemoteAuthorization?: (fieldKey: any, value: any) => void;
+  onReload?: InspectorFlowHandler;
+  onSubmit?: InspectorFlowHandler;
+  remoteAuthorization?: InspectorAuthorizationState;
+  result?: InspectorRecord | null;
+  state?: InspectorRecord | null;
+  values?: InspectorFormValues;
+} | null;
+type InspectorManagementFlow = {
+  enabled: boolean;
+  actionIntent?: InspectorRecord | null;
+  busyActionKey?: string;
+  onRefresh?: InspectorFlowHandler;
+  onRequestAction?: (action: any) => void;
+  refreshing?: boolean;
+  result?: InspectorRecord | null;
+} | null;
+type InspectorTroubleshootingEntry = {
+  key: string;
+  title: string;
+  summary: string;
+  steps: string[];
+  commands: string[];
+  docs: Array<{ key: string; href: string; label: string }>;
+  canPreview?: boolean;
+} | null;
+
 function RenameDialog({
   confirmLabel,
   description,
@@ -135,6 +252,19 @@ function RenameDialog({
   submitting = false,
   title,
   value,
+}: {
+  confirmLabel: string;
+  description: string;
+  error?: string;
+  inputLabel: string;
+  messages: InspectorMessages;
+  onCancel: () => void;
+  onChange: (value: string) => void;
+  onConfirm: () => void;
+  placeholder?: string;
+  submitting?: boolean;
+  title: string;
+  value: string;
 }) {
   return (
     <div className="fixed inset-0 z-[41] flex items-center justify-center bg-background/55 px-4 backdrop-blur-[1px]">
@@ -176,7 +306,21 @@ function RenameDialog({
   );
 }
 
-function RenameExtensionConfirmDialog({ description, messages, onCancel, onConfirm, submitting = false, title }) {
+function RenameExtensionConfirmDialog({
+  description,
+  messages,
+  onCancel,
+  onConfirm,
+  submitting = false,
+  title,
+}: {
+  description: string;
+  messages: InspectorMessages;
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitting?: boolean;
+  title: string;
+}) {
   return (
     <div className="fixed inset-0 z-[42] flex items-center justify-center bg-background/55 px-4 backdrop-blur-[1px]">
       <div className="w-full max-w-md rounded-[24px] border border-border/70 bg-card shadow-2xl">
@@ -244,6 +388,16 @@ function LalaClawPanel({
   onRunUpdate,
   showTitle = true,
   state = null,
+}: {
+  busy?: boolean;
+  error?: string;
+  loading?: boolean;
+  messages: InspectorMessages;
+  metadataItems?: InspectorPanelItem[];
+  onReload?: InspectorFlowHandler;
+  onRunUpdate?: InspectorFlowHandler;
+  showTitle?: boolean;
+  state?: LalaClawFlowState;
 }) {
   const metadata = metadataItems.filter((item) => item?.value);
   const badgeVariant = getLalaClawUpdateBadgeVariant(state);
@@ -402,9 +556,20 @@ function OpenClawManagementPanel({
   remoteGuard = null,
   result = null,
   showTitle = true,
+}: {
+  actionIntent?: InspectorRecord | null;
+  busyActionKey?: string;
+  messages: InspectorMessages;
+  onOpenRemoteGuide?: () => void;
+  onRefresh?: InspectorFlowHandler;
+  onRequestAction?: (action: any) => void;
+  refreshing?: boolean;
+  remoteGuard?: InspectorRemoteGuard;
+  result?: InspectorRecord | null;
+  showTitle?: boolean;
 }) {
   const actions = getOpenClawManagementActions(messages);
-  const outcome = getOpenClawManagementOutcome(result);
+  const outcome = getOpenClawManagementOutcome(result || undefined);
   const outcomeBadge = getOpenClawManagementOutcomeBadgeProps(outcome);
   const activeActionLabel = actions.find((action) => action.key === busyActionKey)?.label || "";
 
@@ -433,7 +598,7 @@ function OpenClawManagementPanel({
                   disabled={Boolean(busyActionKey) || remoteGuard?.blocked}
                   aria-label={action.label}
                   className="h-8 rounded-full px-3"
-                  onClick={() => onRequestAction(action)}
+                  onClick={() => onRequestAction?.(action)}
                 >
                   {pending ? messages.inspector.openClawManagement.running(activeActionLabel || action.label) : action.label}
                 </Button>
@@ -547,9 +712,27 @@ function OpenClawConfigPanel({
   state = null,
   values = {},
   showTitle = true,
+}: {
+  busy?: boolean;
+  error?: string;
+  loading?: boolean;
+  messages: InspectorMessages;
+  onChange?: (fieldKey: any, value: any) => void;
+  onOpenPreview?: InspectorPreviewHandler;
+  onChangeRemoteAuthorization?: (fieldKey: any, value: any) => void;
+  onOpenRemoteGuide?: () => void;
+  onRevealInFileManager?: InspectorRevealHandler;
+  onReload?: InspectorFlowHandler;
+  onSubmit?: (withRestart?: boolean) => void;
+  remoteAuthorization?: InspectorAuthorizationState;
+  remoteGuard?: InspectorRemoteGuard;
+  result?: InspectorRecord | null;
+  state?: InspectorRecord | null;
+  values?: InspectorFormValues;
+  showTitle?: boolean;
 }) {
   const fieldMeta = getOpenClawConfigFieldMeta(messages, state);
-  const outcome = getOpenClawConfigOutcome(result);
+  const outcome = getOpenClawConfigOutcome(result || undefined);
   const outcomeBadge = getOpenClawConfigOutcomeBadgeProps(outcome);
   const initialValues = buildOpenClawConfigFormValues(state);
   const configFormState = getOpenClawConfigFormState(values, state, remoteAuthorization);
@@ -678,7 +861,7 @@ function OpenClawConfigPanel({
                           value={String(fieldValue || "")}
                           onChange={(event) => onChange?.(field.key, event.target.value)}
                         >
-                          {field.options.map((option) => (
+                          {(field.options || []).map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
                         </select>
@@ -879,6 +1062,20 @@ function OpenClawOnboardingPanel({
   state = null,
   values = {},
   showTitle = true,
+}: {
+  busy?: boolean;
+  error?: string;
+  loading?: boolean;
+  messages: InspectorMessages;
+  onChange?: (fieldKey: any, value: any) => void;
+  onRefreshCapabilities?: InspectorFlowHandler;
+  onReload?: InspectorFlowHandler;
+  onSubmit?: InspectorFlowHandler;
+  refreshResult?: InspectorRecord | null;
+  result?: InspectorRecord | null;
+  state?: InspectorRecord | null;
+  values?: InspectorFormValues;
+  showTitle?: boolean;
 }) {
   const onboardingFormState = getOpenClawOnboardingFormState(values, state);
   const authChoice = onboardingFormState.authChoice;
@@ -1529,6 +1726,19 @@ function OpenClawUpdatePanel({
   result = null,
   state = null,
   showTitle = true,
+}: {
+  busy?: boolean;
+  error?: string;
+  loading?: boolean;
+  messages: InspectorMessages;
+  onOpenRemoteGuide?: () => void;
+  onOpenTroubleshooting?: (entry: OpenClawUpdateHelpEntry) => void;
+  onReload?: InspectorFlowHandler;
+  onRunUpdate?: InspectorFlowHandler;
+  remoteGuard?: InspectorRemoteGuard;
+  result?: InspectorRecord | null;
+  state?: InspectorRecord | null;
+  showTitle?: boolean;
 }) {
   const outcome = result ? getOpenClawUpdateOutcome(result) : "";
   const outcomeBadge = getOpenClawUpdateOutcomeBadgeProps(outcome);
@@ -1538,7 +1748,7 @@ function OpenClawUpdatePanel({
   const previewActions = Array.isArray(state?.preview?.actions) ? state.preview.actions : [];
   const runButtonLabel = installed ? messages.inspector.openClawUpdate.runUpdate : messages.inspector.openClawUpdate.runInstall;
   const runningLabel = installed ? messages.inspector.openClawUpdate.running : messages.inspector.openClawUpdate.installing;
-  const troubleshootingEntries = buildOpenClawUpdateTroubleshootingEntries(result, messages);
+  const troubleshootingEntries = buildOpenClawUpdateTroubleshootingEntries(result, messages) as InspectorTroubleshootingEntry[];
 
   return (
     <div className={showTitle ? "grid gap-2" : "grid"}>
@@ -1724,7 +1934,9 @@ function OpenClawUpdatePanel({
                       {messages.inspector.openClawUpdate.labels.troubleshooting}
                     </div>
                     <div className="space-y-2">
-                      {troubleshootingEntries.map((entry) => (
+                      {troubleshootingEntries
+                        .filter((entry): entry is NonNullable<InspectorTroubleshootingEntry> => Boolean(entry))
+                        .map((entry) => (
                         <div key={entry.key} className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
                           <div className="text-[12px] font-medium text-foreground">{entry.title}</div>
                           <div className="mt-1 text-[11px] leading-5 text-muted-foreground">{entry.summary}</div>
@@ -1755,7 +1967,7 @@ function OpenClawUpdatePanel({
                             ) : null}
                           </div>
                         </div>
-                      ))}
+                        ))}
                     </div>
                   </div>
                 ) : null}
@@ -1768,7 +1980,15 @@ function OpenClawUpdatePanel({
   );
 }
 
-function OpenClawUpdateTroubleshootingDialog({ entry = null, messages, onClose }) {
+function OpenClawUpdateTroubleshootingDialog({
+  entry = null,
+  messages,
+  onClose,
+}: {
+  entry?: OpenClawUpdateHelpEntry;
+  messages: InspectorMessages;
+  onClose: () => void;
+}) {
   if (!entry) {
     return null;
   }
@@ -1849,6 +2069,17 @@ function OpenClawOperationHistoryPanel({
   rollbackBusy = false,
   remoteGuard = null,
   showTitle = true,
+}: {
+  entries?: InspectorHistoryEntry[];
+  error?: string;
+  loading?: boolean;
+  messages: InspectorMessages;
+  onOpenGuide?: () => void;
+  onRequestRollback?: (entry: InspectorHistoryEntry) => void;
+  onReload?: InspectorFlowHandler;
+  rollbackBusy?: boolean;
+  remoteGuard?: InspectorRemoteGuard;
+  showTitle?: boolean;
 }) {
   return (
     <div className={showTitle ? "grid gap-2" : "grid"}>
@@ -1948,7 +2179,15 @@ function OpenClawOperationHistoryPanel({
   );
 }
 
-function OpenClawRemoteRecoveryDialog({ messages, onClose, open = false }) {
+function OpenClawRemoteRecoveryDialog({
+  messages,
+  onClose,
+  open = false,
+}: {
+  messages: InspectorMessages;
+  onClose: () => void;
+  open?: boolean;
+}) {
   if (!open) {
     return null;
   }
@@ -2037,6 +2276,14 @@ function OpenClawRollbackConfirmDialog({
   onCancel,
   onChange,
   onConfirm,
+}: {
+  authorization?: InspectorAuthorizationState;
+  busy?: boolean;
+  entry?: InspectorRollbackIntent;
+  messages: InspectorMessages;
+  onCancel: () => void;
+  onChange?: (fieldKey: any, value: any) => void;
+  onConfirm: () => void;
 }) {
   if (!entry) {
     return null;
@@ -2119,7 +2366,19 @@ function OpenClawRollbackConfirmDialog({
   );
 }
 
-function OpenClawManagementConfirmDialog({ action, busy = false, messages, onCancel, onConfirm }) {
+function OpenClawManagementConfirmDialog({
+  action,
+  busy = false,
+  messages,
+  onCancel,
+  onConfirm,
+}: {
+  action?: InspectorRecord | null;
+  busy?: boolean;
+  messages: InspectorMessages;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   if (!action) {
     return null;
   }
@@ -2170,17 +2429,30 @@ function FilesTab({
   workspaceCount,
   workspaceItems = [],
   workspaceLoaded = false,
+}: {
+  active?: boolean;
+  currentAgentId?: string;
+  currentWorkspaceRoot?: string;
+  currentSessionUser?: string;
+  items: any[];
+  messages: InspectorMessages;
+  onOpenEdit?: InspectorPreviewHandler;
+  onOpenPreview?: InspectorPreviewHandler;
+  onTrackSessionFiles?: (payload: { files: any[]; rewrites?: InspectorRewrite[] }) => void;
+  workspaceCount?: number;
+  workspaceItems?: any[];
+  workspaceLoaded?: boolean;
 }) {
-  const [contextMenu, setContextMenu] = useState(null);
+  const [contextMenu, setContextMenu] = useState<any>(null);
   const [selectedDirectoryPath, setSelectedDirectoryPath] = useState("");
-  const [pasteFeedback, setPasteFeedback] = useState(null);
+  const [pasteFeedback, setPasteFeedback] = useState<InspectorPasteFeedback>(null);
   const [sessionFilterInput, setSessionFilterInput] = useState("");
   const [workspaceFilterInput, setWorkspaceFilterInput] = useState("");
   const [workspaceFilter, setWorkspaceFilter] = useState("");
-  const [localSessionItems, setLocalSessionItems] = useState([]);
-  const [sessionPathRewrites, setSessionPathRewrites] = useState([]);
-  const [renameState, setRenameState] = useState(null);
-  const [renameExtensionState, setRenameExtensionState] = useState(null);
+  const [localSessionItems, setLocalSessionItems] = useState<any[]>([]);
+  const [sessionPathRewrites, setSessionPathRewrites] = useState<InspectorRewrite[]>([]);
+  const [renameState, setRenameState] = useState<InspectorRenameState>(null);
+  const [renameExtensionState, setRenameExtensionState] = useState<InspectorRenameExtensionState>(null);
   const fileActionSections = [
     { key: "created", label: messages.inspector.fileActions.created },
     { key: "modified", label: messages.inspector.fileActions.modified },
@@ -2207,15 +2479,15 @@ function FilesTab({
         .sort((left, right) => compareFileItemsByPath(left, right, currentWorkspaceRoot)),
     }))
     .filter((section) => section.items.length);
-  const [workspaceNodes, setWorkspaceNodes] = useState(() => normalizeWorkspaceNodes(workspaceItems, currentWorkspaceRoot));
-  const [workspaceState, setWorkspaceState] = useState({
+  const [workspaceNodes, setWorkspaceNodes] = useState<any[]>(() => normalizeWorkspaceNodes(workspaceItems, currentWorkspaceRoot));
+  const [workspaceState, setWorkspaceState] = useState<InspectorWorkspaceState>({
     loaded: workspaceLoaded,
     loading: false,
     error: "",
   });
-  const previousWorkspaceRootRef = useRef(currentWorkspaceRoot);
-  const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [expandedSessionDirectories, setExpandedSessionDirectories] = useState({});
+  const previousWorkspaceRootRef = useRef<string>(currentWorkspaceRoot);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [expandedSessionDirectories, setExpandedSessionDirectories] = useState<Record<string, boolean>>({});
   const hasSessionFiles = sessionItems.length > 0;
   const hasSessionFilter = Boolean(String(sessionFilterInput || "").trim());
   const visibleSessionCount = groups.reduce((total, group) => total + group.items.length, 0);
@@ -2858,7 +3130,7 @@ function FilesTab({
               loadWorkspaceRoot().catch(() => {});
             }}
             selectedDirectoryPath={selectedDirectoryPath}
-            visibleWorkspaceCount={visibleWorkspaceCount}
+            visibleWorkspaceCount={visibleWorkspaceCount ?? 0}
             workspaceFilterInput={workspaceFilterInput}
             workspaceNodes={workspaceNodes}
             workspaceState={workspaceState}
@@ -2942,6 +3214,18 @@ function EnvironmentTab({
   onOpenRemoteGuide,
   onRevealInFileManager,
   updateFlow = null,
+}: {
+  configEditor?: InspectorConfigEditorFlow;
+  history?: InspectorHistoryFlow;
+  items?: InspectorPanelItem[];
+  lalaclawFlow?: InspectorEnvironmentFlow;
+  management?: InspectorManagementFlow;
+  messages: InspectorMessages;
+  onboarding?: InspectorOnboardingFlow;
+  onOpenPreview?: InspectorPreviewHandler;
+  onOpenRemoteGuide?: () => void;
+  onRevealInFileManager?: InspectorRevealHandler;
+  updateFlow?: InspectorUpdateFlow;
 }) {
   if (!items.length) {
     return <PanelEmpty text={messages.inspector.empty.noEnvironment} />;
@@ -3105,6 +3389,9 @@ function EnvironmentTab({
                 messages={messages}
               >
                   {section.items.map((item, index) => {
+                    if (!item) {
+                      return null;
+                    }
                     const badgeProps = getOpenClawDiagnosticBadgeProps(item.value);
                     return (
                       <div
@@ -3224,7 +3511,7 @@ export function InspectorPanel({
   void snapshots;
   const { messages } = useI18n();
   const { filePreview, imagePreview, handleOpenPreview, closeFilePreview, closeImagePreview } = useFilePreview();
-  const tabsListRef = useRef(null);
+  const tabsListRef = useRef<HTMLDivElement | null>(null);
   const [showTabLabels, setShowTabLabels] = useState(true);
   const [tooltipTabKey, setTooltipTabKey] = useState("");
   const [compactSheetOpen, setCompactSheetOpen] = useState(false);
@@ -3563,7 +3850,11 @@ export function InspectorPanel({
     timeline: timelineTabContent,
     environment: environmentTabContent,
   };
-  const activeCompactTab = tabDefinitions.find((tab) => tab.key === resolvedActiveTab) || tabDefinitions[0];
+  const activeCompactTab = tabDefinitions.find((tab) => tab.key === resolvedActiveTab) || tabDefinitions[0] || {
+    key: "files",
+    icon: FolderOpen,
+    label: messages.inspector.tabs.files,
+  };
 
   if (compact) {
     return (

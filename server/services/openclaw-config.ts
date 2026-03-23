@@ -101,13 +101,19 @@ function setValueAtPath(target: LooseRecord, dotPath = '', value: any) {
   let cursor = target;
   for (let index = 0; index < segments.length - 1; index += 1) {
     const segment = segments[index];
+    if (!segment) {
+      continue;
+    }
     if (!cursor[segment] || typeof cursor[segment] !== 'object' || Array.isArray(cursor[segment])) {
       cursor[segment] = {};
     }
     cursor = cursor[segment];
   }
 
-  cursor[segments[segments.length - 1]] = value;
+  const finalSegment = segments[segments.length - 1];
+  if (finalSegment) {
+    cursor[finalSegment] = value;
+  }
 }
 
 function parseValidationPayload(text = ''): LooseRecord | null {
@@ -124,10 +130,13 @@ function parseValidationPayload(text = ''): LooseRecord | null {
 }
 
 function createCommandSummary(command: string, args: string[] = [], response: LooseRecord = {}): CommandSummary {
+  const exitCode = typeof response?.exitCode === 'number' && Number.isInteger(response.exitCode)
+    ? response.exitCode
+    : (response?.ok ? 0 : null);
   return {
     ok: Boolean(response?.ok),
     timedOut: Boolean(response?.timedOut),
-    exitCode: Number.isInteger(response?.exitCode) ? response.exitCode : (response?.ok ? 0 : null),
+    exitCode,
     signal: response?.signal || '',
     stdout: clipOutput(response?.stdout || ''),
     stderr: clipOutput(response?.stderr || ''),
@@ -143,11 +152,12 @@ function createCommandSummary(command: string, args: string[] = [], response: Lo
 function summarizeCommandError(command: string, args: string[] = [], error: LooseRecord) {
   const message = String(error?.message || 'OpenClaw config command failed');
   const timedOut = Boolean(error?.killed) && /timed out/i.test(message);
+  const exitCode = typeof error?.code === 'number' && Number.isInteger(error.code) ? error.code : null;
 
   return createCommandSummary(command, args, {
     ok: false,
     timedOut,
-    exitCode: Number.isInteger(error?.code) ? error.code : null,
+    exitCode,
     signal: error?.signal || '',
     stdout: error?.stdout || '',
     stderr: error?.stderr || '',
@@ -175,7 +185,7 @@ function normalizeFieldValue(definition: ConfigFieldDefinition | null | undefine
 
   if (definition.type === 'enum') {
     const normalized = String(rawValue || '').trim();
-    if (definition.options.includes(normalized)) {
+    if (definition.options?.includes(normalized)) {
       return normalized;
     }
     throw createOpenClawConfigError(`Unsupported option for ${definition.key}`, 400, 'invalid_field_value');
@@ -353,7 +363,8 @@ function buildGuidance({
     guidance.push('The gateway restarted and the health check is healthy.');
   }
 
-  if (restartRequested && ['unreachable', 'unhealthy'].includes(healthCheck?.status)) {
+  const healthStatus = String(healthCheck?.status || '').trim();
+  if (restartRequested && ['unreachable', 'unhealthy'].includes(healthStatus)) {
     guidance.push('The config change was written, but the post-restart health check needs attention.');
   }
 
@@ -394,16 +405,18 @@ export function createOpenClawConfigService({
   if (typeof execFileAsync !== 'function') {
     throw new Error('execFileAsync is required');
   }
+  const execFile = execFileAsync;
+  const runtimeConfig = config && typeof config === 'object' ? config : {};
 
-  const openclawBin = String(config?.openclawBin || 'openclaw').trim() || 'openclaw';
-  const configPath = String(config?.localConfigPath || '').trim();
-  const remoteTarget = Boolean(config?.remoteOpenClawTarget);
+  const openclawBin = String(runtimeConfig?.openclawBin || 'openclaw').trim() || 'openclaw';
+  const configPath = String(runtimeConfig?.localConfigPath || '').trim();
+  const remoteTarget = Boolean(runtimeConfig?.remoteOpenClawTarget);
   const localTargetKey = buildLocalTargetKey(configPath);
-  const remoteTargetKey = buildRemoteTargetKey(config?.baseUrl || '');
+  const remoteTargetKey = buildRemoteTargetKey(runtimeConfig?.baseUrl || '');
 
   async function runOpenClawCommand(args: string[] = []) {
     try {
-      const response = await execFileAsync(openclawBin, args, {
+      const response = await execFile(openclawBin, args, {
         timeout: DEFAULT_CONFIG_TIMEOUT_MS,
         maxBuffer: 8 * 1024 * 1024,
         env: process.env,
@@ -414,7 +427,7 @@ export function createOpenClawConfigService({
         stderr: response?.stderr || '',
       });
     } catch (error) {
-      return summarizeCommandError(openclawBin, args, error);
+      return summarizeCommandError(openclawBin, args, error as LooseRecord);
     }
   }
 
@@ -442,7 +455,7 @@ export function createOpenClawConfigService({
     }
 
     return {
-      path: String(payload?.path || config?.baseUrl || '').trim(),
+      path: String(payload?.path || runtimeConfig?.baseUrl || '').trim(),
       raw: String(payload?.raw || '').trim(),
       parsed,
       hash: String(payload?.hash || '').trim(),

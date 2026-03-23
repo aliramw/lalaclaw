@@ -70,11 +70,22 @@ const homePrefix = "/Users/marila";
 const trackedFileLinkButtonClassName =
   "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
 const emptyMarkdownPluginState = Object.freeze({ remarkPlugins: [], rehypePlugins: [] });
-let mermaidLibraryPromise = null;
-let remarkGfmLibraryPromise = null;
-let remarkMathLibraryPromise = null;
-let rehypeKatexLibraryPromise = null;
-let katexCssPromise = null;
+type MarkdownPluginState = {
+  rehypePlugins: unknown[];
+  remarkPlugins: unknown[];
+};
+
+type OpenFenceState = {
+  indent: string;
+  markerChar: string;
+  markerLength: number;
+} | null;
+
+let mermaidLibraryPromise: Promise<any> | null = null;
+let remarkGfmLibraryPromise: Promise<any> | null = null;
+let remarkMathLibraryPromise: Promise<any> | null = null;
+let rehypeKatexLibraryPromise: Promise<any> | null = null;
+let katexCssPromise: Promise<unknown> | null = null;
 const streamingMarkdownImageNodeCache = new Map<string, HTMLImageElement>();
 
 function contentNeedsGfmPlugin(content = "") {
@@ -262,7 +273,7 @@ function extractHeadingOutline(content = ""): MarkdownHeadingOutlineItem[] {
       if (!match) {
         return null;
       }
-      const text = stripInlineMarkdown(match[2].replace(/\s+#+\s*$/, ""));
+      const text = stripInlineMarkdown(String(match[2] || "").replace(/\s+#+\s*$/, ""));
       if (!text) {
         return null;
       }
@@ -271,11 +282,11 @@ function extractHeadingOutline(content = ""): MarkdownHeadingOutlineItem[] {
       seen.set(baseSlug, currentCount);
       return {
         id: currentCount === 1 ? baseSlug : `${baseSlug}-${currentCount}`,
-        level: match[1].length,
+        level: String(match[1] || "").length,
         text,
       };
     })
-    .filter(Boolean);
+    .filter((item): item is MarkdownHeadingOutlineItem => Boolean(item));
 }
 
 function promoteStandaloneImageLinks(content = "") {
@@ -299,15 +310,17 @@ function normalizeMathDelimiters(content = "") {
 
 function repairFencedCodeBlocks(content = "") {
   const lines = String(content || "").split("\n");
-  const repaired = [];
-  let openFence = null;
+  const repaired: string[] = [];
+  let openFence: OpenFenceState = null;
 
   for (const line of lines) {
     if (!openFence) {
       const match = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
       if (match) {
-        const [, indent, marker, rest] = match;
-        const markerChar = marker[0];
+        const indent = match[1] || "";
+        const marker = match[2] || "";
+        const rest = match[3] || "";
+        const markerChar = marker[0] || "";
         if (markerChar !== "`" || !String(rest || "").includes("`")) {
           openFence = {
             indent,
@@ -348,7 +361,7 @@ function repairFencedCodeBlocks(content = "") {
   return repaired.join("\n");
 }
 
-function resolveMarkdownImagePath(src = "", files = []) {
+function resolveMarkdownImagePath(src = "", files: TrackedFile[] = []) {
   const normalizedSrc = String(src || "").trim();
   if (!normalizedSrc) {
     return "";
@@ -385,7 +398,7 @@ function resolveMarkdownImagePath(src = "", files = []) {
   return "";
 }
 
-function resolveMarkdownImageSource(src = "", files = []) {
+function resolveMarkdownImageSource(src = "", files: TrackedFile[] = []) {
   const normalizedSrc = String(src || "").trim();
   if (!normalizedSrc) {
     return "";
@@ -909,7 +922,7 @@ const MarkdownImage = memo(function MarkdownImage({
       data-scroll-anchor-id={scrollAnchorId || undefined}
       className="my-2 block overflow-hidden rounded-md border border-border/70 bg-background/40"
       onClick={() => {
-        onOpenInlineImagePreview({
+        onOpenInlineImagePreview?.({
           src: resolvedSrc,
           alt: alt || "",
           path: resolvedPath,
@@ -950,7 +963,7 @@ export default function MarkdownRenderer({
   );
   const shouldLoadGfmPlugin = useMemo(() => contentNeedsGfmPlugin(normalizedContent), [normalizedContent]);
   const shouldLoadMathPlugin = useMemo(() => contentNeedsMathPlugin(normalizedContent), [normalizedContent]);
-  const [pluginState, setPluginState] = useState<{ rehypePlugins: any[]; remarkPlugins: any[] }>(emptyMarkdownPluginState);
+  const [pluginState, setPluginState] = useState<MarkdownPluginState>(emptyMarkdownPluginState);
   const outlineItems = useMemo<MarkdownHeadingOutlineItem[]>(
     () => extractHeadingOutline(normalizedContent),
     [normalizedContent],
@@ -971,8 +984,8 @@ export default function MarkdownRenderer({
     }
 
     const loadPlugins = async () => {
-      const remarkPlugins = [];
-      const rehypePlugins = [];
+      const remarkPlugins: unknown[] = [];
+      const rehypePlugins: unknown[] = [];
 
       if (shouldLoadGfmPlugin) {
         remarkPlugins.push(await loadRemarkGfm());
@@ -1088,8 +1101,9 @@ export default function MarkdownRenderer({
   }, [headingScopeId, nextScrollAnchorId, outlineItems]);
 
   const renderImage = useCallback(({ alt, src = "" }: MarkdownImageRendererProps) => {
-    const resolvedSrc = resolveMarkdownImageSource(src, files);
-    const resolvedPath = resolveMarkdownImagePath(src, files);
+    const trackedFiles = files || [];
+    const resolvedSrc = resolveMarkdownImageSource(src, trackedFiles);
+    const resolvedPath = resolveMarkdownImagePath(src, trackedFiles);
     return (
         <MarkdownImage
           alt={alt || ""}
@@ -1115,7 +1129,7 @@ export default function MarkdownRenderer({
   const codeRenderer = useCallback((props: MarkdownRenderProps) => (
     <CodeRenderer
       {...props}
-      files={files}
+      files={files || []}
       resolvedTheme={resolvedTheme}
       streaming={streaming}
       onOpenFilePreview={onOpenFilePreview}
@@ -1124,7 +1138,7 @@ export default function MarkdownRenderer({
     />
   ), [files, handleOpenInlineImagePreview, nextScrollAnchorId, onOpenFilePreview, resolvedTheme, streaming]);
   const linkRenderer = useCallback((props: MarkdownLinkRendererProps) => (
-    <LinkRenderer {...props} files={files} headingScopeId={headingScopeId} onOpenFilePreview={onOpenFilePreview} />
+    <LinkRenderer {...props} files={files || []} headingScopeId={headingScopeId} onOpenFilePreview={onOpenFilePreview} />
   ), [files, headingScopeId, onOpenFilePreview]);
   const tableRenderer = useCallback((props: MarkdownRenderProps) => <TableRenderer {...props} scrollAnchorId={nextScrollAnchorId()} />, [nextScrollAnchorId]);
   const inputRenderer = useCallback(({ className: inputClassName, type, ...props }: { className?: string; type?: string } & Record<string, unknown>) => (

@@ -6,6 +6,8 @@ import type {
   ConversationPendingMap,
   MessagesByTabId,
   PendingChatTurn,
+  SessionFile,
+  SessionFileRewrite,
   StoredUiState,
   TabMetaById,
 } from "@/types/chat";
@@ -40,6 +42,26 @@ const UNTRUSTED_METADATA_SENTINELS = [
   /^Chat history since last reply \(untrusted, for context\):/i,
 ];
 const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value != null;
+}
+
+function isScrollStateEntry(value: [string, ChatScrollState] | null): value is [string, ChatScrollState] {
+  return isPresent(value);
+}
+
+function isChatTab(value: ChatTab | null): value is ChatTab {
+  return isPresent(value);
+}
+
+function isSessionFile(value: SessionFile | null): value is SessionFile {
+  return isPresent(value);
+}
+
+function isSessionFileRewrite(value: SessionFileRewrite | null): value is SessionFileRewrite {
+  return isPresent(value);
+}
 
 function normalizeAgentId(value = "main") {
   return String(value || "main").trim() || "main";
@@ -163,7 +185,7 @@ function sanitizePromptDraftsMap(value: unknown): Record<string, string> {
   return Object.fromEntries(
     Object.entries(value)
       .map(([key, draft]) => [key, typeof draft === "string" ? draft : String(draft || "")])
-      .filter(([, draft]) => draft.length > 0),
+      .filter(([, draft]) => String(draft || "").length > 0),
   );
 }
 
@@ -214,7 +236,7 @@ function sanitizeChatScrollTopMap(value: unknown): Record<string, ChatScrollStat
           },
         ];
       })
-      .filter(Boolean),
+      .filter(isScrollStateEntry),
   );
 }
 
@@ -339,13 +361,13 @@ function cleanWrappedUserMessage(text = "") {
 }
 
 export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) {
-  const collapsed = [];
+  const collapsed: ChatMessage[] = [];
   let lastUserFingerprint = "";
   let lastUserTimestamp = 0;
   let lastAssistantTimestamp = 0;
   let lastAssistantFingerprint = "";
   let assistantSeenForCurrentTurn = false;
-  let pendingReplayUser = null;
+  let pendingReplayUser: ChatMessage | null = null;
   let pendingReplayAssistantFingerprint = "";
 
   const flushPendingReplayUser = () => {
@@ -454,7 +476,7 @@ function sanitizeChatTabs(value: unknown, fallbackSessionUser = defaultSessionUs
     ];
   }
 
-  const seen = new Set();
+  const seen = new Set<string>();
   return value
     .map((tab) => {
       const fallbackTabAgentId = normalizeAgentId(tab?.agentId || fallbackAgentId);
@@ -470,41 +492,42 @@ function sanitizeChatTabs(value: unknown, fallbackSessionUser = defaultSessionUs
         sessionUser: sanitizeSessionUser(tab?.sessionUser || fallbackSessionUser),
       };
     })
-    .filter(Boolean);
+    .filter(isChatTab);
 }
 
-function sanitizeSessionFiles(value: unknown) {
+function sanitizeSessionFiles(value: unknown): SessionFile[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
-    .map((item) => {
-      const fullPath = String(item?.fullPath || item?.path || "").trim();
+    .map((item): SessionFile | null => {
+      const source = (item || {}) as Partial<SessionFile> & Record<string, unknown>;
+      const fullPath = String(source.fullPath || source.path || "").trim();
       if (!fullPath) {
         return null;
       }
 
-      const path = String(item?.path || fullPath).trim() || fullPath;
-      const name = String(item?.name || fullPath.split("/").filter(Boolean).pop() || "").trim();
-      const primaryAction = String(item?.primaryAction || "").trim();
-      const observedAt = Number(item?.observedAt || 0);
-      const updatedAt = Number(item?.updatedAt || 0);
+      const path = String(source.path || fullPath).trim() || fullPath;
+      const name = String(source.name || fullPath.split("/").filter(Boolean).pop() || "").trim();
+      const primaryAction = String(source.primaryAction || "").trim();
+      const observedAt = Number(source.observedAt || 0);
+      const updatedAt = Number(source.updatedAt || 0);
 
       return {
         path,
         fullPath,
         ...(name ? { name } : {}),
-        kind: item?.kind === "目录" ? "目录" : "文件",
+        kind: source.kind === "目录" ? "目录" : "文件",
         ...(primaryAction ? { primaryAction } : {}),
         ...(Number.isFinite(observedAt) && observedAt > 0 ? { observedAt } : {}),
         ...(Number.isFinite(updatedAt) && updatedAt > 0 ? { updatedAt } : {}),
       };
     })
-    .filter(Boolean);
+    .filter(isSessionFile);
 }
 
-function sanitizeSessionFileRewrites(value: unknown) {
+function sanitizeSessionFileRewrites(value: unknown): SessionFileRewrite[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -518,7 +541,7 @@ function sanitizeSessionFileRewrites(value: unknown) {
       }
       return { previousPath, nextPath };
     })
-    .filter(Boolean);
+    .filter(isSessionFileRewrite);
 }
 
 function sanitizeTabMetaMap(value: unknown, tabs: ChatTab[] = []): TabMetaById {
@@ -541,7 +564,8 @@ function sanitizeTabMetaMap(value: unknown, tabs: ChatTab[] = []): TabMetaById {
 
   return Object.fromEntries(
     tabs.map((tab) => {
-      const meta = value?.[tab.id] || {};
+      const source = value as Record<string, Partial<ChatTabMeta>> | undefined;
+      const meta = source?.[tab.id] || {};
       return [
         tab.id,
         {
@@ -559,7 +583,7 @@ function sanitizeTabMetaMap(value: unknown, tabs: ChatTab[] = []): TabMetaById {
 }
 
 function buildKnownTabs(parsed: any, chatTabs: ChatTab[], fallbackAgentId: string, fallbackSessionUser: string): ChatTab[] {
-  const knownTabs = new Map(
+  const knownTabs = new Map<string, ChatTab>(
     (chatTabs || []).map((tab) => [
       tab.id,
       {
@@ -590,7 +614,7 @@ function buildKnownTabs(parsed: any, chatTabs: ChatTab[], fallbackAgentId: strin
     });
   };
 
-  Object.entries(parsed?.tabMetaById || {}).forEach(([tabId, meta]) => registerTab(tabId, meta));
+  Object.entries(parsed?.tabMetaById || {}).forEach(([tabId, meta]) => registerTab(tabId, (meta || {}) as Partial<ChatTabMeta>));
   Object.keys(parsed?.messagesByTabId || {}).forEach((tabId) => registerTab(tabId));
 
   return [...knownTabs.values()];
@@ -939,8 +963,8 @@ export function mergeConversationIdentity(
   localMessages: ChatMessage[] = [],
   pendingEntry: PendingChatTurn | null = null,
 ) {
-  const nextMessages = snapshotMessages.map((message) => ({ ...message }));
-  const usedLocalIndices = new Set();
+  const nextMessages: ChatMessage[] = snapshotMessages.map((message) => ({ ...message }));
+  const usedLocalIndices = new Set<number>();
 
   nextMessages.forEach((message, index) => {
     const localIndex = localMessages.findIndex(
@@ -954,6 +978,9 @@ export function mergeConversationIdentity(
     }
 
     const localMessage = localMessages[localIndex];
+    if (!localMessage) {
+      return;
+    }
     nextMessages[index] = {
       ...message,
       ...(localMessage.id ? { id: localMessage.id } : {}),
@@ -978,8 +1005,12 @@ export function mergeConversationIdentity(
     });
     const snapshotPendingUserIndex = findPendingUserIndex(nextMessages, pendingEntry);
     if (localPendingUser && snapshotPendingUserIndex >= 0) {
+      const snapshotPendingUser = nextMessages[snapshotPendingUserIndex];
+      if (!snapshotPendingUser) {
+        return;
+      }
       nextMessages[snapshotPendingUserIndex] = {
-        ...nextMessages[snapshotPendingUserIndex],
+        ...snapshotPendingUser,
         ...(localPendingUser.id ? { id: localPendingUser.id } : {}),
         ...(Number.isFinite(Number(localPendingUser.timestamp)) ? { timestamp: localPendingUser.timestamp } : {}),
       };
@@ -991,8 +1022,12 @@ export function mergeConversationIdentity(
       : null;
     const snapshotPendingAssistantIndex = findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
     if (localPendingAssistant && snapshotPendingAssistantIndex >= 0) {
+      const snapshotPendingAssistant = nextMessages[snapshotPendingAssistantIndex];
+      if (!snapshotPendingAssistant) {
+        return;
+      }
       nextMessages[snapshotPendingAssistantIndex] = {
-        ...nextMessages[snapshotPendingAssistantIndex],
+        ...snapshotPendingAssistant,
         ...(localPendingAssistant.id ? { id: localPendingAssistant.id } : {}),
         ...(Number.isFinite(Number(localPendingAssistant.timestamp)) ? { timestamp: localPendingAssistant.timestamp } : {}),
       };
@@ -1003,8 +1038,8 @@ export function mergeConversationIdentity(
 }
 
 export function mergeStaleLocalConversationTail(snapshotMessages: ChatMessage[] = [], localMessages: ChatMessage[] = []) {
-  const nextMessages = snapshotMessages.map((message) => ({ ...message }));
-  const normalizedLocalMessages = (localMessages || [])
+  const nextMessages: ChatMessage[] = snapshotMessages.map((message) => ({ ...message }));
+  const normalizedLocalMessages: ChatMessage[] = (localMessages || [])
     .filter((message) => !message?.pending)
     .map((message) => ({ ...message }));
 
@@ -1103,17 +1138,20 @@ export function mergeConversationAttachments(snapshotMessages: ChatMessage[] = [
       return;
     }
 
-    nextMessages[matchIndex] = {
-      ...nextMessages[matchIndex],
-      attachments: localMessage.attachments,
-    };
+    const snapshotMessage = nextMessages[matchIndex];
+    if (snapshotMessage) {
+      nextMessages[matchIndex] = {
+        ...snapshotMessage,
+        attachments: localMessage.attachments,
+      };
+    }
     usedIndices.add(matchIndex);
   });
 
   return nextMessages;
 }
 
-function hasSnapshotAssistantReply(snapshotMessages = [], pendingEntry) {
+function hasSnapshotAssistantReply(snapshotMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null): boolean {
   if (pendingEntry?.stopped) {
     return false;
   }
@@ -1136,7 +1174,7 @@ function hasSnapshotAssistantReply(snapshotMessages = [], pendingEntry) {
   const pendingUserIndex = findPendingUserIndex(snapshotMessages, pendingEntry);
   const startedAt = Number(pendingEntry?.startedAt || 0);
 
-  const matchesAssistant = (message) => {
+  const matchesAssistant = (message: ChatMessage) => {
     if (
       message?.role !== "assistant"
       || message?.pending
@@ -1157,7 +1195,7 @@ function hasSnapshotAssistantReply(snapshotMessages = [], pendingEntry) {
   return snapshotMessages.some(matchesAssistant);
 }
 
-function findPendingUserIndex(snapshotMessages = [], pendingEntry) {
+function findPendingUserIndex(snapshotMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null): number {
   const targetContent = String(pendingEntry?.userMessage?.content || "");
   if (!targetContent) {
     return -1;
@@ -1166,8 +1204,8 @@ function findPendingUserIndex(snapshotMessages = [], pendingEntry) {
   const expectedTimestamp = Number(pendingEntry?.userMessage?.timestamp || 0);
   const startedAt = Number(pendingEntry?.startedAt || 0);
   const matchThreshold = expectedTimestamp || startedAt || 0;
-  const timedMatches = [];
-  const untimedMatches = [];
+  const timedMatches: Array<{ index: number; timestamp: number }> = [];
+  const untimedMatches: number[] = [];
 
   snapshotMessages.forEach((message, index) => {
     if (message?.role !== "user" || String(message.content || "") !== targetContent) {
@@ -1193,20 +1231,23 @@ function findPendingUserIndex(snapshotMessages = [], pendingEntry) {
     }
 
     if (!matchThreshold && timedMatches.length === 1) {
-      return timedMatches[0].index;
+      return timedMatches[0]?.index ?? -1;
     }
 
     return -1;
   }
 
   if (!matchThreshold && untimedMatches.length === 1) {
-    return untimedMatches[0];
+    return untimedMatches[0] ?? -1;
   }
 
   return -1;
 }
 
-function findLocalStreamingAssistant(localMessages = [], pendingEntry) {
+function findLocalStreamingAssistant(
+  localMessages: ChatMessage[] = [],
+  pendingEntry: PendingChatTurn | null = null,
+): ChatMessage | null {
   if (!pendingEntry) {
     return null;
   }
@@ -1234,7 +1275,10 @@ function findLocalStreamingAssistant(localMessages = [], pendingEntry) {
   return candidate ? { ...candidate } : null;
 }
 
-function findSnapshotPendingAssistantIndex(snapshotMessages = [], pendingEntry) {
+function findSnapshotPendingAssistantIndex(
+  snapshotMessages: ChatMessage[] = [],
+  pendingEntry: PendingChatTurn | null = null,
+): number {
   if (pendingEntry?.stopped) {
     return -1;
   }
@@ -1254,6 +1298,10 @@ function findSnapshotPendingAssistantIndex(snapshotMessages = [], pendingEntry) 
   const pendingUserIndex = findPendingUserIndex(snapshotMessages, pendingEntry);
 
   if (pendingUserIndex >= 0) {
+    const pendingUserMessage = snapshotMessages[pendingUserIndex];
+    if (!pendingUserMessage) {
+      return -1;
+    }
     for (let index = snapshotMessages.length - 1; index > pendingUserIndex; index -= 1) {
       const message = snapshotMessages[index];
       if (message?.role !== "assistant" || String(message.content || "").trim() === "") {
@@ -1279,7 +1327,11 @@ function findSnapshotPendingAssistantIndex(snapshotMessages = [], pendingEntry) 
   return -1;
 }
 
-function hasEquivalentAssistantMessage(messages = [], candidate, pendingEntry) {
+function hasEquivalentAssistantMessage(
+  messages: ChatMessage[] = [],
+  candidate: ChatMessage | null = null,
+  pendingEntry: PendingChatTurn | null = null,
+) {
   if (!candidate || candidate?.role !== "assistant") {
     return false;
   }
@@ -1319,12 +1371,16 @@ function hasEquivalentAssistantMessage(messages = [], candidate, pendingEntry) {
   });
 }
 
-function mergeStreamingAssistant(snapshotMessages = [], pendingEntry, localStreamingAssistant) {
+function mergeStreamingAssistant(
+  snapshotMessages: ChatMessage[] = [],
+  pendingEntry: PendingChatTurn | null = null,
+  localStreamingAssistant: ChatMessage | null = null,
+): ChatMessage[] {
   if (!localStreamingAssistant) {
     return snapshotMessages;
   }
 
-  const nextMessages = [...snapshotMessages];
+  const nextMessages: ChatMessage[] = [...snapshotMessages];
   const snapshotAssistantIndex = findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
   if (snapshotAssistantIndex === -1) {
     if (hasEquivalentAssistantMessage(nextMessages, localStreamingAssistant, pendingEntry)) {
@@ -1334,6 +1390,9 @@ function mergeStreamingAssistant(snapshotMessages = [], pendingEntry, localStrea
   }
 
   const snapshotAssistant = nextMessages[snapshotAssistantIndex];
+  if (!snapshotAssistant) {
+    return nextMessages;
+  }
   const localContent = String(localStreamingAssistant.content || "");
   const snapshotContent = String(snapshotAssistant?.content || "");
   const preferredAssistant =
@@ -1351,26 +1410,36 @@ function mergeStreamingAssistant(snapshotMessages = [], pendingEntry, localStrea
   return nextMessages;
 }
 
-function insertPendingUserMessage(snapshotMessages = [], pendingEntry) {
-  const nextMessages = [...snapshotMessages];
+function insertPendingUserMessage(snapshotMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn): ChatMessage[] {
+  const nextMessages: ChatMessage[] = [...snapshotMessages];
   const snapshotAssistantIndex = findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
+  const pendingUserMessage = pendingEntry.userMessage;
 
-  if (snapshotAssistantIndex === -1) {
-    nextMessages.push(pendingEntry.userMessage);
+  if (!pendingUserMessage) {
     return nextMessages;
   }
 
-  nextMessages.splice(snapshotAssistantIndex, 0, pendingEntry.userMessage);
+  if (snapshotAssistantIndex === -1) {
+    nextMessages.push(pendingUserMessage);
+    return nextMessages;
+  }
+
+  if (snapshotAssistantIndex >= 0) {
+    nextMessages.splice(snapshotAssistantIndex, 0, pendingUserMessage);
+  }
   return nextMessages;
 }
 
-function filterStoppedTurnAssistantMessages(snapshotMessages = [], pendingEntry) {
+function filterStoppedTurnAssistantMessages(
+  snapshotMessages: ChatMessage[] = [],
+  pendingEntry: PendingChatTurn | null = null,
+): ChatMessage[] {
   if (!pendingEntry?.stopped) {
     return [...snapshotMessages];
   }
 
   const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
-  let nextMessages = snapshotMessages.filter((message) => {
+  const nextMessages = snapshotMessages.filter((message) => {
     if (message?.role !== "assistant") {
       return true;
     }
@@ -1409,11 +1478,14 @@ export function derivePendingEntryFromLocalMessages(localMessages: ChatMessage[]
     .reverse()
     .find(({ message }) => message?.role === "assistant" && Boolean(message?.pending))?.index;
 
-  if (!Number.isInteger(pendingAssistantIndex) || pendingAssistantIndex < 0) {
+  if (typeof pendingAssistantIndex !== "number" || pendingAssistantIndex < 0) {
     return null;
   }
 
   const pendingAssistant = localMessages[pendingAssistantIndex];
+  if (!pendingAssistant) {
+    return null;
+  }
   const pendingUser = [...localMessages.slice(0, pendingAssistantIndex)]
     .reverse()
     .find((message) => message?.role === "user");
@@ -1450,8 +1522,9 @@ export function mergePendingConversation(
   const filteredSnapshotMessages = filterStoppedTurnAssistantMessages(snapshotMessages, pendingEntry);
   const localStreamingAssistant = findLocalStreamingAssistant(localMessages, pendingEntry);
   if (hasSnapshotAssistantReply(filteredSnapshotMessages, pendingEntry)) {
+    const pendingUserIndex = findPendingUserIndex(filteredSnapshotMessages, pendingEntry);
     const snapshotWithPendingUser =
-      findPendingUserIndex(filteredSnapshotMessages, pendingEntry) >= 0
+      pendingUserIndex >= 0
         ? filteredSnapshotMessages
         : insertPendingUserMessage(filteredSnapshotMessages, pendingEntry);
     return collapseDuplicateConversationTurns(
@@ -1459,7 +1532,8 @@ export function mergePendingConversation(
     );
   }
 
-  const hasPendingUserMessage = findPendingUserIndex(filteredSnapshotMessages, pendingEntry) >= 0;
+  const pendingUserIndex = findPendingUserIndex(filteredSnapshotMessages, pendingEntry);
+  const hasPendingUserMessage = pendingUserIndex >= 0;
 
   const merged = hasPendingUserMessage ? [...filteredSnapshotMessages] : insertPendingUserMessage(filteredSnapshotMessages, pendingEntry);
   const snapshotAssistantIndex = findSnapshotPendingAssistantIndex(merged, pendingEntry);

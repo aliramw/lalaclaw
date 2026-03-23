@@ -398,7 +398,7 @@ function defaultCountWorkspaceFiles(rootDir: string): number {
 
   while (pendingDirectories.length) {
     const currentDirectory = pendingDirectories.pop();
-    let entries = [];
+    let entries: any[] = [];
 
     try {
       entries = fs.readdirSync(currentDirectory, { withFileTypes: true });
@@ -633,6 +633,9 @@ export function createDashboardService({
     workspaceRoot,
   }: DashboardEnvironmentPeekInput) {
     const items: EnvironmentItem[] = [];
+    const normalizedAgentId = String(agentId || '').trim();
+    const normalizedSelectedModel = String(selectedModel || '').trim();
+    const normalizedWorkspaceRoot = String(workspaceRoot || '').trim();
     const openClawVersion =
       parsedStatus?.versionDisplay ||
       liveConfig?.version ||
@@ -644,7 +647,7 @@ export function createDashboardService({
     const gatewayLogPath = logsDir ? path.join(logsDir, 'gateway.log') : '';
     const supervisorLogPath = logsDir ? path.join(logsDir, 'supervisor.log') : '';
     const configExists = pathExists(localConfigPath);
-    const workspaceExists = directoryExists(workspaceRoot);
+    const workspaceExists = directoryExists(normalizedWorkspaceRoot);
     const logsAvailable = directoryExists(logsDir) || pathExists(gatewayLogPath) || pathExists(supervisorLogPath);
     const liveGatewayDetected =
       config.mode === 'openclaw'
@@ -684,7 +687,7 @@ export function createDashboardService({
       buildEnvironmentItem('openclaw.runtime.profile', config.mode || 'unknown'),
       buildEnvironmentItem('openclaw.config.path', localConfigPath || '', { previewable: fileExists(localConfigPath) }),
       buildEnvironmentItem('openclaw.config.status', doctorConfig),
-      buildEnvironmentItem('openclaw.workspace.root', workspaceRoot || '', { revealable: directoryExists(workspaceRoot) }),
+      buildEnvironmentItem('openclaw.workspace.root', normalizedWorkspaceRoot, { revealable: directoryExists(normalizedWorkspaceRoot) }),
       buildEnvironmentItem('openclaw.workspace.status', doctorWorkspace),
       buildEnvironmentItem('openclaw.gateway.status', gatewayStatus),
       buildEnvironmentItem('openclaw.gateway.baseUrl', config.baseUrl || ''),
@@ -717,10 +720,10 @@ export function createDashboardService({
       buildEnvironmentItem('LALACLAW.GATEWAY_AUTH', config.apiKey ? 'token' : 'none'),
       buildEnvironmentItem('OPENCLAW.VERSION', openClawVersion),
       buildEnvironmentItem('session.mode', config.mode),
-      buildEnvironmentItem('session.agent', agentId),
+      buildEnvironmentItem('session.agent', normalizedAgentId),
       buildEnvironmentItem('session.sessionKey', sessionKey || parsedStatus?.sessionKey || ''),
-      buildEnvironmentItem('session.workspaceRoot', workspaceRoot, { revealable: directoryExists(workspaceRoot) }),
-      buildEnvironmentItem('session.selectedModel', selectedModel),
+      buildEnvironmentItem('session.workspaceRoot', normalizedWorkspaceRoot, { revealable: directoryExists(normalizedWorkspaceRoot) }),
+      buildEnvironmentItem('session.selectedModel', normalizedSelectedModel),
       buildEnvironmentItem('session.resolvedModel', latestModel || parsedStatus?.modelDisplay || ''),
       buildEnvironmentItem('session.auth', parsedStatus?.authDisplay || ''),
       buildEnvironmentItem('session.runtime', parsedStatus?.runtimeDisplay || ''),
