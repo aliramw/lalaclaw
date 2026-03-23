@@ -884,6 +884,90 @@ describe("useRuntimeSnapshot", () => {
     expect(MockWebSocket.instances[0].url).toContain("agentId=main");
   });
 
+  it("shows a fresh thinking placeholder when an IM runtime snapshot ends on a synced user message", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const sessionUser = "agent:main:openclaw-weixin:direct:marila";
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser,
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "空闲",
+        },
+        conversation: [
+          { role: "assistant", content: "在。你说。", timestamp: 100 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [{ role: "assistant", content: "在。你说。", timestamp: 100 }] },
+        pendingChatTurns: {},
+        session: createSession({
+          mode: "openclaw",
+          sessionUser,
+        }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket.simulateOpen();
+
+    setBusy.mockClear();
+    setMessagesSynced.mockClear();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: "runtime.snapshot",
+        session: {
+          sessionUser,
+          agentId: "main",
+          status: "运行中",
+        },
+        conversation: [
+          { role: "assistant", content: "在。你说。", timestamp: 100 },
+          { id: "msg-user-2", role: "user", content: "菠菜", timestamp: 200 },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenLastCalledWith([
+        { role: "assistant", content: "在。你说。", timestamp: 100 },
+        { id: "msg-user-2", role: "user", content: "菠菜", timestamp: 200 },
+        { role: "assistant", content: "正在思考…", timestamp: 200, pending: true },
+      ]);
+      expect(setBusy).toHaveBeenLastCalledWith(true);
+    });
+  });
+
   it("exposes runtime socket state and transport mode", async () => {
     const setBusy = vi.fn();
     const setFastMode = vi.fn();

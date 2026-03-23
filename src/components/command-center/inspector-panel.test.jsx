@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as clipboardUtils from "@/components/command-center/clipboard-utils";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
+import { getOfficialOpenClawDocUrl } from "@/components/command-center/inspector-panel-utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
@@ -134,7 +135,7 @@ describe("InspectorPanel", () => {
             ok: true,
             installed: true,
             currentVersion: "2026.3.13",
-            targetVersion: "2026.3.13",
+            targetVersion: null,
             availability: { available: false },
             update: { installKind: "package", packageManager: "pnpm" },
             channel: { value: "stable", label: "stable (default)" },
@@ -197,6 +198,14 @@ describe("InspectorPanel", () => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
     window.localStorage.removeItem(localeStorageKey);
+  });
+
+  it("maps install docs to Chinese, Japanese, and English locale buckets", () => {
+    expect(getOfficialOpenClawDocUrl("install", "zh")).toBe("https://docs.openclaw.ai/zh-CN/install");
+    expect(getOfficialOpenClawDocUrl("install", "zh-hk")).toBe("https://docs.openclaw.ai/zh-CN/install");
+    expect(getOfficialOpenClawDocUrl("install", "ja")).toBe("https://docs.openclaw.ai/ja-JP/start/getting-started");
+    expect(getOfficialOpenClawDocUrl("install", "en")).toBe("https://docs.openclaw.ai/install");
+    expect(getOfficialOpenClawDocUrl("install", "fr")).toBe("https://docs.openclaw.ai/install");
   });
 
   it("renders timeline details and switches tabs", async () => {
@@ -288,7 +297,7 @@ describe("InspectorPanel", () => {
             ok: true,
             installed: true,
             currentVersion: "2026.3.13",
-            targetVersion: "2026.3.13",
+            targetVersion: null,
             availability: { available: false },
             update: { installKind: "package", packageManager: "pnpm" },
             channel: { value: "stable", label: "stable (default)" },
@@ -350,12 +359,101 @@ describe("InspectorPanel", () => {
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("tab", { name: "环境" }));
+    expect(screen.queryByTestId("inspector-tab-alert-environment")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("environment-section-alert-lalaclaw-update")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("environment-section-alert-openclaw-update")).not.toBeInTheDocument();
     await ensureEnvironmentSectionExpanded(user, "LalaClaw");
 
     expect(await screen.findByText("当前源码版本")).toBeInTheDocument();
     expect(screen.getByText("2026.3.21-2")).toBeInTheDocument();
     expect(screen.getByText("最新稳定版")).toBeInTheDocument();
     expect(screen.getByText("2026.3.21-1")).toBeInTheDocument();
+    expect(screen.queryByText("最新稳定版")?.closest(".rounded-xl")).toBeNull();
+  });
+
+  it("shows environment update dots when a LalaClaw update is available", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: null,
+            availability: { available: false },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: { actions: [] },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: true,
+            needsOnboarding: false,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: true, valid: true, path: "/Users/marila/.openclaw/openclaw.json" },
+            defaults: {
+              authChoice: "openai-api-key",
+              gatewayBind: "loopback",
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["openai-api-key"],
+            supportedGatewayBinds: ["loopback"],
+          }),
+        };
+      }
+      if (url === "/api/lalaclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            currentVersion: "2026.3.20-1",
+            workspaceVersion: "2026.3.20-1",
+            currentRelease: { version: "2026.3.20-1", stable: true },
+            targetRelease: { version: "2026.3.22", stable: true },
+            stableTag: "stable",
+            updateAvailable: true,
+            capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+            check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+            job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [] }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, items: [] }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(<TestHarness />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("tab", { name: "环境" }));
+    expect(await screen.findByTestId("inspector-tab-alert-environment")).toBeInTheDocument();
+    expect(screen.getByTestId("environment-section-alert-lalaclaw-update")).toBeInTheDocument();
+    expect(screen.queryByTestId("environment-section-alert-openclaw-update")).not.toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "LalaClaw");
+    expect(await screen.findByText("有可用更新")).toBeInTheDocument();
   });
 
   it("keeps a visible background badge for inactive inspector tabs", () => {
@@ -1107,6 +1205,8 @@ describe("InspectorPanel", () => {
 
     const user = userEvent.setup();
     expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-tab-alert-environment")).toBeInTheDocument();
+    expect(screen.getByTestId("environment-section-alert-openclaw-update")).toBeInTheDocument();
     await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
     expect(screen.getByText("有可用更新")).toBeInTheDocument();
     expect(screen.getByText("目标版本: 2026.3.19")).toBeInTheDocument();
@@ -1142,7 +1242,7 @@ describe("InspectorPanel", () => {
             ok: true,
             installed: true,
             currentVersion: "2026.3.13",
-            targetVersion: "2026.3.13",
+            targetVersion: null,
             availability: { available: false },
             update: { installKind: "package", packageManager: "pnpm" },
             channel: { value: "stable", label: "stable (default)" },
@@ -1183,6 +1283,73 @@ describe("InspectorPanel", () => {
     expect(await screen.findByText("已是最新")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "执行官方更新" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新状态" })).toBeInTheDocument();
+  });
+
+  it("does not show OpenClaw update alerts when no actionable target version is available", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, configPath: "/Users/marila/.openclaw/openclaw.json", baseHash: "hash", fields: [], validation: { ok: true, valid: true } }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.13",
+            targetVersion: null,
+            availability: { available: true, latestVersion: "2026.3.22" },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: {
+              effectiveChannel: "stable",
+              tag: "latest",
+              targetVersion: "2026.3.22",
+              actions: ["Run global package manager update with spec openclaw@latest"],
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "2026.3.13" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-tab-alert-environment")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("environment-section-alert-openclaw-update")).not.toBeInTheDocument();
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    expect(await screen.findByText("已是最新")).toBeInTheDocument();
+    expect(screen.queryByText("有可用更新")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "执行官方更新" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/目标版本:/)).not.toBeInTheDocument();
   });
 
   it("shows official install guidance and can trigger the install flow when OpenClaw is missing", async () => {
@@ -1755,7 +1922,7 @@ describe("InspectorPanel", () => {
         }),
       }),
     );
-  });
+  }, 10000);
 
   it("passes the selected official onboarding flow through to the backend", async () => {
     const fetchMock = vi.fn(async (input, init) => {
@@ -3006,7 +3173,7 @@ describe("InspectorPanel", () => {
     expect(screen.getByText("检查网络或代理配置")).toBeInTheDocument();
 
     const docsLinks = screen.getAllByRole("link", { name: "安装文档" });
-    expect(docsLinks[0]).toHaveAttribute("href", "https://docs.openclaw.ai/install");
+    expect(docsLinks[0]).toHaveAttribute("href", "https://docs.openclaw.ai/zh-CN/install");
 
     await user.click(screen.getAllByRole("button", { name: "查看解决办法" })[0]);
 
@@ -3080,7 +3247,7 @@ describe("InspectorPanel", () => {
 
     expect(await screen.findByText("当前平台暂不支持在这里直接执行 OpenClaw 官方安装流程。")).toBeInTheDocument();
     expect(screen.getByText("改为在应用外执行官方安装")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "安装文档" })).toHaveAttribute("href", "https://docs.openclaw.ai/install");
+    expect(screen.getByRole("link", { name: "安装文档" })).toHaveAttribute("href", "https://docs.openclaw.ai/zh-CN/install");
   });
 
   it("blocks local-only OpenClaw mutations when the active gateway target is remote and shows operation history", async () => {

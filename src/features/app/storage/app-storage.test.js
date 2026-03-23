@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   chatScrollStorageKey,
   collapseDuplicateConversationTurns,
+  createConversationKey,
   createResetSessionUser,
   derivePendingEntryFromLocalMessages,
   hasAuthoritativePendingAssistantReply,
   loadPendingChatTurns,
+  loadStoredPromptDrafts,
+  loadStoredPromptHistory,
   loadStoredChatScrollTops,
   loadStoredState,
   mergeConversationIdentity,
@@ -15,6 +18,9 @@ import {
   persistUiStateSnapshot,
   pruneCompletedPendingChatTurns,
   persistChatScrollTops,
+  promptDraftStorageKey,
+  promptHistoryStorageKey,
+  resolveRuntimePendingEntry,
   sanitizeMessagesForStorage,
   storageKey,
 } from "@/features/app/storage";
@@ -240,6 +246,49 @@ describe("mergePendingConversation", () => {
         timestamp: 200,
       },
     });
+  });
+
+  it("synthesizes a pending IM turn when runtime sync ends on a new user message", () => {
+    expect(
+      resolveRuntimePendingEntry({
+        agentId: "main",
+        conversationKey: "agent:main:openclaw-weixin:direct:marila:main",
+        conversationMessages: [
+          { role: "assistant", content: "上一条回复", timestamp: 100 },
+          { id: "msg-user-2", role: "user", content: "菠菜", timestamp: 200 },
+        ],
+        sessionStatus: "运行中",
+        sessionUser: "agent:main:openclaw-weixin:direct:marila",
+      }),
+    ).toEqual({
+      key: "agent:main:openclaw-weixin:direct:marila:main",
+      agentId: "main",
+      sessionUser: "agent:main:openclaw-weixin:direct:marila",
+      startedAt: 200,
+      pendingTimestamp: 200,
+      userMessage: {
+        id: "msg-user-2",
+        role: "user",
+        content: "菠菜",
+        timestamp: 200,
+      },
+    });
+  });
+
+  it("does not synthesize an IM pending turn once an assistant reply is already the latest message", () => {
+    expect(
+      resolveRuntimePendingEntry({
+        agentId: "main",
+        conversationKey: "agent:main:openclaw-weixin:direct:marila:main",
+        conversationMessages: [
+          { role: "assistant", content: "上一条回复", timestamp: 100 },
+          { role: "user", content: "菠菜", timestamp: 200 },
+          { role: "assistant", content: "在。你说。", timestamp: 220 },
+        ],
+        sessionStatus: "运行中",
+        sessionUser: "agent:main:openclaw-weixin:direct:marila",
+      }),
+    ).toBeNull();
   });
 
   it("inserts the pending user message before a snapshot assistant when the snapshot has not included the user yet", () => {
@@ -1060,6 +1109,8 @@ describe("loadStoredState", () => {
     expect(loadPendingChatTurns()).toEqual({
       "command-center:main": {
         key: "command-center:main",
+        agentId: "main",
+        sessionUser: "command-center",
         startedAt: 100,
         pendingTimestamp: 120,
         assistantMessageId: "msg-assistant-pending-100",
@@ -1162,6 +1213,8 @@ describe("loadStoredState", () => {
     expect(loadPendingChatTurns()).toEqual({
       "command-center:main": {
         key: "command-center:main",
+        agentId: "main",
+        sessionUser: "command-center",
         startedAt: 200,
         pendingTimestamp: 220,
         userMessage: { role: "user", content: "新消息", timestamp: 200 },
@@ -1295,8 +1348,11 @@ describe("loadStoredState", () => {
     });
   });
 
-  it("preserves serialized DingTalk session users for dedicated chat tabs", () => {
+  it("canonicalizes legacy DingTalk session users for dedicated chat tabs and conversation maps", () => {
     const dingtalkSessionUser = '{"channel":"dingtalk-connector","peerid":"398058","sendername":"马锐拉"}';
+    const canonicalSessionUser = "agent:main:dingtalk-connector:direct:398058";
+    const legacyConversationKey = `${dingtalkSessionUser}:main`;
+    const canonicalConversationKey = createConversationKey(canonicalSessionUser, "main");
     window.localStorage.setItem(
       storageKey,
       JSON.stringify({
@@ -1324,6 +1380,15 @@ describe("loadStoredState", () => {
             thinkMode: "off",
           },
         },
+        promptDraftsByConversation: {
+          [legacyConversationKey]: "legacy-draft",
+        },
+        dismissedTaskRelationshipIdsByConversation: {
+          [legacyConversationKey]: ["task-1"],
+        },
+        workspaceFilesOpenByConversation: {
+          [legacyConversationKey]: true,
+        },
       }),
     );
 
@@ -1331,13 +1396,94 @@ describe("loadStoredState", () => {
 
     expect(stored.chatTabs).toEqual([
       { id: "agent:main", agentId: "main", sessionUser: "command-center" },
-      { id: "agent:main::abc123", agentId: "main", sessionUser: dingtalkSessionUser },
+      { id: "agent:main::abc123", agentId: "main", sessionUser: canonicalSessionUser },
     ]);
     expect(stored.tabMetaById["agent:main::abc123"]).toMatchObject({
       agentId: "main",
-      sessionUser: dingtalkSessionUser,
+      sessionUser: canonicalSessionUser,
     });
-    expect(stored.sessionUser).toBe(dingtalkSessionUser);
+    expect(stored.sessionUser).toBe(canonicalSessionUser);
+    expect(stored.promptDraftsByConversation).toEqual({
+      [canonicalConversationKey]: "legacy-draft",
+    });
+    expect(stored.dismissedTaskRelationshipIdsByConversation).toEqual({
+      [canonicalConversationKey]: ["task-1"],
+    });
+    expect(stored.workspaceFilesOpenByConversation).toEqual({
+      [canonicalConversationKey]: true,
+    });
+  });
+
+  it("migrates legacy IM conversation keys across dedicated storage buckets", () => {
+    const dingtalkSessionUser = '{"channel":"dingtalk-connector","peerid":"398058","sendername":"马锐拉"}';
+    const canonicalConversationKey = createConversationKey("agent:main:dingtalk-connector:direct:398058", "main");
+    const legacyConversationKey = `${dingtalkSessionUser}:main`;
+
+    window.localStorage.setItem(
+      promptHistoryStorageKey,
+      JSON.stringify({
+        [legacyConversationKey]: ["第一条", "第二条"],
+      }),
+    );
+    window.localStorage.setItem(
+      promptDraftStorageKey,
+      JSON.stringify({
+        [legacyConversationKey]: "旧草稿",
+      }),
+    );
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        pendingChatTurns: {
+          [legacyConversationKey]: {
+            key: legacyConversationKey,
+            startedAt: 100,
+            pendingTimestamp: 120,
+            userMessage: {
+              role: "user",
+              content: "帮我看看",
+              timestamp: 100,
+            },
+          },
+        },
+      }),
+    );
+    window.localStorage.setItem(
+      chatScrollStorageKey,
+      JSON.stringify({
+        [legacyConversationKey]: {
+          scrollTop: 240,
+          atBottom: true,
+        },
+      }),
+    );
+
+    expect(loadStoredPromptHistory()).toEqual({
+      [canonicalConversationKey]: ["第一条", "第二条"],
+    });
+    expect(loadStoredPromptDrafts()).toEqual({
+      [canonicalConversationKey]: "旧草稿",
+    });
+    expect(loadPendingChatTurns()).toEqual({
+      [canonicalConversationKey]: {
+        key: canonicalConversationKey,
+        startedAt: 100,
+        pendingTimestamp: 120,
+        agentId: "main",
+        sessionUser: "agent:main:dingtalk-connector:direct:398058",
+        userMessage: {
+          role: "user",
+          content: "帮我看看",
+          timestamp: 100,
+        },
+      },
+    });
+    expect(loadStoredChatScrollTops()).toEqual({
+      [canonicalConversationKey]: {
+        scrollTop: 240,
+        atBottom: true,
+      },
+    });
   });
 
   it("loads the global chat font size from the current storage shape", () => {

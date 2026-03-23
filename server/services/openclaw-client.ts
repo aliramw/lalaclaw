@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { URL, pathToFileURL } = require('node:url');
+const { parseImSessionIdentity } = require('../../shared/im-session-key.cjs');
 
 type LooseRecord = Record<string, any>;
 
@@ -48,6 +49,7 @@ type OpenClawDispatchOptions = {
 };
 
 type GatewaySubscriptionOptions = {
+  onReady?: () => void;
   onEvent?: (evt: unknown) => void;
   onError?: (error: unknown) => void;
   onClose?: (reason?: unknown) => void;
@@ -713,16 +715,27 @@ export function createOpenClawClient({
 
   function parseDingTalkSessionUser(sessionUser = '') {
     const trimmedSessionUser = String(sessionUser || '').trim();
-    if (!trimmedSessionUser.startsWith('{')) {
+    if (trimmedSessionUser.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmedSessionUser);
+        if (String(parsed?.channel || '').trim() === 'dingtalk-connector') {
+          return parsed;
+        }
+      } catch {}
+    }
+
+    const parsedIdentity = parseImSessionIdentity(trimmedSessionUser, {
+      agentId: resolveAgentId(trimmedSessionUser) || 'main',
+    });
+    if (String(parsedIdentity?.channel || '').trim() !== 'dingtalk-connector') {
       return null;
     }
 
-    try {
-      const parsed = JSON.parse(trimmedSessionUser);
-      return String(parsed?.channel || '').trim() === 'dingtalk-connector' ? parsed : null;
-    } catch {
-      return null;
-    }
+    return {
+      accountid: parsedIdentity?.accountId || '',
+      chattype: parsedIdentity?.chatType || 'direct',
+      peerid: parsedIdentity?.peerId || '',
+    };
   }
 
   function isResetDingTalkSessionUser(sessionUser = '') {
@@ -828,6 +841,39 @@ export function createOpenClawClient({
     };
   }
 
+  function stripWeixinResetSuffix(value = '') {
+    return String(value || '').trim().replace(/:reset:[^:]+$/i, '');
+  }
+
+  function createWeixinDeliveryRoute({ accountId = '', peerId = '' } = {}) {
+    const normalizedPeerId = stripWeixinResetSuffix(peerId);
+    if (!normalizedPeerId) {
+      return null;
+    }
+
+    const normalizedAccountId = String(accountId || '').trim();
+    return {
+      channel: 'openclaw-weixin',
+      to: normalizedPeerId,
+      ...(normalizedAccountId ? { accountId: normalizedAccountId } : {}),
+    };
+  }
+
+  function parseWeixinSessionUser(sessionUser = '') {
+    const parsedIdentity = parseImSessionIdentity(String(sessionUser || '').trim(), { agentId: 'main' });
+    if (String(parsedIdentity?.channel || '').trim() !== 'openclaw-weixin') {
+      return null;
+    }
+
+    return {
+      agentId: String(parsedIdentity?.agentId || '').trim(),
+      channel: 'openclaw-weixin',
+      chattype: String(parsedIdentity?.chatType || '').trim() || 'direct',
+      peerid: String(parsedIdentity?.peerId || '').trim(),
+      accountid: String(parsedIdentity?.accountId || '').trim(),
+    };
+  }
+
   function resolveSessionDeliveryRoute(sessionUser = 'command-center') {
     const trimmedSessionUser = String(sessionUser || '').trim();
     if (!trimmedSessionUser) {
@@ -861,6 +907,14 @@ export function createOpenClawClient({
     if (parsedWecomSessionUser) {
       return createWecomDeliveryRoute({
         peerId: parsedWecomSessionUser.peerid,
+      });
+    }
+
+    const parsedWeixinSessionUser = parseWeixinSessionUser(trimmedSessionUser);
+    if (parsedWeixinSessionUser) {
+      return createWeixinDeliveryRoute({
+        accountId: parsedWeixinSessionUser.accountid,
+        peerId: parsedWeixinSessionUser.peerid,
       });
     }
 
@@ -912,7 +966,7 @@ export function createOpenClawClient({
     }
 
     const operatorName = String(options?.operatorName || '').trim();
-    if (parseFeishuSessionUser(sessionUser) || parseWecomSessionUser(sessionUser)) {
+    if (parseFeishuSessionUser(sessionUser) || parseWecomSessionUser(sessionUser) || parseWeixinSessionUser(sessionUser)) {
       return operatorName ? `${operatorName}：${trimmedMessage}` : trimmedMessage;
     }
 
@@ -1750,9 +1804,20 @@ export function createOpenClawClient({
    * If the gateway SDK is unavailable or the connection fails, the subscriber
    * silently stops — callers should treat it as a best-effort enhancement.
    */
-  function subscribeGatewayEvents({ onEvent, onError, onClose }: GatewaySubscriptionOptions = {}) {
+  function subscribeGatewayEvents({ onReady, onEvent, onError, onClose }: GatewaySubscriptionOptions = {}) {
     let client: GatewayClientLike | null = null;
     let stopped = false;
+    let readyNotified = false;
+
+    function markReady() {
+      if (readyNotified || stopped) {
+        return;
+      }
+      readyNotified = true;
+      if (typeof onReady === 'function') {
+        onReady();
+      }
+    }
 
     (async () => {
       try {
@@ -1774,7 +1839,9 @@ export function createOpenClawClient({
           clientVersion: sdk.VERSION || 'unknown',
           platform: process.platform,
           mode: sdk.GATEWAY_CLIENT_MODES?.BACKEND || 'backend',
-          onHelloOk: () => {},
+          onHelloOk: () => {
+            markReady();
+          },
           onConnectError: (error: unknown) => {
             if (typeof onError === 'function') onError(error);
           },
@@ -1782,6 +1849,7 @@ export function createOpenClawClient({
             if (typeof onClose === 'function') onClose(reason);
           },
           onEvent: (evt: OpenClawStreamEvent) => {
+            markReady();
             if (typeof onEvent === 'function') onEvent(evt);
           },
         });

@@ -5,7 +5,7 @@
 [![CI](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 
-ஏஜென்ட்களுடன் சேர்ந்து வேலை செய்து உருவாக்குவதற்கான இன்னும் நல்ல வழி.
+OpenClaw உடன் சேர்ந்து வேலை செய்து உருவாக்குவதற்கான இன்னும் நல்ல வழி.
 
 ஆசிரியர்: Marila Wang
 
@@ -126,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.21-2`, நிறுவ:
+குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.24`, நிறுவ:
 
 ```bash
-npm install -g lalaclaw@2026.3.21-2
+npm install -g lalaclaw@2026.3.24
 lalaclaw init
 ```
 
@@ -143,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.21-2`, பயன்படுத்த:
+குறிப்பிட்ட பதிப்பை, உதாரணமாக `2026.3.24`, பயன்படுத்த:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.21-2
+git checkout 2026.3.24
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -194,7 +194,7 @@ PR திறக்கும் முன்:
 LalaClaw npm-க்கு ஏற்ற calendar versioning ஐ பயன்படுத்துகிறது.
 
 - version மாறும் ஒவ்வொரு முறையும் [CHANGELOG.md](../CHANGELOG.md) புதுப்பிக்கவும்
-- அதே நாளில் பல release இருந்தால் `YYYY.M.D-N` வடிவம் பயன்படுத்தவும், உதாரணம் `2026.3.21-2`
+- அதே நாளில் பல release இருந்தால் `YYYY.M.D-N` வடிவம் பயன்படுத்தவும், உதாரணம் `2026.3.24`
 - breaking changes இருந்தால் release notes மற்றும் migration documents இல் தெளிவாக குறிப்பிடவும்
 - மேம்பாட்டிற்கு [`.nvmrc`](../.nvmrc) இல் உள்ள Node.js `22` பரிந்துரைக்கப்படுகிறது. வெளியிடப்பட்ட npm package `^20.19.0 || ^22.12.0 || >=24.0.0` ஐ ஆதரிக்கிறது
 

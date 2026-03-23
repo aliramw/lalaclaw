@@ -203,7 +203,7 @@ export function AccessGate({ children }: { children?: ReactNode }) {
           <div className="flex w-full items-center justify-center">
             <div className="inline-flex max-w-full items-center justify-center gap-3 px-4 py-2" aria-label={messages.app.title}>
               <img src="/favicon.svg" alt="" aria-hidden="true" className="h-11 w-11 shrink-0 drop-shadow-[0_6px_18px_rgba(15,23,42,0.12)] sm:h-12 sm:w-12" />
-              <span className="max-w-full truncate text-center text-[1.9rem] font-bold tracking-[-0.06em] text-foreground sm:text-[2.3rem]">
+              <span className="max-w-full truncate text-center text-[1.9rem] font-bold tracking-[-0.06em] text-slate-900 dark:text-slate-100 sm:text-[2.3rem]">
                 {brandWordmark}
               </span>
             </div>

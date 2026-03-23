@@ -104,6 +104,7 @@ describe('createOpenClawConfigService', () => {
               'dingtalk-connector': { enabled: true },
               feishu: { enabled: true },
               wecom: { enabled: false },
+              'openclaw-weixin': { enabled: true },
             },
             gateway: { bind: 'loopback', http: { endpoints: { chatCompletions: { enabled: true } } } },
             plugins: {
@@ -111,6 +112,7 @@ describe('createOpenClawConfigService', () => {
                 'dingtalk-connector': { enabled: true },
                 feishu: { enabled: true },
                 'wecom-openclaw-plugin': { enabled: true },
+                'openclaw-weixin': { enabled: true },
               },
             },
           },
@@ -145,12 +147,51 @@ describe('createOpenClawConfigService', () => {
       'dingtalk-connector': expect.objectContaining({ enabled: true, defaultAgentId: 'main' }),
       feishu: expect.objectContaining({ enabled: true, defaultAgentId: '' }),
       wecom: expect.objectContaining({ enabled: false }),
+      'openclaw-weixin': expect.objectContaining({ enabled: true, defaultAgentId: '' }),
     });
     expect(result.fields).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: 'modelPrimary', value: 'openai/gpt-5.4' }),
       expect.objectContaining({ key: 'gatewayBind', value: 'loopback' }),
       expect.objectContaining({ key: 'chatCompletionsEnabled', value: true }),
     ]));
+  });
+
+  it('treats Weixin as enabled when the plugin is enabled even if no dedicated channel block exists', async () => {
+    const service = createOpenClawConfigService({
+      callOpenClawGateway: async () => ({
+        path: 'https://gateway.example.test/config',
+        parsed: {
+          channels: {
+            feishu: { enabled: true },
+          },
+          plugins: {
+            entries: {
+              'openclaw-weixin': { enabled: true },
+            },
+          },
+        },
+        hash: 'remote-hash-weixin-plugin-only',
+        valid: true,
+        issues: [],
+        warnings: [],
+      }),
+      config: {
+        remoteOpenClawTarget: true,
+        baseUrl: 'https://gateway.example.test',
+        openclawBin: 'openclaw',
+      },
+      execFileAsync: async () => {
+        throw new Error('Should not run local openclaw config commands for remote state');
+      },
+    });
+
+    const result = await service.getOpenClawConfigState();
+
+    expect(result.imChannels['openclaw-weixin']).toMatchObject({
+      channelEnabled: true,
+      pluginEnabled: true,
+      enabled: true,
+    });
   });
 
   it('applies a remote config patch through gateway RPC and stores a rollback point reference', async () => {
@@ -459,12 +500,14 @@ describe('createOpenClawConfigService', () => {
         'dingtalk-connector': { enabled: true },
         feishu: { enabled: false },
         wecom: { enabled: true },
+        'openclaw-weixin': { enabled: true },
       },
       plugins: {
         entries: {
           'dingtalk-connector': { enabled: true },
           feishu: { enabled: true },
           'wecom-openclaw-plugin': { enabled: false },
+          'openclaw-weixin': { enabled: true },
         },
       },
     });
@@ -494,6 +537,7 @@ describe('createOpenClawConfigService', () => {
       'dingtalk-connector': expect.objectContaining({ enabled: true, defaultAgentId: 'main' }),
       feishu: expect.objectContaining({ enabled: false }),
       wecom: expect.objectContaining({ enabled: false }),
+      'openclaw-weixin': expect.objectContaining({ enabled: true, defaultAgentId: '' }),
     });
   });
 

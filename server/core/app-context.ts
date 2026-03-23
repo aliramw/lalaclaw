@@ -64,6 +64,7 @@ const { createLalaClawUpdateService } = require('../services/lalaclaw-update');
 const { createSessionHandlers } = require('../routes/session');
 const { createWorkspaceTreeHandler } = require('../routes/workspace-tree');
 import { createSessionStore, normalizeSessionUser, normalizeThinkMode } from './session-store';
+const { buildCanonicalImSessionUser } = require('../../shared/im-session-key.cjs');
 const { createTranscriptProjector } = require('../services/transcript');
 const {
   clip,
@@ -192,6 +193,14 @@ export function createAppContext() {
     const resolvedSessionUser = String(sessionUser || 'command-center').trim() || 'command-center';
     if (resolvedSessionUser.startsWith('agent:')) {
       return resolvedSessionUser;
+    }
+    const canonicalImSessionUser = buildCanonicalImSessionUser(resolvedSessionUser, { agentId: normalizedAgentId });
+    if (canonicalImSessionUser) {
+      if (canonicalImSessionUser.startsWith('agent:')) {
+        return canonicalImSessionUser;
+      }
+
+      return `agent:${normalizedAgentId}:${canonicalImSessionUser}`;
     }
     return `agent:${normalizedAgentId}:openai-user:${resolvedSessionUser}`;
   }
@@ -507,6 +516,7 @@ export function createAppContext() {
     getDefaultAgentId,
     getDefaultModelForAgent,
     getSessionPreferences,
+    listImSessionsForAgent,
     normalizeSessionUser,
     normalizeThinkMode,
     parseRequestBody,

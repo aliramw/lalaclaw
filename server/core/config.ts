@@ -22,8 +22,24 @@ export const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const HOME_DIR = process.env.HOME || '';
 const LOCAL_OPENCLAW_CONFIG = path.join(HOME_DIR, '.openclaw', 'openclaw.json');
 export const LOCAL_OPENCLAW_DIR = path.join(HOME_DIR, '.openclaw');
-export const OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw';
 const NPM_GLOBAL_DIR = path.join(HOME_DIR, '.npm-global');
+
+function resolveOpenClawBin(): string {
+  const explicitBin = String(process.env.OPENCLAW_BIN || '').trim();
+  if (explicitBin) {
+    return explicitBin;
+  }
+
+  const candidateBins = [
+    path.join(NPM_GLOBAL_DIR, 'bin', 'openclaw'),
+    path.join(NPM_GLOBAL_DIR, 'lib', 'node_modules', 'openclaw', 'openclaw.mjs'),
+  ];
+
+  const matchedCandidate = candidateBins.find((candidatePath) => fileExists(candidatePath));
+  return matchedCandidate || 'openclaw';
+}
+
+export const OPENCLAW_BIN = resolveOpenClawBin();
 
 function resolveDefaultConfigDir(): string {
   const explicitConfigDir = String(process.env.LALACLAW_CONFIG_DIR || '').trim();

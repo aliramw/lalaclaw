@@ -1,7 +1,11 @@
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
+import dingtalkLogoMarkup from "@/assets/im-logos/im-logo-dingtalk.svg?raw";
+import feishuLogoMarkup from "@/assets/im-logos/im-logo-feishu.svg?raw";
+import wecomLogoMarkup from "@/assets/im-logos/im-logo-wecom.svg?raw";
+import weixinLogoMarkup from "@/assets/im-logos/im-logo-weixin.svg?raw";
 import { Badge } from "@/components/ui/badge";
 import {
   ButtonSurface as Button,
@@ -219,6 +223,12 @@ const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx
 const streamingTailIndicatorClearDelayMs = 420;
 const speechRecognitionStatusResetDelayMs = 2200;
 const voiceInputShortcutLabel = "Cmd + Shift + .";
+const IM_TAB_LOGOS = {
+  "dingtalk-connector": dingtalkLogoMarkup,
+  feishu: feishuLogoMarkup,
+  wecom: wecomLogoMarkup,
+  "openclaw-weixin": weixinLogoMarkup,
+};
 
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
@@ -319,8 +329,9 @@ function formatAttachmentSize(size = 0) {
 function splitImTabTitleForDisplay(title = "", agentId = "", sessionUser = "") {
   const normalizedTitle = String(title || "").trim();
   const normalizedAgentId = String(agentId || "").trim();
+  const imType = resolveImSessionType(sessionUser);
 
-  if (!normalizedTitle || !normalizedAgentId || !resolveImSessionType(sessionUser)) {
+  if (!normalizedTitle || !normalizedAgentId || !imType) {
     return null;
   }
 
@@ -335,9 +346,36 @@ function splitImTabTitleForDisplay(title = "", agentId = "", sessionUser = "") {
   }
 
   return {
+    channel:
+      imType === "dingtalk"
+        ? "dingtalk-connector"
+        : imType === "weixin"
+          ? "openclaw-weixin"
+          : imType,
     platformLabel,
-    agentName: normalizedAgentId,
   };
+}
+
+function ImTabLogo({ active = false, channel = "" }) {
+  const markup = IM_TAB_LOGOS[channel];
+
+  if (!markup) {
+    return null;
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      data-im-logo={channel}
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-[5px] [&_svg]:h-full [&_svg]:w-full",
+        active
+          ? "h-[18px] w-[18px] border border-white/55 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.18),0_0_0_1px_rgba(255,255,255,0.14)]"
+          : "h-4 w-4 bg-muted/65",
+      )}
+      dangerouslySetInnerHTML={{ __html: markup }}
+    />
+  );
 }
 
 function buildCurrentConversationTitle(agentId = "", sessionUser = "", currentConversationLabel = "", locale = "zh") {
@@ -642,8 +680,18 @@ function estimateVisualLineCount(content = "") {
   return Math.max(lines.length, 1);
 }
 
-function EmptyConversation() {
+function EmptyConversation({ loading = false }: { loading?: boolean }) {
   const { messages } = useI18n();
+
+  if (loading) {
+    return (
+      <div>
+        <div className="flex min-h-56 items-center justify-center py-10 text-center">
+          <div className="text-sm font-medium">{messages.chat.loadingConversation}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -2475,14 +2523,9 @@ export function ChatTabsStrip({
                               : item.active ? "bg-white/65" : "bg-muted-foreground/35",
                           )}
                         />
+                        {imTitleParts?.channel ? <ImTabLogo active={item.active} channel={imTitleParts.channel} /> : null}
                         <span className={cn("min-w-0 flex-1 truncate font-medium", item.active ? "text-white" : "text-inherit")}>
-                          {imTitleParts ? (
-                            <>
-                              <span>{imTitleParts.platformLabel}</span>
-                              {" "}
-                              <span className={cn("text-[11px]", item.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
-                            </>
-                          ) : tabTitle}
+                          {imTitleParts ? imTitleParts.platformLabel : tabTitle}
                         </span>
                         {Number(item.unreadCount || 0) > 0 && !item.active ? (
                           <span
@@ -2582,14 +2625,9 @@ export function ChatTabsStrip({
                       : draggedItem.active ? "bg-white/65" : "bg-muted-foreground/35",
                   )}
                 />
+                {imTitleParts?.channel ? <ImTabLogo active={draggedItem.active} channel={imTitleParts.channel} /> : null}
                 <span className={cn("min-w-0 flex-1 truncate font-medium", draggedItem.active ? "text-white" : "text-inherit")}>
-                  {imTitleParts ? (
-                    <>
-                      <span>{imTitleParts.platformLabel}</span>
-                      {" "}
-                      <span className={cn("text-[11px]", draggedItem.active ? "text-white/70" : "text-muted-foreground")}>{imTitleParts.agentName}</span>
-                    </>
-                  ) : tabTitle}
+                  {imTitleParts ? imTitleParts.platformLabel : tabTitle}
                 </span>
                 {Number(draggedItem.unreadCount || 0) > 0 && !draggedItem.active ? (
                   <span
@@ -2831,11 +2869,12 @@ export function ChatPanel({
     () => Boolean(
       latestAssistantMessageId
         && latestAssistantMessage?.role === "assistant"
+        && messages[messages.length - 1]?.role === "assistant"
         && !latestAssistantMessage?.pending
         && String(latestAssistantMessage?.content || "").trim()
         && (showBusyBadge || hasActiveAssistantReply),
     ),
-    [hasActiveAssistantReply, latestAssistantMessage, latestAssistantMessageId, showBusyBadge],
+    [hasActiveAssistantReply, latestAssistantMessage, latestAssistantMessageId, messages, showBusyBadge],
   );
   const latestAssistantRenderKey = useMemo(
     () =>
@@ -4157,7 +4196,7 @@ export function ChatPanel({
 
   const renderedMessageBubbles = useMemo(() => {
     if (!messages.length) {
-      return <EmptyConversation />;
+      return <EmptyConversation loading={busy} />;
     }
 
     let lastUserMessageId = "";
@@ -4222,6 +4261,7 @@ export function ChatPanel({
   }, [
     agentLabel,
     animateViewportScroll,
+    busy,
     chatFontSize,
     files,
     formatTime,

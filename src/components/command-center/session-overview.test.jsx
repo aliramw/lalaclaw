@@ -292,10 +292,12 @@ describe("SessionOverview", () => {
     const dingTalkItem = screen.getByRole("menuitem", { name: "钉钉" });
     const feishuItem = screen.getByRole("menuitem", { name: "飞书" });
     const wecomItem = screen.getByRole("menuitem", { name: "企微" });
-    expect(dingTalkItem.querySelector('img[src="/im-logo-dingtalk.svg"]')).not.toBeNull();
+    const weixinItem = screen.getByRole("menuitem", { name: "微信" });
+    expect(dingTalkItem.querySelector('[data-im-logo="dingtalk-connector"]')).not.toBeNull();
     expect(feishuItem).toHaveClass("cursor-pointer");
-    expect(feishuItem.querySelector('img[src="/im-logo-feishu.svg"]')).not.toBeNull();
-    expect(wecomItem.querySelector('img[src="/im-logo-wecom.svg"]')).not.toBeNull();
+    expect(feishuItem.querySelector('[data-im-logo="feishu"]')).not.toBeNull();
+    expect(wecomItem.querySelector('[data-im-logo="wecom"]')).not.toBeNull();
+    expect(weixinItem.querySelector('[data-im-logo="openclaw-weixin"]')).not.toBeNull();
     await user.click(feishuItem);
 
     await waitFor(() => {
@@ -332,6 +334,7 @@ describe("SessionOverview", () => {
             openSessionUsers={[
               "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58",
               "agent:main:wecom:direct:marila",
+              "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat",
             ]}
             session={createSession()}
           />
@@ -345,6 +348,7 @@ describe("SessionOverview", () => {
     expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "飞书" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "企微" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "微信" })).not.toBeInTheDocument();
   });
 
   it("shows disabled IM channels with a muted plugin-disabled badge", async () => {
@@ -360,6 +364,7 @@ describe("SessionOverview", () => {
               "dingtalk-connector": { enabled: true, defaultAgentId: "main" },
               feishu: { enabled: false, defaultAgentId: "expert" },
               wecom: { enabled: false, defaultAgentId: "writer" },
+              "openclaw-weixin": { enabled: false, defaultAgentId: "ops" },
             }}
             availableModels={["openclaw"]}
             fastMode={false}
@@ -385,17 +390,20 @@ describe("SessionOverview", () => {
     expect(screen.getByRole("menuitem", { name: "钉钉" })).toBeInTheDocument();
     const feishuItem = screen.getByText("飞书").closest('[role="menuitem"]');
     const wecomItem = screen.getByText("企微").closest('[role="menuitem"]');
+    const weixinItem = screen.getByText("微信").closest('[role="menuitem"]');
 
     expect(feishuItem).toBeTruthy();
     expect(wecomItem).toBeTruthy();
+    expect(weixinItem).toBeTruthy();
     expect(within(feishuItem).getByText("未启用插件")).toBeInTheDocument();
     expect(within(wecomItem).getByText("未启用插件")).toBeInTheDocument();
+    expect(within(weixinItem).getByText("未启用插件")).toBeInTheDocument();
 
     await user.click(feishuItem);
     expect(onOpenImSession).not.toHaveBeenCalled();
   });
 
-  it("falls back to a text badge when an IM logo image fails to load", async () => {
+  it("renders IM platform logos inline so they are visible immediately", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 
     render(
@@ -424,16 +432,14 @@ describe("SessionOverview", () => {
     await user.click(screen.getByRole("button", { name: "切换 Agent" }));
 
     const dingTalkItem = screen.getByRole("menuitem", { name: "钉钉" });
-    const dingTalkLogo = dingTalkItem.querySelector('img[src="/im-logo-dingtalk.svg"]');
+    const feishuItem = screen.getByRole("menuitem", { name: "飞书" });
+    const wecomItem = screen.getByRole("menuitem", { name: "企微" });
+    const weixinItem = screen.getByRole("menuitem", { name: "微信" });
 
-    expect(dingTalkLogo).not.toBeNull();
-
-    dingTalkLogo.dispatchEvent(new Event("error"));
-
-    await waitFor(() => {
-      expect(dingTalkItem.querySelector('img[src="/im-logo-dingtalk.svg"]')).toBeNull();
-    });
-    expect(within(dingTalkItem).getByText("D")).toBeInTheDocument();
+    expect(dingTalkItem.querySelector('[data-im-logo="dingtalk-connector"]')).not.toBeNull();
+    expect(feishuItem.querySelector('[data-im-logo="feishu"]')).not.toBeNull();
+    expect(wecomItem.querySelector('[data-im-logo="wecom"]')).not.toBeNull();
+    expect(weixinItem.querySelector('[data-im-logo="openclaw-weixin"]')).not.toBeNull();
   });
 
   it("disables model, fast mode, think mode, and agent-session controls until OpenClaw is connected", () => {

@@ -5,14 +5,12 @@ import type {
   ChatTab,
   ChatTabMeta,
   ConversationPendingMap,
-  PendingChatTurn,
   SessionFile,
   SessionFileRewrite,
   StoredUiState,
 } from "@/types/chat";
 import type { AppSession, RuntimePeeks, RuntimeSnapshot } from "@/types/runtime";
 import {
-  derivePendingEntryFromLocalMessages,
   appendPromptHistory,
   createAgentSessionUser,
   createAgentTabId,
@@ -39,6 +37,7 @@ import {
   persistChatScrollTops,
   sanitizeInspectorPanelWidth,
   sanitizeUserLabel,
+  resolveRuntimePendingEntry,
 } from "@/features/app/storage";
 import { createBaseSession } from "@/features/app/state";
 import { useAppHotkeys } from "@/features/app/controllers/use-app-hotkeys";
@@ -61,6 +60,7 @@ import { useTheme } from "@/features/theme/use-theme";
 import { apiFetch } from "@/lib/api-client";
 import { pushCcDebugEvent } from "@/lib/cc-debug-events";
 import { useI18n } from "@/lib/i18n";
+import { buildCanonicalImSessionUser } from "@/lib/im-session-key";
 
 function areJsonEqual(left, right) {
   if (left === right) {
@@ -186,6 +186,24 @@ function createSessionForTab(messages, tab, meta, cachedSession = null) {
     selectedModel: meta?.model || "",
     fastMode: meta?.fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off,
   });
+}
+
+function buildOptimisticSessionKey(agentId = "main", sessionUser = defaultSessionUser) {
+  const normalizedAgentId = String(agentId || "main").trim() || "main";
+  const normalizedSessionUser = String(sessionUser || defaultSessionUser).trim() || defaultSessionUser;
+
+  if (normalizedSessionUser.startsWith("agent:")) {
+    return normalizedSessionUser;
+  }
+
+  const canonicalImSessionUser = buildCanonicalImSessionUser(normalizedSessionUser, { agentId: normalizedAgentId });
+  if (canonicalImSessionUser) {
+    return canonicalImSessionUser.startsWith("agent:")
+      ? canonicalImSessionUser
+      : `agent:${normalizedAgentId}:${canonicalImSessionUser}`;
+  }
+
+  return `agent:${normalizedAgentId}:openai-user:${normalizedSessionUser}`;
 }
 
 function escapeRegExp(value = "") {
@@ -344,6 +362,9 @@ function resolveImChannelKey(channelOrSessionUser = "") {
   }
   if (imType === "wecom") {
     return "wecom";
+  }
+  if (imType === "weixin") {
+    return "openclaw-weixin";
   }
 
   return normalizedChannel;
@@ -1118,7 +1139,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     [activeConversationKey, workspaceFilesOpenByConversation],
   );
   const sessionOverviewPending = useMemo(
-    () => !Boolean(runtimeCacheByTabId[activeChatTabId]?.overviewReady),
+    () => !runtimeCacheByTabId[activeChatTabId]?.overviewReady,
     [activeChatTabId, runtimeCacheByTabId],
   );
   const setActiveTarget = useCallback((value) => {
@@ -2029,14 +2050,27 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
             nextTabSessionUser,
             nextTabAgentId,
           );
-          const pendingEntry =
-            pendingChatTurnsRef.current[nextConversationKey]
-            || (derivePendingEntryFromLocalMessages(currentMessages) as PendingChatTurn | null)
-            || null;
-          const mergedConversation = mergeConversationIdentity(
-            mergeConversationAttachments(payload.conversation, currentMessages),
+          const nextConversationWithAttachments = mergeConversationAttachments(payload.conversation, currentMessages);
+          const baseMergedConversation = mergeConversationIdentity(
+            nextConversationWithAttachments,
             currentMessages,
           );
+          const pendingEntry = resolveRuntimePendingEntry({
+            agentId: nextTabAgentId,
+            conversationKey: nextConversationKey,
+            conversationMessages: baseMergedConversation,
+            localMessages: currentMessages,
+            pendingChatTurns: pendingChatTurnsRef.current,
+            sessionStatus: snapshotSession.status,
+            sessionUser: nextTabSessionUser,
+          });
+          const mergedConversation = pendingEntry
+            ? mergeConversationIdentity(
+                nextConversationWithAttachments,
+                currentMessages,
+                pendingEntry,
+              )
+            : baseMergedConversation;
           const snapshotHasAssistantReply = pendingEntry
             ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
             : false;
@@ -2095,8 +2129,14 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
           nextTabAgentId,
         );
         const hasTrackedPendingTurn = Boolean(
-          pendingChatTurnsRef.current[nextConversationKey]
-          || derivePendingEntryFromLocalMessages(currentMessages),
+          resolveRuntimePendingEntry({
+            agentId: nextTabAgentId,
+            conversationKey: nextConversationKey,
+            localMessages: currentMessages,
+            pendingChatTurns: pendingChatTurnsRef.current,
+            sessionStatus: snapshotSession.status,
+            sessionUser: nextTabSessionUser,
+          }),
         );
         const hasLocalActiveAssistantReply = currentMessages.some((message) => message?.role === "assistant" && (message?.pending || message?.streaming));
         setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching" || hasTrackedPendingTurn || hasLocalActiveAssistantReply);
@@ -2215,7 +2255,11 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
 
     if (resolvedSessionUser === normalizedSessionUser) {
       const imType = resolveImSessionType(normalizedSessionUser);
-      const channel = imType === "dingtalk" ? "dingtalk-connector" : imType;
+      const channel = imType === "dingtalk"
+        ? "dingtalk-connector"
+        : imType === "weixin"
+          ? "openclaw-weixin"
+          : imType;
 
       if (channel) {
         try {
@@ -2253,6 +2297,79 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
 
     return resolvedSessionUser;
   }, [loadRuntime, syncResolvedImTabIdentity]);
+
+  const dispatchSessionCommand = async (content, {
+    attachments = [],
+    suppressPendingPlaceholder = false,
+  } = {}) => {
+    const normalizedContent = String(content || "").trim();
+    if (!normalizedContent && !(attachments || []).length) {
+      return;
+    }
+
+    shouldAutoScrollRef.current = true;
+    const targetTabId = activeChatTab?.id || activeChatTabId || activeChatTabIdRef.current;
+    const targetTab = chatTabsRef.current.find((tab) => tab.id === targetTabId) || activeChatTab;
+    const targetMeta = (targetTabId && tabMetaByIdRef.current[targetTabId]) || null;
+    const targetSession = (targetTabId && sessionByTabIdRef.current[targetTabId]) || null;
+    const isActiveTargetTab = targetTabId === activeChatTabIdRef.current;
+    const targetAgentId =
+      targetMeta?.agentId
+      || targetSession?.agentId
+      || targetTab?.agentId
+      || (isActiveTargetTab ? session.agentId : "")
+      || sessionStateRef.current.agentId;
+    const rawTargetSessionUser =
+      targetMeta?.sessionUser
+      || targetSession?.sessionUser
+      || targetTab?.sessionUser
+      || (isActiveTargetTab ? session.sessionUser : "")
+      || sessionStateRef.current.sessionUser;
+    const targetSessionUser =
+      targetAgentId && targetAgentId !== "main" && rawTargetSessionUser === defaultSessionUser
+        ? createAgentSessionUser(targetAgentId)
+        : rawTargetSessionUser;
+    const resolvedTargetSessionUser = await resolveImSessionUserForSend({
+      agentId: targetAgentId,
+      sessionUser: targetSessionUser,
+      tabId: targetTabId,
+    });
+    const targetModel =
+      targetMeta?.model
+      || targetSession?.selectedModel
+      || targetSession?.model
+      || (isActiveTargetTab ? model : "")
+      || sessionStateRef.current.model;
+    const targetFastMode =
+      typeof targetMeta?.fastMode === "boolean"
+        ? targetMeta.fastMode
+        : isActiveTargetTab
+          ? fastMode
+          : sessionStateRef.current.fastMode;
+    const targetThinkMode =
+      targetMeta?.thinkMode
+      || targetSession?.thinkMode
+      || (isActiveTargetTab ? session.thinkMode || "off" : "")
+      || sessionStateRef.current.thinkMode;
+
+    const entryTimestamp = Date.now();
+    const entryId = `${entryTimestamp}-${Math.random().toString(36).slice(2, 8)}`;
+    await enqueueOrRunEntry({
+      id: entryId,
+      tabId: targetTabId,
+      key: `${resolvedTargetSessionUser}:${targetAgentId}`,
+      content: normalizedContent,
+      attachments,
+      timestamp: entryTimestamp,
+      userMessageId: `msg-user-${entryId}`,
+      agentId: targetAgentId,
+      sessionUser: resolvedTargetSessionUser,
+      model: targetModel,
+      fastMode: targetFastMode,
+      thinkMode: targetThinkMode,
+      ...(suppressPendingPlaceholder ? { suppressPendingPlaceholder: true } : {}),
+    });
+  };
 
   const sendCurrentPrompt = async () => {
     const content = String(promptRef.current?.value || promptValueRef.current || "").trim();
@@ -2576,6 +2693,17 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
 
   const handleReset = async () => {
     const currentSessionUser = String(sessionStateRef.current.sessionUser || "").trim();
+    const currentMode = String(sessionStateRef.current.mode || session.mode || "").trim();
+    if (isImSessionUser(currentSessionUser) && currentMode === "openclaw") {
+      setPromptHistoryNavigation(null);
+      setComposerAttachments([]);
+      await dispatchSessionCommand("/reset", {
+        suppressPendingPlaceholder: true,
+      });
+      focusPrompt();
+      return;
+    }
+
     const nextSessionUser = isImSessionUser(currentSessionUser)
       ? createResetImSessionUser(currentSessionUser)
       : createResetSessionUser(sessionStateRef.current.agentId);
@@ -2881,7 +3009,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       agentLabel: nextAgent,
       selectedAgentId: nextAgent,
       sessionUser,
-      sessionKey: `agent:${nextAgent}:openai-user:${sessionUser}`,
+      sessionKey: buildOptimisticSessionKey(nextAgent, sessionUser),
       model: nextMeta.model || session.model || "",
       selectedModel: nextMeta.model || session.selectedModel || session.model || "",
       fastMode: session.fastMode,
@@ -3054,7 +3182,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         agentLabel: nextAgentId,
         selectedAgentId: nextAgentId,
         sessionUser: nextSessionUser,
-        sessionKey: `agent:${nextAgentId}:openai-user:${nextSessionUser}`,
+        sessionKey: buildOptimisticSessionKey(nextAgentId, nextSessionUser),
         model: nextMeta.model || session.model || "",
         selectedModel: nextMeta.model || session.selectedModel || session.model || "",
         fastMode: session.fastMode,

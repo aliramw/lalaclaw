@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import packageJson from '../../package.json';
+import { getLalaClawServiceStatus } from './lalaclaw-service-status';
 
 const DEFAULT_REGISTRY_BASE_URL = 'https://registry.npmjs.org';
 export const UPDATE_STATUS_FILENAME = 'lalaclaw-update-state.json';
@@ -39,6 +40,11 @@ type LalaClawUpdateServiceOptions = {
   config?: LalaClawUpdateConfig;
   currentVersion?: string;
   fetchImpl?: typeof fetch;
+  getServiceStatus?: () => {
+    kind?: string;
+    installed?: boolean;
+    running?: boolean;
+  } | null;
   now?: () => number;
   platform?: NodeJS.Platform;
   processPid?: number;
@@ -46,6 +52,12 @@ type LalaClawUpdateServiceOptions = {
   runnerPath?: string;
   spawnImpl?: typeof spawn;
 };
+
+type LalaClawServiceStatusSnapshot = {
+  kind?: string;
+  installed?: boolean;
+  running?: boolean;
+} | null;
 
 type MockJobOptions = {
   currentJob?: LalaClawUpdateJob | null;
@@ -91,6 +103,23 @@ type BuildUpdateStateOptions = {
   job?: LalaClawUpdateJob | null;
   capability: ReturnType<typeof detectCapability>;
 };
+
+function resolveLalaClawChannelState(distTags: Record<string, unknown> = {}) {
+  const explicitStableVersion = String(distTags.stable || '').trim();
+  const latestVersion = String(distTags.latest || '').trim();
+  const channelVersion = explicitStableVersion || latestVersion;
+  return {
+    actualStableVersion: explicitStableVersion,
+    channel: {
+      value: 'stable',
+      source: 'default',
+      label: 'stable (default)',
+      config: null,
+    },
+    latestVersion: channelVersion,
+    stableTag: explicitStableVersion ? 'stable' : 'latest',
+  };
+}
 
 function isSourceCheckout(projectRoot = path.resolve(__dirname, '..', '..')) {
   if (fs.existsSync(path.join(projectRoot, '.git'))) {
@@ -343,12 +372,23 @@ async function fetchRegistryMetadata({
 
 export function detectCapability({
   accessConfigFile = '',
+  serviceStatus = null,
   mockStableVersion = '',
   platform = process.platform,
   projectRoot = path.resolve(__dirname, '..', '..'),
-}) {
+}: {
+  accessConfigFile?: string;
+  serviceStatus?: LalaClawServiceStatusSnapshot;
+  mockStableVersion?: string;
+  platform?: NodeJS.Platform;
+  projectRoot?: string;
+} = {}) {
   const sourceCheckout = isSourceCheckout(projectRoot);
-  const launchdInstalled = platform === 'darwin' && fs.existsSync(resolveLaunchdPlistPath(os.homedir()));
+  const launchdInstalled = platform === 'darwin' && (
+    serviceStatus?.kind === 'launchd'
+      ? Boolean(serviceStatus.installed && serviceStatus.running)
+      : fs.existsSync(resolveLaunchdPlistPath(os.homedir()))
+  );
   const windowsBackgroundInstalled = platform === 'win32'
     && fs.existsSync(resolveWindowsBackgroundServiceStatePath(accessConfigFile || ''));
   const mockPreviewEnabled = Boolean(String(mockStableVersion || '').trim());
@@ -418,10 +458,21 @@ function buildUpdateState({
   capability,
 }: BuildUpdateStateOptions) {
   const distTags = checkResult?.metadata?.['dist-tags'] || {};
-  const stableVersion = String(distTags.stable || distTags.latest || '').trim();
+  const {
+    actualStableVersion,
+    channel,
+    latestVersion,
+    stableTag,
+  } = resolveLalaClawChannelState(distTags);
   const normalizedWorkspaceVersion = String(workspaceVersion || '').trim();
-  const currentRelease = buildReleaseInfo(currentVersion, stableVersion);
-  const targetRelease = buildReleaseInfo(stableVersion, stableVersion);
+  const currentRelease = buildReleaseInfo(currentVersion, actualStableVersion);
+  const targetRelease = buildReleaseInfo(latestVersion, actualStableVersion);
+  const updateAvailable = capability.updateSupported && checkResult?.ok && hasStableUpdate(currentVersion, latestVersion);
+  const availability = {
+    available: Boolean(updateAvailable),
+    hasRegistryUpdate: Boolean(updateAvailable),
+    latestVersion: updateAvailable ? latestVersion : null,
+  };
 
   return {
     ok: true,
@@ -430,12 +481,14 @@ function buildUpdateState({
     workspaceVersion: normalizedWorkspaceVersion,
     currentRelease,
     targetRelease,
-    stableTag: String(distTags.stable ? 'stable' : 'latest'),
-    updateAvailable: capability.updateSupported && checkResult?.ok && hasStableUpdate(currentVersion, stableVersion),
+    stableTag,
+    channel,
+    availability,
+    updateAvailable,
     capability,
     check: {
       ok: Boolean(checkResult?.ok),
-      scope: 'stable',
+      scope: channel.value,
       checkedAt,
       errorCode: checkResult?.errorCode || '',
       error: checkResult?.error || '',
@@ -448,6 +501,7 @@ export function createLalaClawUpdateService({
   config = {},
   currentVersion = PACKAGE_VERSION,
   fetchImpl = global.fetch,
+  getServiceStatus = getLalaClawServiceStatus,
   now = () => Date.now(),
   platform = process.platform,
   processPid = process.pid,
@@ -530,6 +584,7 @@ export function createLalaClawUpdateService({
     const mockStableVersion = resolveMockStableVersion();
     const capability = detectCapability({
       accessConfigFile: config?.accessConfigFile || '',
+      serviceStatus: typeof getServiceStatus === 'function' ? getServiceStatus() : null,
       mockStableVersion,
       platform,
       projectRoot,

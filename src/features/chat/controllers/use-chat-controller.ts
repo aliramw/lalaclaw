@@ -451,8 +451,9 @@ export function useChatController({
       }));
 
       if (isTabActive(targetTabId) && payload.session) {
+        const isSessionResetCommand = /^\/(?:new|reset)(?:\s|$)/i.test(String(resolvedEntry.content || "").trim());
         const canSyncConversationFromPayload = Array.isArray(payload.conversation)
-          && conversationIncludesUserTurn(payload.conversation, resolvedEntry);
+          && (isSessionResetCommand || conversationIncludesUserTurn(payload.conversation, resolvedEntry));
         applySnapshot?.(payload, { syncConversation: canSyncConversationFromPayload });
       }
     } catch (error) {

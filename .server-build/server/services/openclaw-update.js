@@ -5,6 +5,8 @@ exports.parseNoisyJson = parseNoisyJson;
 exports.createOpenClawUpdateService = createOpenClawUpdateService;
 const openclaw_management_1 = require("./openclaw-management");
 const DEFAULT_UPDATE_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_OPENCLAW_UPDATE_CHANNEL = 'stable';
+const DEFAULT_OPENCLAW_UPDATE_TAG = 'latest';
 const OFFICIAL_INSTALL_DOCS_URL = 'https://docs.openclaw.ai/install';
 exports.OFFICIAL_INSTALL_DOCS_URL = OFFICIAL_INSTALL_DOCS_URL;
 const OFFICIAL_INSTALL_COMMAND = 'curl -fsSL https://openclaw.ai/install.sh | bash';
@@ -71,6 +73,18 @@ function buildInstallGuidance() {
     };
 }
 function buildStateFromStatus(status = {}, preview = null) {
+    const channelValue = String(status?.channel?.value || '').trim() || null;
+    const previewTargetVersion = String(preview?.targetVersion || '').trim() || null;
+    const previewTag = String(preview?.tag || '').trim() || null;
+    const previewRequestedChannel = String(preview?.requestedChannel || '').trim() || null;
+    const previewStoredChannel = String(preview?.storedChannel || '').trim() || null;
+    const previewEffectiveChannel = String(preview?.effectiveChannel || '').trim() || null;
+    const shouldExposePreviewTarget = Boolean(previewTargetVersion
+        && (!channelValue
+            || previewTag !== 'latest'
+            || previewRequestedChannel
+            || previewStoredChannel
+            || previewEffectiveChannel === 'dev'));
     return {
         ok: true,
         installed: true,
@@ -81,7 +95,7 @@ function buildStateFromStatus(status = {}, preview = null) {
         channel: status?.channel || null,
         update: status?.update || null,
         currentVersion: preview?.currentVersion || status?.update?.registry?.currentVersion || null,
-        targetVersion: preview?.targetVersion || String(status?.availability?.latestVersion || '').trim() || null,
+        targetVersion: shouldExposePreviewTarget ? previewTargetVersion : null,
     };
 }
 function buildUnsupportedPlatformError() {
@@ -132,7 +146,7 @@ function createOpenClawUpdateService({ config, execFileAsync, fetchImpl = global
         }
     }
     async function getOpenClawUpdateState() {
-        const statusCommandResult = await runOpenClawCommand(['update', 'status', '--json']);
+        const statusCommandResult = await runOpenClawCommand(['update', '--channel', DEFAULT_OPENCLAW_UPDATE_CHANNEL, 'status', '--json']);
         if (!statusCommandResult.ok && statusCommandResult.systemErrorCode === 'ENOENT') {
             return {
                 ok: true,
@@ -154,7 +168,7 @@ function createOpenClawUpdateService({ config, execFileAsync, fetchImpl = global
             error.errorCode = 'update_status_failed';
             throw error;
         }
-        const previewCommandResult = await runOpenClawCommand(['update', '--dry-run', '--json']);
+        const previewCommandResult = await runOpenClawCommand(['update', '--dry-run', '--tag', DEFAULT_OPENCLAW_UPDATE_TAG, '--json']);
         const previewPayload = parseNoisyJson(previewCommandResult.stdout) || parseNoisyJson(previewCommandResult.stderr);
         return {
             ...buildStateFromStatus(statusPayload, previewPayload),
@@ -189,7 +203,7 @@ function createOpenClawUpdateService({ config, execFileAsync, fetchImpl = global
             error.errorCode = 'openclaw_not_installed';
             throw error;
         }
-        const args = ['update', '--yes', '--json'];
+        const args = ['update', '--tag', DEFAULT_OPENCLAW_UPDATE_TAG, '--yes', '--json'];
         if (!restartGateway) {
             args.push('--no-restart');
         }

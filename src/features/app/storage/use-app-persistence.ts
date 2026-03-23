@@ -5,7 +5,10 @@ import {
   pendingChatStorageKey,
   promptDraftStorageKey,
   promptHistoryStorageKey,
+  sanitizePendingChatTurnsMap,
   sanitizeMessagesForStorage,
+  sanitizePromptDraftsMap,
+  sanitizePromptHistoryMap,
   storageKey,
 } from "@/features/app/storage/app-storage";
 import type { ChatMessage } from "@/types/chat";
@@ -158,7 +161,7 @@ export function useAppPersistence({
         pendingChatStorageKey,
         JSON.stringify({
           _persistedAt: persistedAt,
-          pendingChatTurns: nextPendingChatTurns,
+          pendingChatTurns: sanitizePendingChatTurnsMap(nextPendingChatTurns),
         }),
       );
     } catch {}
@@ -175,7 +178,7 @@ export function useAppPersistence({
         : latestPromptDraftsByConversationRef.current;
       window.localStorage.setItem(
         promptDraftStorageKey,
-        JSON.stringify(latestPromptDraftsByConversationRef.current),
+        JSON.stringify(sanitizePromptDraftsMap(latestPromptDraftsByConversationRef.current)),
       );
     } catch {}
   }, [promptDraftsByConversationRef]);
@@ -350,7 +353,7 @@ export function useAppPersistence({
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(promptHistoryStorageKey, JSON.stringify(promptHistoryByConversation));
+      window.localStorage.setItem(promptHistoryStorageKey, JSON.stringify(sanitizePromptHistoryMap(promptHistoryByConversation)));
     } catch {}
   }, [promptHistoryByConversation]);
 

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createRuntimeHandler = createRuntimeHandler;
 const node_url_1 = require("node:url");
+const { buildCanonicalImSessionUser } = require('../../shared/im-session-key.cjs');
 function parseOptionalBoolean(value) {
     const normalized = String(value || '').trim().toLowerCase();
     if (!normalized) {
@@ -19,8 +20,9 @@ function createRuntimeHandler({ buildDashboardSnapshot, config, sendJson, }) {
     return async function handleRuntime(req, res) {
         try {
             const searchParams = new node_url_1.URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`).searchParams;
-            const sessionUser = String(searchParams.get('sessionUser') || 'command-center').trim() || 'command-center';
             const agentId = String(searchParams.get('agentId') || '').trim();
+            const requestedSessionUser = String(searchParams.get('sessionUser') || 'command-center').trim() || 'command-center';
+            const sessionUser = buildCanonicalImSessionUser(requestedSessionUser, { agentId: agentId || 'main' }) || requestedSessionUser;
             const model = String(searchParams.get('model') || '').trim();
             const thinkMode = String(searchParams.get('thinkMode') || '').trim();
             const fastMode = parseOptionalBoolean(searchParams.get('fastMode'));

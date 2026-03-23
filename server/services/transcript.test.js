@@ -139,7 +139,7 @@ describe("searchSessionsForAgent", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].preview).toContain("你你你");
-    expect(results[0].sessionUser).toContain("sendername");
+    expect(results[0].sessionUser).toBe("agent:main:dingtalk-connector:direct:398058");
     expect(results[0].displaySessionUser).toBe("dingtalk-connector:__default__:direct:398058:马锐拉");
   });
 
@@ -372,6 +372,68 @@ describe("searchSessionsForAgent", () => {
     expect(results[0].sessionUser).toBe(sessionKey);
     expect(results[0].displaySessionUser).toBe("wecom:direct:marila");
     expect(results[0].title).toBe("marila");
+    expect(results[0].preview).toContain("宝塔镇河妖");
+  });
+
+  it("returns native Weixin sessions and formats their display session id", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionKey = "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat";
+    const sessions = {
+      [sessionKey]: {
+        updatedAt: 1773733112684,
+        sessionId: "weixin-session",
+        lastChannel: "openclaw-weixin",
+        origin: {
+          label: "Marila 微信",
+          provider: "openclaw-weixin",
+          surface: "weixin",
+          to: "o9cq807-naavqdpr-tmdjv3v8bck@im.wechat",
+        },
+        deliveryContext: {
+          channel: "openclaw-weixin",
+          to: "o9cq807-naavqdpr-tmdjv3v8bck@im.wechat",
+          accountId: "default",
+        },
+      },
+    };
+
+    fs.writeFileSync(path.join(sessionsDir, "sessions.json"), JSON.stringify(sessions), "utf8");
+    fs.writeFileSync(
+      path.join(sessionsDir, "weixin-session.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "weixin-session", timestamp: "2026-03-17T04:40:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:49:46.186Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "宝塔镇河妖",
+              },
+            ],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = createTestProjector(rootDir);
+    const results = projector.searchSessionsForAgent("main", {
+      channel: "openclaw-weixin",
+      limit: 12,
+      term: "宝塔镇河妖",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].sessionUser).toBe(sessionKey);
+    expect(results[0].displaySessionUser).toBe("openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat");
+    expect(results[0].title).toBe("Marila 微信");
     expect(results[0].preview).toContain("宝塔镇河妖");
   });
 

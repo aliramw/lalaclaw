@@ -11,6 +11,9 @@ import type {
   StoredUiState,
   TabMetaById,
 } from "@/types/chat";
+import { isImSessionUser } from "@/features/session/im-session";
+import { normalizeStatusKey } from "@/features/session/status-display";
+import { buildCanonicalImSessionUser } from "@/lib/im-session-key";
 
 export const legacyStorageKey = "command-center-ui-state-v2";
 export const storageKey = "command-center-ui-state-v3";
@@ -75,7 +78,7 @@ function resolveAgentIdFromTabId(tabId = "") {
   return normalizeAgentId(normalized.slice("agent:".length).split("::")[0]);
 }
 
-function shouldPreserveSessionUser(value = "") {
+function shouldPreserveLegacySessionUser(value = "") {
   const normalized = String(value || "").trim();
   if (!normalized) {
     return false;
@@ -89,9 +92,15 @@ export function createAgentTabId(agentId = "main") {
   return `agent:${normalizeAgentId(agentId)}`;
 }
 
-function sanitizeSessionUser(value = defaultSessionUser) {
+function sanitizeSessionUser(value = defaultSessionUser, agentId = "main") {
   const rawValue = String(value || defaultSessionUser).trim();
-  if (shouldPreserveSessionUser(rawValue)) {
+  const normalizedAgentId = normalizeAgentId(agentId);
+  const canonicalImSessionUser = buildCanonicalImSessionUser(rawValue, { agentId: normalizedAgentId });
+  if (canonicalImSessionUser) {
+    return canonicalImSessionUser;
+  }
+
+  if (shouldPreserveLegacySessionUser(rawValue)) {
     return rawValue;
   }
 
@@ -112,6 +121,135 @@ export function createAgentSessionUser(agentId = "main") {
 export function createResetSessionUser(agentId = "main") {
   const normalizedAgentId = normalizeAgentId(agentId).replace(/[^\w:-]+/g, "-");
   return sanitizeSessionUser(`command-center-reset-${normalizedAgentId}-${Date.now()}`);
+}
+
+function parseConversationKey(value = "") {
+  const normalized = String(value || "").trim();
+  const separatorIndex = normalized.lastIndexOf(":");
+  if (separatorIndex <= 0 || separatorIndex >= normalized.length - 1) {
+    return null;
+  }
+
+  return {
+    sessionUser: normalized.slice(0, separatorIndex),
+    agentId: normalizeAgentId(normalized.slice(separatorIndex + 1)),
+  };
+}
+
+function normalizeConversationKey(value = "") {
+  const parsed = parseConversationKey(value);
+  if (!parsed) {
+    return String(value || "").trim();
+  }
+
+  return createConversationKey(parsed.sessionUser, parsed.agentId);
+}
+
+function sanitizeConversationArrayMap(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string[]>>((accumulator, [key, ids]) => {
+    const normalizedKey = normalizeConversationKey(key);
+    if (!normalizedKey || !Array.isArray(ids)) {
+      return accumulator;
+    }
+
+    const normalizedIds = ids.map((id) => String(id || "").trim()).filter(Boolean);
+    if (!normalizedIds.length) {
+      return accumulator;
+    }
+
+    accumulator[normalizedKey] = [...new Set([...(accumulator[normalizedKey] || []), ...normalizedIds])];
+    return accumulator;
+  }, {});
+}
+
+function sanitizeConversationStringMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string>>((accumulator, [key, draft]) => {
+    const normalizedKey = normalizeConversationKey(key);
+    const normalizedDraft = typeof draft === "string" ? draft : String(draft || "");
+    if (!normalizedKey || !normalizedDraft.length) {
+      return accumulator;
+    }
+
+    accumulator[normalizedKey] = normalizedDraft;
+    return accumulator;
+  }, {});
+}
+
+function sanitizeConversationBooleanMap(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, boolean>>((accumulator, [key, flag]) => {
+    const normalizedKey = normalizeConversationKey(key);
+    if (!normalizedKey) {
+      return accumulator;
+    }
+
+    accumulator[normalizedKey] = Boolean(flag);
+    return accumulator;
+  }, {});
+}
+
+export function sanitizePromptHistoryMap(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string[]>>((accumulator, [key, prompts]) => {
+    const normalizedKey = normalizeConversationKey(key);
+    if (!normalizedKey || !Array.isArray(prompts)) {
+      return accumulator;
+    }
+
+    const normalizedPrompts = prompts
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    if (!normalizedPrompts.length) {
+      return accumulator;
+    }
+
+    accumulator[normalizedKey] = [...(accumulator[normalizedKey] || []), ...normalizedPrompts].slice(-promptHistoryLimit);
+    return accumulator;
+  }, {});
+}
+
+export function sanitizePendingChatTurnsMap(value: unknown): ConversationPendingMap {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.entries(value).reduce<ConversationPendingMap>((accumulator, [key, entry]) => {
+    const normalizedKey = normalizeConversationKey(key);
+    if (!normalizedKey || !entry || typeof entry !== "object") {
+      return accumulator;
+    }
+
+    const normalizedEntry = entry as PendingChatTurn;
+    const parsedConversationKey = parseConversationKey(normalizedKey);
+    accumulator[normalizedKey] = {
+      ...normalizedEntry,
+      key: normalizedKey,
+      ...(parsedConversationKey
+        ? {
+            agentId: normalizedEntry.agentId || parsedConversationKey.agentId,
+            sessionUser: sanitizeSessionUser(
+              normalizedEntry.sessionUser || parsedConversationKey.sessionUser,
+              normalizedEntry.agentId || parsedConversationKey.agentId,
+            ),
+          }
+        : {}),
+    };
+    return accumulator;
+  }, {});
 }
 
 function sanitizeChatFontSize(value) {
@@ -162,43 +300,15 @@ function resolveStoredChatFontSize(parsed) {
 }
 
 function sanitizeDismissedTaskRelationshipsMap(value: unknown): Record<string, string[]> {
-  if (!value || typeof value !== "object") {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, ids]) => Array.isArray(ids))
-      .map(([key, ids]) => [
-        key,
-        ids.map((id) => String(id || "").trim()).filter(Boolean),
-      ])
-      .filter(([, ids]) => ids.length),
-  );
+  return sanitizeConversationArrayMap(value);
 }
 
-function sanitizePromptDraftsMap(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object") {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .map(([key, draft]) => [key, typeof draft === "string" ? draft : String(draft || "")])
-      .filter(([, draft]) => String(draft || "").length > 0),
-  );
+export function sanitizePromptDraftsMap(value: unknown): Record<string, string> {
+  return sanitizeConversationStringMap(value);
 }
 
 function sanitizeBooleanMap(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== "object") {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .map(([key, flag]) => [String(key || "").trim(), Boolean(flag)])
-      .filter(([key]) => Boolean(key)),
-  );
+  return sanitizeConversationBooleanMap(value);
 }
 
 function sanitizeChatScrollTopMap(value: unknown): Record<string, ChatScrollState> {
@@ -209,7 +319,7 @@ function sanitizeChatScrollTopMap(value: unknown): Record<string, ChatScrollStat
   return Object.fromEntries(
     Object.entries(value)
       .map(([key, scrollState]) => {
-        const normalizedKey = String(key || "").trim();
+        const normalizedKey = normalizeConversationKey(key);
         if (!normalizedKey) {
           return null;
         }
@@ -483,7 +593,7 @@ function sanitizeChatTabs(value: unknown, fallbackSessionUser = defaultSessionUs
       {
         id: createAgentTabId(fallbackAgentId),
         agentId: normalizeAgentId(fallbackAgentId),
-        sessionUser: sanitizeSessionUser(fallbackSessionUser),
+        sessionUser: sanitizeSessionUser(fallbackSessionUser, fallbackAgentId),
       },
     ];
   }
@@ -501,7 +611,7 @@ function sanitizeChatTabs(value: unknown, fallbackSessionUser = defaultSessionUs
       return {
         id,
         agentId,
-        sessionUser: sanitizeSessionUser(tab?.sessionUser || fallbackSessionUser),
+        sessionUser: sanitizeSessionUser(tab?.sessionUser || fallbackSessionUser, agentId),
       };
     })
     .filter(isChatTab);
@@ -582,7 +692,7 @@ function sanitizeTabMetaMap(value: unknown, tabs: ChatTab[] = []): TabMetaById {
         tab.id,
         {
           agentId: resolveAgentIdFromTabId(tab.id) || normalizeAgentId(meta.agentId || tab.agentId),
-          sessionUser: sanitizeSessionUser(meta.sessionUser || tab.sessionUser),
+          sessionUser: sanitizeSessionUser(meta.sessionUser || tab.sessionUser, meta.agentId || tab.agentId),
           model: String(meta.model || "").trim(),
           fastMode: Boolean(meta.fastMode),
           thinkMode: typeof meta.thinkMode === "string" ? meta.thinkMode : "off",
@@ -601,7 +711,7 @@ function buildKnownTabs(parsed: any, chatTabs: ChatTab[], fallbackAgentId: strin
       {
         id: tab.id,
         agentId: normalizeAgentId(tab.agentId || fallbackAgentId),
-        sessionUser: sanitizeSessionUser(tab.sessionUser || fallbackSessionUser),
+        sessionUser: sanitizeSessionUser(tab.sessionUser || fallbackSessionUser, tab.agentId || fallbackAgentId),
       },
     ]),
   );
@@ -622,7 +732,7 @@ function buildKnownTabs(parsed: any, chatTabs: ChatTab[], fallbackAgentId: strin
     knownTabs.set(id, {
       id,
       agentId,
-      sessionUser: sanitizeSessionUser(sessionUser),
+      sessionUser: sanitizeSessionUser(sessionUser, agentId),
     });
   };
 
@@ -683,7 +793,7 @@ function loadParsedStorageState(raw: string | null): StoredUiState | null {
     thinkMode: typeof parsed?.thinkMode === "string" ? parsed.thinkMode : "off",
     model: parsed?.model || "",
     agentId: activeTab?.agentId || fallbackAgentId || "main",
-    sessionUser: activeTab?.sessionUser || fallbackSessionUser || defaultSessionUser,
+    sessionUser: sanitizeSessionUser(activeTab?.sessionUser || fallbackSessionUser || defaultSessionUser, activeTab?.agentId || fallbackAgentId || "main"),
     inspectorPanelWidth: sanitizeInspectorPanelWidth(parsed?.inspectorPanelWidth),
     chatFontSize: resolveStoredChatFontSize(parsed),
     composerSendMode: sanitizeComposerSendMode(parsed?.composerSendMode),
@@ -746,7 +856,7 @@ export function persistUiStateSnapshot(
       thinkMode: typeof state.thinkMode === "string" ? state.thinkMode : "off",
       model: String(state.model || "").trim(),
       agentId: String(state.agentId || "main").trim() || "main",
-      sessionUser: sanitizeSessionUser(state.sessionUser || defaultSessionUser),
+      sessionUser: sanitizeSessionUser(state.sessionUser || defaultSessionUser, state.agentId || "main"),
       tabMetaById: sanitizeTabMetaMap(state.tabMetaById, sanitizeChatTabs(state.chatTabs, state.sessionUser, state.agentId)),
       promptDraftsByConversation: sanitizePromptDraftsMap(state.promptDraftsByConversation),
       workspaceFilesOpenByConversation: sanitizeBooleanMap(state.workspaceFilesOpenByConversation),
@@ -761,7 +871,7 @@ export function persistUiStateSnapshot(
         pendingChatStorageKey,
         JSON.stringify({
           _persistedAt: persistedAt,
-          pendingChatTurns: state.pendingChatTurns,
+          pendingChatTurns: sanitizePendingChatTurnsMap(state.pendingChatTurns),
         }),
       );
     }
@@ -782,21 +892,7 @@ export function loadStoredPromptHistory(): Record<string, string[]> {
     const raw = window.localStorage.getItem(promptHistoryStorageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      return {};
-    }
-
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([, value]) => Array.isArray(value))
-        .map(([key, value]) => [
-          key,
-          (value as unknown[])
-            .map((item) => String(item || "").trim())
-            .filter(Boolean)
-            .slice(-promptHistoryLimit),
-        ]),
-    );
+    return sanitizePromptHistoryMap(parsed);
   } catch {
     return {};
   }
@@ -822,9 +918,9 @@ export function loadPendingChatTurns() {
       return {};
     }
     if (parsed.pendingChatTurns && typeof parsed.pendingChatTurns === "object") {
-      return parsed.pendingChatTurns;
+      return sanitizePendingChatTurnsMap(parsed.pendingChatTurns);
     }
-    return parsed;
+    return sanitizePendingChatTurnsMap(parsed);
   } catch {
     return {};
   }
@@ -892,7 +988,8 @@ export function persistChatScrollTops(value: Record<string, ChatScrollState | nu
 }
 
 export function createConversationKey(sessionUser = defaultSessionUser, agentId = "main") {
-  return `${sessionUser}:${agentId}`;
+  const normalizedAgentId = normalizeAgentId(agentId);
+  return `${sanitizeSessionUser(sessionUser, normalizedAgentId)}:${normalizedAgentId}`;
 }
 
 export function appendPromptHistory(historyMap: Record<string, string[]>, key: string, prompt: string) {
@@ -1521,6 +1618,80 @@ export function derivePendingEntryFromLocalMessages(localMessages: ChatMessage[]
       ...(pendingUser.attachments?.length ? { attachments: pendingUser.attachments } : {}),
     },
   };
+}
+
+function toPendingUserMessage(message: ChatMessage | null = null) {
+  if (!message || message?.role !== "user") {
+    return null;
+  }
+
+  const content = String(message.content || "");
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments.map((attachment) => ({ ...attachment }))
+    : [];
+  if (!content && !attachments.length) {
+    return null;
+  }
+
+  const nextMessage = {
+    role: "user" as const,
+    content,
+    ...(message.id ? { id: message.id } : {}),
+    ...(Number.isFinite(Number(message.timestamp)) ? { timestamp: Number(message.timestamp) } : {}),
+    ...(attachments.length ? { attachments } : {}),
+  };
+
+  return nextMessage;
+}
+
+export function resolveRuntimePendingEntry({
+  agentId = "main",
+  conversationKey = "",
+  conversationMessages = [],
+  localMessages = [],
+  pendingChatTurns = {},
+  sessionStatus = "",
+  sessionUser = "",
+}: {
+  agentId?: string;
+  conversationKey?: string;
+  conversationMessages?: ChatMessage[];
+  localMessages?: ChatMessage[];
+  pendingChatTurns?: Record<string, PendingChatTurn>;
+  sessionStatus?: unknown;
+  sessionUser?: string;
+} = {}) {
+  const trackedPendingEntry = (
+    pendingChatTurns?.[conversationKey]
+    || derivePendingEntryFromLocalMessages(localMessages)
+    || null
+  );
+  if (trackedPendingEntry) {
+    return trackedPendingEntry;
+  }
+
+  if (!isImSessionUser(sessionUser) || !["running", "dispatching"].includes(normalizeStatusKey(sessionStatus))) {
+    return null;
+  }
+
+  const sourceMessages = Array.isArray(conversationMessages) && conversationMessages.length
+    ? conversationMessages
+    : localMessages;
+  const latestMessage = sourceMessages[sourceMessages.length - 1] || null;
+  const pendingUserMessage = toPendingUserMessage(latestMessage);
+  if (!pendingUserMessage) {
+    return null;
+  }
+
+  const startedAt = Number(pendingUserMessage.timestamp || Date.now());
+  return {
+    ...(conversationKey ? { key: conversationKey } : {}),
+    ...(agentId ? { agentId: normalizeAgentId(agentId) } : {}),
+    ...(sessionUser ? { sessionUser: String(sessionUser).trim() } : {}),
+    startedAt,
+    pendingTimestamp: startedAt,
+    userMessage: pendingUserMessage,
+  } satisfies PendingChatTurn;
 }
 
 export function mergePendingConversation(

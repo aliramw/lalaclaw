@@ -1,6 +1,7 @@
 import { Children, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, Copy, X } from "lucide-react";
+import "katex/dist/katex.min.css";
 import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
@@ -85,7 +86,6 @@ let mermaidLibraryPromise: Promise<any> | null = null;
 let remarkGfmLibraryPromise: Promise<any> | null = null;
 let remarkMathLibraryPromise: Promise<any> | null = null;
 let rehypeKatexLibraryPromise: Promise<any> | null = null;
-let katexCssPromise: Promise<unknown> | null = null;
 const streamingMarkdownImageNodeCache = new Map<string, HTMLImageElement>();
 
 function contentNeedsGfmPlugin(content = "") {
@@ -135,14 +135,6 @@ async function loadRehypeKatex() {
   }
 
   return rehypeKatexLibraryPromise;
-}
-
-async function loadKatexCss() {
-  if (!katexCssPromise) {
-    katexCssPromise = import("katex/dist/katex.min.css");
-  }
-
-  return katexCssPromise;
 }
 
 function stabilizeMermaidTooltips() {
@@ -995,7 +987,6 @@ export default function MarkdownRenderer({
         const [remarkMathPlugin, rehypeKatexPlugin] = await Promise.all([
           loadRemarkMath(),
           loadRehypeKatex(),
-          loadKatexCss(),
         ]);
         remarkPlugins.push(remarkMathPlugin);
         rehypePlugins.push(rehypeKatexPlugin);

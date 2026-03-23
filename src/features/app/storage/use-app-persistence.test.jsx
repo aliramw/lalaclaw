@@ -179,7 +179,9 @@ describe("useAppPersistence", () => {
       _persistedAt: expect.any(Number),
       pendingChatTurns: {
         "command-center:main": {
+          agentId: "main",
           key: "command-center:main",
+          sessionUser: "command-center",
         },
       },
     });

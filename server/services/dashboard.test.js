@@ -49,7 +49,7 @@ describe("createDashboardService", () => {
     fs.mkdirSync(sessionsDir, { recursive: true });
 
     const sessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
-    const sessionKey = `agent:main:openai-user:${sessionUser}`;
+    const sessionKey = "agent:main:dingtalk-connector:direct:398058";
     const sessionRecord = {
       updatedAt: 1773722999708,
       sessionId: "missing-session-id",
@@ -120,7 +120,7 @@ describe("createDashboardService", () => {
       fetchBrowserPeek: async () => ({ summary: "", items: [] }),
       formatTokenBadge: () => "",
       formatTimestamp: (value) => String(value),
-      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => String(nextSessionUser || "").startsWith("agent:") ? nextSessionUser : sessionKey,
       getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
       getLocalSessionFileEntries: () => [],
       getLocalSessionConversation: () => [],
@@ -146,7 +146,7 @@ describe("createDashboardService", () => {
 
     const snapshot = await dashboard.buildDashboardSnapshot(sessionUser, { agentId: "main" });
 
-    expect(snapshot.session.sessionUser).toBe(sessionUser);
+    expect(snapshot.session.sessionUser).toBe(sessionKey);
     expect(snapshot.conversation).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: "user", content: "你你你" }),
@@ -162,7 +162,7 @@ describe("createDashboardService", () => {
     fs.mkdirSync(sessionsDir, { recursive: true });
 
     const sessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
-    const sessionKey = `agent:main:openai-user:${sessionUser}`;
+    const sessionKey = "agent:main:dingtalk-connector:direct:398058";
     const sessionRecord = {
       updatedAt: 1773722999708,
       sessionId: "missing-session-id",
@@ -224,7 +224,7 @@ describe("createDashboardService", () => {
       fetchBrowserPeek: async () => ({ summary: "", items: [] }),
       formatTokenBadge: () => "",
       formatTimestamp: (value) => String(value),
-      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => String(nextSessionUser || "").startsWith("agent:") ? nextSessionUser : sessionKey,
       getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
       getLocalSessionFileEntries: () => [],
       getLocalSessionConversation: () => [],
@@ -789,6 +789,114 @@ describe("createDashboardService", () => {
     const snapshot = await dashboard.buildDashboardSnapshot(bootstrapSessionUser, { agentId: "main" });
 
     expect(snapshot.session.sessionUser).toBe(nativeGroupSessionUser);
+  });
+
+  it("resolves bootstrap Weixin runtime requests to the latest real Weixin session", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-weixin-bootstrap-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const bootstrapSessionUser = "openclaw-weixin:direct:default";
+    const nativeDefaultSessionUser = "agent:main:openclaw-weixin:direct:default";
+    const nativeSessionUser = "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat";
+    const nativeSessionRecord = {
+      updatedAt: 1774255203918,
+      sessionId: "weixin-native-session-id",
+    };
+    const defaultSessionRecord = {
+      updatedAt: 1774251203918,
+      sessionId: "weixin-default-session-id",
+    };
+
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        [nativeSessionUser]: nativeSessionRecord,
+        [nativeDefaultSessionUser]: defaultSessionRecord,
+      }),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "weixin-native-session-id.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "weixin-native-session-id", timestamp: "2026-03-23T10:00:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-23T10:00:06.000Z",
+          message: {
+            role: "assistant",
+            timestamp: 1774255206000,
+            content: [{ type: "text", text: "微信里最新一条" }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "weixin-default-session-id.jsonl"),
+      JSON.stringify({ type: "session", id: "weixin-default-session-id", timestamp: "2026-03-23T09:00:00.000Z" }),
+      "utf8",
+    );
+
+    const projector = buildTestTranscriptProjector(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: projector.collectConversationMessages,
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: { mode: "openclaw", workspaceRoot: rootDir, model: "openai-codex/gpt-5.4", localConfig: {} },
+      extractTextSegments: projector.extractTextSegments,
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (agentId, nextSessionUser) => String(nextSessionUser || "").startsWith("agent:") ? nextSessionUser : `agent:${agentId}:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: projector.getTranscriptEntriesForSession,
+      getTranscriptPath: projector.getTranscriptPath,
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: projector.listImSessionsForAgent,
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: projector.readJsonLines,
+      readTextIfExists: (filePath) => (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""),
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: (_agentId, sessionKey) => {
+        const sessions = {
+          [nativeSessionUser]: nativeSessionRecord,
+          [nativeDefaultSessionUser]: defaultSessionRecord,
+        };
+        return sessions[sessionKey] || null;
+      },
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot(bootstrapSessionUser, { agentId: "main" });
+
+    expect(snapshot.session.sessionUser).toBe(nativeSessionUser);
   });
 
   it("includes runtime hub debug info in the environment peek", async () => {

@@ -26,6 +26,10 @@ import {
 import { isOfflineStatus } from "@/features/session/status-display";
 import { useI18n } from "@/lib/i18n";
 import { getImSessionDisplayName, resolveImSessionType } from "@/features/session/im-session";
+import dingtalkLogoMarkup from "@/assets/im-logos/im-logo-dingtalk.svg?raw";
+import feishuLogoMarkup from "@/assets/im-logos/im-logo-feishu.svg?raw";
+import wecomLogoMarkup from "@/assets/im-logos/im-logo-wecom.svg?raw";
+import weixinLogoMarkup from "@/assets/im-logos/im-logo-weixin.svg?raw";
 
 type SessionOverviewSession = {
   agentId?: string;
@@ -200,19 +204,16 @@ const OCTOPUS_WIDTH_SQUASH_SCALE = 0.1;
 const OCTOPUS_BREATH_CYCLE_MS = 1500;
 const IM_PLATFORM_LOGOS = {
   "dingtalk-connector": {
-    fallbackLabel: "D",
-    imageClassName: "h-full w-full",
-    src: "/im-logo-dingtalk.svg",
+    markup: dingtalkLogoMarkup,
   },
   feishu: {
-    fallbackLabel: "F",
-    imageClassName: "h-full w-full",
-    src: "/im-logo-feishu.svg",
+    markup: feishuLogoMarkup,
   },
   wecom: {
-    fallbackLabel: "W",
-    imageClassName: "h-full w-full",
-    src: "/im-logo-wecom.svg",
+    markup: wecomLogoMarkup,
+  },
+  "openclaw-weixin": {
+    markup: weixinLogoMarkup,
   },
 };
 
@@ -2217,7 +2218,6 @@ function LobsterBrand({ compact = false, subtitle = "" }: { compact?: boolean; s
 
 function ImPlatformLogo({ channel }) {
   const brand = IM_PLATFORM_LOGOS[channel];
-  const [imageFailed, setImageFailed] = useState(false);
 
   if (!brand) {
     return null;
@@ -2226,22 +2226,12 @@ function ImPlatformLogo({ channel }) {
   return (
     <span
       aria-hidden="true"
+      data-im-logo={channel}
       className={cn(
-        "flex h-5 w-5 shrink-0 items-center justify-center self-center overflow-hidden rounded-[6px] bg-muted/65 text-[10px] font-semibold leading-none text-muted-foreground",
+        "flex h-5 w-5 shrink-0 items-center justify-center self-center overflow-hidden rounded-[6px] bg-muted/65 [&_svg]:h-full [&_svg]:w-full",
       )}
-    >
-      {imageFailed ? (
-        <span aria-hidden="true">{brand.fallbackLabel}</span>
-      ) : (
-        <img
-          alt=""
-          aria-hidden="true"
-          className={cn("h-full w-full object-contain", brand.imageClassName)}
-          src={brand.src}
-          onError={() => setImageFailed(true)}
-        />
-      )}
-    </span>
+      dangerouslySetInnerHTML={{ __html: brand.markup }}
+    />
   );
 }
 
@@ -2332,11 +2322,14 @@ export function SessionOverview({
       ? messages.sessionOverview.feishuSessionSearch
       : sessionSearchChannel === "wecom"
         ? messages.sessionOverview.wecomSessionSearch
+        : sessionSearchChannel === "openclaw-weixin"
+          ? messages.sessionOverview.weixinSessionSearch
         : messages.sessionOverview.sessionSearch
   ), [messages, sessionSearchChannel]);
   const dingTalkLabel = getImSessionDisplayName("dingtalk-connector", { locale: intlLocale });
   const feishuLabel = getImSessionDisplayName("feishu:direct:demo", { locale: intlLocale });
   const wecomLabel = getImSessionDisplayName("wecom:direct:demo", { locale: intlLocale, shortWecom: true });
+  const weixinLabel = getImSessionDisplayName("openclaw-weixin:direct:demo", { locale: intlLocale });
   const defaultModel = normalizedAvailableModels[0] || "";
   const getModelItemLabel = (modelId: string) => {
     const normalized = formatModelLabel(modelId);
@@ -2374,8 +2367,14 @@ export function SessionOverview({
         type: "wecom",
         enabled: availableImChannels == null || availableImChannels.wecom?.enabled !== false,
       },
+      {
+        channel: "openclaw-weixin",
+        label: weixinLabel,
+        type: "weixin",
+        enabled: availableImChannels == null || availableImChannels["openclaw-weixin"]?.enabled !== false,
+      },
     ].filter((item) => !normalizedOpenImChannels.has(item.type))
-  ), [availableImChannels, dingTalkLabel, feishuLabel, normalizedOpenImChannels, wecomLabel]);
+  ), [availableImChannels, dingTalkLabel, feishuLabel, normalizedOpenImChannels, wecomLabel, weixinLabel]);
   const handleImMenuSelect = useCallback((channel: string, suppressTooltip?: () => void) => {
     if (onOpenImSession) {
       suppressTooltip?.();

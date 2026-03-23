@@ -1,62 +1,55 @@
+import {
+  buildCanonicalImSessionUser,
+  createImBootstrapSessionUser as createSharedImBootstrapSessionUser,
+  getImSessionType as getSharedImSessionType,
+  isImBootstrapSessionUser as isSharedImBootstrapSessionUser,
+  isImSessionUser as isSharedImSessionUser,
+} from "@/lib/im-session-key";
+
 type ImDisplayNameOptions = {
   locale?: string;
   shortWecom?: boolean;
 };
 
 export function isDingTalkSessionUser(sessionUser: unknown = "") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  return normalizedSessionUser.startsWith('{"channel":"dingtalk-connector"')
-    || normalizedSessionUser.includes("dingtalk-connector");
+  return resolveImSessionType(sessionUser) === "dingtalk";
 }
 
 export function isFeishuSessionUser(sessionUser: unknown = "") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  return normalizedSessionUser.startsWith('{"channel":"feishu"')
-    || normalizedSessionUser.includes(":feishu:")
-    || normalizedSessionUser.startsWith("feishu:");
+  return resolveImSessionType(sessionUser) === "feishu";
 }
 
 export function isWecomSessionUser(sessionUser: unknown = "") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  return normalizedSessionUser.startsWith('{"channel":"wecom"')
-    || normalizedSessionUser.includes(":wecom:")
-    || normalizedSessionUser.startsWith("wecom:");
+  return resolveImSessionType(sessionUser) === "wecom";
+}
+
+export function isWeixinSessionUser(sessionUser: unknown = "") {
+  return resolveImSessionType(sessionUser) === "weixin";
 }
 
 export function resolveImSessionType(sessionUser: unknown = "") {
-  if (isDingTalkSessionUser(sessionUser)) {
+  const normalizedType = String(getSharedImSessionType(String(sessionUser || ""), { agentId: "main" }) || "").trim().toLowerCase();
+  if (normalizedType === "dingtalk") {
     return "dingtalk";
   }
-
-  if (isFeishuSessionUser(sessionUser)) {
+  if (normalizedType === "feishu") {
     return "feishu";
   }
-
-  if (isWecomSessionUser(sessionUser)) {
+  if (normalizedType === "wecom") {
     return "wecom";
   }
-
+  if (normalizedType === "weixin") {
+    return "weixin";
+  }
   return "";
 }
 
 export function isImSessionUser(sessionUser: unknown = "") {
-  return Boolean(resolveImSessionType(sessionUser));
+  return isSharedImSessionUser(String(sessionUser || ""), { agentId: "main" });
 }
 
 export function isImBootstrapSessionUser(sessionUser: unknown = "") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-
-  if (!normalizedSessionUser) {
-    return false;
-  }
-
-  return (
-    normalizedSessionUser === "dingtalk-connector"
-    || normalizedSessionUser === "feishu:direct:default"
-    || normalizedSessionUser === "wecom:direct:default"
-    || /^agent:[^:]+:feishu:[^:]+:default$/i.test(normalizedSessionUser)
-    || /^agent:[^:]+:wecom:[^:]+:default$/i.test(normalizedSessionUser)
-  );
+  return isSharedImBootstrapSessionUser(String(sessionUser || ""), { agentId: "main" });
 }
 
 export function getImSessionDisplayName(sessionUser: unknown = "", { locale = "zh", shortWecom = false }: ImDisplayNameOptions = {}) {
@@ -76,25 +69,14 @@ export function getImSessionDisplayName(sessionUser: unknown = "", { locale = "z
     }
     return shortWecom ? "企微" : "企业微信";
   }
+  if (type === "weixin") {
+    return useChineseLabels ? "微信" : "Weixin";
+  }
   return "";
 }
 
 export function createImBootstrapSessionUser(channel: unknown = "") {
-  const normalizedChannel = String(channel || "").trim();
-
-  if (normalizedChannel === "dingtalk-connector") {
-    return "dingtalk-connector";
-  }
-
-  if (normalizedChannel === "feishu") {
-    return "feishu:direct:default";
-  }
-
-  if (normalizedChannel === "wecom") {
-    return "wecom:direct:default";
-  }
-
-  return "";
+  return createSharedImBootstrapSessionUser(String(channel || ""));
 }
 
 export function createImRuntimeAnchorSessionUser(sessionUser: unknown = "") {
@@ -112,71 +94,19 @@ export function createImRuntimeAnchorSessionUser(sessionUser: unknown = "") {
     return createImBootstrapSessionUser("wecom");
   }
 
+  if (type === "weixin") {
+    return createImBootstrapSessionUser("openclaw-weixin");
+  }
+
   return "";
 }
 
-function stripImResetSuffix(value: unknown = "") {
-  return String(value || "").trim().replace(/:reset:[^:]+$/i, "");
-}
-
 export function createResetImSessionUser(sessionUser: unknown = "", resetAt = Date.now()) {
+  void resetAt;
   const normalizedSessionUser = String(sessionUser || "").trim();
-  const suffix = `:reset:${Number(resetAt) || Date.now()}`;
-
   if (!normalizedSessionUser) {
     return "";
   }
 
-  if (normalizedSessionUser.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(normalizedSessionUser);
-      if (String(parsed?.channel || "").trim() !== "dingtalk-connector") {
-        return normalizedSessionUser;
-      }
-
-      const peerKey = [
-        "peerid",
-        "peerId",
-        "groupid",
-        "groupId",
-        "conversationid",
-        "conversationId",
-      ].find((key) => String(parsed?.[key] || "").trim());
-
-      if (!peerKey) {
-        return normalizedSessionUser;
-      }
-
-      return JSON.stringify({
-        ...parsed,
-        [peerKey]: `${stripImResetSuffix(parsed[peerKey])}${suffix}`,
-      });
-    } catch {
-      return normalizedSessionUser;
-    }
-  }
-
-  const feishuMatch = normalizedSessionUser.match(/^agent:([^:]+):feishu:([^:]+):(.+)$/);
-  if (feishuMatch) {
-    const chatType = String(feishuMatch[2] || "").trim();
-    const peerId = stripImResetSuffix(feishuMatch[3]);
-    if (!chatType || !peerId) {
-      return normalizedSessionUser;
-    }
-
-    return `feishu:${chatType}:${peerId}${suffix}`;
-  }
-
-  const wecomMatch = normalizedSessionUser.match(/^agent:([^:]+):wecom:([^:]+):(.+)$/);
-  if (wecomMatch) {
-    const chatType = String(wecomMatch[2] || "").trim();
-    const peerId = stripImResetSuffix(wecomMatch[3]);
-    if (!chatType || !peerId) {
-      return normalizedSessionUser;
-    }
-
-    return `wecom:${chatType}:${peerId}${suffix}`;
-  }
-
-  return normalizedSessionUser;
+  return buildCanonicalImSessionUser(normalizedSessionUser, { agentId: "main" }) || normalizedSessionUser;
 }

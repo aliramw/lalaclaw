@@ -49,6 +49,7 @@ import {
   getOpenClawOnboardingSecretModeOptions,
   getOpenClawUpdateOutcome,
   getOpenClawUpdateOutcomeBadgeProps,
+  getOfficialOpenClawDocUrl,
   isOpenClawDiagnosticItem,
   isAbsoluteFileSystemPath,
   isLalaClawEnvironmentItem,
@@ -411,10 +412,10 @@ export function LalaClawPanel({
   const currentVersion = shouldPreferWorkspaceVersion
     ? workspaceVersion
     : (installedVersion || messages.inspector.lalaclawUpdate.emptyValue);
-  const targetVersion = state?.targetRelease?.version || "";
+  const targetVersion = String(state?.availability?.latestVersion || state?.targetRelease?.version || "").trim();
   const currentStable = !shouldPreferWorkspaceVersion && Boolean(state?.currentRelease?.stable);
   const targetStable = Boolean(state?.targetRelease?.stable);
-  const updateAvailable = Boolean(state?.updateAvailable);
+  const updateAvailable = state?.availability?.available === true || Boolean(state?.updateAvailable);
   const jobActive = Boolean(state?.job?.active);
   const capabilitySupported = state?.capability?.updateSupported !== false;
   const panelError = error || (state?.job?.status === "failed" ? state?.job?.error : "") || (!state?.check?.ok ? state?.check?.error : "");
@@ -479,7 +480,7 @@ export function LalaClawPanel({
               )}
             </div>
             {targetVersion ? (
-              <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+              <div className="mt-3 grid gap-0.5">
                 <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                   {messages.inspector.lalaclawUpdate.labels.targetVersion}
                 </div>
@@ -1717,6 +1718,7 @@ function OpenClawUpdatePanel({
   busy = false,
   error = "",
   loading = false,
+  locale = "en",
   messages,
   onOpenRemoteGuide,
   onOpenTroubleshooting,
@@ -1730,6 +1732,7 @@ function OpenClawUpdatePanel({
   busy?: boolean;
   error?: string;
   loading?: boolean;
+  locale?: string;
   messages: InspectorMessages;
   onOpenRemoteGuide?: () => void;
   onOpenTroubleshooting?: (entry: OpenClawUpdateHelpEntry) => void;
@@ -1743,12 +1746,13 @@ function OpenClawUpdatePanel({
   const outcome = result ? getOpenClawUpdateOutcome(result) : "";
   const outcomeBadge = getOpenClawUpdateOutcomeBadgeProps(outcome);
   const installed = Boolean(state?.installed);
-  const availability = state?.availability;
-  const shouldShowRunAction = Boolean(state) && (!installed || Boolean(availability?.available));
+  const actionableTargetVersion = String(state?.targetVersion || "").trim();
+  const hasActionableUpdate = Boolean(actionableTargetVersion);
+  const shouldShowRunAction = Boolean(state) && (!installed || hasActionableUpdate);
   const previewActions = Array.isArray(state?.preview?.actions) ? state.preview.actions : [];
   const runButtonLabel = installed ? messages.inspector.openClawUpdate.runUpdate : messages.inspector.openClawUpdate.runInstall;
   const runningLabel = installed ? messages.inspector.openClawUpdate.running : messages.inspector.openClawUpdate.installing;
-  const troubleshootingEntries = buildOpenClawUpdateTroubleshootingEntries(result, messages) as InspectorTroubleshootingEntry[];
+  const troubleshootingEntries = buildOpenClawUpdateTroubleshootingEntries(result, messages, locale) as InspectorTroubleshootingEntry[];
 
   return (
     <div className={showTitle ? "grid gap-2" : "grid"}>
@@ -1767,15 +1771,15 @@ function OpenClawUpdatePanel({
             installed ? (
               <div className="grid gap-2 rounded-2xl border border-border/70 bg-background/80 px-3 py-3 text-[12px] leading-5 text-foreground">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={availability?.available ? "secondary" : "success"} className="px-2 py-0.5 text-[11px] leading-5">
-                    {availability?.available ? messages.inspector.openClawUpdate.statuses.updateAvailable : messages.inspector.openClawUpdate.statuses.upToDate}
+                  <Badge variant={hasActionableUpdate ? "secondary" : "success"} className="px-2 py-0.5 text-[11px] leading-5">
+                    {hasActionableUpdate ? messages.inspector.openClawUpdate.statuses.updateAvailable : messages.inspector.openClawUpdate.statuses.upToDate}
                   </Badge>
                   <span className="text-muted-foreground">
                     {messages.inspector.openClawUpdate.labels.currentVersion}: {state.currentVersion || messages.inspector.openClawUpdate.emptyValue}
                   </span>
-                  {state.targetVersion ? (
+                  {hasActionableUpdate ? (
                     <span className="text-muted-foreground">
-                      {messages.inspector.openClawUpdate.labels.targetVersion}: {state.targetVersion}
+                      {messages.inspector.openClawUpdate.labels.targetVersion}: {actionableTargetVersion}
                     </span>
                   ) : null}
                 </div>
@@ -1784,7 +1788,7 @@ function OpenClawUpdatePanel({
                   <div>{messages.inspector.openClawUpdate.labels.channel}: {state.channel?.label || state.channel?.value || messages.inspector.openClawUpdate.emptyValue}</div>
                   <div>{messages.inspector.openClawUpdate.labels.packageManager}: {state.update?.packageManager || messages.inspector.openClawUpdate.emptyValue}</div>
                 </div>
-                {previewActions.length ? (
+                {hasActionableUpdate && previewActions.length ? (
                   <div>
                     <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                       {messages.inspector.openClawUpdate.labels.preview}
@@ -1807,7 +1811,7 @@ function OpenClawUpdatePanel({
                 <div className="text-muted-foreground">{messages.inspector.openClawUpdate.notInstalledDescription}</div>
                 {state.installGuidance?.docsUrl ? (
                   <a
-                    href={state.installGuidance.docsUrl}
+                    href={getOfficialOpenClawDocUrl("install", locale)}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex w-fit items-center gap-1 text-[12px] font-medium text-primary underline-offset-4 hover:underline"
@@ -2180,10 +2184,12 @@ function OpenClawOperationHistoryPanel({
 }
 
 function OpenClawRemoteRecoveryDialog({
+  locale = "en",
   messages,
   onClose,
   open = false,
 }: {
+  locale?: string;
   messages: InspectorMessages;
   onClose: () => void;
   open?: boolean;
@@ -2193,7 +2199,7 @@ function OpenClawRemoteRecoveryDialog({
   }
 
   const docs = [
-    { key: "install", href: OFFICIAL_OPENCLAW_DOC_URLS.install, label: messages.inspector.remoteOperations.docs.install },
+    { key: "install", href: getOfficialOpenClawDocUrl("install", locale), label: messages.inspector.remoteOperations.docs.install },
     { key: "doctor", href: OFFICIAL_OPENCLAW_DOC_URLS.doctor, label: messages.inspector.remoteOperations.docs.doctor },
     { key: "troubleshooting", href: OFFICIAL_OPENCLAW_DOC_URLS.troubleshooting, label: messages.inspector.remoteOperations.docs.troubleshooting },
   ];
@@ -3213,6 +3219,7 @@ function EnvironmentTab({
   history = null,
   items = [],
   lalaclawFlow = null,
+  locale = "en",
   management = null,
   messages,
   onboarding = null,
@@ -3225,6 +3232,7 @@ function EnvironmentTab({
   history?: InspectorHistoryFlow;
   items?: InspectorPanelItem[];
   lalaclawFlow?: InspectorEnvironmentFlow;
+  locale?: string;
   management?: InspectorManagementFlow;
   messages: InspectorMessages;
   onboarding?: InspectorOnboardingFlow;
@@ -3251,6 +3259,8 @@ function EnvironmentTab({
         <InspectorHint text={messages.inspector.empty.environment} />
         {lalaclawFlow?.enabled ? (
           <EnvironmentSectionCard
+            alertDot={Boolean(lalaclawFlow.state?.updateAvailable)}
+            alertTestId="environment-section-alert-lalaclaw-update"
             defaultOpen={Boolean(lalaclawFlow.defaultOpen)}
             forceOpen={Boolean(lalaclawFlow.forceOpen)}
             label={messages.inspector.lalaclawUpdate.title}
@@ -3324,6 +3334,8 @@ function EnvironmentTab({
         ) : null}
         {updateFlow?.enabled ? (
           <EnvironmentSectionCard
+            alertDot={Boolean(String(updateFlow.state?.targetVersion || "").trim())}
+            alertTestId="environment-section-alert-openclaw-update"
             label={messages.inspector.openClawUpdate.title}
             messages={messages}
             wrapContent={false}
@@ -3332,6 +3344,7 @@ function EnvironmentTab({
               busy={updateFlow.busy}
               error={updateFlow.error}
               loading={updateFlow.loading}
+              locale={locale}
               messages={messages}
               onOpenRemoteGuide={onOpenRemoteGuide}
               onOpenTroubleshooting={updateFlow.onOpenTroubleshooting}
@@ -3517,7 +3530,7 @@ export function InspectorPanel({
   void agents;
   void renderPeek;
   void snapshots;
-  const { messages } = useI18n();
+  const { locale, messages } = useI18n();
   const { filePreview, imagePreview, handleOpenPreview, closeFilePreview, closeImagePreview } = useFilePreview();
   const tabsListRef = useRef<HTMLDivElement | null>(null);
   const [showTabLabels, setShowTabLabels] = useState(true);
@@ -3648,7 +3661,12 @@ export function InspectorPanel({
     { key: "files", icon: FolderOpen, label: messages.inspector.tabs.files, count: files.length },
     { key: "artifacts", icon: FileText, label: messages.inspector.tabs.artifacts },
     { key: "timeline", icon: Hammer, label: messages.inspector.tabs.timeline },
-    { key: "environment", icon: Monitor, label: messages.inspector.tabs.environment, alertDot: Boolean(lalaclawUpdateState?.updateAvailable) },
+    {
+      key: "environment",
+      icon: Monitor,
+      label: messages.inspector.tabs.environment,
+      alertDot: Boolean(lalaclawUpdateState?.updateAvailable || String(openClawUpdateState?.targetVersion || "").trim()),
+    },
   ];
 
   useEffect(() => {
@@ -3839,6 +3857,7 @@ export function InspectorPanel({
         values: openClawConfigValues,
       }}
       items={environmentSection.items}
+      locale={locale}
       management={{
         enabled: hasOpenClawDiagnostics,
         actionIntent: openClawActionIntent,
@@ -3991,6 +4010,7 @@ export function InspectorPanel({
           onClose={() => setOpenClawUpdateHelpEntry(null)}
         />
         <OpenClawRemoteRecoveryDialog
+          locale={locale}
           messages={messages}
           onClose={() => setOpenClawRemoteGuideOpen(false)}
           open={openClawRemoteGuideOpen}
@@ -4155,6 +4175,7 @@ export function InspectorPanel({
         onClose={() => setOpenClawUpdateHelpEntry(null)}
       />
       <OpenClawRemoteRecoveryDialog
+        locale={locale}
         messages={messages}
         onClose={() => setOpenClawRemoteGuideOpen(false)}
         open={openClawRemoteGuideOpen}

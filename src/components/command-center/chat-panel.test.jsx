@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
@@ -28,7 +29,7 @@ function MentionHarness({
   initialPrompt = "",
   sessionOverrides = {},
 }) {
-  const [prompt, setPrompt] = useState(initialPrompt);
+  const [prompt, setPrompt] = React.useState(initialPrompt);
 
   return (
     <TooltipProvider>
@@ -53,8 +54,8 @@ function QueuedMessagesHarness({
   initialPrompt = "",
   initialQueuedMessages = [],
 }) {
-  const [prompt, setPrompt] = useState(initialPrompt);
-  const [queuedMessages, setQueuedMessages] = useState(initialQueuedMessages);
+  const [prompt, setPrompt] = React.useState(initialPrompt);
+  const [queuedMessages, setQueuedMessages] = React.useState(initialQueuedMessages);
 
   const handleRemoveQueuedMessage = (entryId) => {
     setQueuedMessages((current) => current.filter((item) => item.id !== entryId));
@@ -98,7 +99,7 @@ function QueuedMessagesHarness({
 }
 
 function VoiceInputHarness() {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = React.useState("");
 
   return (
     <TooltipProvider>
@@ -329,6 +330,30 @@ describe("ChatPanel", () => {
     expect(onPromptChange).toHaveBeenCalled();
     expect(onReset).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows loading session state before the empty conversation placeholder resolves", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("加载会话中...")).toBeInTheDocument();
+    expect(screen.queryByText("等待第一条指令")).not.toBeInTheDocument();
   });
 
   it("renders the queued strip above the composer with compact edit and delete actions", () => {
@@ -1903,7 +1928,7 @@ describe("ChatPanel", () => {
     );
   });
 
-  it("renders IM tab agent-name with muted color", () => {
+  it("renders IM tabs with platform logo and without the trailing agent name", () => {
     render(
       <TooltipProvider>
         <ChatTabsStrip
@@ -1921,13 +1946,38 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const tabButton = screen.getByRole("button", { name: "钉钉 main" });
-    const agentNameLabel = Array.from(tabButton.querySelectorAll("span")).find(
-      (node) => node.textContent === "main" && node.className.includes("text-muted-foreground"),
+    const tabButton = screen.getByText("钉钉").closest("button");
+
+    expect(tabButton).toBeTruthy();
+    expect(tabButton).toHaveTextContent("钉钉");
+    expect(tabButton).not.toHaveTextContent("钉钉 main");
+    expect(tabButton.querySelector('[data-im-logo="dingtalk-connector"]')).not.toBeNull();
+  });
+
+  it("uses a brighter IM logo chip for the active IM tab", () => {
+    render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            {
+              id: "agent:main::wecom",
+              agentId: "main",
+              active: true,
+              busy: false,
+              title: "企微 main",
+              sessionUser: "agent:main:wecom:direct:marila",
+            },
+          ]}
+        />
+      </TooltipProvider>,
     );
 
-    expect(agentNameLabel).toBeTruthy();
-    expect(agentNameLabel).toHaveClass("text-[11px]");
+    expect(screen.getByRole("button", { name: "企微" }).querySelector('[data-im-logo="wecom"]')).toHaveClass(
+      "h-[18px]",
+      "w-[18px]",
+      "bg-white",
+      "border-white/55",
+    );
   });
 
   it("keeps the tab rail at a stable height during drag interactions", () => {
@@ -2592,6 +2642,36 @@ describe("ChatPanel", () => {
 
     expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
     expect(screen.queryByText("待命")).not.toBeInTheDocument();
+  });
+
+  it("does not attach streaming tail dots to the previous assistant bubble when an IM turn currently ends on a user message", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "assistant", content: "在。你说。", timestamp: 1 },
+            { role: "user", content: "菠菜", timestamp: 2 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({
+            sessionUser: "agent:main:openclaw-weixin:direct:marila",
+            status: "运行中",
+          })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    expect(container.querySelector('[data-streaming-tail-dots="true"]')).toBeNull();
   });
 
   it("keeps the latest streaming assistant bubble in full layout without reusing the pending card style", () => {

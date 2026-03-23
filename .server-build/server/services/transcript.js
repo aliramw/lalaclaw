@@ -7,6 +7,7 @@ exports.createTranscriptProjector = createTranscriptProjector;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
+const { buildCanonicalImSessionUser } = require('../../shared/im-session-key.cjs');
 const { stripMarkdownForDisplay } = require('../../shared/strip-markdown-for-display.cjs');
 function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, fileExists, readJsonIfExists, readTextIfExists, normalizeThinkMode, parseCompactNumber, parseTokenDisplay, formatTokenBadge, clip, formatTimestamp, }) {
     const TRANSIENT_USER_REPLAY_WINDOW_MS = 10 * 60 * 1000;
@@ -1432,10 +1433,11 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
         const openAiUserPrefix = `agent:${normalizedAgentId}:openai-user:`;
         const normalizedSessionKey = String(sessionKey || '').trim();
         if (normalizedSessionKey.startsWith(openAiUserPrefix)) {
-            return normalizedSessionKey.slice(openAiUserPrefix.length).trim();
+            const rawSessionUser = normalizedSessionKey.slice(openAiUserPrefix.length).trim();
+            return buildCanonicalImSessionUser(rawSessionUser, { agentId: normalizedAgentId }) || rawSessionUser;
         }
         const nativeSessionIdentity = parseNativeChannelSessionKey(normalizedAgentId, normalizedSessionKey);
-        if (['feishu', 'wecom'].includes(String(nativeSessionIdentity?.channel || '').trim())) {
+        if (['dingtalk-connector', 'feishu', 'wecom', 'openclaw-weixin'].includes(String(nativeSessionIdentity?.channel || '').trim())) {
             return normalizedSessionKey;
         }
         return '';
@@ -1485,21 +1487,29 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
         if (!normalizedValue) {
             return '';
         }
-        return normalizedValue.replace(/^(?:user|group|channel|wecom):/i, '').trim();
+        return normalizedValue.replace(/^(?:user|group|channel|wecom|weixin|wechat|openclaw-weixin):/i, '').trim();
     }
     function buildSessionSearchMetadata(entry = {}) {
+        const normalizedAgentId = String(entry.agentId || config.agentId || 'main').trim() || 'main';
+        const openAiUserPrefix = `agent:${normalizedAgentId}:openai-user:`;
+        const rawOpenAiSessionUser = String(entry.sessionKey || '').startsWith(openAiUserPrefix)
+            ? String(entry.sessionKey || '').slice(openAiUserPrefix.length).trim()
+            : '';
+        const parsedKeySerializedSessionIdentity = parseSerializedSessionIdentity(rawOpenAiSessionUser);
         const parsedSerializedSessionIdentity = parseSerializedSessionIdentity(entry.sessionUser);
         const parsedNativeSessionIdentity = parseNativeChannelSessionKey(entry.agentId, entry.sessionUser);
-        const parsedSessionIdentity = parsedSerializedSessionIdentity || parsedNativeSessionIdentity;
+        const parsedSessionIdentity = parsedSerializedSessionIdentity || parsedKeySerializedSessionIdentity || parsedNativeSessionIdentity;
         const displaySessionUser = parsedSerializedSessionIdentity
             ? formatSerializedSessionIdentity(parsedSerializedSessionIdentity, entry.sessionUser)
-            : parsedNativeSessionIdentity
-                ? [
-                    parsedNativeSessionIdentity.channel,
-                    parsedNativeSessionIdentity.chattype,
-                    parsedNativeSessionIdentity.peerid,
-                ].filter(Boolean).join(':')
-                : String(entry.sessionUser || '').trim();
+            : parsedKeySerializedSessionIdentity
+                ? formatSerializedSessionIdentity(parsedKeySerializedSessionIdentity, entry.sessionUser)
+                : parsedNativeSessionIdentity
+                    ? [
+                        parsedNativeSessionIdentity.channel,
+                        parsedNativeSessionIdentity.chattype,
+                        parsedNativeSessionIdentity.peerid,
+                    ].filter(Boolean).join(':')
+                    : String(entry.sessionUser || '').trim();
         const friendlySessionLabel = formatFriendlySessionLabel(String(parsedSessionIdentity?.groupname
             || parsedSessionIdentity?.sendername
             || parsedSessionIdentity?.peername

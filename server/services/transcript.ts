@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+const { buildCanonicalImSessionUser } = require('../../shared/im-session-key.cjs');
 const { stripMarkdownForDisplay } = require('../../shared/strip-markdown-for-display.cjs');
 
 type LooseRecord = Record<string, any>;
@@ -1863,11 +1864,12 @@ export function createTranscriptProjector({
     const openAiUserPrefix = `agent:${normalizedAgentId}:openai-user:`;
     const normalizedSessionKey = String(sessionKey || '').trim();
     if (normalizedSessionKey.startsWith(openAiUserPrefix)) {
-      return normalizedSessionKey.slice(openAiUserPrefix.length).trim();
+      const rawSessionUser = normalizedSessionKey.slice(openAiUserPrefix.length).trim();
+      return buildCanonicalImSessionUser(rawSessionUser, { agentId: normalizedAgentId }) || rawSessionUser;
     }
 
     const nativeSessionIdentity = parseNativeChannelSessionKey(normalizedAgentId, normalizedSessionKey);
-    if (['feishu', 'wecom'].includes(String(nativeSessionIdentity?.channel || '').trim())) {
+    if (['dingtalk-connector', 'feishu', 'wecom', 'openclaw-weixin'].includes(String(nativeSessionIdentity?.channel || '').trim())) {
       return normalizedSessionKey;
     }
 
@@ -1929,15 +1931,23 @@ export function createTranscriptProjector({
       return '';
     }
 
-    return normalizedValue.replace(/^(?:user|group|channel|wecom):/i, '').trim();
+    return normalizedValue.replace(/^(?:user|group|channel|wecom|weixin|wechat|openclaw-weixin):/i, '').trim();
   }
 
   function buildSessionSearchMetadata(entry: LooseRecord = {}): SessionSearchMetadata {
+    const normalizedAgentId = String(entry.agentId || config.agentId || 'main').trim() || 'main';
+    const openAiUserPrefix = `agent:${normalizedAgentId}:openai-user:`;
+    const rawOpenAiSessionUser = String(entry.sessionKey || '').startsWith(openAiUserPrefix)
+      ? String(entry.sessionKey || '').slice(openAiUserPrefix.length).trim()
+      : '';
+    const parsedKeySerializedSessionIdentity = parseSerializedSessionIdentity(rawOpenAiSessionUser);
     const parsedSerializedSessionIdentity = parseSerializedSessionIdentity(entry.sessionUser);
     const parsedNativeSessionIdentity = parseNativeChannelSessionKey(entry.agentId, entry.sessionUser);
-    const parsedSessionIdentity = parsedSerializedSessionIdentity || parsedNativeSessionIdentity;
+    const parsedSessionIdentity = parsedSerializedSessionIdentity || parsedKeySerializedSessionIdentity || parsedNativeSessionIdentity;
     const displaySessionUser = parsedSerializedSessionIdentity
       ? formatSerializedSessionIdentity(parsedSerializedSessionIdentity, entry.sessionUser)
+      : parsedKeySerializedSessionIdentity
+        ? formatSerializedSessionIdentity(parsedKeySerializedSessionIdentity, entry.sessionUser)
       : parsedNativeSessionIdentity
         ? [
             parsedNativeSessionIdentity.channel,

@@ -63,6 +63,18 @@ describe("AccessGate", () => {
     expect(screen.getByTestId("access-gate-loading-state").querySelector("svg")).toBeInTheDocument();
   });
 
+  it("keeps the brand wordmark legible in dark mode while loading", () => {
+    document.documentElement.classList.add("dark");
+    global.fetch.mockImplementation(
+      () =>
+        new Promise(() => {}),
+    );
+
+    renderAccessGate();
+
+    expect(screen.getByText("LalaClaw")).toHaveClass("text-slate-900", "dark:text-slate-100");
+  });
+
   it("shows the token form and unlocks after a successful login", async () => {
     window.localStorage.setItem(localeStorageKey, "en");
     const fetchMock = global.fetch;

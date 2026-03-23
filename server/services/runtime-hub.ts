@@ -72,6 +72,7 @@ type GatewaySubscription = {
   stop: () => void;
 };
 type GatewaySubscriptionHandlers = {
+  onReady?: () => void;
   onClose?: () => void;
   onError?: (error?: unknown) => void;
   onEvent: (evt: GatewayEvent) => void | Promise<void>;
@@ -477,6 +478,7 @@ function applyRuntimePatchToSnapshot(snapshot: RuntimeSnapshot | null, patch: Ru
 function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEvents }: RuntimeHubOptions) {
   const channels = new Map<string, RuntimeHubChannel>();
   let gatewaySubscription: GatewaySubscription | null = null;
+  let gatewayEventsActive = false;
   let ttlCheckTimer: NodeJS.Timeout | null = null;
 
   function safeSend(ws: WsLike, data: string | LooseRecord) {
@@ -505,12 +507,36 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
   }
 
   function inferPollInterval(snapshot: RuntimeSnapshot): number {
-    const hasEvents = Boolean(gatewaySubscription);
+    const hasEvents = gatewayEventsActive;
     const status = String(snapshot?.session?.status || '');
     if (/运行中|running|thinking|busy/i.test(status)) {
       return hasEvents ? ACTIVE_POLL_WITH_EVENTS_MS : ACTIVE_POLL_MS;
     }
     return hasEvents ? IDLE_POLL_WITH_EVENTS_MS : IDLE_POLL_MS;
+  }
+
+  function retuneChannelInterval(key: string, channel: RuntimeHubChannel) {
+    const nextInterval = inferPollInterval(channel.latestSnapshot || { session: { status: '运行中' } });
+    if (nextInterval === channel.currentInterval) {
+      return;
+    }
+
+    channel.currentInterval = nextInterval;
+    if (channel.timer) {
+      clearInterval(channel.timer);
+      channel.timer = setInterval(() => refreshChannel(key, channel, 'poll_timer'), nextInterval);
+    }
+  }
+
+  function updateGatewayEventsActive(nextActive: boolean) {
+    if (gatewayEventsActive === nextActive) {
+      return;
+    }
+
+    gatewayEventsActive = nextActive;
+    for (const [key, channel] of channels.entries()) {
+      retuneChannelInterval(key, channel);
+    }
   }
 
   async function refreshChannel(key: string, channel: RuntimeHubChannel, reason = 'poll_timer') {
@@ -543,14 +569,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
         broadcastPatches(channel, patches);
       }
 
-      const nextInterval = inferPollInterval(next);
-      if (nextInterval !== channel.currentInterval) {
-        channel.currentInterval = nextInterval;
-        if (channel.timer) {
-          clearInterval(channel.timer);
-        }
-        channel.timer = setInterval(() => refreshChannel(key, channel), nextInterval);
-      }
+      retuneChannelInterval(key, channel);
     } catch (error) {
       const nextError = error as Error;
       broadcast(channel, { type: 'runtime.error', error: nextError?.message || 'Snapshot refresh failed' });
@@ -895,7 +914,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
       channelCount: number;
       subscriberCount: number;
     } = {
-      gatewayConnected: Boolean(gatewaySubscription),
+      gatewayConnected: gatewayEventsActive,
       channelCount: getChannelCount(),
       subscriberCount: getSubscriberCount(),
       channel: null,
@@ -935,11 +954,17 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     }
 
     gatewaySubscription = subscribeGatewayEvents({
+      onReady: () => {
+        updateGatewayEventsActive(true);
+      },
       onEvent: async (evt: GatewayEvent) => {
         await handleGatewayEvent(evt);
       },
-      onError: () => {},
+      onError: () => {
+        updateGatewayEventsActive(false);
+      },
       onClose: () => {
+        updateGatewayEventsActive(false);
         gatewaySubscription = null;
         // 断线后 5 秒重试
         setTimeout(() => startGatewaySubscription(), 5000);
@@ -973,10 +998,11 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
       clearInterval(ttlCheckTimer);
       ttlCheckTimer = null;
     }
-      if (gatewaySubscription) {
-        gatewaySubscription.stop();
-        gatewaySubscription = null;
-      }
+    updateGatewayEventsActive(false);
+    if (gatewaySubscription) {
+      gatewaySubscription.stop();
+      gatewaySubscription = null;
+    }
     for (const channel of channels.values()) {
       stopChannelLoop(channel);
       for (const ws of channel.subscribers) {

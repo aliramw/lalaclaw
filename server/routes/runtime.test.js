@@ -2,7 +2,7 @@
 import { createRuntimeHandler } from "./runtime.ts";
 
 describe("createRuntimeHandler", () => {
-  it("passes raw sessionUser values to the dashboard snapshot builder", async () => {
+  it("normalizes IM sessionUser values before building the dashboard snapshot", async () => {
     const buildDashboardSnapshot = async (sessionUser) => ({
       session: {
         sessionUser,
@@ -29,6 +29,6 @@ describe("createRuntimeHandler", () => {
     );
 
     expect(responseStatus).toBe(200);
-    expect(responseBody.session.sessionUser).toBe('{"channel":"dingtalk-connector","peerid":"398058"}');
+    expect(responseBody.session.sessionUser).toBe("agent:main:dingtalk-connector:direct:398058");
   });
 });

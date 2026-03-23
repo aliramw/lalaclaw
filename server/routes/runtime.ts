@@ -1,4 +1,5 @@
 import { URL } from 'node:url';
+const { buildCanonicalImSessionUser } = require('../../shared/im-session-key.cjs');
 
 type JsonSender = (res: unknown, status: number, body: Record<string, unknown>) => void;
 
@@ -44,8 +45,9 @@ export function createRuntimeHandler({
   return async function handleRuntime(req: { headers: { host?: string }; url?: string }, res: unknown) {
     try {
       const searchParams = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`).searchParams;
-      const sessionUser = String(searchParams.get('sessionUser') || 'command-center').trim() || 'command-center';
       const agentId = String(searchParams.get('agentId') || '').trim();
+      const requestedSessionUser = String(searchParams.get('sessionUser') || 'command-center').trim() || 'command-center';
+      const sessionUser = buildCanonicalImSessionUser(requestedSessionUser, { agentId: agentId || 'main' }) || requestedSessionUser;
       const model = String(searchParams.get('model') || '').trim();
       const thinkMode = String(searchParams.get('thinkMode') || '').trim();
       const fastMode = parseOptionalBoolean(searchParams.get('fastMode'));

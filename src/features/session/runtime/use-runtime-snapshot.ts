@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import {
   createConversationKey,
-  derivePendingEntryFromLocalMessages,
   extractUserPromptHistory,
   hasAuthoritativePendingAssistantReply,
   mergeConversationAttachments,
   mergeConversationIdentity,
   mergePendingConversation,
   mergeStaleLocalConversationTail,
+  resolveRuntimePendingEntry,
 } from "@/features/app/storage";
 import { isImBootstrapSessionUser, isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
@@ -465,18 +465,6 @@ function stabilizeHydratedConversation(hydratedConversation: ChatMessage[] = [],
   );
 }
 
-function resolvePendingTurn(
-  pendingChatTurns: Record<string, PendingChatTurn> = {},
-  conversationKey: string,
-  localMessages: ChatMessage[] = [],
-): PendingChatTurn | null {
-  return (
-    pendingChatTurns[conversationKey]
-    || (derivePendingEntryFromLocalMessages(localMessages) as PendingChatTurn | null)
-    || null
-  );
-}
-
 export function useRuntimeSnapshot({
   activePendingChat,
   busy,
@@ -629,7 +617,20 @@ export function useRuntimeSnapshot({
       snapshot.session?.agentId || nextSession.agentId,
     );
     const localMessages = messagesRef.current || [];
-    const pendingEntry = resolvePendingTurn(currentPendingChatTurns, nextConversationKey, localMessages);
+    const snapshotConversationWithAttachments = mergeConversationAttachments(snapshot.conversation, localMessages);
+    const baseMergedConversation = mergeConversationIdentity(
+      snapshotConversationWithAttachments,
+      localMessages,
+    );
+    const pendingEntry = resolveRuntimePendingEntry({
+      agentId: snapshot.session?.agentId || nextSession.agentId,
+      conversationKey: nextConversationKey,
+      conversationMessages: baseMergedConversation,
+      localMessages,
+      pendingChatTurns: currentPendingChatTurns,
+      sessionStatus: snapshot.session?.status || nextSession.status,
+      sessionUser: snapshot.session?.sessionUser || nextSession.sessionUser,
+    });
     const snapshotPromptHistory = extractUserPromptHistory(snapshot.conversation);
     const shouldDeferConversationSync = Boolean(pendingEntry) && options.syncConversation === false;
     pushCcDebugEvent("runtime.snapshot.apply", {
@@ -648,11 +649,13 @@ export function useRuntimeSnapshot({
     setFastMode(nextFastMode);
 
     if (options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
-      const mergedConversation = mergeConversationIdentity(
-        mergeConversationAttachments(snapshot.conversation, localMessages),
-        localMessages,
-        pendingEntry,
-      );
+      const mergedConversation = pendingEntry
+        ? mergeConversationIdentity(
+            snapshotConversationWithAttachments,
+            localMessages,
+            pendingEntry,
+          )
+        : baseMergedConversation;
       const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
       const snapshotHasAssistantReply = pendingEntry
         ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
@@ -861,18 +864,33 @@ export function useRuntimeSnapshot({
     const currentPendingChatTurns = pendingChatTurnsRef.current;
     const conversationKey = createConversationKey(currentSession.sessionUser, currentSession.agentId);
     const localMessages = messagesRef.current || [];
-    const pendingEntry = resolvePendingTurn(currentPendingChatTurns, conversationKey, localMessages);
+    const nextConversationWithAttachments = mergeConversationAttachments(nextConversation, localMessages);
+    const baseMergedConversation = mergeConversationIdentity(
+      nextConversationWithAttachments,
+      localMessages,
+    );
+    const pendingEntry = resolveRuntimePendingEntry({
+      agentId: currentSession.agentId,
+      conversationKey,
+      conversationMessages: baseMergedConversation,
+      localMessages,
+      pendingChatTurns: currentPendingChatTurns,
+      sessionStatus: currentSession.status,
+      sessionUser: currentSession.sessionUser,
+    });
     pushCcDebugEvent("runtime.conversation.sync", {
       conversationLength: nextConversation.length,
       pendingKey: pendingEntry?.key || conversationKey,
       pendingAssistantId: pendingEntry?.assistantMessageId || "",
     });
 
-    const mergedConversation = mergeConversationIdentity(
-      mergeConversationAttachments(nextConversation, localMessages),
-      localMessages,
-      pendingEntry,
-    );
+    const mergedConversation = pendingEntry
+      ? mergeConversationIdentity(
+          nextConversationWithAttachments,
+          localMessages,
+          pendingEntry,
+        )
+      : baseMergedConversation;
     const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
     const snapshotHasAssistantReply = pendingEntry
       ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
@@ -1011,7 +1029,14 @@ export function useRuntimeSnapshot({
       const nextSession = { ...currentSession, ...payload.session };
       const localMessages = messagesRef.current || [];
       const conversationKey = createConversationKey(currentSession.sessionUser, currentSession.agentId);
-      const localPendingEntry = resolvePendingTurn(pendingChatTurnsRef.current, conversationKey, localMessages);
+      const localPendingEntry = resolveRuntimePendingEntry({
+        agentId: currentSession.agentId,
+        conversationKey,
+        localMessages,
+        pendingChatTurns: pendingChatTurnsRef.current,
+        sessionStatus: nextSession.status,
+        sessionUser: currentSession.sessionUser,
+      });
       const localRecoveredAssistant = recoveringPendingReply
         ? findPendingAssistantMessage(localMessages, localPendingEntry)
         : null;

@@ -1,4 +1,9 @@
 import { URL } from 'node:url';
+const {
+  buildCanonicalImSessionUser,
+  getImSessionType,
+  parseImSessionIdentity,
+} = require('../../shared/im-session-key.cjs');
 
 type JsonSender = (res: unknown, status: number, body: Record<string, unknown>) => void;
 
@@ -34,6 +39,7 @@ export function createSessionHandlers({
   getDefaultAgentId,
   getDefaultModelForAgent,
   getSessionPreferences,
+  listImSessionsForAgent,
   normalizeThinkMode,
   parseRequestBody,
   resolveAgentDisplayName,
@@ -65,6 +71,7 @@ export function createSessionHandlers({
   getDefaultAgentId: () => string;
   getDefaultModelForAgent: (agentId: string) => string;
   getSessionPreferences: (sessionUser: string) => SessionPreferences;
+  listImSessionsForAgent?: (agentId: string) => Array<Record<string, unknown>>;
   normalizeThinkMode: (value: string) => string;
   parseRequestBody: (req: unknown) => Promise<Record<string, unknown>>;
   resolveAgentDisplayName: (agentId: string) => string;
@@ -77,9 +84,48 @@ export function createSessionHandlers({
   sendJson: JsonSender;
   setSessionPreferences: (sessionUser: string, preferences: SessionPreferences) => void;
 }) {
+  function resolveEffectiveSessionUser(agentId: string, requestedSessionUser: string) {
+    const normalizedAgentId = String(agentId || getDefaultAgentId()).trim() || getDefaultAgentId();
+    let sessionUser = buildCanonicalImSessionUser(requestedSessionUser, { agentId: normalizedAgentId }) || requestedSessionUser;
+    const requestedIdentity = parseImSessionIdentity(sessionUser, { agentId: normalizedAgentId });
+
+    if (requestedIdentity?.isBootstrap && typeof listImSessionsForAgent === 'function') {
+      const requestedType = String(getImSessionType(sessionUser, { agentId: normalizedAgentId }) || '').trim().toLowerCase();
+      const latestImSession = listImSessionsForAgent(normalizedAgentId).find((entry) => {
+        const candidateSessionUser = String(entry?.sessionUser || '').trim();
+        if (!candidateSessionUser) {
+          return false;
+        }
+
+        const candidateIdentity = parseImSessionIdentity(candidateSessionUser, { agentId: normalizedAgentId });
+        if (!candidateIdentity?.channel || candidateIdentity.isBootstrap) {
+          return false;
+        }
+
+        if (String(getImSessionType(candidateSessionUser, { agentId: candidateIdentity.agentId || normalizedAgentId }) || '').trim().toLowerCase() !== requestedType) {
+          return false;
+        }
+
+        const shouldMatchRequestedChatType = requestedIdentity.chatType && requestedIdentity.peerId !== 'default';
+        if (shouldMatchRequestedChatType && candidateIdentity.chatType !== requestedIdentity.chatType) {
+          return false;
+        }
+
+        return true;
+      });
+
+      if (latestImSession?.sessionUser) {
+        sessionUser = String(latestImSession.sessionUser).trim();
+      }
+    }
+
+    return buildCanonicalImSessionUser(sessionUser, { agentId: normalizedAgentId }) || sessionUser;
+  }
+
   function handleSession(req: { url?: string; headers: { host?: string } }, res: unknown) {
-    const sessionUser = parseRequestedSessionUser(new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`).searchParams.get('sessionUser'));
-    const agentId = resolveSessionAgentId(sessionUser);
+    const requestedSessionUser = parseRequestedSessionUser(new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`).searchParams.get('sessionUser'));
+    const agentId = resolveSessionAgentId(requestedSessionUser);
+    const sessionUser = resolveEffectiveSessionUser(agentId, requestedSessionUser);
     const agentLabel = resolveAgentDisplayName(agentId);
     const model = resolveSessionModel(sessionUser, agentId);
     const thinkMode = resolveSessionThinkMode(sessionUser);
@@ -203,8 +249,9 @@ export function createSessionHandlers({
 
     try {
       const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
-      const sessionUser = parseRequestedSessionUser(url.searchParams.get('sessionUser'));
-      const agentId = resolveSessionAgentId(sessionUser);
+      const requestedSessionUser = parseRequestedSessionUser(url.searchParams.get('sessionUser'));
+      const agentId = resolveSessionAgentId(requestedSessionUser);
+      const sessionUser = resolveEffectiveSessionUser(agentId, requestedSessionUser);
       const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
       const limitParam = Number(url.searchParams.get('limit') || 200);
       const limit = Math.max(1, Math.min(1000, limitParam));

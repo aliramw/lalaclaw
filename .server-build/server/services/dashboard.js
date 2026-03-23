@@ -5,6 +5,7 @@ exports.mergeConversationMessages = mergeConversationMessages;
 exports.createDashboardService = createDashboardService;
 const fs = require('node:fs');
 const path = require('node:path');
+const { buildCanonicalImSessionUser, getImSessionType, isImBootstrapSessionUser: isSharedImBootstrapSessionUser, parseImSessionIdentity: parseSharedImSessionIdentity, } = require('../../shared/im-session-key.cjs');
 const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
@@ -128,38 +129,18 @@ function mergeProjectedFiles(primary = [], secondary = []) {
     return [...merged.values()];
 }
 function parseImSessionIdentity(sessionUser = '') {
-    const normalizedSessionUser = String(sessionUser || '').trim();
-    if (!normalizedSessionUser) {
-        return null;
-    }
-    if (normalizedSessionUser === 'dingtalk-connector' || normalizedSessionUser.includes('dingtalk-connector')) {
-        return {
-            type: 'dingtalk',
-            chatType: '',
-            peerId: normalizedSessionUser,
-        };
-    }
-    let match = normalizedSessionUser.match(/^agent:[^:]+:(feishu|wecom):([^:]+):(.+)$/i);
-    if (!match) {
-        match = normalizedSessionUser.match(/^(feishu|wecom):([^:]+):(.+)$/i);
-    }
-    if (!match) {
+    const parsedIdentity = parseSharedImSessionIdentity(sessionUser, { agentId: 'main' });
+    if (!parsedIdentity?.channel) {
         return null;
     }
     return {
-        type: String(match[1] || '').trim().toLowerCase(),
-        chatType: String(match[2] || '').trim().toLowerCase(),
-        peerId: String(match[3] || '').trim(),
+        type: String(getImSessionType(sessionUser, { agentId: parsedIdentity.agentId || 'main' }) || '').trim().toLowerCase(),
+        chatType: String(parsedIdentity.chatType || '').trim().toLowerCase(),
+        peerId: String(parsedIdentity.peerId || '').trim(),
     };
 }
 function isImBootstrapSessionUser(sessionUser = '') {
-    const identity = parseImSessionIdentity(sessionUser);
-    if (!identity?.type) {
-        return false;
-    }
-    return identity.type === 'dingtalk'
-        ? String(sessionUser || '').trim() === 'dingtalk-connector'
-        : identity.peerId === 'default';
+    return isSharedImBootstrapSessionUser(sessionUser, { agentId: 'main' });
 }
 function isRoutableImSessionUser(sessionUser = '') {
     const identity = parseImSessionIdentity(sessionUser);
@@ -650,6 +631,10 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         const forcedThinkMode = String(overrides?.thinkMode || '').trim();
         const agentId = forcedAgentId || resolveSessionAgentId(sessionUser);
         let effectiveSessionUser = sessionUser;
+        const requestedCanonicalImSessionUser = buildCanonicalImSessionUser(effectiveSessionUser, { agentId });
+        if (requestedCanonicalImSessionUser) {
+            effectiveSessionUser = requestedCanonicalImSessionUser;
+        }
         if (typeof listImSessionsForAgent === 'function' && isImBootstrapSessionUser(effectiveSessionUser)) {
             const requestedIdentity = parseImSessionIdentity(effectiveSessionUser);
             const latestImSession = listImSessionsForAgent(agentId).find((entry) => {
@@ -668,6 +653,10 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
             if (latestImSession?.sessionUser) {
                 effectiveSessionUser = latestImSession.sessionUser;
             }
+        }
+        const resolvedCanonicalImSessionUser = buildCanonicalImSessionUser(effectiveSessionUser, { agentId });
+        if (resolvedCanonicalImSessionUser) {
+            effectiveSessionUser = resolvedCanonicalImSessionUser;
         }
         let sessionKey = getCommandCenterSessionKey(agentId, effectiveSessionUser);
         let sessionRecord = resolveSessionRecord(agentId, sessionKey);

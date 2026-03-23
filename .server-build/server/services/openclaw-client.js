@@ -38,6 +38,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { URL, pathToFileURL } = require('node:url');
+const { parseImSessionIdentity } = require('../../shared/im-session-key.cjs');
 let gatewaySdkPromise = null;
 const GATEWAY_RETRY_DELAYS_MS = [250, 1000];
 const OPENCLAW_WAIT_POLL_TIMEOUT_MS = 900;
@@ -538,16 +539,26 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
     }
     function parseDingTalkSessionUser(sessionUser = '') {
         const trimmedSessionUser = String(sessionUser || '').trim();
-        if (!trimmedSessionUser.startsWith('{')) {
+        if (trimmedSessionUser.startsWith('{')) {
+            try {
+                const parsed = JSON.parse(trimmedSessionUser);
+                if (String(parsed?.channel || '').trim() === 'dingtalk-connector') {
+                    return parsed;
+                }
+            }
+            catch { }
+        }
+        const parsedIdentity = parseImSessionIdentity(trimmedSessionUser, {
+            agentId: resolveAgentId(trimmedSessionUser) || 'main',
+        });
+        if (String(parsedIdentity?.channel || '').trim() !== 'dingtalk-connector') {
             return null;
         }
-        try {
-            const parsed = JSON.parse(trimmedSessionUser);
-            return String(parsed?.channel || '').trim() === 'dingtalk-connector' ? parsed : null;
-        }
-        catch {
-            return null;
-        }
+        return {
+            accountid: parsedIdentity?.accountId || '',
+            chattype: parsedIdentity?.chatType || 'direct',
+            peerid: parsedIdentity?.peerId || '',
+        };
     }
     function isResetDingTalkSessionUser(sessionUser = '') {
         const parsed = parseDingTalkSessionUser(sessionUser);
@@ -635,6 +646,34 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             peerid: String(syntheticMatch[2] || '').trim(),
         };
     }
+    function stripWeixinResetSuffix(value = '') {
+        return String(value || '').trim().replace(/:reset:[^:]+$/i, '');
+    }
+    function createWeixinDeliveryRoute({ accountId = '', peerId = '' } = {}) {
+        const normalizedPeerId = stripWeixinResetSuffix(peerId);
+        if (!normalizedPeerId) {
+            return null;
+        }
+        const normalizedAccountId = String(accountId || '').trim();
+        return {
+            channel: 'openclaw-weixin',
+            to: normalizedPeerId,
+            ...(normalizedAccountId ? { accountId: normalizedAccountId } : {}),
+        };
+    }
+    function parseWeixinSessionUser(sessionUser = '') {
+        const parsedIdentity = parseImSessionIdentity(String(sessionUser || '').trim(), { agentId: 'main' });
+        if (String(parsedIdentity?.channel || '').trim() !== 'openclaw-weixin') {
+            return null;
+        }
+        return {
+            agentId: String(parsedIdentity?.agentId || '').trim(),
+            channel: 'openclaw-weixin',
+            chattype: String(parsedIdentity?.chatType || '').trim() || 'direct',
+            peerid: String(parsedIdentity?.peerId || '').trim(),
+            accountid: String(parsedIdentity?.accountId || '').trim(),
+        };
+    }
     function resolveSessionDeliveryRoute(sessionUser = 'command-center') {
         const trimmedSessionUser = String(sessionUser || '').trim();
         if (!trimmedSessionUser) {
@@ -665,6 +704,13 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (parsedWecomSessionUser) {
             return createWecomDeliveryRoute({
                 peerId: parsedWecomSessionUser.peerid,
+            });
+        }
+        const parsedWeixinSessionUser = parseWeixinSessionUser(trimmedSessionUser);
+        if (parsedWeixinSessionUser) {
+            return createWeixinDeliveryRoute({
+                accountId: parsedWeixinSessionUser.accountid,
+                peerId: parsedWeixinSessionUser.peerid,
             });
         }
         if (!trimmedSessionUser.startsWith('dingtalk-connector:')) {
@@ -707,7 +753,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             return '';
         }
         const operatorName = String(options?.operatorName || '').trim();
-        if (parseFeishuSessionUser(sessionUser) || parseWecomSessionUser(sessionUser)) {
+        if (parseFeishuSessionUser(sessionUser) || parseWecomSessionUser(sessionUser) || parseWeixinSessionUser(sessionUser)) {
             return operatorName ? `${operatorName}：${trimmedMessage}` : trimmedMessage;
         }
         const parsedSessionUser = parseDingTalkSessionUser(sessionUser);
@@ -1364,9 +1410,19 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
      * If the gateway SDK is unavailable or the connection fails, the subscriber
      * silently stops — callers should treat it as a best-effort enhancement.
      */
-    function subscribeGatewayEvents({ onEvent, onError, onClose } = {}) {
+    function subscribeGatewayEvents({ onReady, onEvent, onError, onClose } = {}) {
         let client = null;
         let stopped = false;
+        let readyNotified = false;
+        function markReady() {
+            if (readyNotified || stopped) {
+                return;
+            }
+            readyNotified = true;
+            if (typeof onReady === 'function') {
+                onReady();
+            }
+        }
         (async () => {
             try {
                 const sdk = await loadOpenClawGatewaySdk();
@@ -1385,7 +1441,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
                     clientVersion: sdk.VERSION || 'unknown',
                     platform: process.platform,
                     mode: sdk.GATEWAY_CLIENT_MODES?.BACKEND || 'backend',
-                    onHelloOk: () => { },
+                    onHelloOk: () => {
+                        markReady();
+                    },
                     onConnectError: (error) => {
                         if (typeof onError === 'function')
                             onError(error);
@@ -1395,6 +1453,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
                             onClose(reason);
                     },
                     onEvent: (evt) => {
+                        markReady();
                         if (typeof onEvent === 'function')
                             onEvent(evt);
                     },

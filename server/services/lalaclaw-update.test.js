@@ -13,7 +13,7 @@ describe('createLalaClawUpdateService', () => {
     }
   });
 
-  it('checks only the stable dist-tag when computing update availability', async () => {
+  it('uses the stable channel first when computing update availability', async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lalaclaw-update-'));
     tempDirs.push(stateDir);
     const service = createLalaClawUpdateService({
@@ -42,9 +42,62 @@ describe('createLalaClawUpdateService', () => {
       version: '2026.3.21-1',
       stable: true,
     });
-    expect(result.workspaceVersion).toBe('2026.3.21-2');
+    expect(result.channel).toEqual({
+      value: 'stable',
+      source: 'default',
+      label: 'stable (default)',
+      config: null,
+    });
+    expect(result.availability).toEqual({
+      available: true,
+      hasRegistryUpdate: true,
+      latestVersion: '2026.3.21-1',
+    });
+    expect(result.workspaceVersion).toBe('2026.3.24');
     expect(result.updateAvailable).toBe(true);
     expect(result.stableTag).toBe('stable');
+  });
+
+  it('falls back to latest when the stable dist-tag is absent without marking it as a stable release', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lalaclaw-update-'));
+    tempDirs.push(stateDir);
+    const service = createLalaClawUpdateService({
+      currentVersion: '2026.3.13',
+      config: {
+        stateDir,
+        accessConfigFile: '/tmp/lalaclaw/.env.local',
+      },
+      projectRoot: '/tmp/lalaclaw-package',
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          'dist-tags': {
+            latest: '2026.3.22',
+          },
+        }),
+      }),
+      spawnImpl: () => ({ unref() {} }),
+    });
+
+    const result = await service.getLalaClawUpdateState();
+
+    expect(result.channel).toEqual({
+      value: 'stable',
+      source: 'default',
+      label: 'stable (default)',
+      config: null,
+    });
+    expect(result.stableTag).toBe('latest');
+    expect(result.targetRelease).toEqual({
+      version: '2026.3.22',
+      stable: false,
+    });
+    expect(result.availability).toEqual({
+      available: true,
+      hasRegistryUpdate: true,
+      latestVersion: '2026.3.22',
+    });
+    expect(result.updateAvailable).toBe(true);
   });
 
   it('blocks in-app updates from a source checkout', async () => {
@@ -108,6 +161,47 @@ describe('createLalaClawUpdateService', () => {
     expect(spawned[0].args).toContain('--target-version');
     expect(spawned[0].args).toContain('2026.3.21-1');
     expect(spawned[0].options.detached).toBe(true);
+  });
+
+  it('falls back to manual restart when the macOS launch agent is installed but not running', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lalaclaw-update-'));
+    tempDirs.push(stateDir);
+    const spawned = [];
+    const service = createLalaClawUpdateService({
+      currentVersion: '2026.3.20-1',
+      config: {
+        stateDir,
+        accessConfigFile: '/tmp/lalaclaw/.env.local',
+      },
+      getServiceStatus: () => ({
+        kind: 'launchd',
+        installed: true,
+        running: false,
+      }),
+      platform: 'darwin',
+      projectRoot: '/tmp/lalaclaw-package',
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          'dist-tags': {
+            stable: '2026.3.21-1',
+          },
+        }),
+      }),
+      spawnImpl: (command, args, options) => {
+        spawned.push({ command, args, options });
+        return { unref() {} };
+      },
+    });
+
+    const result = await service.runLalaClawUpdate();
+
+    expect(result.ok).toBe(true);
+    expect(result.accepted).toBe(true);
+    expect(spawned).toHaveLength(1);
+    const restartModeFlagIndex = spawned[0].args.indexOf('--restart-mode');
+    expect(restartModeFlagIndex).toBeGreaterThan(-1);
+    expect(spawned[0].args[restartModeFlagIndex + 1]).toBe('manual');
   });
 
   it('supports a dev mock preview flow for newer stable versions from a source checkout', async () => {

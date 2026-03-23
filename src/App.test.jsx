@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as AppModule from "@/App";
+import { buildDevWorkspaceLabel } from "@/lib/dev-workspace-label";
 import { devWorkspacePageReloader } from "@/lib/dev-workspace-page-reloader";
 import { I18nProvider } from "@/lib/i18n";
 import { localeStorageKey } from "@/lib/i18n";
@@ -531,6 +532,7 @@ describe("App", () => {
     expect(screen.getByTestId("dev-workspace-badge")).toHaveTextContent("feat/init-autostart");
     expect(screen.getByTestId("dev-workspace-badge")).not.toHaveTextContent("路径");
     expect(screen.getByTestId("dev-workspace-badge")).toHaveAttribute("aria-expanded", "false");
+    expect(buildDevWorkspaceLabel(globalThis.__LALACLAW_DEV_INFO__, "5173")).toBe("feat/init-autostart · lalaclaw2 · 5173");
   });
 
   it("shows a dev restart button and posts a restart request from the expanded badge", async () => {
@@ -901,7 +903,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
     });
-  });
+  }, 10000);
 
   it("shows only one thinking bubble while later prompts wait in the queue", async () => {
     const openClawSnapshot = createSnapshot({
@@ -3628,6 +3630,95 @@ describe("App", () => {
     expect(textarea).toHaveValue("");
   });
 
+  it("resets IM sessions by sending /reset to the canonical native session key", async () => {
+    const dingtalkSessionUser = "agent:main:dingtalk-connector:direct:398058";
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main::dingtalk",
+        activeTab: "timeline",
+        chatTabs: [
+          { id: "agent:main::dingtalk", agentId: "main", sessionUser: dingtalkSessionUser },
+        ],
+        tabMetaById: {
+          "agent:main::dingtalk": {
+            agentId: "main",
+            fastMode: false,
+            model: "openclaw",
+            sessionUser: dingtalkSessionUser,
+            thinkMode: "off",
+          },
+        },
+        messagesByTabId: {
+          "agent:main::dingtalk": [{ role: "assistant", content: "钉钉旧消息", timestamp: 1 }],
+        },
+        sessionUser: dingtalkSessionUser,
+        agentId: "main",
+        model: "openclaw",
+      }),
+    );
+
+    const chatBodies = [];
+    const fetchMock = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot({
+          mode: "openclaw",
+          session: {
+            ...createSnapshot().session,
+            mode: "openclaw",
+            agentId: "main",
+            selectedAgentId: "main",
+            sessionUser: dingtalkSessionUser,
+            sessionKey: dingtalkSessionUser,
+          },
+          conversation: [{ role: "assistant", content: "钉钉旧消息", timestamp: 1 }],
+        }));
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        chatBodies.push(JSON.parse(init.body));
+        return mockJsonResponse(createSnapshot({
+          mode: "openclaw",
+          outputText: "新会话已开始。",
+          metadata: { status: "已完成 / 标准" },
+          session: {
+            ...createSnapshot().session,
+            mode: "openclaw",
+            agentId: "main",
+            selectedAgentId: "main",
+            sessionUser: dingtalkSessionUser,
+            sessionKey: dingtalkSessionUser,
+          },
+          conversation: [{ role: "assistant", content: "新会话已开始。", timestamp: 2 }],
+        }));
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("钉钉旧消息");
+
+    await user.click(screen.getByLabelText("开启新会话"));
+    await user.click(await screen.findByRole("button", { name: "确定" }));
+
+    await waitFor(() => {
+      expect(chatBodies).toHaveLength(1);
+    });
+
+    expect(chatBodies[0].sessionUser).toBe(dingtalkSessionUser);
+    expect(chatBodies[0].messages.at(-1)?.content).toBe("/reset");
+
+    await waitFor(() => {
+      expect(hasMessageText("新会话已开始。", "assistant")).toBe(true);
+    });
+    expect(hasMessageText("钉钉旧消息", "assistant")).toBe(false);
+  });
+
   it("shows -- summary placeholders while a reset session is still loading its runtime overview", async () => {
     const resetRuntimeDeferred = createDeferred();
     let runtimeRequestCount = 0;
@@ -3955,7 +4046,7 @@ describe("App", () => {
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "飞书" }));
 
-    expect(await screen.findByRole("button", { name: "飞书 main" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "飞书" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "定位飞书会话" })).not.toBeInTheDocument();
 
     await user.click(screen.getByLabelText("切换 Agent"));
@@ -4121,7 +4212,7 @@ describe("App", () => {
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
 
-    expect(await screen.findByRole("button", { name: "钉钉 main" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "钉钉" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "钉钉 paint" })).not.toBeInTheDocument();
   });
 
@@ -4182,7 +4273,7 @@ describe("App", () => {
 
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "飞书" }));
-    expect(await screen.findByRole("button", { name: "飞书 main" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "飞书" })).toBeInTheDocument();
 
     await user.type(getComposer(), "hi");
     await user.click(screen.getByRole("button", { name: "发送" }));

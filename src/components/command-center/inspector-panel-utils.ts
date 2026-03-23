@@ -18,6 +18,30 @@ export const OFFICIAL_OPENCLAW_DOC_URLS = {
   troubleshooting: "https://openclawlab.com/en/docs/gateway/troubleshooting/",
 };
 
+const OFFICIAL_OPENCLAW_INSTALL_DOC_URLS = {
+  en: "https://docs.openclaw.ai/install",
+  zh: "https://docs.openclaw.ai/zh-CN/install",
+  ja: "https://docs.openclaw.ai/ja-JP/start/getting-started",
+};
+
+function normalizeOpenClawDocLocale(locale: unknown = "") {
+  const normalized = String(locale || "").trim().toLowerCase();
+  if (normalized === "zh" || normalized === "zh-hk" || normalized.startsWith("zh-")) {
+    return "zh";
+  }
+  if (normalized === "ja" || normalized.startsWith("ja-")) {
+    return "ja";
+  }
+  return "en";
+}
+
+export function getOfficialOpenClawDocUrl(docKey: keyof typeof OFFICIAL_OPENCLAW_DOC_URLS | string, locale: unknown = "") {
+  if (docKey === "install") {
+    return OFFICIAL_OPENCLAW_INSTALL_DOC_URLS[normalizeOpenClawDocLocale(locale)] || OFFICIAL_OPENCLAW_INSTALL_DOC_URLS.en;
+  }
+  return OFFICIAL_OPENCLAW_DOC_URLS[docKey as keyof typeof OFFICIAL_OPENCLAW_DOC_URLS] || OFFICIAL_OPENCLAW_DOC_URLS.install;
+}
+
 const OPENCLAW_DIAGNOSTIC_PREFIX = "openclaw.";
 const openClawDiagnosticFieldsBySection = {
   overview: [
@@ -447,7 +471,11 @@ function normalizeOpenClawUpdateIssueKey(value = "") {
   return String(value || "").trim();
 }
 
-export function buildOpenClawUpdateTroubleshootingEntries(result: Record<string, any> | null = null, messages: any) {
+export function buildOpenClawUpdateTroubleshootingEntries(
+  result: Record<string, any> | null = null,
+  messages: any,
+  locale: unknown = "",
+) {
   const issueKeys: string[] = [];
   const errorCode = normalizeOpenClawUpdateIssueKey(result?.errorCode);
   const commandResult = result?.commandResult || {};
@@ -513,7 +541,7 @@ export function buildOpenClawUpdateTroubleshootingEntries(result: Record<string,
 
     const docs = (issue.docs || []).map((docKey: string) => ({
       key: docKey,
-      href: OFFICIAL_OPENCLAW_DOC_URLS[docKey as keyof typeof OFFICIAL_OPENCLAW_DOC_URLS] || OFFICIAL_OPENCLAW_DOC_URLS.install,
+      href: getOfficialOpenClawDocUrl(docKey, locale),
       label: messages.inspector.openClawUpdate.guidance?.docs?.[docKey] || docKey,
     }));
 

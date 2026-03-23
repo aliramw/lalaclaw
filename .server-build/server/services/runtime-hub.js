@@ -384,6 +384,7 @@ function applyRuntimePatchToSnapshot(snapshot, patch) {
 function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEvents }) {
     const channels = new Map();
     let gatewaySubscription = null;
+    let gatewayEventsActive = false;
     let ttlCheckTimer = null;
     function safeSend(ws, data) {
         try {
@@ -408,12 +409,32 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
         }
     }
     function inferPollInterval(snapshot) {
-        const hasEvents = Boolean(gatewaySubscription);
+        const hasEvents = gatewayEventsActive;
         const status = String(snapshot?.session?.status || '');
         if (/运行中|running|thinking|busy/i.test(status)) {
             return hasEvents ? ACTIVE_POLL_WITH_EVENTS_MS : ACTIVE_POLL_MS;
         }
         return hasEvents ? IDLE_POLL_WITH_EVENTS_MS : IDLE_POLL_MS;
+    }
+    function retuneChannelInterval(key, channel) {
+        const nextInterval = inferPollInterval(channel.latestSnapshot || { session: { status: '运行中' } });
+        if (nextInterval === channel.currentInterval) {
+            return;
+        }
+        channel.currentInterval = nextInterval;
+        if (channel.timer) {
+            clearInterval(channel.timer);
+            channel.timer = setInterval(() => refreshChannel(key, channel, 'poll_timer'), nextInterval);
+        }
+    }
+    function updateGatewayEventsActive(nextActive) {
+        if (gatewayEventsActive === nextActive) {
+            return;
+        }
+        gatewayEventsActive = nextActive;
+        for (const [key, channel] of channels.entries()) {
+            retuneChannelInterval(key, channel);
+        }
     }
     async function refreshChannel(key, channel, reason = 'poll_timer') {
         if (channel.inFlight || channel.subscribers.size === 0) {
@@ -439,14 +460,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
             if (patches && patches.length > 0) {
                 broadcastPatches(channel, patches);
             }
-            const nextInterval = inferPollInterval(next);
-            if (nextInterval !== channel.currentInterval) {
-                channel.currentInterval = nextInterval;
-                if (channel.timer) {
-                    clearInterval(channel.timer);
-                }
-                channel.timer = setInterval(() => refreshChannel(key, channel), nextInterval);
-            }
+            retuneChannelInterval(key, channel);
         }
         catch (error) {
             const nextError = error;
@@ -730,7 +744,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     }
     function getDebugInfo({ sessionUser, agentId } = { sessionUser: '', agentId: '' }) {
         const info = {
-            gatewayConnected: Boolean(gatewaySubscription),
+            gatewayConnected: gatewayEventsActive,
             channelCount: getChannelCount(),
             subscriberCount: getSubscriberCount(),
             channel: null,
@@ -764,11 +778,17 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
             return;
         }
         gatewaySubscription = subscribeGatewayEvents({
+            onReady: () => {
+                updateGatewayEventsActive(true);
+            },
             onEvent: async (evt) => {
                 await handleGatewayEvent(evt);
             },
-            onError: () => { },
+            onError: () => {
+                updateGatewayEventsActive(false);
+            },
             onClose: () => {
+                updateGatewayEventsActive(false);
                 gatewaySubscription = null;
                 // 断线后 5 秒重试
                 setTimeout(() => startGatewaySubscription(), 5000);
@@ -802,6 +822,7 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
             clearInterval(ttlCheckTimer);
             ttlCheckTimer = null;
         }
+        updateGatewayEventsActive(false);
         if (gatewaySubscription) {
             gatewaySubscription.stop();
             gatewaySubscription = null;

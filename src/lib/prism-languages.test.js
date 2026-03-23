@@ -2,40 +2,33 @@ import { describe, expect, it } from "vitest";
 import { ensurePrismLanguage, normalizePrismLanguage, Prism } from "@/lib/prism-languages";
 
 describe("prism language registration", () => {
-  it("loads common non-bundled languages on demand", async () => {
+  it("keeps bundled languages highlightable without runtime language loading", async () => {
     await Promise.all([
-      ensurePrismLanguage("java"),
-      ensurePrismLanguage("bash"),
-      ensurePrismLanguage("docker"),
-      ensurePrismLanguage("makefile"),
-      ensurePrismLanguage("php"),
-      ensurePrismLanguage("ruby"),
-      ensurePrismLanguage("scala"),
-      ensurePrismLanguage("csharp"),
-      ensurePrismLanguage("powershell"),
-      ensurePrismLanguage("toml"),
-      ensurePrismLanguage("ini"),
+      ensurePrismLanguage("python"),
+      ensurePrismLanguage("go"),
+      ensurePrismLanguage("rust"),
+      ensurePrismLanguage("yaml"),
+      ensurePrismLanguage("typescript"),
+      ensurePrismLanguage("tsx"),
+      ensurePrismLanguage("cpp"),
     ]);
 
-    expect(Prism.languages.java).toBeTruthy();
-    expect(Prism.languages.bash).toBeTruthy();
-    expect(Prism.languages.docker).toBeTruthy();
-    expect(Prism.languages.makefile).toBeTruthy();
-    expect(Prism.languages.php).toBeTruthy();
-    expect(Prism.languages.ruby).toBeTruthy();
-    expect(Prism.languages.scala).toBeTruthy();
-    expect(Prism.languages.csharp).toBeTruthy();
-    expect(Prism.languages.powershell).toBeTruthy();
-    expect(Prism.languages.toml).toBeTruthy();
-    expect(Prism.languages.ini).toBeTruthy();
+    expect(Prism.languages.python).toBeTruthy();
+    expect(Prism.languages.go).toBeTruthy();
+    expect(Prism.languages.rust).toBeTruthy();
+    expect(Prism.languages.yaml).toBeTruthy();
+    expect(Prism.languages.typescript).toBeTruthy();
+    expect(Prism.languages.tsx).toBeTruthy();
+    expect(Prism.languages.cpp).toBeTruthy();
   });
 
-  it("normalizes common aliases before loading a language", async () => {
+  it("normalizes aliases and safely falls back for unsupported languages", async () => {
     expect(normalizePrismLanguage("md")).toBe("markdown");
     expect(normalizePrismLanguage("py")).toBe("python");
-    expect(normalizePrismLanguage("zsh")).toBe("bash");
+    expect(normalizePrismLanguage("zsh")).toBe("text");
+    expect(normalizePrismLanguage("toml")).toBe("text");
 
-    await ensurePrismLanguage("zsh");
-    expect(Prism.languages.bash).toBeTruthy();
+    await expect(ensurePrismLanguage("zsh")).resolves.toBe("text");
+    await expect(ensurePrismLanguage("toml")).resolves.toBe("text");
   });
 });

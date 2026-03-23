@@ -413,6 +413,22 @@ describe("planSearchedSessionTabTarget", () => {
       }),
     );
   });
+
+  it("opens Weixin sessions in a dedicated tab and labels them as agent:weixin", () => {
+    expect(
+      planSearchedSessionTabTarget({
+        activeTabId: "agent:main",
+        agentId: "main",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        sessionUser: "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat",
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        create: true,
+        title: "微信 main",
+      }),
+    );
+  });
 });
 
 describe("resolveRuntimeTabAgentId", () => {
@@ -497,10 +513,15 @@ describe("buildChatTabTitle", () => {
     expect(buildChatTabTitle("expert", "agent:main:wecom:direct:marila")).toBe("企微 expert");
   });
 
+  it("formats Weixin tabs with the platform name prefix", () => {
+    expect(buildChatTabTitle("expert", "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat")).toBe("微信 expert");
+  });
+
   it("formats IM tab titles with English platform names outside Chinese locales", () => {
     expect(buildChatTabTitle("expert", '{"channel":"dingtalk-connector","peerid":"398058"}', { locale: "en-US" })).toBe("Dingtalk expert");
     expect(buildChatTabTitle("expert", "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58", { locale: "en-US" })).toBe("Feishu expert");
     expect(buildChatTabTitle("expert", "agent:main:wecom:direct:marila", { locale: "en-US" })).toBe("WeCom expert");
+    expect(buildChatTabTitle("expert", "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat", { locale: "en-US" })).toBe("Weixin expert");
   });
 });
 

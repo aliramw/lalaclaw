@@ -5,7 +5,7 @@
 [![CI](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/aliramw/lalaclaw/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 
-Une meilleure façon de co-creer avec des agents.
+Une meilleure façon de co-creer avec OpenClaw.
 
 Auteure : Marila Wang
 
@@ -126,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-Pour installer une version precise, par exemple `2026.3.21-2` :
+Pour installer une version precise, par exemple `2026.3.24` :
 
 ```bash
-npm install -g lalaclaw@2026.3.21-2
+npm install -g lalaclaw@2026.3.24
 lalaclaw init
 ```
 
@@ -143,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-Pour passer a une version precise, par exemple `2026.3.21-2` :
+Pour passer a une version precise, par exemple `2026.3.24` :
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.21-2
+git checkout 2026.3.24
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -194,7 +194,7 @@ La checklist complete est dans [CONTRIBUTING.md](../CONTRIBUTING.md).
 LalaClaw utilise un versionnement calendaire compatible avec npm.
 
 - Mettez a jour [CHANGELOG.md](../CHANGELOG.md) a chaque changement de version
-- Pour plusieurs releases le meme jour, utilisez `YYYY.M.D-N`, par exemple `2026.3.21-2`
+- Pour plusieurs releases le meme jour, utilisez `YYYY.M.D-N`, par exemple `2026.3.24`
 - Signalez clairement les changements cassants dans les release notes et les documents de migration
 - Pour le developpement, la version Node.js recommandee est `22` via [`.nvmrc`](../.nvmrc). Le package npm publie prend en charge `^20.19.0 || ^22.12.0 || >=24.0.0`
 

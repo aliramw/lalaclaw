@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026.3.24]
+
+### Added
+
+- Added broader regression coverage for IM session identity handling, runtime snapshot refresh behavior, and OpenClaw environment update/config flows so the current release path is validated end to end
+
+### Changed
+
+- Refined the OpenClaw environment experience so install docs follow the active locale, update messaging stays aligned with OpenClaw's own channel semantics, and ambiguous stable/default update targets no longer trigger noisy action prompts
+- Updated IM conversation tabs to use branded platform icons, remove redundant trailing agent names, and improve active-tab icon contrast for DingTalk, Feishu, WeCom, and Weixin sessions
+- Updated README and localized quick-start / README version examples to `2026.3.24`
+
+### Fixed
+
+- Fixed dark-mode branding contrast on the access recovery screen so the LalaClaw wordmark stays legible on dark backgrounds
+- Fixed several OpenClaw environment regressions around target-version display, stable-channel update affordances, and locale-specific install documentation links
+- Fixed IM session tab presentation regressions so active IM tabs stay readable while matching the same platform branding used elsewhere in the command center
+
 ## [2026.3.21-2]
 
 ### Added

@@ -16,6 +16,7 @@ import { isImSessionUser } from "@/features/session/im-session";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, normalizeStatusKey } from "@/features/session/status-display";
 import { I18nProvider } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
+import { buildDevWorkspaceLabel } from "@/lib/dev-workspace-label";
 import { devWorkspacePageReloader } from "@/lib/dev-workspace-page-reloader";
 import { cn } from "@/lib/utils";
 
@@ -42,10 +43,6 @@ const pointerFocusDismissSelector = [
   "a[href]",
   "summary",
 ].join(",");
-
-function buildDevWorkspaceLabel(info, port = "") {
-  return [info?.branch || info?.commit || "", info?.worktree || "", port ? `:${port}` : ""].filter(Boolean).join(" · ");
-}
 
 function getDevWorkspaceInfo() {
   const info = globalThis.__LALACLAW_DEV_INFO__;

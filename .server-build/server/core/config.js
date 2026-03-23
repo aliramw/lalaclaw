@@ -30,8 +30,20 @@ exports.DIST_DIR = node_path_1.default.join(exports.PROJECT_ROOT, 'dist');
 const HOME_DIR = process.env.HOME || '';
 const LOCAL_OPENCLAW_CONFIG = node_path_1.default.join(HOME_DIR, '.openclaw', 'openclaw.json');
 exports.LOCAL_OPENCLAW_DIR = node_path_1.default.join(HOME_DIR, '.openclaw');
-exports.OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw';
 const NPM_GLOBAL_DIR = node_path_1.default.join(HOME_DIR, '.npm-global');
+function resolveOpenClawBin() {
+    const explicitBin = String(process.env.OPENCLAW_BIN || '').trim();
+    if (explicitBin) {
+        return explicitBin;
+    }
+    const candidateBins = [
+        node_path_1.default.join(NPM_GLOBAL_DIR, 'bin', 'openclaw'),
+        node_path_1.default.join(NPM_GLOBAL_DIR, 'lib', 'node_modules', 'openclaw', 'openclaw.mjs'),
+    ];
+    const matchedCandidate = candidateBins.find((candidatePath) => fileExists(candidatePath));
+    return matchedCandidate || 'openclaw';
+}
+exports.OPENCLAW_BIN = resolveOpenClawBin();
 function resolveDefaultConfigDir() {
     const explicitConfigDir = String(process.env.LALACLAW_CONFIG_DIR || '').trim();
     if (explicitConfigDir) {

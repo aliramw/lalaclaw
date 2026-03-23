@@ -51,6 +51,8 @@ type CopyButtonProps = {
 };
 
 type EnvironmentSectionCardProps = {
+  alertDot?: boolean;
+  alertTestId?: string;
   children?: ReactNode;
   count?: number;
   defaultOpen?: boolean;
@@ -251,6 +253,8 @@ export function HoverCopyValueButton({ content = "" }: CopyButtonProps) {
 }
 
 export function EnvironmentSectionCard({
+  alertDot = false,
+  alertTestId,
   children,
   count = 0,
   defaultOpen = false,
@@ -291,7 +295,18 @@ export function EnvironmentSectionCard({
               <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
-          <div className="min-w-0 text-[13px] font-semibold leading-5 text-foreground">{label}</div>
+          <div className="min-w-0">
+            <div className="inline-flex min-w-0 items-center gap-2">
+              <div className="truncate text-[13px] font-semibold leading-5 text-foreground">{label}</div>
+              {alertDot ? (
+                <span
+                  data-testid={alertTestId}
+                  aria-hidden="true"
+                  className="h-2 w-2 shrink-0 rounded-full bg-red-500"
+                />
+              ) : null}
+            </div>
+          </div>
           {shouldShowCount ? (
             <Badge variant="secondary" className="h-6 min-w-6 justify-center rounded-full border border-border/70 bg-background px-1.5 py-0 text-[10px] font-medium text-foreground">
               {count}

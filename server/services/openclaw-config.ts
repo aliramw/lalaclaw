@@ -49,11 +49,23 @@ type ImChannelSummary = {
   enabled: boolean;
   defaultAgentId: string;
 };
+type ImChannelDefinition = {
+  channel: string;
+  pluginId: string;
+  channelPath: string;
+  allowPluginOnly?: boolean;
+};
 
-const IM_CHANNEL_DEFINITIONS = [
+const IM_CHANNEL_DEFINITIONS: readonly ImChannelDefinition[] = [
   { channel: 'dingtalk-connector', pluginId: 'dingtalk-connector', channelPath: 'channels.dingtalk-connector.enabled' },
   { channel: 'feishu', pluginId: 'feishu', channelPath: 'channels.feishu.enabled' },
   { channel: 'wecom', pluginId: 'wecom-openclaw-plugin', channelPath: 'channels.wecom.enabled' },
+  {
+    channel: 'openclaw-weixin',
+    pluginId: 'openclaw-weixin',
+    channelPath: 'channels.openclaw-weixin.enabled',
+    allowPluginOnly: true,
+  },
 ] as const;
 export const MODEL_PRIMARY_PATH = 'agents.defaults.model.primary';
 export const AGENT_MODEL_KEY = 'agentModel';
@@ -317,9 +329,12 @@ function resolveImChannelDefaultAgentId(configJson: LooseRecord = {}, channel = 
 
 function buildImChannelSummary(configJson: LooseRecord = {}) {
   return Object.fromEntries(
-    IM_CHANNEL_DEFINITIONS.map(({ channel, pluginId, channelPath }) => {
-      const channelEnabled = isConfigFlagEnabled(getValueAtPath(configJson, channelPath));
+    IM_CHANNEL_DEFINITIONS.map(({ channel, pluginId, channelPath, allowPluginOnly = false }) => {
+      const channelFlag = getValueAtPath(configJson, channelPath);
       const pluginEnabled = isConfigFlagEnabled(getValueAtPath(configJson, `plugins.entries.${pluginId}.enabled`));
+      const channelEnabled = channelFlag === undefined && allowPluginOnly
+        ? pluginEnabled
+        : isConfigFlagEnabled(channelFlag);
       const summary: ImChannelSummary = {
         channel,
         pluginId,
