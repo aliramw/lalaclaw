@@ -10,12 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Added the internal AI-assisted coding governance plan under `plan/ai-assisted-code-quality.md` so prompt templates, quality gates, release checks, and reviewer sign-off expectations are tracked in one place.
+- Added Windows installation and packaged-start guidance across the root README and localized quick-start guides, including a tarball-based validation path for PowerShell users.
+- Added release tarball smoke validation so packaged installs are now checked in a clean temporary directory before publish, including real startup, first-screen render, and browser runtime error checks.
+- Added broader OpenClaw compatibility regressions covering onboarding, config/update flows, and installed-package validation for newer OpenClaw releases.
 
 ### Changed
 
-- Documented the new AI-assisted contribution rules across `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, and `dev-spec/frontend-visual-spec.md` so release-facing governance and visual-rule expectations stay aligned.
-- Updated README and localized quick-start version examples to `2026.3.24-1`.
+- Updated the Environment/update flow so source checkouts and packaged installs report release availability more accurately during local development and release validation.
+- Documented the new AI-assisted contribution governance across `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, and `dev-spec/frontend-visual-spec.md`.
+- Updated README and localized quick-start / README version examples to `2026.3.24-1`.
+
+### Fixed
+
+- Fixed compatibility issues with OpenClaw `2026.3.22` so install/update/onboarding flows keep working without regressing existing local installs.
+- Fixed release-validation gaps by hardening the clean-install smoke flow and tightening the related regression coverage.
 
 ## [2026.3.24]
 
