@@ -39,7 +39,7 @@ export function findNearbyCollisionPairs(positions: LobsterPosition[] = [], {
   );
   const cellSize = Math.max(baseCollisionDistance, maxFontSize * 0.84, 1);
   const occupiedCells = new Map();
-  const pairs = [];
+  const pairs: Array<[number, number]> = [];
 
   positions.forEach((position, index) => {
     const column = Math.floor(Number(position?.centerX || 0) / cellSize);

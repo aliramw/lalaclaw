@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ChatMessage, ChatTab, ChatTabMeta, ConversationPendingMap, PendingChatTurn, StoredUiState } from "@/types/chat";
+import type {
+  ChatMessage,
+  ChatScrollState,
+  ChatTab,
+  ChatTabMeta,
+  ConversationPendingMap,
+  PendingChatTurn,
+  SessionFile,
+  SessionFileRewrite,
+  StoredUiState,
+} from "@/types/chat";
 import type { AppSession, RuntimePeeks, RuntimeSnapshot } from "@/types/runtime";
 import {
   derivePendingEntryFromLocalMessages,
@@ -113,7 +123,7 @@ function replacePathPrefix(sourcePath = "", previousPath = "", nextPath = "") {
   return `${normalizedNext}${normalizedSource.slice(normalizedPrevious.length)}`;
 }
 
-function renameSessionFiles(items = [], previousPath = "", nextPath = "") {
+function renameSessionFiles(items: SessionFile[] = [], previousPath = "", nextPath = ""): SessionFile[] {
   return (items || []).map((item) => {
     const currentPath = String(item?.fullPath || item?.path || "").trim();
     if (currentPath !== previousPath && !currentPath.startsWith(`${previousPath}/`)) {
@@ -130,15 +140,18 @@ function renameSessionFiles(items = [], previousPath = "", nextPath = "") {
   });
 }
 
-function applySessionFileRewrites(items = [], rewrites = []) {
+function applySessionFileRewrites(items: SessionFile[] = [], rewrites: SessionFileRewrite[] = []): SessionFile[] {
   return (rewrites || []).reduce(
     (current, rewrite) => renameSessionFiles(current, rewrite?.previousPath, rewrite?.nextPath),
     items,
   );
 }
 
-function mergeSessionFileRewrites(previousRewrites = [], nextRewrites = []) {
-  const merged = [...(previousRewrites || [])];
+function mergeSessionFileRewrites(
+  previousRewrites: SessionFileRewrite[] = [],
+  nextRewrites: SessionFileRewrite[] = [],
+): SessionFileRewrite[] {
+  const merged: SessionFileRewrite[] = [...(previousRewrites || [])];
 
   for (const rewrite of nextRewrites || []) {
     const previousPath = String(rewrite?.previousPath || "").trim();
@@ -199,7 +212,7 @@ function resolveAgentIdFromTabId(tabId = "") {
   if (!normalized.startsWith("agent:")) {
     return "main";
   }
-  return normalized.slice("agent:".length).split("::")[0].trim() || "main";
+  return (normalized.slice("agent:".length).split("::")[0] || "").trim() || "main";
 }
 
 function hashSessionUser(value = "") {
@@ -225,6 +238,7 @@ type PersistCurrentUiOverrides = {
   messages?: ChatMessage[];
   chatFontSize?: StoredUiState["chatFontSize"];
   composerSendMode?: StoredUiState["composerSendMode"];
+  userLabel?: string;
 };
 
 type PromptConversationOptions = {
@@ -247,6 +261,35 @@ type RuntimeCacheEntry = {
   taskRelationships: unknown[];
   taskTimeline: unknown[];
 };
+
+type SwitchingAgentOverlay = {
+  agentLabel: string;
+  mode: string;
+} | null;
+
+type SwitchingModelOverlay = {
+  modelLabel: string;
+} | null;
+
+type ModelSwitchNotice = {
+  type: "success" | "error";
+  message: string;
+} | null;
+
+type FocusMessageRequest = {
+  id: string;
+  messageId?: string;
+  role?: string;
+  source?: string;
+  timestamp?: number;
+} | null;
+
+type TabIdentity = {
+  agentId?: string;
+  sessionUser?: string;
+};
+
+type TabMutation<T> = T | ((current: T) => T);
 
 export function buildChatTabTitle(agentId = "main", sessionUser = "", options: BuildChatTabTitleOptions = {}) {
   const normalizedAgentId = String(agentId || "main").trim() || "main";
@@ -285,7 +328,7 @@ export function resolveImRuntimeSessionUser({
 export function planSearchedSessionTabTarget({
   activeTabId = "",
   agentId = "main",
-  chatTabs = [],
+  chatTabs = [] as ChatTab[],
   sessionUser = "",
   locale = "zh",
 } = {}) {
@@ -362,7 +405,7 @@ function normalizeRuntimeIdentityValue(value = "") {
   return String(value || "").trim();
 }
 
-export function hasActiveAssistantReply(messages = []) {
+export function hasActiveAssistantReply(messages: ChatMessage[] = []) {
   return (messages || []).some((message) => message?.role === "assistant" && (message?.pending || message?.streaming));
 }
 
@@ -547,7 +590,13 @@ export function resolveViewportAnchorCandidate(viewport, selector, viewportRect)
   return null;
 }
 
-export function buildChatScrollStateSnapshot({ viewport = null, scrollTop = 0 } = {}) {
+export function buildChatScrollStateSnapshot({
+  viewport = null,
+  scrollTop = 0,
+}: {
+  viewport?: HTMLDivElement | null;
+  scrollTop?: number;
+} = {}): ChatScrollState {
   const normalizedTop = Math.max(0, Math.round(Number(scrollTop) || 0));
   const distanceFromBottom = viewport
     ? Math.max(0, viewport.scrollHeight - normalizedTop - viewport.clientHeight)
@@ -581,7 +630,7 @@ export function buildChatScrollStateSnapshot({ viewport = null, scrollTop = 0 } 
   };
 }
 
-export function getLatestUserMessageKey(messages = []) {
+export function getLatestUserMessageKey(messages: ChatMessage[] = []) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "user") {
@@ -594,7 +643,7 @@ export function getLatestUserMessageKey(messages = []) {
   return "";
 }
 
-export function getLatestSettledMessageKey(messages = []) {
+export function getLatestSettledMessageKey(messages: ChatMessage[] = []) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (!message || message.pending || message.streaming) {
@@ -612,8 +661,8 @@ export function getLatestSettledMessageKey(messages = []) {
   return "";
 }
 
-export function getSettledMessageKeys(messages = []) {
-  return (messages || []).reduce((keys, message, index) => {
+export function getSettledMessageKeys(messages: ChatMessage[] = []): string[] {
+  return (messages || []).reduce<string[]>((keys, message, index) => {
     if (!message || message.pending || message.streaming) {
       return keys;
     }
@@ -630,7 +679,7 @@ export function getSettledMessageKeys(messages = []) {
 
 export function deriveUnreadTabState({
   activeChatTabId = "",
-  chatTabs = [],
+  chatTabs = [] as ChatTab[],
   settledMessageKeysByTabId = {},
   previousSettledMessageKeysByTabId = {},
   previousUnreadCountByTabId = {},
@@ -640,7 +689,7 @@ export function deriveUnreadTabState({
       .map((tab) => String(tab?.id || "").trim())
       .filter(Boolean),
   );
-  const nextUnreadCountByTabId = {};
+  const nextUnreadCountByTabId: Record<string, number> = {};
 
   for (const tabId of trackedTabIds) {
     if (tabId === activeChatTabId) {
@@ -784,9 +833,9 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const [promptHistoryByConversation, setPromptHistoryByConversation] = useState(storedPromptHistory);
   const [promptDraftsByConversation, setPromptDraftsByConversation] = useState(storedPromptDrafts);
   const [pendingChatTurns, setPendingChatTurnsState] = useState<ConversationPendingMap>(storedPendingChatTurns);
-  const [switchingAgentOverlay, setSwitchingAgentOverlay] = useState(null);
-  const [switchingModelOverlay, setSwitchingModelOverlay] = useState(null);
-  const [modelSwitchNotice, setModelSwitchNotice] = useState(null);
+  const [switchingAgentOverlay, setSwitchingAgentOverlay] = useState<SwitchingAgentOverlay>(null);
+  const [switchingModelOverlay, setSwitchingModelOverlay] = useState<SwitchingModelOverlay>(null);
+  const [modelSwitchNotice, setModelSwitchNotice] = useState<ModelSwitchNotice>(null);
   const [activeTab, setActiveTab] = useState(stored?.activeTab || defaultTab);
   const [inspectorPanelWidth, setInspectorPanelWidth] = useState(stored?.inspectorPanelWidth || defaultInspectorPanelWidth);
   const [chatFontSize, setChatFontSize] = useState(stored?.chatFontSize || defaultChatFontSize);
@@ -795,19 +844,19 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const [dismissedTaskRelationshipIdsByConversation, setDismissedTaskRelationshipIdsByConversation] = useState(
     stored?.dismissedTaskRelationshipIdsByConversation || {},
   );
-  const [focusMessageRequest, setFocusMessageRequest] = useState(null);
+  const [focusMessageRequest, setFocusMessageRequest] = useState<FocusMessageRequest>(null);
   const { resolvedTheme, setTheme, theme } = useTheme();
   const [session, setSession] = useState(createSessionForTab(i18n, initialActiveTab, initialActiveMeta, initialSessionByTabId[initialActiveChatTabId]));
-  const [messages, setMessages] = useState(initialHydratedMessagesByTabId[initialActiveChatTabId] || []);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialHydratedMessagesByTabId[initialActiveChatTabId] || []);
   const [busy, setBusy] = useState(Boolean(initialBusyByTabId[initialActiveChatTabId]));
   const [model, setModel] = useState(initialActiveMeta.model || "");
   const [fastMode, setFastMode] = useState(Boolean(initialActiveMeta.fastMode));
   const [prompt, setPrompt] = useState(storedPromptDrafts[initialConversationKey] || "");
   const [promptSyncVersion, setPromptSyncVersion] = useState(0);
-  const promptRef = useRef(null);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const promptValueRef = useRef(storedPromptDrafts[initialConversationKey] || "");
   const promptDraftFlushTimeoutRef = useRef(0);
-  const messageViewportRef = useRef(null);
+  const messageViewportRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
   const messagesRef = useRef(messages);
   const activeChatTabIdRef = useRef(activeChatTabId);
@@ -828,7 +877,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const chatFontSizeRef = useRef(chatFontSize);
   const composerSendModeRef = useRef(composerSendMode);
   const userLabelRef = useRef(userLabel);
-  const promptHeightMetricsRef = useRef({ node: null, maxHeight: 0 });
+  const promptHeightMetricsRef = useRef<{ node: HTMLTextAreaElement | null; maxHeight: number }>({ node: null, maxHeight: 0 });
   const promptHeightFrameRef = useRef(0);
   const dismissedTaskRelationshipIdsByConversationRef = useRef(dismissedTaskRelationshipIdsByConversation);
   const restoredPendingConversationKeysRef = useRef(new Set(Object.keys(storedPendingChatTurns || {})));
@@ -846,7 +895,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     sessionUser: initialActiveMeta.sessionUser,
     agentId: initialActiveMeta.agentId,
   });
-  const chatScrollTopByConversationRef = useRef(storedChatScrollTops);
+  const chatScrollTopByConversationRef = useRef<Record<string, ChatScrollState>>(storedChatScrollTops);
   const chatScrollPersistenceTimerRef = useRef(0);
   const [restoredChatScrollRevision, setRestoredChatScrollRevision] = useState(0);
   const localizedFormatTime = useMemo(() => (timestamp) => formatTime(timestamp, intlLocale), [intlLocale]);
@@ -1153,8 +1202,15 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     });
   }, []);
 
-  const updateTabIdentity = useCallback((tabId: string, nextIdentity: { agentId?: string; sessionUser?: string } = {}) => {
+  const updateTabIdentity = useCallback((tabId: string, value: TabMutation<TabIdentity> = {}) => {
     setChatTabs((current) => {
+      const currentIdentity = current.find((tab) => tab.id === tabId) || null;
+      const nextIdentity = typeof value === "function"
+        ? value({
+            agentId: currentIdentity?.agentId,
+            sessionUser: currentIdentity?.sessionUser,
+          })
+        : value;
       const updated = current.map((tab) =>
         tab.id === tabId
           ? {
@@ -2278,7 +2334,10 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   };
 
   const visibleTaskRelationships = useMemo(
-    () => taskRelationships.filter((relationship) => !dismissedTaskRelationshipIds.includes(relationship?.id)),
+    () => taskRelationships.filter((relationship: { id?: string } | null | undefined) => {
+      const relationshipId = String(relationship?.id || "").trim();
+      return !relationshipId || !dismissedTaskRelationshipIds.includes(relationshipId);
+    }),
     [dismissedTaskRelationshipIds, taskRelationships],
   );
 
@@ -2308,15 +2367,15 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       persistConversationScrollTop(activeConversationKey, viewport.scrollTop);
     };
 
-    let removeAutoScrollSync = null;
-    let bottomObserver = null;
+    let removeAutoScrollSync: (() => void) | null = null;
+    let bottomObserver: IntersectionObserver | null = null;
 
     syncAutoScroll();
     if (IntersectionObserverCtor && bottomSentinel) {
       bottomObserver = new IntersectionObserverCtor(
         (entries) => {
-          const entry = entries.find((candidate) => candidate.target === bottomSentinel) || entries[0];
-          shouldAutoScrollRef.current = Boolean(entry?.isIntersecting || entry?.intersectionRatio > 0);
+          const entry = entries.find((candidate) => candidate.target === bottomSentinel) || entries[0] || null;
+          shouldAutoScrollRef.current = Boolean(entry?.isIntersecting || (entry?.intersectionRatio || 0) > 0);
         },
         {
           root: viewport,
@@ -3071,6 +3130,9 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         return current;
       }
       const insertionIndex = placement === "after" ? nextTargetIndex + 1 : nextTargetIndex;
+      if (!movedTab) {
+        return current;
+      }
       updated.splice(insertionIndex, 0, movedTab);
       chatTabsRef.current = updated;
       return updated;

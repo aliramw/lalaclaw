@@ -17,12 +17,16 @@ export function shouldShowBubbleTopJumpButton({
     return false;
   }
 
-  const bubbleHeight = Number(bubbleRect.height) || Math.max(0, Number(bubbleRect.bottom || 0) - Number(bubbleRect.top || 0));
+  const bubbleTop = Number(bubbleRect.top) || 0;
+  const bubbleBottom = Number(bubbleRect.bottom) || 0;
+  const viewportTop = Number(viewportRect.top) || 0;
+  const viewportBottom = Number(viewportRect.bottom) || viewportTop;
+  const bubbleHeight = Number(bubbleRect.height) || Math.max(0, bubbleBottom - bubbleTop);
   const minTallHeight = Math.min(96, Math.max(56, viewportClientHeight * 0.18));
   const bubbleTallEnough = bubbleHeight >= minTallHeight;
-  const bubbleTopHidden = bubbleRect.top <= viewportRect.top - 8;
-  const bubbleNotFullyVisible = bubbleTopHidden || bubbleRect.bottom >= viewportRect.bottom - 8;
-  const bubbleStillVisible = bubbleRect.bottom > viewportRect.top + 24;
+  const bubbleTopHidden = bubbleTop <= viewportTop - 8;
+  const bubbleNotFullyVisible = bubbleTopHidden || bubbleBottom >= viewportBottom - 8;
+  const bubbleStillVisible = bubbleBottom > viewportTop + 24;
 
   return bubbleTallEnough && bubbleTopHidden && bubbleNotFullyVisible && bubbleStillVisible;
 }

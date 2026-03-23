@@ -94,7 +94,7 @@ export function formatTokenBadge(usage: UsageLike | null | undefined): string {
     return '';
   }
 
-  const parts = [];
+  const parts: string[] = [];
   if (usage.input) {
     parts.push(`↑${formatCompactTokenCount(usage.input)}`);
   }

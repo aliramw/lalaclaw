@@ -32,6 +32,12 @@ import { useRuntimeSocket } from "./use-runtime-socket";
 
 const EMPTY_RUNTIME_PEEKS: RuntimePeeks = { workspace: null, terminal: null, browser: null, environment: null };
 
+type InflightRuntimeRequest = {
+  key: string;
+  promise: Promise<RuntimeSnapshot>;
+  requestId: number;
+} | null;
+
 function areJsonEqual(left: unknown, right: unknown) {
   if (left === right) {
     return true;
@@ -492,20 +498,20 @@ export function useRuntimeSnapshot({
   const INITIAL_RUNTIME_RETRY_DELAY_MS = 1200;
   const STOP_OVERRIDE_DURATION_MS = 10_000;
   const RECOVERED_PENDING_SETTLE_DELAY_MS = 900;
-  const [availableModels, setAvailableModels] = useState([]);
-  const [availableAgents, setAvailableAgents] = useState([]);
-  const [taskTimeline, setTaskTimeline] = useState([]);
-  const [taskRelationships, setTaskRelationships] = useState([]);
-  const [files, setFiles] = useState([]);
-  const [artifacts, setArtifacts] = useState([]);
-  const [snapshots, setSnapshots] = useState([]);
-  const [agents, setAgents] = useState([]);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [availableAgents, setAvailableAgents] = useState<string[]>([]);
+  const [taskTimeline, setTaskTimeline] = useState<unknown[]>([]);
+  const [taskRelationships, setTaskRelationships] = useState<RuntimeTaskRelationship[]>([]);
+  const [files, setFiles] = useState<RuntimeFile[]>([]);
+  const [artifacts, setArtifacts] = useState<unknown[]>([]);
+  const [snapshots, setSnapshots] = useState<unknown[]>([]);
+  const [agents, setAgents] = useState<unknown[]>([]);
   const [peeks, setPeeks] = useState<RuntimePeeks>(EMPTY_RUNTIME_PEEKS);
   const stopOverrideUntilRef = useRef(
     (() => { try { const v = Number(sessionStorage.getItem("cc-stop-override-until") || 0); return v > Date.now() ? v : 0; } catch { return 0; } })()
   );
   const runtimeRequestRef = useRef(0);
-  const inflightRuntimeRequestRef = useRef(null);
+  const inflightRuntimeRequestRef = useRef<InflightRuntimeRequest>(null);
   const pendingChatTurnsRef = useRef(pendingChatTurns);
   const recoveredPendingProgressRef = useRef<RuntimeRecoveredPendingProgressMap>({});
   const recoveredPendingSettleTimeoutRef = useRef(0);
@@ -583,7 +589,7 @@ export function useRuntimeSnapshot({
     clearRecoveredPendingSettleTimeout();
   }, [clearRecoveredPendingSettleTimeout]);
 
-  const setFilesFromSnapshot = useCallback((nextFiles = []) => {
+  const setFilesFromSnapshot = useCallback((nextFiles: RuntimeFile[] = []) => {
     const normalizedNextFiles = Array.isArray(nextFiles) ? nextFiles : [];
     setFiles((current) => {
       const mergedFiles = mergeRuntimeFiles(current, normalizedNextFiles);
@@ -734,7 +740,7 @@ export function useRuntimeSnapshot({
       if (!areSessionSnapshotsEqual(currentSession, nextSessionState)) {
         setSession(nextSessionState);
       }
-      setMessagesSynced(stabilizedConversation);
+      setMessagesSynced(stabilizedConversation || []);
       setBusy(hasActivePendingTurn);
 
       if (recoveringPendingReply && pendingEntry) {
@@ -949,7 +955,7 @@ export function useRuntimeSnapshot({
       hydratedSummary: summarizeCcMessages(stabilizedConversation),
     });
 
-    setMessagesSynced(stabilizedConversation);
+    setMessagesSynced(stabilizedConversation || []);
     setBusy(hasActivePendingTurn);
 
     if (recoveringPendingReply && pendingEntry) {

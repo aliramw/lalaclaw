@@ -230,7 +230,13 @@ async function hydrateAttachmentReferences(attachments: AttachmentLike[] = []) {
           }
 
           runStoreOperation("readonly", (store) => {
-            const request = store.get(attachment.storageKey);
+            const storageKey = attachment.storageKey;
+            if (!storageKey) {
+              resolve(attachment);
+              return;
+            }
+
+            const request = store.get(storageKey);
             request.onsuccess = () => {
               const storedAttachment = request.result?.attachment;
               resolve(storedAttachment ? { ...attachment, ...storedAttachment } : attachment);

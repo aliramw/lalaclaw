@@ -96,7 +96,7 @@ export function canPreviewFileItem(item?: InspectorFileItem | null) {
     return true;
   }
 
-  const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+  const extension = fileName.includes(".") ? String(fileName.split(".").pop() || "") : "";
   return Boolean(extension) && previewableExtensions.has(extension);
 }
 
@@ -115,7 +115,7 @@ export function canEditFileItem(item?: InspectorFileItem | null) {
     return true;
   }
 
-  const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+  const extension = fileName.includes(".") ? String(fileName.split(".").pop() || "") : "";
   return Boolean(extension) && editableExtensions.has(extension);
 }
 
@@ -369,7 +369,7 @@ export function buildSessionTreeNodes(items: InspectorFileItem[] = [], currentWo
 
       let currentLevel = rootNodes;
       for (let index = 0; index < segments.length - 1; index += 1) {
-        const name = segments[index];
+        const name = segments[index] || "";
         const fullPath = joinPathSegments(basePath, segments.slice(0, index + 1));
         let node = currentLevel.find((candidate) => candidate.kind === "目录" && candidate.fullPath === fullPath);
         if (!node) {
@@ -386,7 +386,7 @@ export function buildSessionTreeNodes(items: InspectorFileItem[] = [], currentWo
           };
           currentLevel.push(node);
         }
-        currentLevel = node.children;
+        currentLevel = node.children || [];
       }
 
       currentLevel.push({

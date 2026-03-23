@@ -94,7 +94,20 @@ function resolveDefaultAgentId(localConfig: LooseRecord | null): string {
 }
 
 function getConfiguredModelEntries(localConfig: LooseRecord | null = null): Array<[string, LooseRecord]> {
-  return Object.entries(localConfig?.agents?.defaults?.models || {}).filter(([modelId]) => String(modelId || '').trim());
+  const models = localConfig?.agents?.defaults?.models;
+  if (!models || typeof models !== 'object') {
+    return [];
+  }
+
+  return Object.entries(models).reduce<Array<[string, LooseRecord]>>((entries, [modelId, meta]) => {
+    const normalizedModelId = String(modelId || '').trim();
+    if (!normalizedModelId || !meta || typeof meta !== 'object') {
+      return entries;
+    }
+
+    entries.push([normalizedModelId, meta as LooseRecord]);
+    return entries;
+  }, []);
 }
 
 export function resolveCanonicalModelId(value = '', localConfig: LooseRecord | null = null): string {
@@ -121,7 +134,7 @@ export function resolveCanonicalModelId(value = '', localConfig: LooseRecord | n
 
   const suffixMatches = configuredModels.filter(([modelId]) => modelId.toLowerCase().endsWith(`/${normalizedRequestedModel}`));
   if (suffixMatches.length === 1) {
-    return suffixMatches[0][0];
+    return suffixMatches[0]?.[0] || requestedModel;
   }
 
   return requestedModel;

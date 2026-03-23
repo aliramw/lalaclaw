@@ -151,10 +151,70 @@ export function createOpenClawClient({
   tailLines,
   loadGatewaySdk,
 }: OpenClawClientOptions) {
+  const runtimeConfig = config ?? {};
+  const openClawBin = String(OPENCLAW_BIN || runtimeConfig.openclawBin || 'openclaw').trim() || 'openclaw';
+  const projectRoot = String(PROJECT_ROOT || process.cwd()).trim() || process.cwd();
+  const clipText = typeof clip === 'function'
+    ? clip
+    : (value: unknown, maxLength = 10_000) => {
+      const normalized = String(value || '');
+      return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}\n...[truncated]` : normalized;
+    };
+  const normalizeSessionUserValue = typeof normalizeSessionUser === 'function'
+    ? normalizeSessionUser
+    : (value: unknown) => String(value || '').trim();
+  const normalizeChatMessageValue = typeof normalizeChatMessage === 'function'
+    ? normalizeChatMessage
+    : (message: unknown) => {
+      if (typeof message === 'string') {
+        return message;
+      }
+      if (message && typeof message === 'object' && typeof (message as LooseRecord).content === 'string') {
+        return String((message as LooseRecord).content);
+      }
+      return '';
+    };
+  const getMessageAttachmentsList = typeof getMessageAttachments === 'function'
+    ? getMessageAttachments
+    : (): MessageAttachment[] => [];
+  const describeAttachment = typeof describeAttachmentForModel === 'function'
+    ? describeAttachmentForModel
+    : () => '';
+  const buildMessageContent = typeof buildOpenClawMessageContent === 'function'
+    ? buildOpenClawMessageContent
+    : (message: unknown, _mode?: string) => {
+      if (message && typeof message === 'object' && 'content' in (message as LooseRecord)) {
+        return (message as LooseRecord).content;
+      }
+      return typeof message === 'string' ? message : '';
+    };
+  const getSessionKey = typeof getCommandCenterSessionKey === 'function'
+    ? getCommandCenterSessionKey
+    : (...args: unknown[]) => String(args.find(Boolean) || 'main').trim() || 'main';
+  const resolveAgentId = typeof resolveSessionAgentId === 'function'
+    ? resolveSessionAgentId
+    : () => 'main';
+  const resolveModel = typeof resolveSessionModel === 'function'
+    ? resolveSessionModel
+    : () => 'main';
+  const readText = typeof readTextIfExists === 'function'
+    ? readTextIfExists
+    : () => '';
+  const readTailLines = typeof tailLines === 'function'
+    ? tailLines
+    : (): string[] => [];
+
+  function getExecFileAsync() {
+    if (typeof execFileAsync !== 'function') {
+      throw new Error('execFileAsync is required');
+    }
+    return execFileAsync;
+  }
+
   function buildOpenClawExecEnv(baseEnv = process.env) {
     const values = [
       path.dirname(process.execPath),
-      path.isAbsolute(OPENCLAW_BIN) ? path.dirname(OPENCLAW_BIN) : '',
+      path.isAbsolute(openClawBin) ? path.dirname(openClawBin) : '',
       ...String(baseEnv?.PATH || '').split(path.delimiter),
     ]
       .map((value) => String(value || '').trim())
@@ -241,14 +301,14 @@ export function createOpenClawClient({
       : GATEWAY_RETRY_DELAYS_MS;
     const attempts = Math.max(1, Number(options.attempts) || (delays.length + 1));
     let attempt = 0;
-    let lastError = null;
+    let lastError: Error | null = null;
 
     while (attempt < attempts) {
       attempt += 1;
       try {
         return await task();
       } catch (error) {
-        lastError = error;
+        lastError = error instanceof Error ? error : new Error(String(error || 'Unknown gateway error'));
         if (!isRetryableGatewayError(error)) {
           throw error;
         }
@@ -291,12 +351,12 @@ export function createOpenClawClient({
 
   async function resolveOpenClawReplyModulePath() {
     const candidateBins: string[] = [];
-    if (path.isAbsolute(OPENCLAW_BIN)) {
-      candidateBins.push(OPENCLAW_BIN);
+    if (path.isAbsolute(openClawBin)) {
+      candidateBins.push(openClawBin);
     } else {
       try {
-        const { stdout } = await execFileAsync('which', [OPENCLAW_BIN], {
-          cwd: PROJECT_ROOT,
+        const { stdout } = await getExecFileAsync()('which', [openClawBin], {
+          cwd: projectRoot,
           env: buildOpenClawExecEnv(process.env),
           maxBuffer: 1024 * 32,
         });
@@ -332,13 +392,13 @@ export function createOpenClawClient({
   }
 
   async function invokeOpenClawTool(tool: string, args: LooseRecord = {}, sessionKey = 'main', action = '') {
-    const endpoint = new URL('/tools/invoke', config.baseUrl).toString();
+    const endpoint = new URL('/tools/invoke', String(runtimeConfig.baseUrl || '')).toString();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    if (config.apiKey) {
-      headers.Authorization = `Bearer ${config.apiKey}`;
+    if (runtimeConfig.apiKey) {
+      headers.Authorization = `Bearer ${runtimeConfig.apiKey}`;
     }
 
     const payload: Record<string, unknown> = {
@@ -370,11 +430,11 @@ export function createOpenClawClient({
   }
 
   function getGatewayWebSocketUrl() {
-    if (!config.baseUrl) {
+    if (!runtimeConfig.baseUrl) {
       return '';
     }
 
-    const url = new URL(config.baseUrl);
+    const url = new URL(String(runtimeConfig.baseUrl));
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.pathname = '/';
     url.search = '';
@@ -404,12 +464,12 @@ export function createOpenClawClient({
       String(timeoutMs),
     ];
 
-    if (config.apiKey) {
-      args.push('--token', config.apiKey);
+    if (runtimeConfig.apiKey) {
+      args.push('--token', runtimeConfig.apiKey);
     }
 
-    const { stdout } = await withGatewayRetry(`gateway RPC ${method}`, async () => await execFileAsync(OPENCLAW_BIN, args, {
-      cwd: PROJECT_ROOT,
+    const { stdout } = await withGatewayRetry(`gateway RPC ${method}`, async () => await getExecFileAsync()(openClawBin, args, {
+      cwd: projectRoot,
       env: buildOpenClawExecEnv(process.env),
       maxBuffer: 1024 * 1024,
     }));
@@ -462,7 +522,7 @@ export function createOpenClawClient({
       }
     }
 
-    let lastError = null;
+    let lastError: Error | null = null;
     let scalarFallback: unknown;
     for (const candidate of candidates) {
       try {
@@ -482,21 +542,21 @@ export function createOpenClawClient({
       return scalarFallback;
     }
 
-    const preview = clip(text.replace(/\s+/g, ' '), 200);
+    const preview = clipText(text.replace(/\s+/g, ' '), 200);
     throw new Error(`${lastError?.message || 'Unknown JSON parse error'}; stdout preview: ${preview}`);
   }
 
   async function fetchBrowserPeek() {
-    if (config.mode !== 'openclaw') {
+    if (runtimeConfig.mode !== 'openclaw') {
       return {
         summary: '未连接 OpenClaw。',
         items: [{ label: '控制台', value: '当前处于 mock 模式' }],
       };
     }
 
-    const controlUiUrl = `${config.baseUrl}/`;
-    const healthUrl = `${config.baseUrl}/healthz`;
-    const browserServerLog = tailLines(readTextIfExists(path.join(config.logsDir, 'gateway.log')), 80)
+    const controlUiUrl = `${String(runtimeConfig.baseUrl || '')}/`;
+    const healthUrl = `${String(runtimeConfig.baseUrl || '')}/healthz`;
+    const browserServerLog = readTailLines(readText(path.join(String(runtimeConfig.logsDir || ''), 'gateway.log')), 80)
       .reverse()
       .find((line) => line.includes('[browser/server]'));
 
@@ -523,7 +583,7 @@ export function createOpenClawClient({
       items: [
         { label: '控制台页面', value: `${controlTitle} · ${controlUiUrl}` },
         { label: 'Gateway 健康', value: healthStatus },
-        { label: 'Browser Control', value: browserServerLog ? browserServerLog.split('[browser/server] ')[1] : `127.0.0.1:${config.browserControlPort}` },
+        { label: 'Browser Control', value: browserServerLog ? browserServerLog.split('[browser/server] ')[1] : `127.0.0.1:${runtimeConfig.browserControlPort}` },
       ],
     };
   }
@@ -538,11 +598,11 @@ export function createOpenClawClient({
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`OpenClaw request failed: ${response.status} ${clip(errorText, 200)}`);
+      throw new Error(`OpenClaw request failed: ${response.status} ${clipText(errorText, 200)}`);
     }
 
     const data = await response.json();
-    return parseOpenClawResponse(data);
+    return parseOpenClawResponse(data as LooseRecord);
   }
 
   function buildOpenClawRequest(
@@ -552,20 +612,20 @@ export function createOpenClawClient({
     options: OpenClawDispatchOptions = {},
     stream = false,
   ) {
-    const agentId = resolveSessionAgentId(sessionUser);
-    const model = resolveSessionModel(sessionUser, agentId);
+    const agentId = resolveAgentId(sessionUser);
+    const model = resolveModel(sessionUser, agentId);
     const commandBody = typeof options.commandBody === 'string' ? options.commandBody.trim() : '';
     const normalizedMessages =
       commandBody && !messages.some((message: OpenClawMessage) => message?.role === 'user')
         ? [{ role: 'user', content: '\u200b' }, ...messages]
         : messages;
-    const endpoint = new URL(config.apiPath, config.baseUrl).toString();
+    const endpoint = new URL(String(runtimeConfig.apiPath || ''), String(runtimeConfig.baseUrl || '')).toString();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    if (config.apiKey) {
-      headers.Authorization = `Bearer ${config.apiKey}`;
+    if (runtimeConfig.apiKey) {
+      headers.Authorization = `Bearer ${runtimeConfig.apiKey}`;
     }
 
     if (agentId) {
@@ -577,14 +637,14 @@ export function createOpenClawClient({
       'Respond concisely and include operational clarity for the human operator.';
 
     let payload: OpenClawRequestPayload;
-    if (config.apiStyle === 'responses') {
+    if (runtimeConfig.apiStyle === 'responses') {
       payload = {
         model,
         input: [
           { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
           ...normalizedMessages.map((message: OpenClawMessage) => ({
             role: message.role,
-            content: buildOpenClawMessageContent(message, 'responses'),
+            content: buildMessageContent(message, 'responses'),
           })),
         ],
         reasoning: { effort: fastMode ? 'low' : 'medium' },
@@ -600,12 +660,12 @@ export function createOpenClawClient({
           { role: 'system', content: systemPrompt },
           ...normalizedMessages.map((message: OpenClawMessage) => ({
             role: message.role,
-            content: buildOpenClawMessageContent(message, 'chat'),
+            content: buildMessageContent(message, 'chat'),
           })),
         ],
         temperature: fastMode ? 0.3 : 0.7,
         stream,
-        user: normalizeSessionUser(sessionUser),
+        user: normalizeSessionUserValue(sessionUser),
       };
       if (commandBody) {
         payload.commandBody = commandBody;
@@ -620,9 +680,9 @@ export function createOpenClawClient({
   }
 
   function buildOpenClawSessionMessage(message: unknown) {
-    const text = normalizeChatMessage(message).trim();
-    const attachments = getMessageAttachments(message);
-    const attachmentPrompts = attachments.map((attachment) => describeAttachmentForModel(attachment)).filter(Boolean);
+    const text = normalizeChatMessageValue(message).trim();
+    const attachments = getMessageAttachmentsList(message);
+    const attachmentPrompts = attachments.map((attachment) => describeAttachment(attachment)).filter(Boolean);
     const textPrompt = text || (attachmentPrompts.length ? `用户附加了 ${attachmentPrompts.length} 个附件，请结合附件内容处理请求。` : '');
     return [textPrompt, ...attachmentPrompts].filter(Boolean).join('\n\n').trim();
   }
@@ -817,14 +877,15 @@ export function createOpenClawClient({
     let chatType = 'direct';
     let peerId = '';
 
-    if (['direct', 'group', 'channel'].includes(parts[1])) {
-      chatType = parts[1];
+    const secondPart = parts[1];
+    if (secondPart && ['direct', 'group', 'channel'].includes(secondPart)) {
+      chatType = secondPart;
       peerId = parts.slice(2).join(':');
     } else if (parts.length >= 3) {
-      accountId = parts[1];
+      accountId = secondPart || accountId;
       peerId = parts.slice(2).join(':');
     } else {
-      peerId = parts[1];
+      peerId = secondPart || '';
     }
 
     return createDingTalkDeliveryRoute({
@@ -840,7 +901,7 @@ export function createOpenClawClient({
     }
 
     return messages.some((message: unknown) =>
-      getMessageAttachments(message).some((attachment: MessageAttachment) => attachment.kind === 'image' && attachment.dataUrl),
+      getMessageAttachmentsList(message).some((attachment: MessageAttachment) => attachment.kind === 'image' && attachment.dataUrl),
     );
   }
 
@@ -871,8 +932,8 @@ export function createOpenClawClient({
       return null;
     }
 
-    const agentId = resolveSessionAgentId(sessionUser);
-    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const agentId = resolveAgentId(sessionUser);
+    const sessionKey = getSessionKey(agentId, sessionUser);
     return await invokeOpenClawTool(
       'message',
       {
@@ -890,14 +951,14 @@ export function createOpenClawClient({
     const result = await startOpenClawSessionRun(messages, sessionUser);
     const finalAssistant = await waitForOpenClawSessionCompletion(result, timeoutMs);
     return {
-      outputText: finalAssistant ? normalizeChatMessage(finalAssistant) || 'OpenClaw returned an empty response.' : 'OpenClaw returned an empty response.',
+      outputText: finalAssistant ? normalizeChatMessageValue(finalAssistant) || 'OpenClaw returned an empty response.' : 'OpenClaw returned an empty response.',
       usage: finalAssistant?.usage || null,
     };
   }
 
   async function startOpenClawSessionRun(messages: OpenClawMessage[], sessionUser = 'command-center'): Promise<OpenClawRunState | null> {
-    const agentId = resolveSessionAgentId(sessionUser);
-    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const agentId = resolveAgentId(sessionUser);
+    const sessionKey = getSessionKey(agentId, sessionUser);
     const message = messages.map((entry: OpenClawMessage) => buildOpenClawSessionMessage(entry)).filter(Boolean).join('\n\n').trim();
 
     if (!message) {
@@ -923,8 +984,8 @@ export function createOpenClawClient({
   }
 
   function buildGatewayChatSendParams(sessionUser = 'command-center', message = '', timeoutMs = 30000, options: OpenClawDispatchOptions = {}) {
-    const agentId = resolveSessionAgentId(sessionUser);
-    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const agentId = resolveAgentId(sessionUser);
+    const sessionKey = getSessionKey(agentId, sessionUser);
     const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
 
     return {
@@ -943,8 +1004,8 @@ export function createOpenClawClient({
   }
 
   function buildGatewayAgentStartParams(sessionUser = 'command-center', message = '', idempotencyKey = '') {
-    const agentId = resolveSessionAgentId(sessionUser);
-    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const agentId = resolveAgentId(sessionUser);
+    const sessionKey = getSessionKey(agentId, sessionUser);
     const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
 
     return {
@@ -974,7 +1035,7 @@ export function createOpenClawClient({
   }
 
   function normalizeComparableMessageText(message: unknown) {
-    return normalizeChatMessage(message).replace(/\r\n/g, '\n').trim();
+    return normalizeChatMessageValue(message).replace(/\r\n/g, '\n').trim();
   }
 
   function isTerminalOpenClawWaitStatus(status = '') {
@@ -1025,13 +1086,13 @@ export function createOpenClawClient({
       .filter((index) => index >= 0)
       .pop();
 
-    if (Number.isInteger(turnUserIndex) && turnUserIndex >= 0) {
+    if (typeof turnUserIndex === 'number' && Number.isInteger(turnUserIndex) && turnUserIndex >= 0) {
       const turnAssistants = messages
         .slice(turnUserIndex + 1)
-        .filter((entry: OpenClawMessage) => entry?.role === 'assistant' && normalizeChatMessage(entry));
+        .filter((entry: OpenClawMessage) => entry?.role === 'assistant' && normalizeChatMessageValue(entry));
 
       if (turnAssistants.length) {
-        return turnAssistants[turnAssistants.length - 1];
+        return turnAssistants[turnAssistants.length - 1] || null;
       }
 
       return null;
@@ -1041,7 +1102,7 @@ export function createOpenClawClient({
       return null;
     }
 
-    const assistants = [...messages].reverse().filter((entry: OpenClawMessage) => entry?.role === 'assistant' && normalizeChatMessage(entry));
+    const assistants = [...messages].reverse().filter((entry: OpenClawMessage) => entry?.role === 'assistant' && normalizeChatMessageValue(entry));
 
     if (normalizedAcceptedAt > 0) {
       return assistants.find((entry) => normalizeMessageTimestamp(entry?.timestamp) >= normalizedAcceptedAt) || null;
@@ -1179,7 +1240,7 @@ export function createOpenClawClient({
     }
 
     const choiceMessage = event?.choices?.[0]?.message;
-    return normalizeChatMessage(choiceMessage) || '';
+    return normalizeChatMessageValue(choiceMessage) || '';
   }
 
   async function consumeSseEvents(response: Response, onEvent: (event: OpenClawStreamEvent) => void): Promise<void> {
@@ -1246,12 +1307,12 @@ export function createOpenClawClient({
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`OpenClaw request failed: ${response.status} ${clip(errorText, 200)}`);
+      throw new Error(`OpenClaw request failed: ${response.status} ${clipText(errorText, 200)}`);
     }
 
     if (!response.body) {
       const data = await response.json();
-      const parsed = parseOpenClawResponse(data);
+      const parsed = parseOpenClawResponse(data as LooseRecord);
       if (parsed.outputText) {
         onDelta(parsed.outputText);
       }
@@ -1259,7 +1320,7 @@ export function createOpenClawClient({
     }
 
     let outputText = '';
-    let usage = null;
+    let usage: unknown = null;
 
     await consumeSseEvents(response, (event: OpenClawStreamEvent) => {
       const delta = extractOpenClawStreamDelta(event);
@@ -1318,8 +1379,8 @@ export function createOpenClawClient({
       throw new Error('OpenClaw Gateway client is unavailable');
     }
 
-    const agentId = resolveSessionAgentId(sessionUser);
-    const sessionKey = getCommandCenterSessionKey(agentId, sessionUser);
+    const agentId = resolveAgentId(sessionUser);
+    const sessionKey = getSessionKey(agentId, sessionUser);
     const message = messages.map((entry) => buildOpenClawSessionMessage(entry)).filter(Boolean).join('\n\n').trim();
     const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
     if (!message) {
@@ -1430,7 +1491,7 @@ export function createOpenClawClient({
           const latestAssistant = latestAssistantState.status === 'fulfilled'
             ? latestAssistantState.value
             : null;
-          const nextText = latestAssistant ? normalizeChatMessage(latestAssistant) || '' : '';
+          const nextText = latestAssistant ? normalizeChatMessageValue(latestAssistant) || '' : '';
           emitDeltaFromFullText(nextText);
           const waitResult = waitResultState.status === 'fulfilled' ? waitResultState.value : null;
           if (settleFromSilentWaitResult(waitResult)) {
@@ -1446,7 +1507,7 @@ export function createOpenClawClient({
 
     const client = new GatewayClient({
       url: gatewayUrl,
-      token: config.apiKey || undefined,
+      token: runtimeConfig.apiKey || undefined,
       clientName: GATEWAY_CLIENT_NAMES?.GATEWAY_CLIENT || 'gateway-client',
       clientDisplayName: 'LalaClaw',
       clientVersion: VERSION || 'unknown',
@@ -1484,7 +1545,7 @@ export function createOpenClawClient({
         }
 
         if (payload.state === 'delta') {
-          const nextText = normalizeChatMessage(payload.message) || '';
+          const nextText = normalizeChatMessageValue(payload.message) || '';
           if (!nextText) {
             return;
           }
@@ -1543,13 +1604,13 @@ export function createOpenClawClient({
         new Promise((_, reject) => setTimeout(() => reject(new Error('OpenClaw session timed out')), timeoutMs + 2000)),
       ]);
 
-      let finalAssistant = null;
+      let finalAssistant: OpenClawMessage | null = null;
       try {
         finalAssistant = await readOpenClawSessionAssistant(activeRunState);
       } catch {}
       const finalText =
-        normalizeChatMessage((finalPayload as { message?: unknown } | null)?.message)
-        || (finalAssistant ? normalizeChatMessage(finalAssistant) : '')
+        normalizeChatMessageValue((finalPayload as { message?: unknown } | null)?.message)
+        || (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
         || latestText;
 
       emitDeltaFromFullText(finalText);
@@ -1587,7 +1648,7 @@ export function createOpenClawClient({
       );
 
       const latestAssistant = await readOpenClawSessionAssistant(runState);
-      const nextText = latestAssistant ? normalizeChatMessage(latestAssistant) || '' : '';
+      const nextText = latestAssistant ? normalizeChatMessageValue(latestAssistant) || '' : '';
       if (nextText && nextText.startsWith(latestText) && nextText.length > latestText.length) {
         const delta = nextText.slice(latestText.length);
         latestText = nextText;
@@ -1606,7 +1667,7 @@ export function createOpenClawClient({
       }
 
       const finalAssistant = latestAssistant || await waitForOpenClawSessionCompletion(runState, timeoutMs);
-      const finalText = finalAssistant ? normalizeChatMessage(finalAssistant) || latestText : latestText;
+      const finalText = finalAssistant ? normalizeChatMessageValue(finalAssistant) || latestText : latestText;
       if (finalText && finalText.startsWith(latestText) && finalText.length > latestText.length) {
         onDelta(finalText.slice(latestText.length));
         latestText = finalText;
@@ -1676,7 +1737,7 @@ export function createOpenClawClient({
 
     const choice = data.choices?.[0]?.message;
     return {
-      outputText: normalizeChatMessage(choice) || 'OpenClaw returned an empty response.',
+      outputText: normalizeChatMessageValue(choice) || 'OpenClaw returned an empty response.',
       usage: data.usage || null,
     };
   }
@@ -1705,9 +1766,9 @@ export function createOpenClawClient({
           return;
         }
 
-        client = new sdk.GatewayClient({
+        const nextClient = new sdk.GatewayClient({
           url: gatewayUrl,
-          token: config.apiKey || undefined,
+          token: runtimeConfig.apiKey || undefined,
           clientName: sdk.GATEWAY_CLIENT_NAMES?.GATEWAY_CLIENT || 'gateway-client',
           clientDisplayName: 'LalaClaw-RuntimeHub',
           clientVersion: sdk.VERSION || 'unknown',
@@ -1725,7 +1786,8 @@ export function createOpenClawClient({
           },
         });
 
-        client.start();
+        client = nextClient;
+        nextClient.start();
       } catch (error: unknown) {
         if (typeof onError === 'function') onError(error);
       }

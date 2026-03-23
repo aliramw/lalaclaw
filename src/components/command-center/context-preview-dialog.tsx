@@ -319,7 +319,7 @@ function formatUsageSummary(usage: NormalizedUsage | null, intlLocale) {
     return "";
   }
 
-  const parts = [];
+  const parts: string[] = [];
   const input = formatCompactNumber(usage.input, intlLocale);
   const output = formatCompactNumber(usage.output, intlLocale);
   const total = formatCompactNumber(usage.total, intlLocale);

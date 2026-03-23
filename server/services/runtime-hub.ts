@@ -232,6 +232,9 @@ function diffSnapshot(prev: RuntimeSnapshot | null, next: RuntimeSnapshot): Runt
   const patches: RuntimePatch[] = [];
   for (const key of DIFF_SECTIONS) {
     const comparator = SECTION_COMPARATORS[key];
+    if (!comparator) {
+      continue;
+    }
     if (comparator(prev[key], next[key])) {
       patches.push({ type: `${key}.sync`, [key]: next[key] });
     }
@@ -543,7 +546,9 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
       const nextInterval = inferPollInterval(next);
       if (nextInterval !== channel.currentInterval) {
         channel.currentInterval = nextInterval;
-        clearInterval(channel.timer);
+        if (channel.timer) {
+          clearInterval(channel.timer);
+        }
         channel.timer = setInterval(() => refreshChannel(key, channel), nextInterval);
       }
     } catch (error) {
@@ -594,10 +599,11 @@ function createRuntimeHub({ buildDashboardSnapshot, config, subscribeGatewayEven
     let nextSnapshot = channel.latestSnapshot;
     const appliedPatches: RuntimePatch[] = [];
     for (const patch of patches) {
-      nextSnapshot = applyRuntimePatchToSnapshot(nextSnapshot, patch);
-      if (!nextSnapshot) {
+      const patchedSnapshot = applyRuntimePatchToSnapshot(nextSnapshot, patch);
+      if (!patchedSnapshot) {
         continue;
       }
+      nextSnapshot = patchedSnapshot;
       appliedPatches.push(patch);
     }
 

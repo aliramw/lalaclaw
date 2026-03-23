@@ -218,7 +218,9 @@ export function createTranscriptProjector({
 
     if (jsonLinesCache.size >= JSON_LINES_CACHE_MAX) {
       const oldest = jsonLinesCache.keys().next().value as string | undefined;
-      jsonLinesCache.delete(oldest);
+      if (oldest) {
+        jsonLinesCache.delete(oldest);
+      }
     }
     jsonLinesCache.set(filePath, { mtime, entries });
 
@@ -377,7 +379,7 @@ export function createTranscriptProjector({
     }
 
     const lines = normalized.split('\n');
-    const cleanedItems = [];
+    const cleanedItems: string[] = [];
     let index = 1;
 
     while (index < lines.length) {
@@ -394,7 +396,7 @@ export function createTranscriptProjector({
       }
 
       index += 1;
-      const itemLines = [];
+      const itemLines: string[] = [];
       while (index < lines.length) {
         const currentTrimmed = String(lines[index] || '').trim();
         if (
@@ -403,7 +405,7 @@ export function createTranscriptProjector({
         ) {
           break;
         }
-        itemLines.push(lines[index]);
+        itemLines.push(lines[index] || '');
         index += 1;
       }
 
@@ -729,7 +731,7 @@ export function createTranscriptProjector({
   function extractResolvedPathsFromSource(source: unknown, roots: string[]): string[] {
     const pathPattern = /(?:~\/[^\s"'`]+|\/Users\/[^\s"'`]+|(?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
     const matches = String(source || '').match(pathPattern) || [];
-    const resolvedPaths = [];
+    const resolvedPaths: string[] = [];
 
     for (const match of matches) {
       const resolved = normalizeCandidatePath(match, roots);
@@ -789,7 +791,7 @@ export function createTranscriptProjector({
           );
 
           for (const resolved of resolvedPaths) {
-            upsertDetectedFile(found, resolved, action, observedAt);
+            upsertDetectedFile(found, resolved, action || undefined, observedAt);
           }
         }
       }
@@ -879,7 +881,7 @@ export function createTranscriptProjector({
         }
 
         const latestConversationEntry = conversation[conversation.length - 1];
-        if (isMirroredImReplayPair(latestConversationEntry, rawContent, content, timestamp)) {
+        if (latestConversationEntry && isMirroredImReplayPair(latestConversationEntry, rawContent, content, timestamp)) {
           conversation.pop();
           assistantConversationIndicesAfterLastUser = assistantConversationIndicesAfterLastUser.filter(
             (index) => index !== conversation.length,
@@ -1731,7 +1733,7 @@ export function createTranscriptProjector({
       .filter((entry) => entry.updatedAt && String(entry.sessionKey || '').startsWith(prefix))
       .sort((left, right) => right.updatedAt - left.updatedAt);
 
-    let latestEntry = null;
+    let latestEntry: any = null;
 
     for (const entry of candidates) {
       if (!latestEntry) {
@@ -1966,7 +1968,7 @@ export function createTranscriptProjector({
     }
 
     const sessionsDir = getSessionsDirPath(normalizedAgentId);
-    let directoryEntries = [];
+    let directoryEntries: any[] = [];
     try {
       directoryEntries = fs.readdirSync(sessionsDir, { withFileTypes: true });
     } catch {
@@ -1978,7 +1980,7 @@ export function createTranscriptProjector({
       .filter((entry: any) => entry?.isFile?.() && entry.name.endsWith('.jsonl'))
       .map((entry: any) => {
         const filePath = path.join(sessionsDir, entry.name);
-        let stat = null;
+        let stat: import('node:fs').Stats | null = null;
         try {
           stat = fs.statSync(filePath);
         } catch {
@@ -2021,7 +2023,7 @@ export function createTranscriptProjector({
     const primaryPath = sessionRecord?.sessionId
       ? getTranscriptPath(normalizedAgentId, sessionRecord.sessionId)
       : '';
-    const transcriptPaths = [];
+    const transcriptPaths: string[] = [];
 
     if (primaryPath && fileExists(primaryPath)) {
       transcriptPaths.push(primaryPath);
@@ -2029,7 +2031,7 @@ export function createTranscriptProjector({
       transcriptPaths.push(...findFallbackTranscriptPaths(normalizedAgentId, sessionKey));
     }
 
-    const mergedEntries = [];
+    const mergedEntries: LooseRecord[] = [];
     for (const transcriptPath of transcriptPaths) {
       const transcriptEntries = readJsonLines(transcriptPath);
       if (!transcriptEntries.length) {

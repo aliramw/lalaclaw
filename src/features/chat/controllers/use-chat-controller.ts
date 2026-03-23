@@ -257,16 +257,30 @@ export function useChatController({
     const suppressPendingPlaceholder = shouldSuppressPendingPlaceholder(resolvedEntry);
     const pendingMessage = createPendingAssistantMessage(resolvedEntry, i18n.chat.thinkingPlaceholder);
     const userMessage = createUserMessage(resolvedEntry);
+    const resolvedEntryKey = String(
+      resolvedEntry.key || resolvedEntry.id || pendingMessage.id || pendingMessage.timestamp || Date.now(),
+    ).trim();
+    const resolvedPendingTimestamp = Number(
+      pendingMessage.timestamp || resolvedEntry.pendingTimestamp || resolvedEntry.timestamp || Date.now(),
+    );
+    const resolvedPendingAssistantMessageId = String(
+      pendingMessage.id || resolvedEntry.assistantMessageId || `msg-assistant-pending-${resolvedPendingTimestamp}`,
+    );
+    const resolvedUserMessageId = String(
+      userMessage.id || resolvedEntry.userMessageId || `msg-user-${resolvedPendingTimestamp}`,
+    );
+    const resolvedUserMessageContent = String(userMessage.content || "");
+    const resolvedUserMessageTimestamp = Number(userMessage.timestamp || resolvedEntry.timestamp || Date.now());
     const nextPendingEntry: PendingChatTurn = {
-      key: resolvedEntry.key,
+      key: resolvedEntryKey,
       startedAt: Date.now(),
-      pendingTimestamp: pendingMessage.timestamp,
-      assistantMessageId: pendingMessage.id,
+      pendingTimestamp: resolvedPendingTimestamp,
+      assistantMessageId: resolvedPendingAssistantMessageId,
       userMessage: {
-        id: userMessage.id,
+        id: resolvedUserMessageId,
         role: "user" as const,
-        content: userMessage.content,
-        timestamp: userMessage.timestamp,
+        content: resolvedUserMessageContent,
+        timestamp: resolvedUserMessageTimestamp,
         ...(userMessage.attachments?.length ? { attachments: userMessage.attachments } : {}),
       },
       ...(suppressPendingPlaceholder ? { suppressPendingPlaceholder: true } : {}),
@@ -276,8 +290,8 @@ export function useChatController({
       currentMessages,
       {
         ...resolvedEntry,
-        pendingTimestamp: pendingMessage.timestamp,
-        assistantMessageId: pendingMessage.id,
+        pendingTimestamp: resolvedPendingTimestamp,
+        assistantMessageId: resolvedPendingAssistantMessageId,
       },
       i18n.chat.thinkingPlaceholder,
       { includePendingPlaceholder: !suppressPendingPlaceholder },
@@ -287,7 +301,7 @@ export function useChatController({
     setBusyForTab(targetTabId, true);
     setPendingChatTurns((current) => ({
       ...current,
-      [resolvedEntry.key]: nextPendingEntry,
+      [resolvedEntryKey]: nextPendingEntry,
     }));
     persistOptimisticChatState({
       tabId: targetTabId,
@@ -317,7 +331,7 @@ export function useChatController({
         signal: abortController.signal,
         body: JSON.stringify(buildChatRequestBody({
           entry: resolvedEntry,
-          assistantMessageId: pendingMessage.id,
+          assistantMessageId: resolvedPendingAssistantMessageId,
           messages: nextMessages,
           userLabel,
         })),
@@ -326,7 +340,7 @@ export function useChatController({
       const payload = isNdjsonStreamResponse(response)
         ? await consumeChatStream(response, {
             entry: streamEntry,
-            pendingTimestamp: pendingMessage.timestamp,
+            pendingTimestamp: resolvedPendingTimestamp,
             setMessagesForTab,
           })
         : await response.json() as ChatStreamPayload;
@@ -338,7 +352,7 @@ export function useChatController({
         entryId: resolvedEntry.id,
         hasConversation: Array.isArray(payload.conversation),
         outputText: String(payload.outputText || "").slice(0, 120),
-        assistantMessageId: payload.assistantMessageId || pendingMessage.id,
+        assistantMessageId: payload.assistantMessageId || resolvedPendingAssistantMessageId,
       });
 
       if (payload.resetSessionUser) {
@@ -371,7 +385,7 @@ export function useChatController({
             : [
                 {
                   role: "assistant",
-                  content: payload.outputText,
+                  content: String(payload.outputText || ""),
                   timestamp: Date.now(),
                   ...(payload.tokenBadge ? { tokenBadge: payload.tokenBadge } : {}),
                 },
@@ -391,7 +405,7 @@ export function useChatController({
         }));
 
         if (isTabActive(targetTabId)) {
-          applySnapshot(payload, { syncConversation: false });
+          applySnapshot?.(payload, { syncConversation: false });
         }
         return;
       }
@@ -401,13 +415,13 @@ export function useChatController({
           current,
           {
             ...resolvedEntry,
-            pendingTimestamp: pendingMessage.timestamp,
+            pendingTimestamp: resolvedPendingTimestamp,
           },
           i18n.chat.thinkingPlaceholder,
-          payload.outputText,
-          payload.tokenBadge,
+          String(payload.outputText || ""),
+          String(payload.tokenBadge || ""),
           false,
-          payload.assistantMessageId || pendingMessage.id,
+          payload.assistantMessageId || resolvedPendingAssistantMessageId,
         );
         pushCcDebugEvent("chat.messages.replace-assistant", {
           tabId: targetTabId,
@@ -439,7 +453,7 @@ export function useChatController({
       if (isTabActive(targetTabId) && payload.session) {
         const canSyncConversationFromPayload = Array.isArray(payload.conversation)
           && conversationIncludesUserTurn(payload.conversation, resolvedEntry);
-        applySnapshot(payload, { syncConversation: canSyncConversationFromPayload });
+        applySnapshot?.(payload, { syncConversation: canSyncConversationFromPayload });
       }
     } catch (error) {
       pushCcDebugEvent("chat.run.error", {
@@ -465,13 +479,13 @@ export function useChatController({
             current,
             {
               ...resolvedEntry,
-              pendingTimestamp: pendingMessage.timestamp,
+              pendingTimestamp: resolvedPendingTimestamp,
             },
             i18n.chat.thinkingPlaceholder,
             stoppedContent,
             String(runtimeError?.tokenBadge || ""),
             false,
-            String(runtimeError?.assistantMessageId || pendingMessage.id),
+            String(runtimeError?.assistantMessageId || resolvedPendingAssistantMessageId),
           ),
         );
         updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.idle }));
@@ -485,13 +499,13 @@ export function useChatController({
           current,
           {
             ...resolvedEntry,
-            pendingTimestamp: pendingMessage.timestamp,
+            pendingTimestamp: resolvedPendingTimestamp,
           },
           i18n.chat.thinkingPlaceholder,
           preservedContent,
           String(runtimeError?.tokenBadge || ""),
           false,
-          String(runtimeError?.assistantMessageId || pendingMessage.id),
+          String(runtimeError?.assistantMessageId || resolvedPendingAssistantMessageId),
         ),
       );
       updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.failed }));
@@ -520,7 +534,7 @@ export function useChatController({
           };
           setPendingChatTurns((current) => ({
             ...current,
-            [resolvedEntry.key]: stoppedEntry,
+            [resolvedEntryKey]: stoppedEntry,
           }));
           persistOptimisticChatState({
             tabId: targetTabId,
@@ -533,17 +547,17 @@ export function useChatController({
             entryId: resolvedEntry.id,
           });
           setPendingChatTurns((current) => {
-            if (!current[resolvedEntry.key]) {
+            if (!current[resolvedEntryKey]) {
               return current;
             }
             const next = { ...current };
-            delete next[resolvedEntry.key];
+            delete next[resolvedEntryKey];
             return next;
           });
           persistOptimisticChatState({
             tabId: targetTabId,
             nextMessages: getMessagesForTab(targetTabId),
-            clearPendingKey: resolvedEntry.key,
+            clearPendingKey: resolvedEntryKey,
           });
         }
         setBusyForTab(targetTabId, false);

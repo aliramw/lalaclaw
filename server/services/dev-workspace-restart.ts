@@ -60,6 +60,10 @@ type ScheduleRestartOptions = {
   targetWorktreePath?: string;
 };
 
+function isWorktreeEntry(value: WorktreeEntry | null): value is WorktreeEntry {
+  return value !== null;
+}
+
 function isValidPort(value: unknown) {
   const numeric = Number(value);
   return Number.isInteger(numeric) && numeric >= 1 && numeric <= 65535;
@@ -128,7 +132,7 @@ function normalizeStatusState(payload: Record<string, unknown> | null = null): R
             detached: Boolean(entry.detached),
           };
         })
-        .filter(Boolean)
+        .filter(isWorktreeEntry)
       : [],
     targetWorktreePath: String(payload?.targetWorktreePath || '').trim(),
   };

@@ -36,6 +36,27 @@ type SessionFileEntry = {
   timestamp?: number;
 };
 
+type NormalizedSessionFileEntry = {
+  type: string;
+  timestamp: number;
+  message: {
+    role: string;
+    timestamp: number;
+    content: Array<{ type: string; text: string }>;
+    attachments?: Array<{
+      id: string;
+      kind: string;
+      name: string;
+      path: string;
+      fullPath: string;
+    }>;
+  };
+};
+
+function isNormalizedSessionFileEntry(value: NormalizedSessionFileEntry | null): value is NormalizedSessionFileEntry {
+  return value !== null;
+}
+
 export function normalizeSessionUser(sessionUser = '') {
   const normalized = String(sessionUser || 'command-center')
     .trim()
@@ -198,7 +219,7 @@ export function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent,
           },
         };
       })
-      .filter(Boolean);
+      .filter(isNormalizedSessionFileEntry);
 
     if (!normalizedEntries.length) {
       return current;

@@ -83,7 +83,9 @@ export function createRequestHandler(appContext = defaultAppContext) {
   const requireAccess = appHelpers?.requireAccess || (() => true);
 
   return (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const requestPath = req.url || '/';
+    const requestHost = req.headers.host || `${HOST}:${PORT}`;
+    const url = new URL(requestPath, `http://${requestHost}`);
 
     if (req.method === 'GET' && url.pathname === '/api/auth/state') {
       if (handleAccessState) {

@@ -108,6 +108,11 @@ type InspectorFilesPanelProps = {
   workspaceLoaded?: boolean;
 };
 
+type ContextMenuState = { item: InspectorFileItem; x: number; y: number } | null;
+type WorkspacePanelState = { loaded: boolean; loading: boolean; error: string };
+type RenameState = { item: InspectorFileItem; value: string; submitting: boolean; error: string } | null;
+type RenameExtensionState = { fromExtension: string; toExtension: string } | null;
+
 function RenameDialog({
   confirmLabel,
   description,
@@ -302,7 +307,7 @@ function renderCompactDirectoryLabel(chain: InspectorFileNode[] = []) {
     return <span className="truncate">{names[0]}</span>;
   }
 
-  const parts = [];
+  const parts: ReactNode[] = [];
   names.forEach((name, index) => {
     if (index > 0) {
       parts.push(
@@ -499,7 +504,7 @@ function SessionTreeNode({
 }
 
 function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, onRefreshDirectory, onRename }: FileContextMenuProps) {
-  const menuRef = useRef<any>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
 
   useLayoutEffect(() => {
@@ -528,8 +533,9 @@ function FileContextMenu({ menu, messages, onClose, onOpenEdit, onOpenPreview, o
       return undefined;
     }
 
-    const handlePointerDown = (event) => {
-      if (menuRef.current?.contains(event.target)) {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && menuRef.current?.contains(target)) {
         return;
       }
       onClose();
@@ -821,13 +827,13 @@ export function InspectorFilesPanel({
   workspaceItems = [],
   workspaceLoaded = false,
 }: InspectorFilesPanelProps) {
-  const [contextMenu, setContextMenu] = useState(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [sessionFilterInput, setSessionFilterInput] = useState("");
   const [workspaceFilterInput, setWorkspaceFilterInput] = useState("");
   const [workspaceFilter, setWorkspaceFilter] = useState("");
   const [sessionItems, setSessionItems] = useState(items);
-  const [renameState, setRenameState] = useState(null);
-  const [renameExtensionState, setRenameExtensionState] = useState(null);
+  const [renameState, setRenameState] = useState<RenameState>(null);
+  const [renameExtensionState, setRenameExtensionState] = useState<RenameExtensionState>(null);
   const fileActionSections = [
     { key: "created", label: messages.inspector.fileActions.created },
     { key: "modified", label: messages.inspector.fileActions.modified },
@@ -844,14 +850,14 @@ export function InspectorFilesPanel({
     }))
     .filter((section) => section.items.length);
   const [workspaceNodes, setWorkspaceNodes] = useState(() => normalizeWorkspaceNodes(workspaceItems, currentWorkspaceRoot));
-  const [workspaceState, setWorkspaceState] = useState({
+  const [workspaceState, setWorkspaceState] = useState<WorkspacePanelState>({
     loaded: workspaceLoaded,
     loading: false,
     error: "",
   });
   const previousWorkspaceRootRef = useRef(currentWorkspaceRoot);
-  const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [expandedSessionDirectories, setExpandedSessionDirectories] = useState({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [expandedSessionDirectories, setExpandedSessionDirectories] = useState<Record<string, boolean>>({});
   const hasSessionFiles = sessionItems.length > 0;
   const hasSessionFilter = Boolean(String(sessionFilterInput || "").trim());
   const visibleSessionCount = groups.reduce((total, group) => total + group.items.length, 0);
@@ -860,13 +866,13 @@ export function InspectorFilesPanel({
   const visibleWorkspaceCount = hasWorkspaceFilter
     ? countWorkspaceFiles(workspaceNodes)
     : (Number.isFinite(workspaceCount) ? workspaceCount : workspaceNodes.length);
-  const getDisabledFileSelectionReason = useCallback((item) => {
+  const getDisabledFileSelectionReason = useCallback((item?: InspectorFileItem | null) => {
     if (!isEditSelectionMode || item?.kind === "目录" || canEditFileItem(item)) {
       return "";
     }
     return messages.inspector.previewActions.editSelectionUnavailable;
   }, [isEditSelectionMode, messages.inspector.previewActions.editSelectionUnavailable]);
-  const handleOpenFile = useCallback((item) => {
+  const handleOpenFile = useCallback((item?: InspectorFileItem | null) => {
     if (item?.kind === "目录") {
       return;
     }
@@ -875,11 +881,15 @@ export function InspectorFilesPanel({
       if (!canEditFileItem(item)) {
         return;
       }
-      onOpenEdit?.(item);
+      if (item) {
+        onOpenEdit?.(item);
+      }
       return;
     }
 
-    onOpenPreview?.(item);
+    if (item) {
+      onOpenPreview?.(item);
+    }
   }, [isEditSelectionMode, onOpenEdit, onOpenPreview]);
 
   useEffect(() => {
@@ -1118,7 +1128,7 @@ export function InspectorFilesPanel({
     workspaceState.loading,
   ]);
 
-  const handleWorkspaceDirectoryOpen = async (node) => {
+  const handleWorkspaceDirectoryOpen = async (node: InspectorFileNode) => {
     const nodePath = resolveItemPath(node);
 
     if (!nodePath || node.loading) {
@@ -1195,7 +1205,7 @@ export function InspectorFilesPanel({
     workspaceFilter,
   ]);
 
-  const handleOpenRenameDialog = useCallback((item) => {
+  const handleOpenRenameDialog = useCallback((item: InspectorFileItem) => {
     const resolvedPath = resolveItemPath(item);
     const fallbackName = String(item?.name || getPathName(resolvedPath) || "").trim();
     if (!fallbackName) {

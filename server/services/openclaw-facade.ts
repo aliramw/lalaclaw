@@ -101,7 +101,6 @@ export function createOpenClawFacade({
   if (!openClawOperationHistory || typeof openClawOperationHistory.record !== 'function' || typeof openClawOperationHistory.list !== 'function') {
     throw new Error('openClawOperationHistory is required');
   }
-
   function recordOpenClawOperation(entry: OpenClawOperationEntry = {}) {
     return openClawOperationHistory.record({
       target: config.remoteOpenClawTarget ? 'remote' : 'local',
@@ -149,6 +148,48 @@ export function createOpenClawFacade({
     throw error;
   }
 
+  function requireLocalConfigPatch() {
+    if (typeof applyLocalOpenClawConfigPatch !== 'function') {
+      throw new Error('applyLocalOpenClawConfigPatch is required');
+    }
+    return applyLocalOpenClawConfigPatch;
+  }
+
+  function requireLocalConfigRollback() {
+    if (typeof restoreLocalOpenClawConfigBackup !== 'function') {
+      throw new Error('restoreLocalOpenClawConfigBackup is required');
+    }
+    return restoreLocalOpenClawConfigBackup;
+  }
+
+  function requireLocalAction() {
+    if (typeof runLocalOpenClawAction !== 'function') {
+      throw new Error('runLocalOpenClawAction is required');
+    }
+    return runLocalOpenClawAction;
+  }
+
+  function requireLocalInstall() {
+    if (typeof runLocalOpenClawInstall !== 'function') {
+      throw new Error('runLocalOpenClawInstall is required');
+    }
+    return runLocalOpenClawInstall;
+  }
+
+  function requireLocalUpdate() {
+    if (typeof runLocalOpenClawUpdate !== 'function') {
+      throw new Error('runLocalOpenClawUpdate is required');
+    }
+    return runLocalOpenClawUpdate;
+  }
+
+  function requireLocalOnboarding() {
+    if (typeof runLocalOpenClawOnboarding !== 'function') {
+      throw new Error('runLocalOpenClawOnboarding is required');
+    }
+    return runLocalOpenClawOnboarding;
+  }
+
   async function runOpenClawAction(action: string) {
     if (String(action || '').trim() !== 'status') {
       assertRemoteMutationAllowed('management', action);
@@ -169,7 +210,7 @@ export function createOpenClawFacade({
 
     const startedAt = now();
     try {
-      const result = await runLocalOpenClawAction(action);
+      const result = await requireLocalAction()(action);
       recordOpenClawOperation({
         scope: 'management',
         action,
@@ -205,7 +246,7 @@ export function createOpenClawFacade({
 
     const startedAt = now();
     try {
-      const result = await applyLocalOpenClawConfigPatch(options);
+      const result = await requireLocalConfigPatch()(options);
       recordOpenClawOperation({
         scope: 'config',
         action: options?.restartGateway ? 'apply+restart' : 'apply',
@@ -253,7 +294,7 @@ export function createOpenClawFacade({
 
     const startedAt = now();
     try {
-      const result = await restoreLocalOpenClawConfigBackup(options);
+      const result = await requireLocalConfigRollback()(options);
       recordOpenClawOperation({
         scope: 'config',
         action: 'rollback',
@@ -295,7 +336,7 @@ export function createOpenClawFacade({
 
     const startedAt = now();
     try {
-      const result = await runLocalOpenClawUpdate(options);
+      const result = await requireLocalUpdate()(options);
       recordOpenClawOperation({
         scope: 'update',
         action: 'update',
@@ -331,7 +372,7 @@ export function createOpenClawFacade({
 
     const startedAt = now();
     try {
-      const result = await runLocalOpenClawInstall();
+      const result = await requireLocalInstall()();
       recordOpenClawOperation({
         scope: 'update',
         action: 'install',
@@ -364,7 +405,7 @@ export function createOpenClawFacade({
 
     const startedAt = now();
     try {
-      const result = await runLocalOpenClawOnboarding(options);
+      const result = await requireLocalOnboarding()(options);
       recordOpenClawOperation({
         scope: 'onboarding',
         action: 'onboard',

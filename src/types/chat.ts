@@ -162,6 +162,7 @@ export type StoredUiState = {
   inspectorPanelWidth: number;
   chatFontSize: ChatFontSize;
   composerSendMode: ComposerSendMode;
+  userLabel?: string;
   dismissedTaskRelationshipIdsByConversation: Record<string, string[]>;
   promptDraftsByConversation: Record<string, string>;
 };
