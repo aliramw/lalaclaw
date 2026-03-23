@@ -117,6 +117,69 @@ describe('createOpenClawUpdateService', () => {
     expect(result.targetVersion).toBeNull();
   });
 
+  it('treats package-qualified latest tags like stable default latest previews', async () => {
+    const service = createOpenClawUpdateService({
+      config: { openclawBin: 'openclaw' },
+      execFileAsync: async (_command, args) => {
+        if (args.join(' ') === 'update --channel stable status --json') {
+          return {
+            stdout: '{"update":{"installKind":"package","registry":{"latestVersion":"2026.3.22"}},"channel":{"value":"stable","label":"stable (default)"},"availability":{"available":true,"latestVersion":"2026.3.22","hasRegistryUpdate":true}}',
+            stderr: '',
+          };
+        }
+        if (args.join(' ') === 'update --dry-run --tag latest --json') {
+          return {
+            stdout: '{"dryRun":true,"requestedChannel":null,"storedChannel":null,"effectiveChannel":"stable","tag":"openclaw@latest","currentVersion":"2026.3.13","targetVersion":"2026.3.22","actions":["Run global package manager update with spec openclaw@latest"]}',
+            stderr: '',
+          };
+        }
+        throw new Error(`Unexpected command: ${args.join(' ')}`);
+      },
+    });
+
+    const result = await service.getOpenClawUpdateState();
+
+    expect(result.preview).toMatchObject({
+      effectiveChannel: 'stable',
+      tag: 'openclaw@latest',
+      targetVersion: '2026.3.22',
+    });
+    expect(result.targetVersion).toBeNull();
+  });
+
+  it('keeps update status usable when dry-run preview is unsupported', async () => {
+    const service = createOpenClawUpdateService({
+      config: { openclawBin: 'openclaw' },
+      execFileAsync: async (_command, args) => {
+        if (args.join(' ') === 'update --channel stable status --json') {
+          return {
+            stdout: '{"update":{"installKind":"package","registry":{"latestVersion":"2026.3.22","currentVersion":"2026.3.13"}},"channel":{"value":"stable","label":"stable (default)"},"availability":{"available":true,"latestVersion":"2026.3.22","hasRegistryUpdate":true}}',
+            stderr: '',
+          };
+        }
+        if (args.join(' ') === 'update --dry-run --tag latest --json') {
+          const error = new Error('error: unknown option --dry-run');
+          error.code = 1;
+          error.stderr = 'error: unknown option --dry-run';
+          throw error;
+        }
+        throw new Error(`Unexpected command: ${args.join(' ')}`);
+      },
+    });
+
+    const result = await service.getOpenClawUpdateState();
+
+    expect(result.installed).toBe(true);
+    expect(result.preview).toBeNull();
+    expect(result.currentVersion).toBe('2026.3.13');
+    expect(result.targetVersion).toBeNull();
+    expect(result.availability).toMatchObject({ available: true, latestVersion: '2026.3.22' });
+    expect(result.previewCommandResult).toMatchObject({
+      ok: false,
+      command: { display: 'openclaw update --dry-run --tag latest --json' },
+    });
+  });
+
   it('runs the official update command and reports post-update health', async () => {
     const execMock = async (_command, args) => {
       if (args.join(' ') === 'update --channel stable status --json') {

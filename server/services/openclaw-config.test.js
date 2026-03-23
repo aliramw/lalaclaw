@@ -156,6 +156,99 @@ describe('createOpenClawConfigService', () => {
     ]));
   });
 
+  it('accepts newer remote config.get payloads wrapped in result.resolved with warnings and issues', async () => {
+    const gatewayCalls = [];
+    const service = createOpenClawConfigService({
+      callOpenClawGateway: async (method) => {
+        gatewayCalls.push(method);
+        return {
+          result: {
+            path: 'https://gateway.example.test/config',
+            resolved: {
+              agents: { defaults: { model: { primary: 'openai/gpt-5.4' } } },
+              gateway: { bind: 'auto', http: { endpoints: { chatCompletions: { enabled: true } } } },
+            },
+            hash: 'remote-hash-resolved-1',
+            valid: false,
+            issues: [{ path: 'gateway.bind', message: 'Using auto bind requires restart verification' }],
+            warnings: [{ path: 'gateway.http', message: 'Control UI origin list inherited from defaults' }],
+          },
+        };
+      },
+      config: {
+        remoteOpenClawTarget: true,
+        baseUrl: 'https://gateway.example.test',
+        openclawBin: 'openclaw',
+      },
+      execFileAsync: async () => {
+        throw new Error('Should not run local openclaw config commands for remote state');
+      },
+    });
+
+    const result = await service.getOpenClawConfigState();
+
+    expect(gatewayCalls).toEqual(['config.get']);
+    expect(result).toMatchObject({
+      ok: true,
+      remoteTarget: true,
+      configPath: 'https://gateway.example.test/config',
+      baseHash: 'remote-hash-resolved-1',
+      modelOptions: ['openai/gpt-5.4'],
+      validation: {
+        ok: false,
+        valid: false,
+        details: {
+          issues: [{ path: 'gateway.bind', message: 'Using auto bind requires restart verification' }],
+          warnings: [{ path: 'gateway.http', message: 'Control UI origin list inherited from defaults' }],
+        },
+      },
+    });
+    expect(result.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'modelPrimary', value: 'openai/gpt-5.4' }),
+      expect.objectContaining({ key: 'gatewayBind', value: 'auto' }),
+      expect.objectContaining({ key: 'chatCompletionsEnabled', value: true }),
+    ]));
+  });
+
+  it('falls back to parsing raw JSON when remote config.get omits parsed config fields', async () => {
+    const service = createOpenClawConfigService({
+      callOpenClawGateway: async () => ({
+        result: {
+          path: 'https://gateway.example.test/config',
+          raw: '{"agents":{"defaults":{"model":{"primary":"openrouter/minimax/minimax-m2.5"}}},"gateway":{"bind":"loopback","http":{"endpoints":{"chatCompletions":{"enabled":false}}}}}',
+          hash: 'remote-hash-raw-1',
+          valid: true,
+          issues: [],
+          warnings: [],
+        },
+      }),
+      config: {
+        remoteOpenClawTarget: true,
+        baseUrl: 'https://gateway.example.test',
+        openclawBin: 'openclaw',
+      },
+      execFileAsync: async () => {
+        throw new Error('Should not run local openclaw config commands for remote state');
+      },
+    });
+
+    const result = await service.getOpenClawConfigState();
+
+    expect(result).toMatchObject({
+      ok: true,
+      remoteTarget: true,
+      configPath: 'https://gateway.example.test/config',
+      baseHash: 'remote-hash-raw-1',
+      modelOptions: ['openrouter/minimax/minimax-m2.5'],
+      validation: { ok: true, valid: true },
+    });
+    expect(result.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'modelPrimary', value: 'openrouter/minimax/minimax-m2.5' }),
+      expect.objectContaining({ key: 'gatewayBind', value: 'loopback' }),
+      expect.objectContaining({ key: 'chatCompletionsEnabled', value: false }),
+    ]));
+  });
+
   it('treats Weixin as enabled when the plugin is enabled even if no dedicated channel block exists', async () => {
     const service = createOpenClawConfigService({
       callOpenClawGateway: async () => ({

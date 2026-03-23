@@ -177,6 +177,14 @@ function buildInstallGuidance(): InstallGuidance {
   };
 }
 
+function isLatestTagSpecifier(value: string | null) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return normalized === 'latest' || normalized.endsWith('@latest');
+}
+
 function buildStateFromStatus(status: UpdateStatusShape = {}, preview: UpdatePreviewShape | null = null): OpenClawUpdateState {
   const channelValue = String(status?.channel?.value || '').trim() || null;
   const previewTargetVersion = String(preview?.targetVersion || '').trim() || null;
@@ -184,11 +192,12 @@ function buildStateFromStatus(status: UpdateStatusShape = {}, preview: UpdatePre
   const previewRequestedChannel = String(preview?.requestedChannel || '').trim() || null;
   const previewStoredChannel = String(preview?.storedChannel || '').trim() || null;
   const previewEffectiveChannel = String(preview?.effectiveChannel || '').trim() || null;
+  const previewUsesLatestTag = isLatestTagSpecifier(previewTag);
   const shouldExposePreviewTarget = Boolean(
     previewTargetVersion
       && (
         !channelValue
-        || previewTag !== 'latest'
+        || !previewUsesLatestTag
         || previewRequestedChannel
         || previewStoredChannel
         || previewEffectiveChannel === 'dev'
@@ -289,7 +298,9 @@ export function createOpenClawUpdateService({
     }
 
     const previewCommandResult = await runOpenClawCommand(['update', '--dry-run', '--tag', DEFAULT_OPENCLAW_UPDATE_TAG, '--json']);
-    const previewPayload = parseNoisyJson(previewCommandResult.stdout) || parseNoisyJson(previewCommandResult.stderr);
+    const previewPayload = previewCommandResult.ok
+      ? (parseNoisyJson(previewCommandResult.stdout) || parseNoisyJson(previewCommandResult.stderr))
+      : null;
 
     return {
       ...buildStateFromStatus(statusPayload, previewPayload),

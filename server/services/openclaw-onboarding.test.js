@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildOnboardingArgs,
@@ -46,6 +49,74 @@ Options:
       supportedSecretInputModes: ['plaintext', 'ref'],
       supportedGatewayTokenInputModes: ['plaintext', 'ref'],
       supportedGatewayBinds: ['loopback', 'tailnet'],
+    });
+  });
+
+  it('keeps the app-supported subset from the OpenClaw 2026.3.22 onboard help surface', () => {
+    const capabilities = parseOnboardingHelpCapabilities(`
+🦞 OpenClaw 2026.3.22 (4dcc39c)
+
+Usage: openclaw onboard [options]
+
+Options:
+  --accept-risk                            Acknowledge risk
+  --auth-choice <choice>                   Auth: chutes|litellm-api-key|custom-api-key|skip|setup-token|oauth|claude-cli|codex-cli|token|apiKey|byteplus-api-key|chutes-api-key|cloudflare-ai-gateway-api-key|copilot-proxy|github-copilot|gemini-api-key|google-gemini-cli|huggingface-api-key|kilocode-api-key|kimi-code-api-key|minimax-global-oauth|minimax-global-api|minimax-cn-oauth|minimax-cn-api|mistral-api-key|modelstudio-api-key-cn|modelstudio-api-key|moonshot-api-key|moonshot-api-key-cn|ollama|openai-codex|openai-api-key|opencode-zen|opencode-go|openrouter-api-key|qianfan-api-key|sglang|synthetic-api-key|together-api-key|venice-api-key|ai-gateway-api-key|vllm|volcengine-api-key|xai-api-key|xiaomi-api-key|zai-api-key|zai-coding-global|zai-coding-cn|zai-global|zai-cn|qwen-portal
+  --daemon-runtime <runtime>               Daemon runtime: node|bun
+  --flow <flow>                            Onboard flow: quickstart|advanced|manual
+  --gateway-auth <mode>                    Gateway auth: token|password
+  --gateway-bind <mode>                    Gateway bind: loopback|tailnet|lan|auto|custom
+  --gateway-token <token>                  Gateway token (token auth)
+  --gateway-token-ref-env <name>           Gateway token SecretRef env var name (token auth; e.g. OPENCLAW_GATEWAY_TOKEN)
+  --secret-input-mode <mode>               API key persistence mode: plaintext|ref (default: plaintext)
+`);
+
+    expect(capabilities).toEqual({
+      capabilityDetection: {
+        source: 'help',
+        reason: '',
+        detectedAt: '',
+        signature: '',
+        commandResult: null,
+      },
+      supportedAuthChoices: [
+        'token',
+        'github-copilot',
+        'google-gemini-cli',
+        'openai-api-key',
+        'openrouter-api-key',
+        'gemini-api-key',
+        'mistral-api-key',
+        'moonshot-api-key',
+        'kimi-code-api-key',
+        'minimax-global-api',
+        'zai-api-key',
+        'zai-coding-global',
+        'zai-coding-cn',
+        'ai-gateway-api-key',
+        'opencode-zen',
+        'opencode-go',
+        'xai-api-key',
+        'together-api-key',
+        'huggingface-api-key',
+        'qianfan-api-key',
+        'modelstudio-api-key',
+        'modelstudio-api-key-cn',
+        'volcengine-api-key',
+        'byteplus-api-key',
+        'xiaomi-api-key',
+        'kilocode-api-key',
+        'litellm-api-key',
+        'synthetic-api-key',
+        'custom-api-key',
+        'ollama',
+        'skip',
+      ],
+      supportedDaemonRuntimes: ['node', 'bun'],
+      supportedFlows: ['quickstart', 'advanced', 'manual'],
+      supportedGatewayAuthModes: ['off', 'token', 'password'],
+      supportedSecretInputModes: ['plaintext', 'ref'],
+      supportedGatewayTokenInputModes: ['plaintext', 'ref'],
+      supportedGatewayBinds: ['loopback', 'tailnet', 'lan', 'auto', 'custom'],
     });
   });
 });
@@ -449,6 +520,109 @@ describe('createOpenClawOnboardingService', () => {
     expect(result.capabilityDetection).toMatchObject({
       source: 'help',
       reason: '',
+    });
+  });
+
+  it('derives 2026.3.22 onboarding capabilities from noisy help output and keeps supported defaults stable', async () => {
+    const packageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openclaw-onboarding-signature-'));
+    await fs.writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ version: '2026.3.22' }));
+    const service = createOpenClawOnboardingService({
+      config: { openclawBin: 'openclaw' },
+      execFileAsync: async (_command, args) => {
+        const normalizedArgs = args.join(' ');
+        if (normalizedArgs === 'update status --json') {
+          return {
+            stdout: JSON.stringify({
+              update: {
+                root: packageRoot,
+                installKind: 'package',
+              },
+              channel: { value: 'stable' },
+              availability: { available: false },
+            }),
+            stderr: '',
+          };
+        }
+        if (normalizedArgs === 'config file') {
+          return {
+            stdout: '~/.openclaw/openclaw.json\n',
+            stderr: '',
+          };
+        }
+        if (normalizedArgs === 'onboard --help') {
+          return {
+            stdout: [
+              '[plugins] dingtalk-connector failed to load from ~/.openclaw/extensions/dingtalk-connector/index.ts',
+              'Usage: openclaw onboard [options]',
+              '  --auth-choice <choice>                   Auth: chutes|litellm-api-key|custom-api-key|skip|setup-token|oauth|claude-cli|codex-cli|token|apiKey|byteplus-api-key|chutes-api-key|cloudflare-ai-gateway-api-key|copilot-proxy|github-copilot|gemini-api-key|google-gemini-cli|huggingface-api-key|kilocode-api-key|kimi-code-api-key|minimax-global-oauth|minimax-global-api|minimax-cn-oauth|minimax-cn-api|mistral-api-key|modelstudio-api-key-cn|modelstudio-api-key|moonshot-api-key|moonshot-api-key-cn|ollama|openai-codex|openai-api-key|opencode-zen|opencode-go|openrouter-api-key|qianfan-api-key|sglang|synthetic-api-key|together-api-key|venice-api-key|ai-gateway-api-key|vllm|volcengine-api-key|xai-api-key|xiaomi-api-key|zai-api-key|zai-coding-global|zai-coding-cn|zai-global|zai-cn|qwen-portal',
+              '  --daemon-runtime <runtime>               Daemon runtime: node|bun',
+              '  --flow <flow>                            Onboard flow: quickstart|advanced|manual',
+              '  --gateway-auth <mode>                    Gateway auth: token|password',
+              '  --gateway-bind <mode>                    Gateway bind: loopback|tailnet|lan|auto|custom',
+              '  --gateway-token <token>                  Gateway token (token auth)',
+              '  --gateway-token-ref-env <name>           Gateway token SecretRef env var name (token auth; e.g. OPENCLAW_GATEWAY_TOKEN)',
+              '  --secret-input-mode <mode>               API key persistence mode: plaintext|ref (default: plaintext)',
+            ].join('\n'),
+            stderr: '',
+          };
+        }
+        if (normalizedArgs === 'config validate --json') {
+          return {
+            stdout: '{"valid":true,"path":"/Users/marila/.openclaw/openclaw.json"}',
+            stderr: '',
+          };
+        }
+        throw new Error(`Unexpected command: ${normalizedArgs}`);
+      },
+    });
+
+    const result = await service.getOpenClawOnboardingState();
+
+    expect(result.ready).toBe(true);
+    expect(result.configPath).toBe('~/.openclaw/openclaw.json');
+    expect(result.supportedAuthChoices).toEqual([
+      'token',
+      'github-copilot',
+      'google-gemini-cli',
+      'openai-api-key',
+      'openrouter-api-key',
+      'gemini-api-key',
+      'mistral-api-key',
+      'moonshot-api-key',
+      'kimi-code-api-key',
+      'minimax-global-api',
+      'zai-api-key',
+      'zai-coding-global',
+      'zai-coding-cn',
+      'ai-gateway-api-key',
+      'opencode-zen',
+      'opencode-go',
+      'xai-api-key',
+      'together-api-key',
+      'huggingface-api-key',
+      'qianfan-api-key',
+      'modelstudio-api-key',
+      'modelstudio-api-key-cn',
+      'volcengine-api-key',
+      'byteplus-api-key',
+      'xiaomi-api-key',
+      'kilocode-api-key',
+      'litellm-api-key',
+      'synthetic-api-key',
+      'custom-api-key',
+      'ollama',
+      'skip',
+    ]);
+    expect(result.supportedDaemonRuntimes).toEqual(['node', 'bun']);
+    expect(result.supportedFlows).toEqual(['quickstart', 'advanced', 'manual']);
+    expect(result.supportedGatewayAuthModes).toEqual(['off', 'token', 'password']);
+    expect(result.defaults.authChoice).toBe('openai-api-key');
+    expect(result.defaults.flow).toBe('quickstart');
+    expect(result.defaults.gatewayBind).toBe('loopback');
+    expect(result.capabilityDetection).toMatchObject({
+      source: 'help',
+      reason: '',
+      signature: 'openclaw@2026.3.22@package@stable',
     });
   });
 
