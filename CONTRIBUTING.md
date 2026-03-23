@@ -123,6 +123,7 @@ That smoke installs the published tarball into a clean temp directory, starts `l
 - Update at least `src/locales/en.js` and `src/locales/zh.js` when adding locale keys.
 - Update docs for user-visible behavior changes.
 - Update [CHANGELOG.md](./CHANGELOG.md) when versioned behavior changes.
+- Follow `AGENTS.md` guidance and log AI-generated prompts/output/tests in [plan/ai-assisted-code-quality.md](./plan/ai-assisted-code-quality.md); human reviewers must sign off before merging.
 - Run the relevant local checks before submitting. Prefer:
   - `npm run lint`
   - `npm test`

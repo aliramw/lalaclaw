@@ -321,3 +321,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Expanded the root README and all localized quick-start guides with step-by-step GitHub installation, initialization, and remote-gateway setup instructions
 - Standardized browser and localized product titles on `LalaClaw` instead of `LalaClaw.ai`
 - Added a composer send-mode toggle with a blue underlined link style and changed the default keyboard behavior to `Enter` send with `Shift + Enter` newline
+#\n+## [Unreleased]\n+\n+### Added\n+\n+- Documented the new AI-assisted coding governance plan (AGENTS/plan/dev-spec/README/CONTRIBUTING) so contributors know how prompt metadata, CI requirements, and visual rules must be tracked before merging.\n+\n ## [2026.3.24]\n*** End Patch

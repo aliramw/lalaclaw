@@ -192,6 +192,14 @@ http://127.0.0.1:3000
 - 涉及流式消息、并发发送、hydration、持久化恢复时，优先补 `App` 级或控制器级测试。
 - 最终说明里明确写出已运行的测试命令；没跑测试也要明确说明。
 
+### 人+AI 代码协同 / AI-assisted Coding Governance
+
+- AI 生成或补全的代码必须沿用本仓库现有的 PR 流程：先提交草稿分支、贴出 prompt/模型版本/生成时间，并在 PR 描述里注明“AI 生成内容”标签，再由人工 reviewer 审查再合入。
+- 所有 AI 贡献都要在 `plan/ai-assisted-code-quality.md` 中登记对应的 prompt 模板、质量门节点（lint、contract test、smoke test 等）、及默认的人工复审 checklist；这个计划文档也用于追踪某次 AI 输出是否触发了 post-release issue、由谁复审、哪些测试在 CI 跑过。
+- AI 产出必须走和人类代码一样的 CI/CD：lint、格式、契约/类型检查、相关单元/集成/端到端测试、安全/依赖扫描、以及必要时的 `npm run build` 或 smoke/pack 验证，不允许绕过任何质量闸门。
+- High-risk 模块（runtime/session、WebSocket、OpenClaw 运维、release pipeline、核心 storage/state）默认只允许人工实现，AI 只能辅助生成 boilerplate/辅助函数，且产出必须额外附带人工 sign-off 及针对该模块的 regressions 说明。
+- New UI/visual rules introduced via AI output must still reference `dev-spec/frontend-visual-spec.md` and be mirrored there before landing.反馈回路条目里也要记录 AI 输出如何遵守视觉规范。
+
 ### 测试命令基线 / Validation Command Baseline
 
 - 默认测试命令使用仓库现有 script，不要临时发明新入口。Use the existing npm scripts as the default validation surface.

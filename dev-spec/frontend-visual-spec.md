@@ -150,6 +150,7 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - When a user gives specific visual feedback, update this spec in the same workstream as the code change.
 - New visual rules should be written here as explicit guidance, not left implied in a component implementation.
 - If a requested visual change conflicts with an older rule, update this file to reflect the new decision instead of silently diverging from the spec.
+- AI-generated visual suggestions must be logged in `plan/ai-assisted-code-quality.md`, validated against this spec, and any new rule captured here before the PR merges. Feedback tracking should note how the AI output complied with the spec.
 - 文件与文件夹的右键菜单都要提供“重命名”入口；重命名弹窗默认聚焦名称输入框，提交后列表应立即反映新名称，不等待整页刷新。
 - 文件重命名如果会修改后缀，必须先弹出二次确认；文件夹重命名不需要后缀确认。
 - “本次会话文件”不仅要显示 AI 在当前对话中查看/创建/修改过的文件，也要立即显示用户在当前对话里主动完成的本地文件操作结果，例如粘贴到目录或重命名后的文件；不要要求用户等到 runtime 回写后才看到这些文件。

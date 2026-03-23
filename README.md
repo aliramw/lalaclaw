@@ -40,6 +40,7 @@ A longer walkthrough lives in [docs/en/showcase.md](./docs/en/showcase.md).
 - Interface guide: [docs/en/documentation-interface.md](./docs/en/documentation-interface.md)
 - Sessions and runtime: [docs/en/documentation-sessions.md](./docs/en/documentation-sessions.md)
 - Architecture notes: [docs/en/architecture.md](./docs/en/architecture.md)
+- AI-assisted coding governance plan: [plan/ai-assisted-code-quality.md](./plan/ai-assisted-code-quality.md)
 
 More structure notes live in [server/README.md](./server/README.md) and [src/features/README.md](./src/features/README.md).
 
@@ -222,6 +223,8 @@ For the full command list and contributor workflow, see [CONTRIBUTING.md](./CONT
 ## Contributing
 
 Contributions are welcome. For larger features, architectural changes, or user-visible behavior changes, please open an issue first.
+
+- AI-generated contributions must follow `AGENTS.md` instructions, log prompts/outputs/tests in `plan/ai-assisted-code-quality.md`, and get a human reviewer sign-off before merging.
 
 Before opening a PR:
 
