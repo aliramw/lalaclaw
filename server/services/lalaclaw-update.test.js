@@ -53,7 +53,7 @@ describe('createLalaClawUpdateService', () => {
       hasRegistryUpdate: true,
       latestVersion: '2026.3.21-1',
     });
-    expect(result.workspaceVersion).toBe('2026.3.24');
+    expect(result.workspaceVersion).toBe('2026.3.24-1');
     expect(result.updateAvailable).toBe(true);
     expect(result.stableTag).toBe('stable');
   });
