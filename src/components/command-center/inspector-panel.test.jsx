@@ -1352,6 +1352,159 @@ describe("InspectorPanel", () => {
     expect(screen.queryByText(/目标版本:/)).not.toBeInTheDocument();
   });
 
+  it("renders the OpenClaw 2026.3.22 inspector state without surfacing a false update alert", async () => {
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/openclaw/config") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            baseHash: "remote-hash-2026-3-22",
+            fields: [
+              { key: "modelPrimary", value: "openai/gpt-5.4" },
+              { key: "gatewayBind", value: "loopback" },
+            ],
+            validation: {
+              ok: true,
+              valid: true,
+              details: {
+                issues: [],
+                warnings: [{ path: "gateway.http", message: "Control UI origin list inherited from defaults" }],
+              },
+            },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            currentVersion: "2026.3.22",
+            targetVersion: null,
+            availability: { available: false, latestVersion: "2026.3.22" },
+            update: { installKind: "package", packageManager: "pnpm" },
+            channel: { value: "stable", label: "stable (default)" },
+            preview: {
+              effectiveChannel: "stable",
+              tag: "openclaw@latest",
+              targetVersion: "2026.3.22",
+              actions: [
+                "Run global package manager update with spec openclaw@latest",
+                "Run plugin update sync after core update",
+              ],
+            },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/onboarding") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            installed: true,
+            ready: false,
+            needsOnboarding: true,
+            configPath: "/Users/marila/.openclaw/openclaw.json",
+            validation: { ok: false, valid: false, path: "/Users/marila/.openclaw/openclaw.json" },
+            capabilityDetection: {
+              source: "help",
+              reason: "",
+              detectedAt: "2026-03-24T02:18:00.000Z",
+              signature: "openclaw@2026.3.22@package@stable",
+            },
+            defaults: {
+              authChoice: "openai-api-key",
+              customCompatibility: "openai",
+              daemonRuntime: "node",
+              flow: "quickstart",
+              gatewayAuth: "off",
+              gatewayBind: "loopback",
+              gatewayTokenInputMode: "plaintext",
+              installDaemon: true,
+              secretInputMode: "plaintext",
+              skipHealthCheck: false,
+              workspace: "/Users/marila/.openclaw/workspace",
+            },
+            supportedAuthChoices: ["github-copilot", "google-gemini-cli", "openai-api-key", "openrouter-api-key", "custom-api-key", "ollama", "skip"],
+            supportedDaemonRuntimes: ["node", "bun"],
+            supportedFlows: ["quickstart", "advanced", "manual"],
+            supportedGatewayAuthModes: ["off", "token", "password"],
+            supportedGatewayTokenInputModes: ["plaintext", "ref"],
+            supportedSecretInputModes: ["plaintext", "ref"],
+            supportedGatewayBinds: ["loopback", "tailnet", "lan", "auto", "custom"],
+          }),
+        };
+      }
+      if (url === "/api/lalaclaw/update") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            currentVersion: "2026.3.24",
+            workspaceVersion: "2026.3.24",
+            currentRelease: { version: "2026.3.24", stable: true },
+            targetRelease: { version: "2026.3.24", stable: true },
+            stableTag: "stable",
+            updateAvailable: false,
+            capability: { installKind: "npm-package", restartMode: "manual", updateSupported: true, reason: "" },
+            check: { ok: true, scope: "stable", checkedAt: 1, errorCode: "", error: "" },
+            job: { active: false, status: "idle", targetVersion: "", currentVersionAtStart: "", startedAt: 0, finishedAt: 0, errorCode: "", error: "" },
+          }),
+        };
+      }
+      if (url === "/api/openclaw/history") {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, entries: [], remoteTarget: false }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithTooltip(
+      <InspectorPanel
+        activeTab="environment"
+        artifacts={[]}
+        currentWorkspaceRoot="/Users/marila/.openclaw/workspace"
+        files={[]}
+        peeks={{
+          environment: {
+            summary: "这里列出 OpenClaw 只读诊断信息。",
+            items: [
+              { label: "openclaw.version", value: "2026.3.22" },
+              { label: "openclaw.runtime.profile", value: "openclaw" },
+            ],
+          },
+          workspace: null,
+          terminal: null,
+          browser: null,
+        }}
+        setActiveTab={() => {}}
+        taskTimeline={[]}
+      />,
+    );
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("OpenClaw 安装与更新")).toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-tab-alert-environment")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("environment-section-alert-openclaw-update")).not.toBeInTheDocument();
+
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 安装与更新");
+    expect(await screen.findByText("已是最新")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "执行官方更新" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/目标版本:/)).not.toBeInTheDocument();
+
+    await ensureEnvironmentSectionExpanded(user, "OpenClaw 初始化");
+    expect(await screen.findByText("来自 `openclaw onboard --help` 的实时探测")).toBeInTheDocument();
+    expect(screen.getByText("版本签名: openclaw@2026.3.22@package@stable")).toBeInTheDocument();
+    expect(screen.getByText("GitHub Copilot 本机登录 / Google Gemini CLI 登录 / OpenAI API Key / OpenRouter API Key / 自定义 OpenAI 兼容提供方 / Ollama / 暂时跳过提供方配置")).toBeInTheDocument();
+  });
+
   it("shows official install guidance and can trigger the install flow when OpenClaw is missing", async () => {
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);

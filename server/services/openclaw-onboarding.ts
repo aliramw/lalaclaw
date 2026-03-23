@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { performHealthCheck } from './openclaw-management';
@@ -107,11 +108,30 @@ function buildCapabilityDetection({
   };
 }
 
+function resolveOpenClawVersionFromPackageRoot(packageRoot = '') {
+  const normalizedPackageRoot = String(packageRoot || '').trim();
+  if (!normalizedPackageRoot) {
+    return '';
+  }
+
+  try {
+    const packageJsonPath = path.join(normalizedPackageRoot, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      return '';
+    }
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    return String(packageJson?.version || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 function resolveOpenClawVersionSignature(statusPayload: LooseRecord = {}, openclawBin = 'openclaw') {
   const currentVersion = String(
     statusPayload?.currentVersion
       || statusPayload?.update?.registry?.currentVersion
       || statusPayload?.update?.currentVersion
+      || resolveOpenClawVersionFromPackageRoot(statusPayload?.update?.root)
       || '',
   ).trim();
   const installKind = String(statusPayload?.update?.installKind || '').trim();

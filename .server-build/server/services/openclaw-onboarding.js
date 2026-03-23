@@ -7,6 +7,7 @@ exports.parseOnboardingHelpCapabilities = parseOnboardingHelpCapabilities;
 exports.parseNoisyJson = parseNoisyJson;
 exports.buildOnboardingArgs = buildOnboardingArgs;
 exports.createOpenClawOnboardingService = createOpenClawOnboardingService;
+const node_fs_1 = __importDefault(require("node:fs"));
 const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 const openclaw_management_1 = require("./openclaw-management");
@@ -57,10 +58,28 @@ function buildCapabilityDetection({ source = 'static-fallback', reason = '', com
         commandResult: commandResult || null,
     };
 }
+function resolveOpenClawVersionFromPackageRoot(packageRoot = '') {
+    const normalizedPackageRoot = String(packageRoot || '').trim();
+    if (!normalizedPackageRoot) {
+        return '';
+    }
+    try {
+        const packageJsonPath = node_path_1.default.join(normalizedPackageRoot, 'package.json');
+        if (!node_fs_1.default.existsSync(packageJsonPath)) {
+            return '';
+        }
+        const packageJson = JSON.parse(node_fs_1.default.readFileSync(packageJsonPath, 'utf8'));
+        return String(packageJson?.version || '').trim();
+    }
+    catch {
+        return '';
+    }
+}
 function resolveOpenClawVersionSignature(statusPayload = {}, openclawBin = 'openclaw') {
     const currentVersion = String(statusPayload?.currentVersion
         || statusPayload?.update?.registry?.currentVersion
         || statusPayload?.update?.currentVersion
+        || resolveOpenClawVersionFromPackageRoot(statusPayload?.update?.root)
         || '').trim();
     const installKind = String(statusPayload?.update?.installKind || '').trim();
     const channel = String(statusPayload?.channel?.value || '').trim();

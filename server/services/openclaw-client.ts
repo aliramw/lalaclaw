@@ -13,10 +13,18 @@ type GatewaySdkModule = {
   VERSION: string;
 };
 
+type GatewaySdkArtifacts = {
+  kind: 'stable' | 'legacy';
+  cliRuntimePath?: string;
+  gatewayRuntimePath?: string;
+  replyModulePath?: string;
+};
+
 let gatewaySdkPromise: Promise<GatewaySdkModule> | null = null;
 const GATEWAY_RETRY_DELAYS_MS = [250, 1000];
 const OPENCLAW_WAIT_POLL_TIMEOUT_MS = 900;
 const OPENCLAW_WAIT_POLL_COMMAND_TIMEOUT_MS = 10000;
+const LEGACY_REPLY_MODULE_RE = /^reply-[A-Za-z0-9_]{6,}\.js$/;
 const GATEWAY_RETRYABLE_ERROR_CODES = new Set([
   'ECONNREFUSED',
   'ECONNRESET',
@@ -336,9 +344,26 @@ export function createOpenClawClient({
 
     if (!gatewaySdkPromise) {
       gatewaySdkPromise = (async () => {
-        const replyModulePath = await resolveOpenClawReplyModulePath();
-        const replyModuleUrl = pathToFileURL(replyModulePath);
-        const module = await import(replyModuleUrl.href);
+        const artifacts = await resolveOpenClawGatewaySdkArtifacts();
+        if (artifacts.kind === 'stable' && artifacts.gatewayRuntimePath) {
+          const gatewayRuntimeModule = await importOpenClawFileModule(artifacts.gatewayRuntimePath);
+          const cliRuntimeModule = artifacts.cliRuntimePath
+            ? await importOpenClawFileModule(artifacts.cliRuntimePath)
+            : {};
+          return {
+            GatewayClient: gatewayRuntimeModule.GatewayClient,
+            GATEWAY_CLIENT_NAMES: {
+              GATEWAY_CLIENT: 'gateway-client',
+            },
+            GATEWAY_CLIENT_MODES: {
+              BACKEND: 'backend',
+            },
+            VERSION: String((cliRuntimeModule as LooseRecord)?.VERSION || '').trim() || 'unknown',
+          };
+        }
+
+        const replyModulePath = artifacts.replyModulePath || '';
+        const module = await importOpenClawFileModule(replyModulePath);
         return {
           GatewayClient: module.zs,
           GATEWAY_CLIENT_NAMES: module.wm,
@@ -351,7 +376,7 @@ export function createOpenClawClient({
     return await gatewaySdkPromise;
   }
 
-  async function resolveOpenClawReplyModulePath() {
+  async function resolveOpenClawGatewaySdkArtifacts(): Promise<GatewaySdkArtifacts> {
     const candidateBins: string[] = [];
     if (path.isAbsolute(openClawBin)) {
       candidateBins.push(openClawBin);
@@ -369,11 +394,17 @@ export function createOpenClawClient({
       } catch {}
     }
 
-    for (const binPath of candidateBins) {
-      const replyModulePath = path.resolve(path.dirname(binPath), '..', 'lib', 'node_modules', 'openclaw', 'dist', 'reply-Bm8VrLQh.js');
-      if (fs.existsSync(replyModulePath)) {
-        return replyModulePath;
+    const candidatePackageRoots: string[] = [];
+    const pushPackageRoot = (packageRoot: string) => {
+      const normalized = String(packageRoot || '').trim();
+      if (!normalized || candidatePackageRoots.includes(normalized)) {
+        return;
       }
+      candidatePackageRoots.push(normalized);
+    };
+
+    for (const binPath of candidateBins) {
+      pushPackageRoot(path.resolve(path.dirname(binPath), '..', 'lib', 'node_modules', 'openclaw'));
     }
 
     const prefixedRoots = [
@@ -384,9 +415,13 @@ export function createOpenClawClient({
     ].filter(Boolean);
 
     for (const root of prefixedRoots) {
-      const replyModulePath = path.join(root, 'openclaw', 'dist', 'reply-Bm8VrLQh.js');
-      if (fs.existsSync(replyModulePath)) {
-        return replyModulePath;
+      pushPackageRoot(path.join(root, 'openclaw'));
+    }
+
+    for (const packageRoot of candidatePackageRoots) {
+      const artifacts = resolveOpenClawGatewaySdkArtifactsForPackageRoot(packageRoot);
+      if (artifacts) {
+        return artifacts;
       }
     }
 
@@ -1879,5 +1914,48 @@ export function createOpenClawClient({
     mirrorOpenClawUserMessage,
     parseOpenClawResponse,
     subscribeGatewayEvents,
+  };
+}
+
+export async function importOpenClawFileModule(modulePath = ''): Promise<LooseRecord> {
+  const normalizedModulePath = String(modulePath || '').trim();
+  if (!normalizedModulePath) {
+    throw new Error('Module path is required');
+  }
+  const specifier = normalizedModulePath.startsWith('file:')
+    ? normalizedModulePath
+    : pathToFileURL(normalizedModulePath).href;
+  return await (0, eval)(`import(${JSON.stringify(specifier)})`);
+}
+
+export function resolveOpenClawGatewaySdkArtifactsForPackageRoot(packageRoot = ''): GatewaySdkArtifacts | null {
+  const normalizedPackageRoot = String(packageRoot || '').trim();
+  if (!normalizedPackageRoot) {
+    return null;
+  }
+
+  const gatewayRuntimePath = path.join(normalizedPackageRoot, 'dist', 'plugin-sdk', 'gateway-runtime.js');
+  if (fs.existsSync(gatewayRuntimePath)) {
+    const cliRuntimePath = path.join(normalizedPackageRoot, 'dist', 'plugin-sdk', 'cli-runtime.js');
+    return {
+      kind: 'stable',
+      gatewayRuntimePath,
+      cliRuntimePath: fs.existsSync(cliRuntimePath) ? cliRuntimePath : '',
+    };
+  }
+
+  const distDir = path.join(normalizedPackageRoot, 'dist');
+  if (!fs.existsSync(distDir)) {
+    return null;
+  }
+
+  const legacyReplyEntry = fs.readdirSync(distDir).find((entry: string) => LEGACY_REPLY_MODULE_RE.test(entry));
+  if (!legacyReplyEntry) {
+    return null;
+  }
+
+  return {
+    kind: 'legacy',
+    replyModulePath: path.join(distDir, legacyReplyEntry),
   };
 }

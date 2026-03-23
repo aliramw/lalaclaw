@@ -1,10 +1,39 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createOpenClawClient } from './openclaw-client.ts';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createOpenClawClient, resolveOpenClawGatewaySdkArtifactsForPackageRoot } from './openclaw-client.ts';
 const unavailableGatewaySdk = async () => {
   throw new Error('Gateway SDK unavailable in this test');
 };
 
 describe('createOpenClawClient', () => {
+  it('prefers stable plugin-sdk gateway runtime before legacy hashed reply bundles', () => {
+    const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openclaw-sdk-stable-'));
+    fs.mkdirSync(path.join(packageRoot, 'dist', 'plugin-sdk'), { recursive: true });
+    fs.writeFileSync(path.join(packageRoot, 'dist', 'plugin-sdk', 'gateway-runtime.js'), 'export const GatewayClient = class {};\n');
+    fs.writeFileSync(path.join(packageRoot, 'dist', 'plugin-sdk', 'cli-runtime.js'), 'export const VERSION = "2026.3.22";\n');
+    fs.writeFileSync(path.join(packageRoot, 'dist', 'reply-payload-MXtGsVoh.js'), 'export const ignored = true;\n');
+
+    expect(resolveOpenClawGatewaySdkArtifactsForPackageRoot(packageRoot)).toEqual({
+      kind: 'stable',
+      gatewayRuntimePath: path.join(packageRoot, 'dist', 'plugin-sdk', 'gateway-runtime.js'),
+      cliRuntimePath: path.join(packageRoot, 'dist', 'plugin-sdk', 'cli-runtime.js'),
+    });
+  });
+
+  it('falls back to the legacy hashed reply bundle when plugin-sdk runtime is unavailable', () => {
+    const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openclaw-sdk-legacy-'));
+    fs.mkdirSync(path.join(packageRoot, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(packageRoot, 'dist', 'reply-AbCd1234.js'), 'export const legacy = true;\n');
+    fs.writeFileSync(path.join(packageRoot, 'dist', 'reply-payload-MXtGsVoh.js'), 'export const ignored = true;\n');
+
+    expect(resolveOpenClawGatewaySdkArtifactsForPackageRoot(packageRoot)).toEqual({
+      kind: 'legacy',
+      replyModulePath: path.join(packageRoot, 'dist', 'reply-AbCd1234.js'),
+    });
+  });
+
   it('keeps reset DingTalk sessions isolated from the delivery-routed gateway session', async () => {
     const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058:reset:1773319871765","sendername":"马锐拉"}';
     const gatewayCalls = [];

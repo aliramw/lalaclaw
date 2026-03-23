@@ -737,9 +737,15 @@ describe("App", () => {
 
     const user = userEvent.setup();
     const worktreeSelect = await screen.findByTestId("dev-workspace-worktree-select");
-    expect(worktreeSelect).toHaveValue("/Users/marila/projects/lalaclaw2");
     const branchSelect = await screen.findByTestId("dev-workspace-branch-select");
-    expect(branchSelect).toHaveValue("feat/init-autostart");
+
+    await waitFor(() => {
+      expect(worktreeSelect).toHaveValue("/Users/marila/projects/lalaclaw2");
+      expect(worktreeSelect).not.toBeDisabled();
+      expect(Array.from(worktreeSelect.options).map((option) => option.value)).toContain("/Users/marila/.codex/worktrees/c11c/lalaclaw2");
+      expect(branchSelect).toHaveValue("feat/init-autostart");
+      expect(branchSelect).not.toBeDisabled();
+    });
 
     await user.selectOptions(worktreeSelect, "/Users/marila/.codex/worktrees/c11c/lalaclaw2");
     await user.selectOptions(branchSelect, "main");
@@ -4374,6 +4380,7 @@ describe("App", () => {
 
   it("resolves a bootstrap Feishu tab before sending the first message", async () => {
     const chatBodies = [];
+    const deferredRuntime = createDeferred();
     const nativeSessionUser = "agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58";
     let feishuRuntimeRequestCount = 0;
     const fetchMock = vi.fn((input, init) => {
@@ -4385,16 +4392,20 @@ describe("App", () => {
 
         if (sessionUser === "feishu:direct:default") {
           feishuRuntimeRequestCount += 1;
-          return mockJsonResponse(createSnapshot({
-            session: {
-              ...createSnapshot().session,
-              agentId: "main",
-              selectedAgentId: "main",
-              sessionUser: feishuRuntimeRequestCount > 1 ? nativeSessionUser : "feishu:direct:default",
-              sessionKey: `agent:main:openai-user:${feishuRuntimeRequestCount > 1 ? nativeSessionUser : "feishu:direct:default"}`,
-              status: "空闲",
-            },
-          }));
+          if (feishuRuntimeRequestCount === 1) {
+            return mockJsonResponse(createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                agentId: "main",
+                selectedAgentId: "main",
+                sessionUser: "feishu:direct:default",
+                sessionKey: "agent:main:openai-user:feishu:direct:default",
+                status: "空闲",
+              },
+            }));
+          }
+
+          return deferredRuntime.promise;
         }
 
         return mockJsonResponse(createSessionSnapshot(sessionUser));
@@ -4431,8 +4442,25 @@ describe("App", () => {
     await user.click(screen.getByRole("menuitem", { name: "飞书" }));
     expect(await screen.findByRole("button", { name: "飞书" })).toBeInTheDocument();
 
-    await user.type(getComposer(), "hi");
-    await user.click(screen.getByRole("button", { name: "发送" }));
+    const textarea = await findComposer();
+    await user.type(textarea, "hi");
+    await user.keyboard("{Enter}{Enter}{Enter}");
+    expect(textarea).toHaveValue("");
+
+    await waitFor(() => {
+      expect(feishuRuntimeRequestCount).toBeGreaterThanOrEqual(2);
+    });
+
+    deferredRuntime.resolve(mockJsonResponse(createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        agentId: "main",
+        selectedAgentId: "main",
+        sessionUser: nativeSessionUser,
+        sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+        status: "空闲",
+      },
+    })));
 
     await waitFor(() => {
       expect(chatBodies[0]).toMatchObject({
