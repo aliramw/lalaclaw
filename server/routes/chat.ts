@@ -65,6 +65,7 @@ type ChatHandlerOptions = {
   getMessageAttachments: (message?: ChatMessage | null) => LooseRecord[];
   getSessionPreferences: (sessionUser?: string) => SessionPreferenceState;
   mirrorOpenClawUserMessage?: (sessionUser: string, content: string, options?: LooseRecord) => Promise<unknown>;
+  materializeMessageAttachments?: (attachments?: LooseRecord[], options?: LooseRecord) => LooseRecord[] | Promise<LooseRecord[]>;
   normalizeChatMessage: (message?: ChatMessage | null) => string;
   normalizeSessionUser: (sessionUser?: string) => string;
   parseFastCommand: (content: string) => ParsedCommand;
@@ -147,6 +148,7 @@ export function createChatHandler({
   getMessageAttachments,
   getSessionPreferences,
   mirrorOpenClawUserMessage,
+  materializeMessageAttachments,
   normalizeChatMessage,
   normalizeSessionUser,
   parseFastCommand,
@@ -241,7 +243,14 @@ export function createChatHandler({
         : `msg-assistant-${Date.now()}`;
       const latestUserMessage = [...messages].reverse().find((message: ChatMessage) => message?.role === 'user');
       const latestUserContent = normalizeChatMessage(latestUserMessage);
-      const latestUserAttachments = getMessageAttachments(latestUserMessage);
+      const latestUserAttachments = await Promise.resolve(
+        typeof materializeMessageAttachments === 'function'
+          ? materializeMessageAttachments(
+              getMessageAttachments(latestUserMessage),
+              { sessionUser },
+            )
+          : getMessageAttachments(latestUserMessage),
+      );
       const resetCommand = parseSessionResetCommand(latestUserContent);
       const fastCommand = parseFastCommand(latestUserContent);
       const modelCommand = parseModelCommand?.(latestUserContent) || null;
@@ -284,6 +293,7 @@ export function createChatHandler({
             role: 'user',
             content: latestUserContent,
             timestamp: responseTimestamp - 1,
+            ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}),
           },
           {
             role: 'assistant',
@@ -358,6 +368,7 @@ export function createChatHandler({
             role: 'user',
             content: latestUserContent,
             timestamp: responseTimestamp - 1,
+            ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}),
           },
           {
             role: 'assistant',
@@ -502,7 +513,14 @@ export function createChatHandler({
           : '';
 
       if (config.mode === 'openclaw' && latestUserContent && !latestUserContent.startsWith('/')) {
-        await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent, { operatorName });
+        try {
+          await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent, { operatorName });
+        } catch (error) {
+          console.warn('[chat] mirrorOpenClawUserMessage failed', {
+            error: error instanceof Error ? error.message : String(error || ''),
+            sessionUser,
+          });
+        }
       }
 
       if (shouldStream) {
@@ -566,6 +584,7 @@ export function createChatHandler({
                 role: 'user',
                 content: latestUserContent,
                 timestamp: requestTimestamp,
+                ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}),
               },
             ]
           : []),

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenClawClient } from "../server/services/openclaw-client.ts";
+import { buildOpenClawMessageContent } from "../server/formatters/chat-format.ts";
 
 function createClient(overrides = {}) {
   return createOpenClawClient({
@@ -88,6 +89,53 @@ describe("createOpenClawClient", () => {
         }),
       }),
     );
+  });
+
+  it("tells direct multimodal streams to treat attached images as real visual inputs", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      body: null,
+      json: async () => ({ output_text: "已分析图片", usage: { total_tokens: 8 } }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createClient({
+      buildOpenClawMessageContent,
+    });
+
+    await client.dispatchOpenClawStream(
+      [
+        {
+          role: "user",
+          content: "把黑T恤改成米白色布衣",
+          attachments: [
+            {
+              kind: "image",
+              dataUrl: "data:image/png;base64,AAAA",
+              name: "avatar.png",
+              fullPath: "/Users/marila/.openclaw/workspace/test/avatar.png",
+            },
+          ],
+        },
+      ],
+      false,
+      "command-center",
+      { onDelta: () => {} },
+    );
+
+    const [, requestOptions] = fetchMock.mock.calls[0];
+    const payload = JSON.parse(String(requestOptions?.body || "{}"));
+
+    expect(payload.messages?.[0]?.content).toContain("treat them as real visual inputs");
+    expect(payload.messages?.[1]?.content).toEqual([
+      { type: "text", text: "把黑T恤改成米白色布衣" },
+      {
+        type: "text",
+        text: "附件 avatar.png 已附加。\n路径: /Users/marila/.openclaw/workspace/test/avatar.png",
+      },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+    ]);
+    expect(payload.stream).toBe(true);
   });
 
   it("dispatches text-only conversations through gateway session calls", async () => {

@@ -1167,6 +1167,92 @@ describe("useChatController", () => {
     ]);
   });
 
+  it("clears stale streaming state when the final assistant reply falls back to replacing the trailing assistant bubble", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = {
+      current: [
+        { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 1050, pending: true },
+      ],
+    };
+
+    const appliedMessageSnapshots = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+      appliedMessageSnapshots.push(messagesRef.current);
+
+      if (appliedMessageSnapshots.length === 1) {
+        messagesRef.current = [
+          { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+          { role: "assistant", content: "收到", timestamp: 1774409543000, streaming: true },
+        ];
+      }
+    });
+
+    vi.stubGlobal("fetch", vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        conversation: [
+          { role: "assistant", content: "收到。", timestamp: 1100 },
+        ],
+        outputText: "收到。",
+        assistantMessageId: "msg-assistant-pending-1",
+        metadata: { status: "已完成 / 标准" },
+        session: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    ));
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        isTabActive: () => true,
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry({
+        id: "entry-final-clears-streaming",
+        key: "command-center:main",
+        content: "1",
+        attachments: [],
+        timestamp: 1000,
+        userMessageId: "msg-user-1",
+        assistantMessageId: "msg-assistant-pending-1",
+        pendingTimestamp: 1050,
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-5",
+        fastMode: false,
+      });
+    });
+
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
+      { id: "msg-user-1", role: "user", content: "1", timestamp: 1000 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+    ]);
+    expect(appliedMessageSnapshots.at(-1)?.[1]?.streaming).toBeUndefined();
+    expect(appliedMessageSnapshots.at(-1)?.[1]?.pending).toBeUndefined();
+  });
+
   it("does not queue a duplicate prompt again while the tab is already busy", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();
@@ -2090,6 +2176,40 @@ describe("useChatController", () => {
       name: "poster.png",
       path: "/Users/marila/projects/assets/poster.png",
       fullPath: "/Users/marila/projects/assets/poster.png",
+    });
+  });
+
+  it("dedupes equivalent pasted image attachments when the same clipboard image is added twice", async () => {
+    const { result } = renderHook(() =>
+      useChatController({
+        activeConversationKey: "command-center:main",
+        activeTargetRef: { current: { sessionUser: "command-center", agentId: "main" } },
+        applySnapshot: vi.fn(),
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        setBusy: vi.fn(),
+        setMessagesSynced: vi.fn(),
+        setPendingChatTurns: vi.fn(),
+        setSession: vi.fn(),
+      }),
+    );
+
+    const pastedImageA = new File(["same-image"], "image.png", { type: "image/png" });
+    const pastedImageB = new File(["same-image"], "image.png", { type: "image/png" });
+
+    await act(async () => {
+      await result.current.handleAddAttachments([pastedImageA]);
+      await result.current.handleAddAttachments([pastedImageB]);
+    });
+
+    expect(result.current.composerAttachments).toHaveLength(1);
+    expect(result.current.composerAttachments[0]).toMatchObject({
+      kind: "image",
+      name: "image.png",
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,AAAA",
+      previewUrl: "data:image/png;base64,AAAA",
     });
   });
 });

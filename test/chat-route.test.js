@@ -40,6 +40,7 @@ function createHandler(overrides = {}) {
     getDefaultModelForAgent: vi.fn((agentId) => `default-${agentId}`),
     getMessageAttachments: vi.fn((message) => message?.attachments || []),
     getSessionPreferences: vi.fn(() => ({ fastMode: true, thinkMode: "minimal" })),
+    materializeMessageAttachments: vi.fn(async (attachments) => attachments || []),
     normalizeChatMessage: vi.fn((message) => String(message?.content || "")),
     normalizeSessionUser: vi.fn((value) => String(value || "command-center")),
     parseFastCommand: vi.fn(() => null),
@@ -435,6 +436,156 @@ describe("createChatHandler", () => {
 
     expect(writes.some((chunk) => String(chunk || "").includes("\"message.complete\""))).toBe(true);
     expect(res.end).toHaveBeenCalled();
+  });
+
+  it("preserves image attachments for the main session dispatch and local conversation", async () => {
+    const imageAttachment = {
+      id: "image-1",
+      kind: "image",
+      name: "avatar.png",
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,AAAA",
+    };
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "把黑T恤改成米白色布衣", attachments: [imageAttachment] }],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.dispatchOpenClaw).toHaveBeenCalledWith(
+      [
+        {
+          role: "user",
+          content: "把黑T恤改成米白色布衣",
+          attachments: [imageAttachment],
+        },
+      ],
+      false,
+      "command-center",
+      { commandBody: "把黑T恤改成米白色布衣", thinkMode: "off" },
+    );
+    expect(harness.appendLocalSessionConversation).toHaveBeenCalledWith(
+      "command-center",
+      [
+        {
+          role: "user",
+          content: "把黑T恤改成米白色布衣",
+          timestamp: Date.now(),
+          attachments: [imageAttachment],
+        },
+        {
+          role: "assistant",
+          content: "完成",
+          timestamp: Date.now() + 1,
+          tokenBadge: "↑1 ↓2",
+        },
+      ],
+    );
+  });
+
+  it("materializes inline web image attachments before dispatching them to the model", async () => {
+    const imageAttachment = {
+      id: "image-1",
+      kind: "image",
+      name: "wukong-mibai-eyes-brave.png",
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,AAAA",
+    };
+    const materializedAttachment = {
+      ...imageAttachment,
+      path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1234-wukong-mibai-eyes-brave.png",
+      fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1234-wukong-mibai-eyes-brave.png",
+    };
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "修改这张图。把上衣改成姜黄色", attachments: [imageAttachment] }],
+      })),
+      materializeMessageAttachments: vi.fn(async () => [materializedAttachment]),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.materializeMessageAttachments).toHaveBeenCalledWith(
+      [imageAttachment],
+      { sessionUser: "command-center" },
+    );
+    expect(harness.dispatchOpenClaw).toHaveBeenCalledWith(
+      [
+        {
+          role: "user",
+          content: "修改这张图。把上衣改成姜黄色",
+          attachments: [materializedAttachment],
+        },
+      ],
+      false,
+      "command-center",
+      { commandBody: "修改这张图。把上衣改成姜黄色", thinkMode: "off" },
+    );
+    expect(harness.appendLocalSessionFileEntries).toHaveBeenCalledWith(
+      "command-center",
+      [
+        {
+          role: "user",
+          content: "修改这张图。把上衣改成姜黄色",
+          timestamp: Date.now(),
+          attachments: [materializedAttachment],
+        },
+      ],
+    );
+  });
+
+  it("continues the OpenClaw request when mirroring the user message to an IM channel fails", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "agent:main:wecom:direct:marila",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "看到图了吗" }],
+      })),
+      mirrorOpenClawUserMessage: vi.fn(async () => {
+        throw new Error("Tool invoke failed: 500");
+      }),
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await harness.handler({}, {});
+
+    expect(harness.mirrorOpenClawUserMessage).toHaveBeenCalledWith(
+      "agent:main:wecom:direct:marila",
+      "看到图了吗",
+      { operatorName: "" },
+    );
+    expect(harness.dispatchOpenClaw).toHaveBeenCalledWith(
+      [{ role: "user", content: "看到图了吗" }],
+      false,
+      "agent:main:wecom:direct:marila",
+      { commandBody: "看到图了吗", thinkMode: "off" },
+    );
+    expect(harness.responseRecorder.calls[0]).toMatchObject({
+      statusCode: 200,
+      payload: {
+        ok: true,
+        outputText: "完成",
+      },
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[chat] mirrorOpenClawUserMessage failed",
+      expect.objectContaining({
+        error: "Tool invoke failed: 500",
+        sessionUser: "agent:main:wecom:direct:marila",
+      }),
+    );
   });
 
   it("does not abort the OpenClaw session when the client disconnects during a stream", async () => {

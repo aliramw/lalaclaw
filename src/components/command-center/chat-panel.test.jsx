@@ -249,6 +249,40 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "向左滚动会话标签" })).not.toBeDisabled();
   });
 
+  it("keeps a tab busy dot stable through a brief false pulse", () => {
+    vi.useFakeTimers();
+
+    const { container, rerender } = render(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: true, title: "main" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeTruthy();
+
+    rerender(
+      <TooltipProvider>
+        <ChatTabsStrip
+          items={[
+            { id: "agent:main", agentId: "main", active: true, busy: false, title: "main" },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
+  });
+
   it("does not render a user-name editor in the chat header anymore", () => {
     render(
       <TooltipProvider>
@@ -2465,6 +2499,74 @@ describe("ChatPanel", () => {
     expect(screen.queryByText("大纲")).not.toBeInTheDocument();
   });
 
+  it("keeps the latest assistant outline hidden while the header is still latched busy", () => {
+    vi.useFakeTimers();
+
+    const { container, rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              id: "msg-latched-busy-outline",
+              role: "assistant",
+              content: "# 第一部分\n内容\n## 第二部分\n更多内容",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(container.querySelector("[data-message-outline-meta-stack]")).toBeNull();
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              id: "msg-latched-busy-outline",
+              role: "assistant",
+              content: "# 第一部分\n内容\n## 第二部分\n更多内容",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    expect(container.querySelector("[data-message-outline-meta-stack]")).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByText("待命")).toBeInTheDocument();
+    expect(container.querySelector("[data-message-outline-meta-stack]")).not.toBeNull();
+  });
+
   it("renders messages and busy/openclaw status", () => {
     const onStop = vi.fn();
 
@@ -2614,6 +2716,59 @@ describe("ChatPanel", () => {
     expect(screen.queryByText("待命")).not.toBeInTheDocument();
   });
 
+  it("keeps the header busy badge stable through a brief false pulse", () => {
+    vi.useFakeTimers();
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    expect(screen.queryByText("待命")).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByText("待命")).toBeInTheDocument();
+  });
+
   it("shows busy for Feishu sessions when the runtime status says running without a local pending bubble", () => {
     render(
       <TooltipProvider>
@@ -2703,6 +2858,60 @@ describe("ChatPanel", () => {
     expect(streamingBubble).not.toHaveClass("cc-thinking-bubble");
     expect(screen.queryByText("生成中")).not.toBeInTheDocument();
     expect(streamingBubble?.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
+  });
+
+  it("keeps the streaming assistant DOM node stable when timestamp changes without an explicit id", () => {
+    const { rerender, container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段", timestamp: 2, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const initialBubble = container.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(initialBubble).toBeTruthy();
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:01"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段\n第二段", timestamp: 3, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const updatedBubble = container.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(updatedBubble).toBe(initialBubble);
+    expect(updatedBubble?.textContent || "").toContain("第一段");
+    expect(updatedBubble?.textContent || "").toContain("第二段");
   });
 
   it("does not keep the breathing class once the assistant message is no longer streaming", () => {
@@ -3329,6 +3538,56 @@ describe("ChatPanel", () => {
 
     await user.click(image);
     expect(await screen.findByRole("button", { name: "放大图片" })).toBeInTheDocument();
+  });
+
+  it("renders equivalent message image attachments only once when payloads arrive from different layers", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              role: "user",
+              content: "修改这张图。把上衣改成姜黄色吧",
+              timestamp: 1,
+              attachments: [
+                {
+                  id: "local-image",
+                  kind: "image",
+                  name: "wukong-mibai-eyes-brave.png",
+                  mimeType: "image/png",
+                  size: 826 * 1024,
+                  dataUrl: "data:image/png;base64,BBBB",
+                  previewUrl: "data:image/png;base64,BBBB",
+                },
+                {
+                  id: "runtime-image",
+                  kind: "image",
+                  name: "wukong-mibai-eyes-brave.png",
+                  mimeType: "image/png",
+                  size: 826 * 1024,
+                  path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/wukong-mibai-eyes-brave.png",
+                  fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/wukong-mibai-eyes-brave.png",
+                },
+              ],
+            },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const images = screen.getAllByAltText("wukong-mibai-eyes-brave.png");
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute("src", "data:image/png;base64,BBBB");
   });
 
   it("routes pasted files from anywhere on the page through the attachment flow and refocuses the composer", async () => {

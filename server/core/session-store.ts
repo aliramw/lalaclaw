@@ -15,22 +15,30 @@ type SessionPreferences = {
 };
 
 type SessionConversationEntry = {
+  attachments?: SessionAttachment[];
   content?: string;
   role?: string;
   timestamp?: number;
   tokenBadge?: string;
 };
 
-type SessionFileAttachment = {
+type SessionAttachment = {
+  dataUrl?: string;
   fullPath?: string;
   id?: string;
   kind?: string;
+  mimeType?: string;
   name?: string;
   path?: string;
+  previewUrl?: string;
+  size?: number;
+  storageKey?: string;
+  textContent?: string;
+  truncated?: boolean;
 };
 
 type SessionFileEntry = {
-  attachments?: SessionFileAttachment[];
+  attachments?: SessionAttachment[];
   content?: string;
   role?: string;
   timestamp?: number;
@@ -53,8 +61,41 @@ type NormalizedSessionFileEntry = {
   };
 };
 
-function isNormalizedSessionFileEntry(value: NormalizedSessionFileEntry | null): value is NormalizedSessionFileEntry {
-  return value !== null;
+function normalizeSessionAttachments(
+  attachments: SessionAttachment[] = [],
+  { preserveInlineContent = false }: { preserveInlineContent?: boolean } = {},
+) {
+  return Array.isArray(attachments)
+    ? attachments
+        .map((attachment) => ({
+          id: attachment?.id || '',
+          kind: attachment?.kind || '',
+          name: String(attachment?.name || '').trim(),
+          size: Number(attachment?.size) || 0,
+          mimeType: String(attachment?.mimeType || '').trim(),
+          path: String(attachment?.path || '').trim(),
+          fullPath: String(attachment?.fullPath || '').trim(),
+          ...(preserveInlineContent && typeof attachment?.dataUrl === 'string' && attachment.dataUrl.trim()
+            ? { dataUrl: attachment.dataUrl.trim() }
+            : {}),
+          ...(preserveInlineContent && typeof attachment?.previewUrl === 'string' && attachment.previewUrl.trim()
+            ? { previewUrl: attachment.previewUrl.trim() }
+            : {}),
+          ...(preserveInlineContent && typeof attachment?.textContent === 'string' && attachment.textContent
+            ? { textContent: attachment.textContent }
+            : {}),
+          ...(preserveInlineContent && attachment?.truncated ? { truncated: true } : {}),
+          ...(preserveInlineContent && typeof attachment?.storageKey === 'string' && attachment.storageKey.trim()
+            ? { storageKey: attachment.storageKey.trim() }
+            : {}),
+        }))
+        .filter((attachment) =>
+          attachment.name
+          || attachment.path
+          || attachment.fullPath
+          || (preserveInlineContent && (attachment.dataUrl || attachment.textContent)),
+        )
+    : [];
 }
 
 export function normalizeSessionUser(sessionUser = '') {
@@ -162,13 +203,23 @@ export function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent,
     const current = localSessionConversation.get(key) || [];
     const normalizedEntries = entries
       .filter(Boolean)
-      .map((entry) => ({
-        role: entry.role,
-        content: String(entry.content || '').trim(),
-        timestamp: Number(entry.timestamp) || Date.now(),
-        ...(entry.tokenBadge ? { tokenBadge: String(entry.tokenBadge) } : {}),
-      }))
-      .filter((entry) => entry.role && entry.content);
+      .reduce<Record<string, unknown>[]>((list, entry) => {
+        const content = String(entry.content || '').trim();
+        const attachments = normalizeSessionAttachments(entry.attachments, { preserveInlineContent: true });
+
+        if (!entry.role || (!content && !attachments.length)) {
+          return list;
+        }
+
+        list.push({
+          role: entry.role,
+          content,
+          timestamp: Number(entry.timestamp) || Date.now(),
+          ...(entry.tokenBadge ? { tokenBadge: String(entry.tokenBadge) } : {}),
+          ...(attachments.length ? { attachments } : {}),
+        });
+        return list;
+      }, []);
 
     if (!normalizedEntries.length) {
       return current;
@@ -190,25 +241,15 @@ export function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent,
     const current = localSessionFileEntries.get(key) || [];
     const normalizedEntries = entries
       .filter(Boolean)
-      .map((entry) => {
+      .reduce<Record<string, unknown>[]>((list, entry) => {
         const content = String(entry.content || '').trim();
-        const attachments = Array.isArray(entry.attachments)
-          ? entry.attachments
-              .map((attachment) => ({
-                id: attachment?.id || '',
-                kind: attachment?.kind || '',
-                name: String(attachment?.name || '').trim(),
-                path: String(attachment?.path || '').trim(),
-                fullPath: String(attachment?.fullPath || '').trim(),
-              }))
-              .filter((attachment) => attachment.name || attachment.path || attachment.fullPath)
-          : [];
+        const attachments = normalizeSessionAttachments(entry.attachments);
 
         if (!entry.role || (!content && !attachments.length)) {
-          return null;
+          return list;
         }
 
-        return {
+        list.push({
           type: 'message',
           timestamp: Number(entry.timestamp) || Date.now(),
           message: {
@@ -217,9 +258,9 @@ export function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent,
             content: content ? [{ type: 'text', text: content }] : [],
             ...(attachments.length ? { attachments } : {}),
           },
-        };
-      })
-      .filter(isNormalizedSessionFileEntry);
+        });
+        return list;
+      }, []);
 
     if (!normalizedEntries.length) {
       return current;

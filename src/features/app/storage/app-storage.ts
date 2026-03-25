@@ -45,6 +45,16 @@ const UNTRUSTED_METADATA_SENTINELS = [
   /^Chat history since last reply \(untrusted, for context\):/i,
 ];
 const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
+const INTERNAL_MEMORY_FLUSH_SENTINELS = [
+  /^Pre-compaction memory flush\./i,
+  /Store durable memories only in memory\/\d{4}-\d{2}-\d{2}\.md/i,
+  /If nothing to store,\s*reply with NO_REPLY\./i,
+];
+const INTERNAL_SESSION_STARTUP_SENTINELS = [
+  /^A new session was started via \/new or \/reset\./i,
+  /Run your Session Startup sequence - read the required files before responding to the user\./i,
+  /Do not mention internal steps, files, tools, or reasoning\./i,
+];
 
 function isPresent<T>(value: T | null | undefined): value is T {
   return value != null;
@@ -380,6 +390,234 @@ function normalizeConversationContent(content = "", role = "") {
     .trim();
 }
 
+function extractSyntheticAttachmentPrompt(content = "") {
+  const normalized = String(content || "").trim();
+  if (!normalized) {
+    return { attachmentNames: [] as string[], baseContent: "" };
+  }
+
+  const blocks = normalized
+    .split(/\n{2,}/)
+    .map((block) => String(block || "").trim())
+    .filter(Boolean);
+  const attachmentNames: string[] = [];
+
+  while (blocks.length) {
+    const lastBlock = blocks[blocks.length - 1] || "";
+    const attachmentMatch = lastBlock.match(/^附件\s+(.+?)(?:\s*\([^)]+\))?\s*已附加。$/);
+    if (!attachmentMatch?.[1]) {
+      break;
+    }
+    attachmentNames.unshift(String(attachmentMatch[1] || "").trim());
+    blocks.pop();
+  }
+
+  if (blocks.length && /^用户附加了\s+\d+\s+个附件，请结合附件内容处理请求。$/i.test(blocks[blocks.length - 1] || "")) {
+    blocks.pop();
+  }
+
+  return {
+    attachmentNames,
+    baseContent: blocks.join("\n\n").trim(),
+  };
+}
+
+function getConversationAttachmentFingerprint(attachments: unknown = "") {
+  if (!Array.isArray(attachments)) {
+    return "";
+  }
+
+  return attachments
+    .map((attachment) => [
+      String(attachment?.kind || "").trim(),
+      String(attachment?.name || "").trim(),
+      String(attachment?.fullPath || attachment?.path || "").trim(),
+      String(attachment?.mimeType || "").trim(),
+    ].join("::"))
+    .filter(Boolean)
+    .join("|");
+}
+
+function getConversationAttachmentMergeSignatures(attachment: Record<string, unknown> = {}, index = 0) {
+  const signatures: string[] = [];
+  const filePath = String(attachment?.fullPath || attachment?.path || "").trim();
+  if (filePath) {
+    signatures.push(["path", filePath].join("|"));
+  }
+
+  const name = String(attachment?.name || "").trim();
+  const mimeType = String(attachment?.mimeType || "").trim();
+  const kind = String(attachment?.kind || "").trim();
+  if (name || mimeType || kind) {
+    signatures.push(["named", name, mimeType, kind].join("|"));
+  }
+
+  const explicitId = String(attachment?.id || attachment?.storageKey || "").trim();
+  if (explicitId) {
+    signatures.push(`id::${explicitId}`);
+  }
+
+  if (!signatures.length) {
+    signatures.push(`index::${index}`);
+  }
+
+  return signatures;
+}
+
+function getConversationAttachmentPayloadScore(attachment: Record<string, unknown> = {}) {
+  let score = 0;
+
+  if (String(attachment?.previewUrl || "").trim()) {
+    score += 64;
+  }
+  if (String(attachment?.dataUrl || "").trim()) {
+    score += 32;
+  }
+  if (String(attachment?.fullPath || "").trim()) {
+    score += 16;
+  }
+  if (String(attachment?.path || "").trim()) {
+    score += 8;
+  }
+  if (String(attachment?.textContent || "").trim()) {
+    score += 4;
+  }
+  if (String(attachment?.mimeType || "").trim()) {
+    score += 2;
+  }
+  if (String(attachment?.name || "").trim()) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function mergeConversationAttachmentPayloads(snapshotAttachments: unknown = [], localAttachments: unknown = []) {
+  if (!Array.isArray(snapshotAttachments) || !snapshotAttachments.length) {
+    return Array.isArray(localAttachments) ? localAttachments : [];
+  }
+
+  if (!Array.isArray(localAttachments) || !localAttachments.length) {
+    return snapshotAttachments;
+  }
+
+  const remainingLocalAttachments = localAttachments.map((attachment) =>
+    attachment && typeof attachment === "object" ? attachment as Record<string, unknown> : {},
+  );
+  const claimedLocalAttachmentIndices = new Set<number>();
+
+  const mergedAttachments = snapshotAttachments.map((attachment, index) => {
+    const normalizedAttachment = attachment && typeof attachment === "object" ? attachment as Record<string, unknown> : {};
+    const snapshotSignatures = new Set(getConversationAttachmentMergeSignatures(normalizedAttachment, index));
+    const localAttachmentIndex = remainingLocalAttachments.findIndex((candidate, candidateIndex) => {
+      if (claimedLocalAttachmentIndices.has(candidateIndex)) {
+        return false;
+      }
+      const candidateSignatures = getConversationAttachmentMergeSignatures(candidate, candidateIndex);
+      return candidateSignatures.some((signature) => snapshotSignatures.has(signature));
+    });
+    const localAttachment = localAttachmentIndex >= 0 ? remainingLocalAttachments[localAttachmentIndex] : null;
+    if (localAttachmentIndex >= 0) {
+      claimedLocalAttachmentIndices.add(localAttachmentIndex);
+    }
+
+    if (!localAttachment) {
+      return normalizedAttachment;
+    }
+
+    const snapshotScore = getConversationAttachmentPayloadScore(normalizedAttachment);
+    const localScore = getConversationAttachmentPayloadScore(localAttachment);
+    const preferredAttachment = snapshotScore >= localScore ? normalizedAttachment : localAttachment;
+    const fallbackAttachment = preferredAttachment === normalizedAttachment ? localAttachment : normalizedAttachment;
+
+    return {
+      ...fallbackAttachment,
+      ...preferredAttachment,
+    };
+  });
+
+  remainingLocalAttachments.forEach((attachment, index) => {
+    if (!claimedLocalAttachmentIndices.has(index)) {
+      mergedAttachments.push(attachment);
+    }
+  });
+
+  return mergedAttachments;
+}
+
+function hasConversationPayload(message: ChatMessage | null | undefined) {
+  return Boolean(String(message?.content || "").trim()) || Boolean(message?.attachments?.length);
+}
+
+function getConversationAttachmentNames(message: ChatMessage | null | undefined): string[] {
+  const attachmentNames = Array.isArray(message?.attachments)
+    ? message.attachments
+      .map((attachment) => String(attachment?.name || "").trim())
+      .filter(Boolean)
+    : [];
+
+  if (attachmentNames.length) {
+    return [...attachmentNames].sort();
+  }
+
+  return extractSyntheticAttachmentPrompt(message?.content)
+    .attachmentNames
+    .map((name) => String(name || "").trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function getConversationComparableText(message: ChatMessage | null | undefined) {
+  const syntheticPrompt = extractSyntheticAttachmentPrompt(message?.content);
+  const content = syntheticPrompt.baseContent || String(message?.content || "");
+  return normalizeConversationContent(content, String(message?.role || ""));
+}
+
+function shouldCollapseSyntheticAttachmentDuplicate(
+  previous: ChatMessage | null | undefined,
+  next: ChatMessage | null | undefined,
+) {
+  if (previous?.role !== "user" || next?.role !== "user") {
+    return false;
+  }
+
+  const previousTimestamp = Number(previous.timestamp || 0);
+  const nextTimestamp = Number(next.timestamp || 0);
+  if (
+    previousTimestamp > 0
+    && nextTimestamp > 0
+    && nextTimestamp - previousTimestamp > DUPLICATE_CONVERSATION_TURN_WINDOW_MS
+  ) {
+    return false;
+  }
+
+  const previousAttachmentNames = getConversationAttachmentNames(previous);
+  const nextAttachmentNames = getConversationAttachmentNames(next);
+  if (!previousAttachmentNames.length || !nextAttachmentNames.length) {
+    return false;
+  }
+
+  const previousText = getConversationComparableText(previous);
+  const nextText = getConversationComparableText(next);
+  return previousText === nextText && previousAttachmentNames.join("|") === nextAttachmentNames.join("|");
+}
+
+function choosePreferredSyntheticAttachmentTurn(previous: ChatMessage, next: ChatMessage) {
+  const previousHasAttachments = Boolean(previous.attachments?.length);
+  const nextHasAttachments = Boolean(next.attachments?.length);
+  if (previousHasAttachments !== nextHasAttachments) {
+    return nextHasAttachments ? next : previous;
+  }
+
+  const previousText = String(previous.content || "").trim();
+  const nextText = String(next.content || "").trim();
+  if (previousText !== nextText) {
+    return nextText.length <= previousText.length ? next : previous;
+  }
+
+  return next;
+}
+
 function cleanWrappedUserMessage(text = "") {
   let lines = String(text || "").trim().split("\n");
   const stripLeadingBlankLines = () => {
@@ -472,6 +710,14 @@ function cleanWrappedUserMessage(text = "") {
   );
   cleaned = cleaned.replace(/^(?:ou_[a-z0-9_-]+|on_[a-z0-9_-]+|oc_[a-z0-9_-]+)\s*:\s*/i, "");
 
+  if (INTERNAL_MEMORY_FLUSH_SENTINELS.every((pattern) => pattern.test(cleaned))) {
+    return "";
+  }
+
+  if (INTERNAL_SESSION_STARTUP_SENTINELS.every((pattern) => pattern.test(cleaned))) {
+    return "";
+  }
+
   if (
     /^OpenClaw runtime context \(internal\):/i.test(cleaned)
     && /runtime-generated,\s*not user-authored/i.test(cleaned)
@@ -486,6 +732,7 @@ export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) 
   const collapsed: ChatMessage[] = [];
   let lastUserFingerprint = "";
   let lastUserTimestamp = 0;
+  let lastUserIndex = -1;
   let lastAssistantTimestamp = 0;
   let lastAssistantFingerprint = "";
   let assistantSeenForCurrentTurn = false;
@@ -502,13 +749,45 @@ export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) 
   };
 
   for (const entry of entries) {
-    if (!entry?.role || !entry?.content) {
+    if (!entry?.role || !hasConversationPayload(entry)) {
       continue;
     }
 
     if (entry.role === "user") {
+      const previousEntry = collapsed[collapsed.length - 1];
+      if (!assistantSeenForCurrentTurn && shouldCollapseSyntheticAttachmentDuplicate(previousEntry, entry)) {
+        collapsed[collapsed.length - 1] = choosePreferredSyntheticAttachmentTurn(previousEntry as ChatMessage, entry);
+        const preferred = collapsed[collapsed.length - 1];
+        lastUserFingerprint =
+          getConversationComparableText(preferred)
+          || getConversationAttachmentNames(preferred).join("|");
+        lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
+        lastUserIndex = collapsed.length - 1;
+        pendingReplayAssistantFingerprint = "";
+        continue;
+      }
+
+      const previousUserEntry = lastUserIndex >= 0 ? collapsed[lastUserIndex] : null;
+      if (
+        assistantSeenForCurrentTurn
+        && previousUserEntry
+        && shouldCollapseSyntheticAttachmentDuplicate(previousUserEntry, entry)
+      ) {
+        const preferred = choosePreferredSyntheticAttachmentTurn(previousUserEntry, entry);
+        collapsed[lastUserIndex] = preferred;
+        lastUserFingerprint =
+          getConversationComparableText(preferred)
+          || getConversationAttachmentNames(preferred).join("|");
+        lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
+        pendingReplayAssistantFingerprint = "";
+        continue;
+      }
+
       flushPendingReplayUser();
-      const fingerprint = normalizeConversationContent(entry.content, entry.role);
+      const fingerprint =
+        getConversationComparableText(entry)
+        || getConversationAttachmentFingerprint(entry.attachments)
+        || getConversationAttachmentNames(entry).join("|");
       const timestamp = Number(entry.timestamp || 0);
       const withinShortReplayWindow =
         timestamp > 0
@@ -535,13 +814,17 @@ export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) 
       collapsed.push(entry);
       lastUserFingerprint = fingerprint;
       lastUserTimestamp = timestamp;
+      lastUserIndex = collapsed.length - 1;
       assistantSeenForCurrentTurn = false;
       pendingReplayAssistantFingerprint = "";
       continue;
     }
 
     if (entry.role === "assistant") {
-      const fingerprint = normalizeConversationContent(entry.content, entry.role);
+      const fingerprint =
+        normalizeConversationContent(entry.content, entry.role)
+        || getConversationAttachmentFingerprint(entry.attachments);
+      const currentAssistantTimestamp = Number(entry.timestamp || 0);
       if (pendingReplayUser) {
         const shouldCollapseReplay =
           pendingReplayAssistantFingerprint
@@ -560,9 +843,22 @@ export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) 
         }
       }
 
+      const isDuplicateAssistantReplay =
+        assistantSeenForCurrentTurn
+        && Boolean(fingerprint)
+        && fingerprint === lastAssistantFingerprint
+        && (
+          !currentAssistantTimestamp
+          || !lastAssistantTimestamp
+          || currentAssistantTimestamp >= lastAssistantTimestamp
+        );
+      if (isDuplicateAssistantReplay) {
+        continue;
+      }
+
       collapsed.push(entry);
       assistantSeenForCurrentTurn = true;
-      lastAssistantTimestamp = Number(entry.timestamp || 0);
+      lastAssistantTimestamp = currentAssistantTimestamp;
       lastAssistantFingerprint = fingerprint;
       continue;
     }
@@ -1054,7 +1350,12 @@ function areEquivalentConversationMessages(snapshotMessage, localMessage) {
   const localContent = localMessage.role === "assistant"
     ? normalizeAssistantConversationContent(localMessage.content)
     : String(localMessage.content || "").trim();
-  if (!snapshotContent || snapshotContent !== localContent) {
+  const snapshotAttachmentFingerprint = getConversationAttachmentFingerprint(snapshotMessage.attachments);
+  const localAttachmentFingerprint = getConversationAttachmentFingerprint(localMessage.attachments);
+  const contentMatches = Boolean(snapshotContent) && snapshotContent === localContent;
+  const attachmentMatches = Boolean(snapshotAttachmentFingerprint) && snapshotAttachmentFingerprint === localAttachmentFingerprint;
+
+  if (!contentMatches && !attachmentMatches) {
     return false;
   }
 
@@ -1151,7 +1452,7 @@ export function mergeConversationIdentity(
 export function mergeStaleLocalConversationTail(snapshotMessages: ChatMessage[] = [], localMessages: ChatMessage[] = []) {
   const nextMessages: ChatMessage[] = snapshotMessages.map((message) => ({ ...message }));
   const normalizedLocalMessages: ChatMessage[] = (localMessages || [])
-    .filter((message) => !message?.pending)
+    .filter((message) => !message?.pending && !message?.streaming)
     .map((message) => ({ ...message }));
 
   if (!nextMessages.length) {
@@ -1253,7 +1554,7 @@ export function mergeConversationAttachments(snapshotMessages: ChatMessage[] = [
     if (snapshotMessage) {
       nextMessages[matchIndex] = {
         ...snapshotMessage,
-        attachments: localMessage.attachments,
+        attachments: mergeConversationAttachmentPayloads(snapshotMessage.attachments, localMessage.attachments),
       };
     }
     usedIndices.add(matchIndex);

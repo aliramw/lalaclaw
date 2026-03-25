@@ -100,6 +100,184 @@ describe("createTranscriptProjector", () => {
     ]);
   });
 
+  it("drops pre-compaction memory flush directives from visible conversation", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [
+            {
+              type: "text",
+              text: [
+                "Pre-compaction memory flush. Store durable memories only in memory/2026-03-24.md (create memory/ if needed).",
+                "Treat workspace bootstrap/reference files such as MEMORY.md, SOUL.md, TOOLS.md, and AGENTS.md as read-only during this flush; never overwrite, replace, or edit them.",
+                "If memory/2026-03-24.md already exists, APPEND new content only and do not overwrite existing entries.",
+                "Do NOT create timestamped variant files (e.g., 2026-03-24-HHMM.md); always use the canonical 2026-03-24.md filename.",
+                "If nothing to store, reply with NO_REPLY.",
+                "Current time: Tuesday, March 24th, 2026 — 11:41 PM (Asia/Shanghai) / 2026-03-24 15:41 UTC",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [{ type: "text", text: "正常回复" }],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      { role: "assistant", content: "正常回复", timestamp: 2 },
+    ]);
+  });
+
+  it("drops reset startup directives from visible conversation", () => {
+    const projector = createProjector();
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [
+            {
+              type: "text",
+              text: [
+                "A new session was started via /new or /reset. Run your Session Startup sequence - read the required files before responding to the user.",
+                "Then greet the user in your configured persona, if one is provided.",
+                "Be yourself - use your defined voice, mannerisms, and mood. Keep it to 1-3 sentences and ask what they want to do.",
+                "If the runtime model differs from default_model in the system prompt, mention the default model.",
+                "Do not mention internal steps, files, tools, or reasoning.",
+                "Current time: Tuesday, March 24th, 2026 — 11:47 PM (Asia/Shanghai) / 2026-03-24 15:47 UTC",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+      {
+        type: "message",
+        timestamp: 2,
+        message: {
+          role: "assistant",
+          timestamp: 2,
+          content: [{ type: "text", text: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。" }],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      {
+        role: "assistant",
+        content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
+        timestamp: 2,
+      },
+    ]);
+  });
+
+  it("keeps structured image attachments while stripping generated attachment descriptions from user transcript text", () => {
+    const projector = createProjector();
+    const imagePath = "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png";
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [
+            {
+              type: "text",
+              text: [
+                "修改这张图。把上衣改成姜黄色",
+                "附件 wukong-mibai-eyes-brave.png (image/png, 826 KB) 已附加。",
+                `路径: ${imagePath}`,
+              ].join("\n"),
+            },
+            {
+              type: "image",
+              data: "AAAA",
+              mimeType: "image/png",
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      {
+        role: "user",
+        content: "修改这张图。把上衣改成姜黄色",
+        timestamp: 1,
+        attachments: [
+          {
+            kind: "image",
+            name: "wukong-mibai-eyes-brave.png",
+            mimeType: "image/png",
+            path: imagePath,
+            fullPath: imagePath,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps attachment-only image turns as attachments instead of generated helper text", () => {
+    const projector = createProjector();
+    const imagePath = "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-avatar.png";
+    const entries = [
+      {
+        type: "message",
+        timestamp: 1,
+        message: {
+          role: "user",
+          timestamp: 1,
+          content: [
+            {
+              type: "text",
+              text: [
+                "用户附加了 1 个附件，请结合附件内容处理请求。",
+                "附件 avatar.png (image/png, 217 KB) 已附加。",
+                `路径: ${imagePath}`,
+              ].join("\n"),
+            },
+            {
+              type: "image",
+              data: "BBBB",
+              mimeType: "image/png",
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(projector.collectConversationMessages(entries)).toEqual([
+      {
+        role: "user",
+        content: "",
+        timestamp: 1,
+        attachments: [
+          {
+            kind: "image",
+            name: "avatar.png",
+            mimeType: "image/png",
+            path: imagePath,
+            fullPath: imagePath,
+          },
+        ],
+      },
+    ]);
+  });
+
   it("strips repeated system exec wrappers and sender metadata before the visible user text", () => {
     const projector = createProjector();
     const entries = [

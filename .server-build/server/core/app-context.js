@@ -28,6 +28,7 @@ const { createOpenClawOnboardingHandler } = require('../routes/openclaw-onboardi
 const { createOpenClawUpdateHandler } = require('../routes/openclaw-update');
 const { createRuntimeHandler } = require('../routes/runtime');
 const { createRuntimeHub } = require('../services/runtime-hub');
+const { materializeInlineAttachments } = require('../services/attachment-materializer');
 const { createOpenClawConfigService } = require('../services/openclaw-config');
 const { createOpenClawFacade } = require('../services/openclaw-facade');
 const { createOpenClawManagementService } = require('../services/openclaw-management');
@@ -234,6 +235,7 @@ function createAppContext() {
         getDefaultModelForAgent,
         getMessageAttachments,
         getSessionPreferences,
+        materializeMessageAttachments: (attachments = []) => materializeInlineAttachments(attachments, { rootDir: config_1.LOCAL_OPENCLAW_DIR }),
         mirrorOpenClawUserMessage,
         normalizeChatMessage,
         normalizeSessionUser: session_store_1.normalizeSessionUser,

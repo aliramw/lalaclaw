@@ -2439,6 +2439,116 @@ describe("App", () => {
     });
   });
 
+  it("does not restore cleared main-tab messages after reset when switching tabs", async () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        chatTabs: [
+          { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+          { id: "agent:paint", agentId: "paint", sessionUser: "command-center-paint-1" },
+        ],
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+          "agent:paint": {
+            agentId: "paint",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center-paint-1",
+            thinkMode: "off",
+          },
+        },
+        messagesByTabId: {
+          "agent:main": [
+            { role: "user", content: "需要被重置", timestamp: 1 },
+            { role: "assistant", content: "这是待清空的回复。", timestamp: 2 },
+          ],
+          "agent:paint": [
+            { role: "assistant", content: "paint 会话消息", timestamp: 3 },
+          ],
+        },
+        sessionUser: "command-center",
+        agentId: "main",
+        model: "openai-codex/gpt-5.4",
+      }),
+    );
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (!url.startsWith("/api/runtime")) {
+        throw new Error(`Unexpected fetch: ${url}`);
+      }
+
+      const params = new URL(url, "http://localhost").searchParams;
+      const sessionUser = params.get("sessionUser") || "command-center";
+      const agentId = params.get("agentId") || (sessionUser === "command-center-paint-1" ? "paint" : "main");
+
+      if (agentId === "paint") {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId: "paint",
+              selectedAgentId: "paint",
+              availableAgents: ["main", "paint"],
+              sessionUser: "command-center-paint-1",
+              sessionKey: "agent:paint:openai-user:command-center-paint-1",
+            },
+            conversation: [{ role: "assistant", content: "paint 会话消息", timestamp: 3 }],
+          }),
+        );
+      }
+
+      return mockJsonResponse(
+        createSnapshot({
+          session: {
+            ...createSnapshot().session,
+            agentId: "main",
+            selectedAgentId: "main",
+            availableAgents: ["main", "paint"],
+            sessionUser,
+            sessionKey: `agent:main:openai-user:${sessionUser}`,
+          },
+          conversation: [],
+        }),
+      );
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("需要被重置");
+    await screen.findByText("这是待清空的回复。");
+
+    await user.click(screen.getByLabelText("开启新会话"));
+    await user.click(await screen.findByRole("button", { name: "确定" }));
+
+    await waitFor(() => {
+      expect(hasMessageText("需要被重置", "user")).toBe(false);
+      expect(hasMessageText("这是待清空的回复。", "assistant")).toBe(false);
+    });
+
+    await user.click(screen.getByRole("button", { name: "paint" }));
+    await screen.findByText("paint 会话消息");
+
+    await user.click(screen.getByRole("button", { name: "main" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("main - 当前会话")).toBeInTheDocument();
+      expect(hasMessageText("需要被重置", "user")).toBe(false);
+      expect(hasMessageText("这是待清空的回复。", "assistant")).toBe(false);
+    });
+  });
+
   it("recalls sent prompts with arrow keys when the input is empty", async () => {
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);

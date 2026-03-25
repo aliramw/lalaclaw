@@ -5,6 +5,9 @@ exports.getMessageAttachments = getMessageAttachments;
 exports.describeAttachmentForModel = describeAttachmentForModel;
 exports.buildOpenClawMessageContent = buildOpenClawMessageContent;
 exports.summarizeMessages = summarizeMessages;
+function getAttachmentModelPath(attachment) {
+    return attachment.fullPath || attachment.path || '';
+}
 function clipText(text, maxLength = 140) {
     if (!text) {
         return '';
@@ -64,13 +67,19 @@ function getMessageAttachments(message) {
         .filter((attachment) => attachment.name);
 }
 function describeAttachmentForModel(attachment) {
+    const attachmentPath = getAttachmentModelPath(attachment);
     if (attachment.textContent) {
-        return `附件 ${attachment.name}:\n${attachment.textContent}${attachment.truncated ? '\n[内容已截断]' : ''}`;
+        const headerParts = [`附件 ${attachment.name}`];
+        if (attachmentPath) {
+            headerParts.push(`路径: ${attachmentPath}`);
+        }
+        return `${headerParts.join('\n')}\n内容:\n${attachment.textContent}${attachment.truncated ? '\n[内容已截断]' : ''}`;
     }
     const attachmentDetails = [attachment.mimeType, attachment.size ? `${Math.max(1, Math.round(attachment.size / 1024))} KB` : '']
         .filter(Boolean)
         .join(', ');
-    return `附件 ${attachment.name}${attachmentDetails ? ` (${attachmentDetails})` : ''} 已附加。`;
+    const baseDescription = `附件 ${attachment.name}${attachmentDetails ? ` (${attachmentDetails})` : ''} 已附加。`;
+    return attachmentPath ? `${baseDescription}\n路径: ${attachmentPath}` : baseDescription;
 }
 function buildOpenClawMessageContent(message, apiStyle = 'chat') {
     const text = normalizeChatMessage(message).trim();
@@ -83,6 +92,10 @@ function buildOpenClawMessageContent(message, apiStyle = 'chat') {
         }
         attachments.forEach((attachment) => {
             if (attachment.kind === 'image' && attachment.dataUrl) {
+                const attachmentDescription = describeAttachmentForModel(attachment);
+                if (attachmentDescription) {
+                    content.push({ type: 'input_text', text: attachmentDescription });
+                }
                 content.push({ type: 'input_image', image_url: attachment.dataUrl });
                 return;
             }
@@ -99,6 +112,10 @@ function buildOpenClawMessageContent(message, apiStyle = 'chat') {
     }
     attachments.forEach((attachment) => {
         if (attachment.kind === 'image' && attachment.dataUrl) {
+            const attachmentDescription = describeAttachmentForModel(attachment);
+            if (attachmentDescription) {
+                content.push({ type: 'text', text: attachmentDescription });
+            }
             content.push({ type: 'image_url', image_url: { url: attachment.dataUrl } });
             return;
         }

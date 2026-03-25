@@ -37,7 +37,7 @@ function createChatStopHandler({ callOpenClawGateway, config, getCommandCenterSe
         }
     };
 }
-function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionConversation, buildDashboardSnapshot, callOpenClawGateway, clearLocalSessionConversation, clearLocalSessionFileEntries, clip, config, delay, dispatchOpenClaw, dispatchOpenClawStream, formatTokenBadge, getCommandCenterSessionKey, getDefaultAgentId, getDefaultModelForAgent, getMessageAttachments, getSessionPreferences, mirrorOpenClawUserMessage, normalizeChatMessage, normalizeSessionUser, parseFastCommand, parseModelCommand, parseRequestBody, parseSessionResetCommand, parseSlashCommandState, resolveCanonicalModelId, resolveSessionAgentId, resolveSessionFastMode, resolveSessionModel, resolveSessionThinkMode, sendJson, setSessionPreferences, summarizeMessages, }) {
+function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionConversation, buildDashboardSnapshot, callOpenClawGateway, clearLocalSessionConversation, clearLocalSessionFileEntries, clip, config, delay, dispatchOpenClaw, dispatchOpenClawStream, formatTokenBadge, getCommandCenterSessionKey, getDefaultAgentId, getDefaultModelForAgent, getMessageAttachments, getSessionPreferences, mirrorOpenClawUserMessage, materializeMessageAttachments, normalizeChatMessage, normalizeSessionUser, parseFastCommand, parseModelCommand, parseRequestBody, parseSessionResetCommand, parseSlashCommandState, resolveCanonicalModelId, resolveSessionAgentId, resolveSessionFastMode, resolveSessionModel, resolveSessionThinkMode, sendJson, setSessionPreferences, summarizeMessages, }) {
     function startChatStream(res) {
         res.writeHead(200, {
             'Content-Type': 'application/x-ndjson; charset=utf-8',
@@ -102,7 +102,9 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                 : `msg-assistant-${Date.now()}`;
             const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user');
             const latestUserContent = normalizeChatMessage(latestUserMessage);
-            const latestUserAttachments = getMessageAttachments(latestUserMessage);
+            const latestUserAttachments = await Promise.resolve(typeof materializeMessageAttachments === 'function'
+                ? materializeMessageAttachments(getMessageAttachments(latestUserMessage), { sessionUser })
+                : getMessageAttachments(latestUserMessage));
             const resetCommand = parseSessionResetCommand(latestUserContent);
             const fastCommand = parseFastCommand(latestUserContent);
             const modelCommand = parseModelCommand?.(latestUserContent) || null;
@@ -140,6 +142,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                         role: 'user',
                         content: latestUserContent,
                         timestamp: responseTimestamp - 1,
+                        ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}),
                     },
                     {
                         role: 'assistant',
@@ -200,6 +203,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                         role: 'user',
                         content: latestUserContent,
                         timestamp: responseTimestamp - 1,
+                        ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}),
                     },
                     {
                         role: 'assistant',
@@ -315,7 +319,15 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                 ? body.userLabel.trim()
                 : '';
             if (config.mode === 'openclaw' && latestUserContent && !latestUserContent.startsWith('/')) {
-                await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent, { operatorName });
+                try {
+                    await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent, { operatorName });
+                }
+                catch (error) {
+                    console.warn('[chat] mirrorOpenClawUserMessage failed', {
+                        error: error instanceof Error ? error.message : String(error || ''),
+                        sessionUser,
+                    });
+                }
             }
             if (shouldStream) {
                 startChatStream(res);
@@ -373,6 +385,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                             role: 'user',
                             content: latestUserContent,
                             timestamp: requestTimestamp,
+                            ...(latestUserAttachments.length ? { attachments: latestUserAttachments } : {}),
                         },
                     ]
                     : []),

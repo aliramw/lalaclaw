@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactElement } from "react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ArrowRight, CircleUserRound, RotateCw, X } from "lucide-react";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { SessionOverview } from "@/components/command-center/session-overview";
+import { AppSplitLayout } from "@/components/app-shell/app-split-layout";
+import { DevWorkspaceBadge } from "@/components/app-shell/dev-workspace-badge";
+import { getDevWorkspaceInfo } from "@/components/app-shell/dev-workspace-info";
+import { SettingsTrigger } from "@/components/app-shell/settings-trigger";
+import { AgentSwitchOverlay, ModelSwitchOverlay, SessionNotice } from "@/components/app-shell/session-overlays";
+import { useAppSessionOverviews } from "@/components/app-shell/use-app-session-overviews";
 import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
 import { InspectorPanel } from "@/components/command-center/inspector-panel";
 import { SettingsDialog } from "@/components/command-center/settings-dialog";
@@ -12,26 +16,21 @@ import { useCommandCenter } from "@/features/app/controllers";
 import { AccessGate } from "@/features/auth/access-gate";
 import { useAccessGate } from "@/features/auth/access-context";
 import { defaultInspectorPanelWidth, maxInspectorPanelWidth, minInspectorPanelWidth } from "@/features/app/storage";
-import { isImSessionUser } from "@/features/session/im-session";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, normalizeStatusKey } from "@/features/session/status-display";
 import { I18nProvider } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
 import { buildDevWorkspaceLabel } from "@/lib/dev-workspace-label";
-import { devWorkspacePageReloader } from "@/lib/dev-workspace-page-reloader";
-import { cn } from "@/lib/utils";
 
 const AppCard: any = Card;
 const AppCardContent: any = CardContent;
 
 const desktopBreakpointQuery = "(min-width: 1280px)";
 const dragHandleWidth = 8;
-const resizeHandleDots = Array.from({ length: 12 });
 const minChatPanelWidth = 560;
 const compactInspectorPanelMinWidth = 58;
 const compactInspectorPanelMaxWidth = 72;
 const compactChatPanelMinWidth = 220;
 const shouldBypassAccessGate = Boolean(import.meta.env?.MODE === "test" || import.meta.env?.VITEST);
-const devWorkspaceBadgeStorageKey = "lalaclaw-dev-workspace-badge-collapsed";
 const pointerFocusDismissSelector = [
   "button",
   "[role='button']",
@@ -43,62 +42,6 @@ const pointerFocusDismissSelector = [
   "a[href]",
   "summary",
 ].join(",");
-
-function getDevWorkspaceInfo() {
-  const info = globalThis.__LALACLAW_DEV_INFO__;
-  return info && typeof info === "object" ? info : null;
-}
-
-function formatDetachedWorkspaceLabel(commit = "") {
-  const normalizedCommit = String(commit || "").trim();
-  return normalizedCommit ? `detached@${normalizedCommit}` : "detached";
-}
-
-function resolveCurrentWorkspaceBranchLabel({ branch = "", commit = "", detached = false } = {}) {
-  const normalizedBranch = String(branch || "").trim();
-  if (normalizedBranch) {
-    return normalizedBranch;
-  }
-
-  return detached ? formatDetachedWorkspaceLabel(commit) : "";
-}
-
-function getWorktreePathSuffix(worktreePath = "") {
-  const normalizedPath = String(worktreePath || "").trim().replace(/\\/g, "/");
-  if (!normalizedPath) {
-    return "";
-  }
-
-  const segments = normalizedPath.split("/").filter(Boolean);
-  if (segments.length >= 2) {
-    return segments.slice(-2).join("/");
-  }
-  return segments[0] || normalizedPath;
-}
-
-function buildWorktreeOptionLabel(worktree, duplicateLabelCounts = new Map()) {
-  const branchLabel = resolveCurrentWorkspaceBranchLabel({
-    branch: worktree?.branch,
-    detached: worktree?.detached,
-  });
-  const baseLabel = [worktree?.name || worktree?.path || "", branchLabel].filter(Boolean).join(" · ");
-  if (!baseLabel) {
-    return getWorktreePathSuffix(worktree?.path);
-  }
-
-  if ((duplicateLabelCounts.get(baseLabel) || 0) < 2) {
-    return baseLabel;
-  }
-
-  const pathSuffix = getWorktreePathSuffix(worktree?.path);
-  return pathSuffix ? `${baseLabel} · ${pathSuffix}` : baseLabel;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
 
 function shouldDismissPointerFocus(element) {
   if (!(element instanceof HTMLElement)) {
@@ -135,465 +78,6 @@ function isSameCompletedAtMap(current = {}, next = {}) {
   }
 
   return currentKeys.every((key) => current[key] === next[key]);
-}
-
-function AgentSwitchOverlay({ agentLabel, mode = "switching" }) {
-  const { messages } = useI18n();
-
-  if (!agentLabel) {
-    return null;
-  }
-
-  const title = mode === "opening-session"
-    ? messages.common.openingAgentSession(agentLabel)
-    : messages.common.switchingToAgent(agentLabel);
-
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-background/78 backdrop-blur-[6px]">
-      <div className="cc-agent-switch-card flex w-[min(26rem,calc(100vw-2rem))] flex-col items-center gap-4 rounded-[1.75rem] border border-border/70 bg-card/94 px-7 py-8 text-center shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
-        <div className="cc-agent-switch-orbit" aria-hidden="true">
-          <span className="cc-agent-switch-dot cc-agent-switch-dot-1" />
-          <span className="cc-agent-switch-dot cc-agent-switch-dot-2" />
-          <span className="cc-agent-switch-dot cc-agent-switch-dot-3" />
-        </div>
-        <div className="space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.28em] text-muted-foreground">
-            {messages.sessionOverview.labels.agent}
-          </div>
-          <div className="text-xl font-semibold tracking-[-0.02em] text-foreground">
-            {title}
-          </div>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {messages.common.switchingAgentWait}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ModelSwitchOverlay({ modelLabel }) {
-  const { messages } = useI18n();
-
-  if (!modelLabel) {
-    return null;
-  }
-
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-background/78 backdrop-blur-[6px]">
-      <div className="cc-agent-switch-card flex w-[min(30rem,calc(100vw-2rem))] flex-col items-center gap-4 rounded-[1.75rem] border border-border/70 bg-card/94 px-7 py-8 text-center shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
-        <div className="cc-agent-switch-orbit" aria-hidden="true">
-          <span className="cc-agent-switch-dot cc-agent-switch-dot-1" />
-          <span className="cc-agent-switch-dot cc-agent-switch-dot-2" />
-          <span className="cc-agent-switch-dot cc-agent-switch-dot-3" />
-        </div>
-        <div className="space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.28em] text-muted-foreground">
-            {messages.sessionOverview.labels.model}
-          </div>
-          <div className="space-y-2">
-            <div className="text-xl font-semibold tracking-[-0.02em] text-foreground">
-              {messages.common.switchingModelTo}
-            </div>
-            <div className="break-all text-xl font-semibold tracking-[-0.02em] text-foreground">
-              {modelLabel}
-            </div>
-          </div>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {messages.common.switchingModelWait}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DevWorkspaceBadge() {
-  const { messages } = useI18n();
-  const devWorkspaceInfo = getDevWorkspaceInfo();
-  const fallbackCurrentBranch = resolveCurrentWorkspaceBranchLabel({
-    branch: devWorkspaceInfo?.branch,
-    commit: devWorkspaceInfo?.commit,
-    detached: String(devWorkspaceInfo?.branch || "").trim().startsWith("detached@"),
-  });
-  const showDevWorkspaceBadge = Boolean(
-    (import.meta.env?.DEV || import.meta.env?.MODE === "test" || import.meta.env?.VITEST) && devWorkspaceInfo,
-  );
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    try {
-      return window.localStorage.getItem(devWorkspaceBadgeStorageKey) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const [restartError, setRestartError] = useState("");
-  const [restarting, setRestarting] = useState(false);
-  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
-  const [currentBranch, setCurrentBranch] = useState(() => fallbackCurrentBranch);
-  const [targetBranch, setTargetBranch] = useState("");
-  const [availableWorktrees, setAvailableWorktrees] = useState(() => {
-    const currentPath = String(devWorkspaceInfo?.cwd || "").trim();
-    if (!currentPath) {
-      return [];
-    }
-    return [{
-      path: currentPath,
-      name: String(devWorkspaceInfo?.worktree || "").trim(),
-      branch: String(devWorkspaceInfo?.branch || "").trim(),
-      detached: String(devWorkspaceInfo?.branch || "").trim().startsWith("detached@"),
-    }];
-  });
-  const [currentWorktreePath, setCurrentWorktreePath] = useState(() => String(devWorkspaceInfo?.cwd || "").trim());
-  const [targetWorktreePath, setTargetWorktreePath] = useState(() => String(devWorkspaceInfo?.cwd || "").trim());
-  const [loadingBranches, setLoadingBranches] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    try {
-      window.localStorage.setItem(devWorkspaceBadgeStorageKey, collapsed ? "1" : "0");
-    } catch {}
-  }, [collapsed]);
-
-  const port = typeof window !== "undefined" ? window.location.port : "";
-  const host = typeof window !== "undefined" ? window.location.hostname : "";
-  const worktreeOptionLabelCounts = useMemo(() => {
-    const counts = new Map();
-    availableWorktrees.forEach((worktree) => {
-      const baseLabel = [worktree.name || worktree.path || "", resolveCurrentWorkspaceBranchLabel({
-        branch: worktree.branch,
-        detached: worktree.detached,
-      })].filter(Boolean).join(" · ");
-      counts.set(baseLabel, (counts.get(baseLabel) || 0) + 1);
-    });
-    return counts;
-  }, [availableWorktrees]);
-  const currentWorktreeName = availableWorktrees.find((entry) => entry.path === currentWorktreePath)?.name
-    || devWorkspaceInfo?.worktree
-    || "";
-  const label = buildDevWorkspaceLabel({
-    branch: currentBranch || fallbackCurrentBranch || devWorkspaceInfo?.commit || "",
-    worktree: currentWorktreeName,
-  }, port);
-  const toggleLabel = collapsed ? messages.common.devWorkspaceExpand : messages.common.devWorkspaceCollapse;
-  const isSwitchingBranch = Boolean(targetBranch) && targetBranch !== currentBranch;
-  const restartButtonLabel = restarting
-    ? messages.common.devWorkspaceRestarting
-    : isSwitchingBranch
-      ? messages.common.devWorkspaceSwitchRestart
-      : messages.common.devWorkspaceRestart;
-
-  useEffect(() => {
-    if (collapsed) {
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const loadBranches = async () => {
-      setLoadingBranches(true);
-      try {
-        const response = await fetch("/api/dev/workspace-restart", {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok || payload?.ok === false || cancelled) {
-          return;
-        }
-
-        const nextBranches = Array.isArray(payload?.branches)
-          ? payload.branches.map((entry) => String(entry || "").trim()).filter(Boolean)
-          : [];
-        const nextWorktrees = Array.isArray(payload?.worktrees)
-          ? payload.worktrees.map((entry) => ({
-            path: String(entry?.path || "").trim(),
-            name: String(entry?.name || "").trim(),
-            branch: String(entry?.branch || "").trim(),
-            detached: Boolean(entry?.detached),
-          })).filter((entry) => entry.path)
-          : [];
-        const nextCurrentWorktreePath = String(payload?.currentWorktreePath || "").trim() || String(devWorkspaceInfo?.cwd || "").trim();
-        const currentWorktreeEntry = nextWorktrees.find((entry) => entry.path === nextCurrentWorktreePath);
-        const nextCurrentBranch = resolveCurrentWorkspaceBranchLabel({
-          branch: String(payload?.currentBranch || "").trim() || currentWorktreeEntry?.branch || "",
-          commit: devWorkspaceInfo?.commit,
-          detached: Boolean(currentWorktreeEntry?.detached),
-        }) || fallbackCurrentBranch;
-
-        setAvailableBranches(nextBranches);
-        setAvailableWorktrees(nextWorktrees);
-        setCurrentBranch(nextCurrentBranch);
-        setCurrentWorktreePath(nextCurrentWorktreePath);
-        setTargetWorktreePath((current) => {
-          if (current && nextWorktrees.some((entry) => entry.path === current)) {
-            return current;
-          }
-          return nextCurrentWorktreePath || current;
-        });
-        setTargetBranch((current) => {
-          if (current && nextBranches.includes(current)) {
-            return current;
-          }
-          const normalizedPayloadBranch = String(payload?.currentBranch || "").trim();
-          if (normalizedPayloadBranch && nextBranches.includes(normalizedPayloadBranch)) {
-            return normalizedPayloadBranch;
-          }
-          return "";
-        });
-      } finally {
-        if (!cancelled) {
-          setLoadingBranches(false);
-        }
-      }
-    };
-
-    loadBranches().catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [collapsed, devWorkspaceInfo?.branch, devWorkspaceInfo?.cwd]);
-
-  const handleToggleCollapsed = useCallback(() => {
-    setCollapsed((current) => !current);
-  }, []);
-
-  const handleToggleKeyDown = useCallback((event) => {
-    if (event.key !== "Enter" && event.key !== " ") {
-      return;
-    }
-    event.preventDefault();
-    handleToggleCollapsed();
-  }, [handleToggleCollapsed]);
-
-  const pollForRestartReady = useCallback(async (restartId) => {
-    const timeoutMs = 90_000;
-    const startedAt = Date.now();
-
-    await sleep(600);
-
-    while (Date.now() - startedAt < timeoutMs) {
-      try {
-        const response = await fetch("/api/dev/workspace-restart", {
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        const payload = await response.json().catch(() => null);
-          if (response.ok && payload?.restartId === restartId) {
-            if (payload.status === "ready") {
-              devWorkspacePageReloader.reload();
-              return;
-            }
-          if (payload.status === "failed") {
-            throw new Error(payload.error || messages.common.devWorkspaceRestartFailed);
-          }
-        }
-      } catch {}
-
-      await sleep(1000);
-    }
-
-    throw new Error(messages.common.devWorkspaceRestartFailed);
-  }, [messages]);
-
-  const handleRestartServices = useCallback(async (event) => {
-    event.stopPropagation();
-    if (restarting) {
-      return;
-    }
-
-    setRestartError("");
-    setRestarting(true);
-
-    try {
-      const response = await fetch("/api/dev/workspace-restart", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          frontendHost: host || "127.0.0.1",
-          frontendPort: Number(port || 0),
-          targetBranch: isSwitchingBranch ? targetBranch : "",
-          targetWorktreePath,
-        }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || payload?.ok === false || !payload?.restartId) {
-        throw new Error(payload?.error || messages.common.devWorkspaceRestartFailed);
-      }
-
-      await pollForRestartReady(payload.restartId);
-    } catch (error) {
-      setRestarting(false);
-      setRestartError(error?.message || messages.common.devWorkspaceRestartFailed);
-    }
-  }, [host, isSwitchingBranch, messages, pollForRestartReady, port, restarting, targetBranch, targetWorktreePath]);
-
-  if (!showDevWorkspaceBadge) {
-    return null;
-  }
-
-  return (
-    <div className="pointer-events-none fixed right-3 bottom-3 z-[140]">
-      <section
-        aria-expanded={collapsed ? "false" : "true"}
-        aria-label={toggleLabel}
-        data-testid="dev-workspace-badge"
-        onClick={handleToggleCollapsed}
-        onKeyDown={handleToggleKeyDown}
-        role="button"
-        tabIndex={0}
-        className={cn(
-          "pointer-events-auto rounded-2xl border border-border/70 bg-background/92 text-left shadow-[0_10px_30px_rgba(15,23,42,0.14)] backdrop-blur transition hover:border-border hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          collapsed
-            ? "max-w-[min(24rem,calc(100vw-1.5rem))] px-3 py-2"
-            : "min-w-[15rem] max-w-[min(24rem,calc(100vw-1.5rem))] px-3 py-2.5",
-        )}
-      >
-        {collapsed ? (
-          <div className="text-[12px] font-semibold leading-5 text-foreground">
-            <code>{label}</code>
-          </div>
-        ) : (
-          <>
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="inline-flex h-7 items-center rounded-full border border-amber-500/35 bg-amber-500/12 px-2 text-[10px] font-semibold tracking-[0.14em] text-amber-700 uppercase">
-                {messages.common.devWorkspace}
-              </div>
-              <button
-                type="button"
-                data-testid="dev-workspace-restart-button"
-                onClick={handleRestartServices}
-                disabled={restarting}
-                className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground transition hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
-              >
-                <RotateCw className={cn("h-3.5 w-3.5", restarting ? "animate-spin" : "")} aria-hidden="true" />
-                <span>{restartButtonLabel}</span>
-              </button>
-            </div>
-            <div className="text-[12px] font-semibold leading-5 text-foreground">
-              <code>{label}</code>
-            </div>
-            <div className="mt-2 grid gap-1">
-              <label htmlFor="dev-workspace-worktree-select" className="text-[11px] font-medium leading-4 text-muted-foreground">
-                {messages.common.devWorkspaceTargetWorktree}
-              </label>
-              <select
-                id="dev-workspace-worktree-select"
-                data-testid="dev-workspace-worktree-select"
-                value={targetWorktreePath}
-                disabled={restarting || loadingBranches || !availableWorktrees.length}
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-                onChange={(event) => {
-                  event.stopPropagation();
-                  setTargetWorktreePath(event.target.value);
-                }}
-                className="h-8 rounded-md border border-border/70 bg-background px-2 text-[12px] text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label={messages.common.devWorkspaceTargetWorktree}
-              >
-                {loadingBranches ? (
-                  <option value={targetWorktreePath || ""}>{messages.common.devWorkspaceWorktreeLoading}</option>
-                ) : availableWorktrees.length ? (
-                  availableWorktrees.map((worktree) => (
-                    <option key={worktree.path} value={worktree.path}>
-                      {buildWorktreeOptionLabel(worktree, worktreeOptionLabelCounts)}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">{messages.common.devWorkspaceWorktreeUnavailable}</option>
-                )}
-              </select>
-            </div>
-            <div className="mt-2 grid gap-1">
-              <label htmlFor="dev-workspace-branch-select" className="text-[11px] font-medium leading-4 text-muted-foreground">
-                {messages.common.devWorkspaceTargetBranch}
-              </label>
-              <select
-                id="dev-workspace-branch-select"
-                data-testid="dev-workspace-branch-select"
-                value={targetBranch}
-                disabled={restarting || loadingBranches || !availableBranches.length}
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-                onChange={(event) => {
-                  event.stopPropagation();
-                  setTargetBranch(event.target.value);
-                }}
-                className="h-8 rounded-md border border-border/70 bg-background px-2 text-[12px] text-foreground outline-none transition focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label={messages.common.devWorkspaceTargetBranch}
-              >
-                {loadingBranches ? (
-                  <option value={targetBranch || ""}>{messages.common.devWorkspaceBranchLoading}</option>
-                ) : availableBranches.length ? (
-                  availableBranches.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">{messages.common.devWorkspaceBranchUnavailable}</option>
-                )}
-              </select>
-            </div>
-            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[11px] leading-4 text-muted-foreground">
-              <dt>{messages.common.devWorkspaceBranch}</dt>
-              <dd className="min-w-0 truncate">
-                <code>{currentBranch || devWorkspaceInfo.branch || devWorkspaceInfo.commit || messages.common.unknown}</code>
-              </dd>
-              <dt>{messages.common.devWorkspaceWorktree}</dt>
-              <dd className="min-w-0 truncate">
-                <code>{availableWorktrees.find((entry) => entry.path === currentWorktreePath)?.name || devWorkspaceInfo.worktree || messages.common.unknown}</code>
-              </dd>
-              <dt>{messages.common.devWorkspacePort}</dt>
-              <dd>
-                <code>{port || messages.common.unknown}</code>
-              </dd>
-              <dt>{messages.common.devWorkspacePath}</dt>
-              <dd className="min-w-0 truncate">
-                <code>{currentWorktreePath || devWorkspaceInfo.cwd || messages.common.unknown}</code>
-              </dd>
-            </dl>
-            {restartError ? (
-              <div className="mt-2 text-[11px] leading-4 text-red-600 dark:text-red-300">
-                {restartError}
-              </div>
-            ) : null}
-          </>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function SessionNotice({ notice }) {
-  if (!notice?.message) {
-    return null;
-  }
-
-  return (
-    <div className="pointer-events-none fixed inset-x-0 top-5 z-[130] flex justify-center px-4">
-      <div
-        className={cn(
-          "inline-flex min-h-11 items-center rounded-full border px-4 py-2 text-sm font-medium shadow-lg backdrop-blur",
-          notice.type === "error"
-            ? "border-rose-200/70 bg-rose-50/95 text-rose-700 dark:border-rose-500/30 dark:bg-rose-950/80 dark:text-rose-100"
-            : "border-sky-200/80 bg-white/96 text-slate-800 dark:border-sky-500/25 dark:bg-slate-900/88 dark:text-slate-100",
-        )}
-      >
-        {notice.message}
-      </div>
-    </div>
-  );
 }
 
 function FailedRelationshipContextMenu({ menu, messages, onClose, onDismiss }) {
@@ -1194,19 +678,10 @@ function AppContent() {
     runtimeTransport,
   ]);
   const settingsTrigger = useMemo(() => (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={i18nMessages.settingsDialog.openLabel}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/70 text-muted-foreground transition hover:border-border hover:bg-accent/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          onClick={() => setSettingsDialogOpen(true)}
-        >
-          <CircleUserRound className="h-[1.1rem] w-[1.1rem]" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{i18nMessages.settingsDialog.openLabel}</TooltipContent>
-    </Tooltip>
+    <SettingsTrigger
+      label={i18nMessages.settingsDialog.openLabel}
+      onOpen={() => setSettingsDialogOpen(true)}
+    />
   ), [i18nMessages.settingsDialog.openLabel]);
   const splitLayoutStyle = useMemo(
     () => (isWideLayout
@@ -1218,253 +693,42 @@ function AppContent() {
         }),
     [compactInspectorPanelWidth, isWideLayout, resolvedInspectorPanelWidth],
   );
-  const openAgentIds = useMemo(
-    () => chatTabs
-      .filter((tab) => !isImSessionUser(tab.sessionUser))
-      .map((tab) => tab.agentId),
-    [chatTabs],
-  );
-  const openSessionUsers = useMemo(() => chatTabs.map((tab) => tab.sessionUser), [chatTabs]);
-  const tabBrandOverview = useMemo<ReactElement>(() => (
-    <SessionOverview
-      layout="tab-brand"
-      accessLoggingOut={loggingOut}
-      accessMode={accessMode}
-      availableAgents={availableAgents}
-      availableImChannels={imChannelConfigs}
-      availableModels={availableModels}
-      composerSendMode={composerSendMode}
-      extraControls={settingsTrigger}
-      fastMode={fastMode}
-      formatCompactK={formatCompactK}
-      model={model}
-      onAgentChange={handleAgentChange}
-      onAccessLogout={logout}
-      onFastModeChange={handleFastModeChange}
-      onModelChange={handleModelChange}
-      onLoadImChannels={loadImChannelConfigs}
-      onSearchSessions={handleSearchSessions}
-      onSelectSearchedSession={handleSelectSearchedSession}
-      onThinkModeChange={handleThinkModeChange}
-      onThemeChange={setTheme}
-      resolvedTheme={resolvedTheme}
-      runtimeFallbackReason={runtimeFallbackReason}
-      runtimeReconnectAttempts={runtimeReconnectAttempts}
-      runtimeSocketStatus={runtimeSocketStatus}
-      runtimeTransport={runtimeTransport}
-      sessionOverviewPending={sessionOverviewPending}
-      session={session}
-      theme={theme}
-    />
-  ), [
+  const {
+    agentTabOverview,
+    controlsOverview,
+    statusOverview,
+    tabBrandOverview,
+  } = useAppSessionOverviews({
+    accessLoggingOut: loggingOut,
     accessMode,
     availableAgents,
-    imChannelConfigs,
+    availableImChannels: imChannelConfigs,
     availableModels,
+    chatTabs,
     composerSendMode,
-    settingsTrigger,
+    extraControls: settingsTrigger,
     fastMode,
     formatCompactK,
-    handleAgentChange,
-    loggingOut,
-    logout,
-    handleFastModeChange,
-    handleModelChange,
-    loadImChannelConfigs,
-    handleSearchSessions,
-    handleSelectSearchedSession,
-    handleThinkModeChange,
     model,
+    onAccessLogout: logout,
+    onAgentChange: handleAgentChange,
+    onFastModeChange: handleFastModeChange,
+    onLoadImChannels: loadImChannelConfigs,
+    onModelChange: handleModelChange,
+    onOpenImSession: handleOpenImSession,
+    onSearchSessions: handleSearchSessions,
+    onSelectSearchedSession: handleSelectSearchedSession,
+    onThinkModeChange: handleThinkModeChange,
+    onThemeChange: setTheme,
     resolvedTheme,
     runtimeFallbackReason,
     runtimeReconnectAttempts,
     runtimeSocketStatus,
     runtimeTransport,
-    sessionOverviewPending,
     session,
-    setTheme,
-    theme,
-  ]);
-  const agentTabOverview = useMemo<ReactElement>(() => (
-    <SessionOverview
-      layout="agent-tab"
-      accessLoggingOut={loggingOut}
-      accessMode={accessMode}
-      availableAgents={availableAgents}
-      availableImChannels={imChannelConfigs}
-      availableModels={availableModels}
-      composerSendMode={composerSendMode}
-      extraControls={settingsTrigger}
-      fastMode={fastMode}
-      formatCompactK={formatCompactK}
-      model={model}
-      onAgentChange={handleAgentChange}
-      onAccessLogout={logout}
-      onFastModeChange={handleFastModeChange}
-      onModelChange={handleModelChange}
-      onLoadImChannels={loadImChannelConfigs}
-      onOpenImSession={handleOpenImSession}
-      onSearchSessions={handleSearchSessions}
-      onSelectSearchedSession={handleSelectSearchedSession}
-      onThinkModeChange={handleThinkModeChange}
-      onThemeChange={setTheme}
-      openAgentIds={openAgentIds}
-      openSessionUsers={openSessionUsers}
-      resolvedTheme={resolvedTheme}
-      runtimeFallbackReason={runtimeFallbackReason}
-      runtimeReconnectAttempts={runtimeReconnectAttempts}
-      runtimeSocketStatus={runtimeSocketStatus}
-      runtimeTransport={runtimeTransport}
-      sessionOverviewPending={sessionOverviewPending}
-      session={session}
-      theme={theme}
-    />
-  ), [
-    accessMode,
-    availableAgents,
-    imChannelConfigs,
-    availableModels,
-    composerSendMode,
-    settingsTrigger,
-    fastMode,
-    formatCompactK,
-    handleAgentChange,
-    loggingOut,
-    logout,
-    handleFastModeChange,
-    handleModelChange,
-    handleOpenImSession,
-    loadImChannelConfigs,
-    handleSearchSessions,
-    handleSelectSearchedSession,
-    handleThinkModeChange,
-    model,
-    openAgentIds,
-    openSessionUsers,
-    resolvedTheme,
-    runtimeFallbackReason,
-    runtimeReconnectAttempts,
-    runtimeSocketStatus,
-    runtimeTransport,
     sessionOverviewPending,
-    session,
-    setTheme,
     theme,
-  ]);
-  const controlsOverview = useMemo<ReactElement>(() => (
-    <SessionOverview
-      layout="controls"
-      accessLoggingOut={loggingOut}
-      accessMode={accessMode}
-      availableAgents={availableAgents}
-      availableImChannels={imChannelConfigs}
-      availableModels={availableModels}
-      composerSendMode={composerSendMode}
-      extraControls={settingsTrigger}
-      fastMode={fastMode}
-      formatCompactK={formatCompactK}
-      model={model}
-      onAgentChange={handleAgentChange}
-      onAccessLogout={logout}
-      onFastModeChange={handleFastModeChange}
-      onModelChange={handleModelChange}
-      onLoadImChannels={loadImChannelConfigs}
-      onSearchSessions={handleSearchSessions}
-      onSelectSearchedSession={handleSelectSearchedSession}
-      onThinkModeChange={handleThinkModeChange}
-      onThemeChange={setTheme}
-      resolvedTheme={resolvedTheme}
-      runtimeFallbackReason={runtimeFallbackReason}
-      runtimeReconnectAttempts={runtimeReconnectAttempts}
-      runtimeSocketStatus={runtimeSocketStatus}
-      runtimeTransport={runtimeTransport}
-      sessionOverviewPending={sessionOverviewPending}
-      session={session}
-      theme={theme}
-    />
-  ), [
-    accessMode,
-    availableAgents,
-    imChannelConfigs,
-    availableModels,
-    composerSendMode,
-    settingsTrigger,
-    fastMode,
-    formatCompactK,
-    handleAgentChange,
-    loggingOut,
-    logout,
-    handleFastModeChange,
-    handleModelChange,
-    loadImChannelConfigs,
-    handleSearchSessions,
-    handleSelectSearchedSession,
-    handleThinkModeChange,
-    model,
-    resolvedTheme,
-    runtimeFallbackReason,
-    runtimeReconnectAttempts,
-    runtimeSocketStatus,
-    runtimeTransport,
-    sessionOverviewPending,
-    session,
-    setTheme,
-    theme,
-  ]);
-  const statusOverview = useMemo<ReactElement>(() => (
-    <SessionOverview
-      layout="status"
-      accessLoggingOut={loggingOut}
-      accessMode={accessMode}
-      availableAgents={availableAgents}
-      availableModels={availableModels}
-      composerSendMode={composerSendMode}
-      fastMode={fastMode}
-      formatCompactK={formatCompactK}
-      model={model}
-      onAgentChange={handleAgentChange}
-      onAccessLogout={logout}
-      onFastModeChange={handleFastModeChange}
-      onModelChange={handleModelChange}
-      onSearchSessions={handleSearchSessions}
-      onSelectSearchedSession={handleSelectSearchedSession}
-      onThinkModeChange={handleThinkModeChange}
-      onThemeChange={setTheme}
-      resolvedTheme={resolvedTheme}
-      runtimeFallbackReason={runtimeFallbackReason}
-      runtimeReconnectAttempts={runtimeReconnectAttempts}
-      runtimeSocketStatus={runtimeSocketStatus}
-      runtimeTransport={runtimeTransport}
-      sessionOverviewPending={sessionOverviewPending}
-      session={session}
-      theme={theme}
-    />
-  ), [
-    accessMode,
-    availableAgents,
-    availableModels,
-    composerSendMode,
-    fastMode,
-    formatCompactK,
-    handleAgentChange,
-    loggingOut,
-    logout,
-    handleFastModeChange,
-    handleModelChange,
-    handleSearchSessions,
-    handleSelectSearchedSession,
-    handleThinkModeChange,
-    model,
-    resolvedTheme,
-    runtimeFallbackReason,
-    runtimeReconnectAttempts,
-    runtimeSocketStatus,
-    runtimeTransport,
-    sessionOverviewPending,
-    session,
-    setTheme,
-    theme,
-  ]);
+  });
   const taskRelationshipsPanel = useMemo(() => (
     <TaskRelationshipsPanel
       onDismissRelationship={dismissTaskRelationship}
@@ -1555,12 +819,8 @@ function AppContent() {
             {controlsOverview}
           </div>
 
-          <main
-            ref={splitLayoutRef}
-            className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden"
-            style={splitLayoutStyle}
-          >
-            <div className="min-h-0 min-w-0 pr-1.5 xl:pr-0.5">
+          <AppSplitLayout
+            chatPanel={(
               <ChatPanel
                 agentLabel={session.agentLabel || session.agentId || "main"}
                 activeChatTabId={activeChatTabId}
@@ -1606,46 +866,16 @@ function AppContent() {
                 workspaceFiles={chatWorkspaceFiles}
                 workspaceLoaded={chatWorkspaceLoaded}
               />
-            </div>
-
-            {isWideLayout ? (
-              <div className="xl:flex xl:min-h-0 xl:items-stretch xl:justify-center">
-                <button
-                  type="button"
-                  aria-label={i18nMessages.common.resizePanels}
-                  onPointerDown={handleResizeStart}
-                  className="group relative h-full w-full cursor-col-resize touch-none select-none"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "absolute left-1/2 top-1/2 inline-grid h-[22px] w-[6.8px] -translate-x-1/2 -translate-y-1/2 grid-cols-2 grid-rows-6 gap-x-[2px] gap-y-[2px] transition-colors",
-                      isResizingPanels
-                        ? "bg-transparent"
-                        : "bg-transparent",
-                    )}
-                  >
-                    {resizeHandleDots.map((_, index) => (
-                      <span
-                        key={index}
-                        className={cn(
-                          "h-[2.4px] w-[2.4px] rounded-full transition-colors",
-                          isResizingPanels ? "bg-primary/80" : "bg-muted-foreground/45 group-hover:bg-foreground/55",
-                        )}
-                      />
-                    ))}
-                  </span>
-                </button>
-              </div>
-            ) : null}
-
-            <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden pl-1.5 xl:min-w-[300px] xl:pl-0.5">
-              {taskRelationshipsPanel}
-              <div className="min-h-0 min-w-0 flex-1">
-                {inspectorPanel}
-              </div>
-            </div>
-          </main>
+            )}
+            inspectorPanel={inspectorPanel}
+            isResizingPanels={isResizingPanels}
+            isWideLayout={isWideLayout}
+            onResizeStart={handleResizeStart}
+            resizeLabel={i18nMessages.common.resizePanels}
+            splitLayoutRef={splitLayoutRef}
+            splitLayoutStyle={splitLayoutStyle}
+            taskRelationshipsPanel={taskRelationshipsPanel}
+          />
         </div>
         <SettingsDialog
           currentAgentId={session.agentId}

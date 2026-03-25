@@ -70,6 +70,74 @@ describe("session-store", () => {
     expect(store.getLocalSessionConversation("demo")).toEqual(merged);
   });
 
+  it("preserves inline image attachments in local conversations", () => {
+    const store = createSessionStore({
+      getDefaultAgentId: () => "main",
+      getDefaultModelForAgent: () => "gpt-5",
+      resolveCanonicalModelId: (value) => value,
+    });
+
+    const merged = store.appendLocalSessionConversation("demo", [
+      {
+        role: "user",
+        content: "把黑T恤改成米白色布衣",
+        timestamp: 20,
+        attachments: [{
+          id: "image-1",
+          kind: "image",
+          name: "avatar.png",
+          mimeType: "image/png",
+          dataUrl: "data:image/png;base64,AAAA",
+          previewUrl: "data:image/png;base64,AAAA",
+        }],
+      },
+      {
+        role: "user",
+        content: "   ",
+        timestamp: 10,
+        attachments: [{
+          kind: "image",
+          name: "only-image.png",
+          dataUrl: "data:image/png;base64,BBBB",
+        }],
+      },
+    ]);
+
+    expect(merged).toEqual([
+      {
+        role: "user",
+        content: "",
+        timestamp: 10,
+        attachments: [{
+          id: "",
+          kind: "image",
+          name: "only-image.png",
+          size: 0,
+          mimeType: "",
+          path: "",
+          fullPath: "",
+          dataUrl: "data:image/png;base64,BBBB",
+        }],
+      },
+      {
+        role: "user",
+        content: "把黑T恤改成米白色布衣",
+        timestamp: 20,
+        attachments: [{
+          id: "image-1",
+          kind: "image",
+          name: "avatar.png",
+          size: 0,
+          mimeType: "image/png",
+          path: "",
+          fullPath: "",
+          dataUrl: "data:image/png;base64,AAAA",
+          previewUrl: "data:image/png;base64,AAAA",
+        }],
+      },
+    ]);
+  });
+
   it("stores local file entries with text and attachment paths", () => {
     const store = createSessionStore({
       getDefaultAgentId: () => "main",
@@ -100,7 +168,7 @@ describe("session-store", () => {
           role: "user",
           timestamp: 20,
           content: [{ type: "text", text: "看这张图 /tmp/ref.png" }],
-          attachments: [{ id: "", kind: "image", name: "ref.png", path: "/tmp/ref.png", fullPath: "/tmp/ref.png" }],
+          attachments: [{ id: "", kind: "image", name: "ref.png", size: 0, mimeType: "", path: "/tmp/ref.png", fullPath: "/tmp/ref.png" }],
         },
       },
     ]);

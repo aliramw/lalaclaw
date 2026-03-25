@@ -11,6 +11,7 @@ import {
   loadStoredPromptHistory,
   loadStoredChatScrollTops,
   loadStoredState,
+  mergeConversationAttachments,
   mergeConversationIdentity,
   mergePendingConversation,
   mergeStaleLocalConversationTail,
@@ -421,6 +422,24 @@ describe("mergePendingConversation", () => {
     ]);
   });
 
+  it("does not re-append a stale local streaming assistant after the runtime snapshot has already settled", () => {
+    expect(
+      mergeStaleLocalConversationTail(
+        [
+          { id: "msg-user-1", role: "user", content: "给我结论", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "最终结论", timestamp: 120, tokenBadge: "↑12" },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "给我结论", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "最终结论", timestamp: 120, tokenBadge: "↑12", streaming: true },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "给我结论", timestamp: 100 },
+      { id: "msg-assistant-1", role: "assistant", content: "最终结论", timestamp: 120, tokenBadge: "↑12" },
+    ]);
+  });
+
   it("prunes restored pending turns when local stored messages already contain the final assistant reply", () => {
     expect(
       pruneCompletedPendingChatTurns(
@@ -649,6 +668,328 @@ describe("collapseDuplicateConversationTurns", () => {
       { role: "assistant", content: "[[reply_to_current]] 第一版开头", timestamp: 120_000 },
     ]);
   });
+
+  it("preserves attachment-only user turns", () => {
+    expect(
+      collapseDuplicateConversationTurns([
+        {
+          role: "user",
+          content: "",
+          timestamp: 2_000,
+          attachments: [
+            {
+              kind: "image",
+              name: "photo.jpg",
+              path: "/tmp/photo.jpg",
+              fullPath: "/tmp/photo.jpg",
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content: "",
+        timestamp: 2_000,
+        attachments: [
+          {
+            kind: "image",
+            name: "photo.jpg",
+            path: "/tmp/photo.jpg",
+            fullPath: "/tmp/photo.jpg",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("prefers the real attachment-bearing turn over a synthetic attachment prompt duplicate", () => {
+    expect(
+      collapseDuplicateConversationTurns([
+        {
+          role: "user",
+          content: "给我改成米白色的布衣\n\n附件 avatar.JPG.png (image/png, 217 KB) 已附加。",
+          timestamp: 2_000,
+        },
+        {
+          role: "user",
+          content: "给我改成米白色的布衣",
+          timestamp: 2_000,
+          attachments: [
+            {
+              kind: "image",
+              name: "avatar.JPG.png",
+              path: "/tmp/avatar.JPG.png",
+              fullPath: "/tmp/avatar.JPG.png",
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content: "给我改成米白色的布衣",
+        timestamp: 2_000,
+        attachments: [
+          {
+            kind: "image",
+            name: "avatar.JPG.png",
+            path: "/tmp/avatar.JPG.png",
+            fullPath: "/tmp/avatar.JPG.png",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("collapses a delayed synthetic attachment prompt after an assistant reply", () => {
+    expect(
+      collapseDuplicateConversationTurns([
+        {
+          role: "user",
+          content: "看得到图吗",
+          timestamp: 2_000,
+          attachments: [
+            {
+              kind: "image",
+              name: "image.png",
+              path: "/tmp/image.png",
+              fullPath: "/tmp/image.png",
+            },
+          ],
+        },
+        {
+          role: "assistant",
+          content: "能，这次我看得到你发来的图片附件了。",
+          timestamp: 2_001,
+        },
+        {
+          role: "user",
+          content: "看得到图吗\n\n附件 image.png (image/png, 1829 KB) 已附加。",
+          timestamp: 2_002,
+        },
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        content: "看得到图吗",
+        timestamp: 2_000,
+        attachments: [
+          {
+            kind: "image",
+            name: "image.png",
+            path: "/tmp/image.png",
+            fullPath: "/tmp/image.png",
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: "能，这次我看得到你发来的图片附件了。",
+        timestamp: 2_001,
+      },
+    ]);
+  });
+
+  it("collapses delayed duplicate assistant greetings when no user turn happened between them", () => {
+    expect(
+      collapseDuplicateConversationTurns([
+        {
+          role: "assistant",
+          content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
+          timestamp: 2_000,
+          tokenBadge: "↑3.8k ↓99 R24.3k",
+        },
+        {
+          role: "assistant",
+          content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
+          timestamp: 2_025,
+          tokenBadge: "↑3.8k ↓99 R24.3k",
+        },
+      ]),
+    ).toEqual([
+      {
+        role: "assistant",
+        content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
+        timestamp: 2_000,
+        tokenBadge: "↑3.8k ↓99 R24.3k",
+      },
+    ]);
+  });
+});
+
+describe("mergeConversationAttachments", () => {
+  it("keeps the richer snapshot image payload when local state only has a skinny attachment shell", () => {
+    expect(
+      mergeConversationAttachments(
+        [
+          {
+            role: "user",
+            content: "只用一句话说你看到了什么",
+            timestamp: 1_000,
+            attachments: [
+              {
+                id: "img-1",
+                kind: "image",
+                name: "avatar.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,server-rich",
+                previewUrl: "data:image/png;base64,server-preview",
+              },
+            ],
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "只用一句话说你看到了什么",
+            timestamp: 1_000,
+            attachments: [
+              {
+                id: "img-1",
+                kind: "image",
+                name: "avatar.png",
+                mimeType: "image/png",
+              },
+            ],
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "只用一句话说你看到了什么",
+        timestamp: 1_000,
+        attachments: [
+          {
+            id: "img-1",
+            kind: "image",
+            name: "avatar.png",
+            mimeType: "image/png",
+            dataUrl: "data:image/png;base64,server-rich",
+            previewUrl: "data:image/png;base64,server-preview",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("merges complementary attachment fields instead of dropping whichever side arrived first", () => {
+    expect(
+      mergeConversationAttachments(
+        [
+          {
+            role: "user",
+            content: "看图",
+            timestamp: 2_000,
+            attachments: [
+              {
+                id: "img-2",
+                kind: "image",
+                name: "merged.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,snapshot",
+              },
+            ],
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "看图",
+            timestamp: 2_000,
+            attachments: [
+              {
+                id: "img-2",
+                kind: "image",
+                name: "merged.png",
+                mimeType: "image/png",
+                fullPath: "/tmp/merged.png",
+                path: "/tmp/merged.png",
+              },
+            ],
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "看图",
+        timestamp: 2_000,
+        attachments: [
+          {
+            id: "img-2",
+            kind: "image",
+            name: "merged.png",
+            mimeType: "image/png",
+            dataUrl: "data:image/png;base64,snapshot",
+            fullPath: "/tmp/merged.png",
+            path: "/tmp/merged.png",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("merges the same image attachment when local state keys it by id and the snapshot only knows its path", () => {
+    expect(
+      mergeConversationAttachments(
+        [
+          {
+            role: "user",
+            content: "修改这张图。把上衣改成姜黄色",
+            timestamp: 3_000,
+            attachments: [
+              {
+                kind: "image",
+                name: "wukong-mibai-eyes-brave.png",
+                mimeType: "image/png",
+                path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+                fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+              },
+            ],
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "修改这张图。把上衣改成姜黄色",
+            timestamp: 3_000,
+            attachments: [
+              {
+                id: "img-local-1",
+                kind: "image",
+                name: "wukong-mibai-eyes-brave.png",
+                mimeType: "image/png",
+                path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+                fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+                dataUrl: "data:image/png;base64,local-rich",
+                previewUrl: "data:image/png;base64,local-preview",
+              },
+            ],
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "修改这张图。把上衣改成姜黄色",
+        timestamp: 3_000,
+        attachments: [
+          {
+            id: "img-local-1",
+            kind: "image",
+            name: "wukong-mibai-eyes-brave.png",
+            mimeType: "image/png",
+            path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+            fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+            dataUrl: "data:image/png;base64,local-rich",
+            previewUrl: "data:image/png;base64,local-preview",
+          },
+        ],
+      },
+    ]);
+  });
 });
 
 describe("createResetSessionUser", () => {
@@ -787,6 +1128,50 @@ describe("sanitizeMessagesForStorage", () => {
         content: "https://alidocs.example/link\n\n将上面的在线文档发给天翊",
         timestamp: 1000,
       },
+    ]);
+  });
+
+  it("drops pre-compaction memory flush directives from persisted user messages", () => {
+    expect(
+      sanitizeMessagesForStorage([
+        {
+          role: "user",
+          content: [
+            "Pre-compaction memory flush. Store durable memories only in memory/2026-03-24.md (create memory/ if needed).",
+            "Treat workspace bootstrap/reference files such as MEMORY.md, SOUL.md, TOOLS.md, and AGENTS.md as read-only during this flush; never overwrite, replace, or edit them.",
+            "If memory/2026-03-24.md already exists, APPEND new content only and do not overwrite existing entries.",
+            "Do NOT create timestamped variant files (e.g., 2026-03-24-HHMM.md); always use the canonical 2026-03-24.md filename.",
+            "If nothing to store, reply with NO_REPLY.",
+            "Current time: Tuesday, March 24th, 2026 — 11:41 PM (Asia/Shanghai) / 2026-03-24 15:41 UTC",
+          ].join("\n"),
+          timestamp: 1000,
+        },
+        { role: "assistant", content: "正常回复", timestamp: 1100 },
+      ]),
+    ).toEqual([
+      { role: "assistant", content: "正常回复", timestamp: 1100 },
+    ]);
+  });
+
+  it("drops reset startup directives from persisted user messages", () => {
+    expect(
+      sanitizeMessagesForStorage([
+        {
+          role: "user",
+          content: [
+            "A new session was started via /new or /reset. Run your Session Startup sequence - read the required files before responding to the user.",
+            "Then greet the user in your configured persona, if one is provided.",
+            "Be yourself - use your defined voice, mannerisms, and mood. Keep it to 1-3 sentences and ask what they want to do.",
+            "If the runtime model differs from default_model in the system prompt, mention the default model.",
+            "Do not mention internal steps, files, tools, or reasoning.",
+            "Current time: Tuesday, March 24th, 2026 — 11:47 PM (Asia/Shanghai) / 2026-03-24 15:47 UTC",
+          ].join("\n"),
+          timestamp: 1000,
+        },
+        { role: "assistant", content: "正常回复", timestamp: 1100 },
+      ]),
+    ).toEqual([
+      { role: "assistant", content: "正常回复", timestamp: 1100 },
     ]);
   });
 });

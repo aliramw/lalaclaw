@@ -751,4 +751,60 @@ describe("collectConversationMessages", () => {
       fs.rmSync(rootDir, { force: true, recursive: true });
     }
   });
+
+  it("converts inbound Weixin image wrappers into structured attachments and drops generated helper text", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
+    try {
+      const projector = createTestProjector(rootDir);
+      const mediaPath = "/Users/marila/.openclaw/media/inbound/74d991a4-9848-40b7-8c86-2a7673517083.jpg";
+
+      const conversation = projector.collectConversationMessages([
+        {
+          type: "message",
+          timestamp: "2026-03-24T06:23:58.000Z",
+          message: {
+            role: "user",
+            timestamp: 1774304638000,
+            content: [{
+              type: "text",
+              text: [
+                `[media attached: ${mediaPath} (image/*)] To send an image back, prefer the message tool (media/path/filePath).`,
+                "If you must inline, use MEDIA:https://example.com/image.jpg (spaces ok, quote if needed) or a safe relative path like MEDIA:./image.jpg.",
+                "Avoid absolute paths (MEDIA:/...) and ~ paths - they are blocked for security. Keep caption in the text body.",
+                "System: [2026-03-24 06:15:43 GMT+8] Exec completed (neat-mea, code 0) :: BASE_SIZE (1024, 1024)",
+                "IMAGE_SAVED:/tmp/bird_shirt_dingtalk_square_1774304100.png TEXT: OUT_SIZE (1024, 1024)",
+                "",
+                "Conversation info (untrusted metadata):",
+                "```json",
+                "{",
+                '  "message_id": "openclaw-weixin:1774304638228-baa39fc9",',
+                '  "timestamp": "Tue 2026-03-24 06:23 GMT+8"',
+                "}",
+                "```",
+              ].join("\n"),
+            }],
+          },
+        },
+      ]);
+
+      expect(conversation).toEqual([
+        {
+          role: "user",
+          content: "",
+          attachments: [
+            {
+              kind: "image",
+              mimeType: "image/*",
+              name: "74d991a4-9848-40b7-8c86-2a7673517083.jpg",
+              path: "/Users/marila/.openclaw/media/inbound/74d991a4-9848-40b7-8c86-2a7673517083.jpg",
+              fullPath: "/Users/marila/.openclaw/media/inbound/74d991a4-9848-40b7-8c86-2a7673517083.jpg",
+            },
+          ],
+          timestamp: 1774304638000,
+        },
+      ]);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
 });

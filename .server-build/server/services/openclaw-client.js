@@ -462,7 +462,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             headers['x-openclaw-agent-id'] = agentId;
         }
         const systemPrompt = 'You are OpenClaw, acting as the command center agent for a software workspace. ' +
-            'Respond concisely and include operational clarity for the human operator.';
+            'Respond concisely and include operational clarity for the human operator. ' +
+            'When image attachments are provided as multimodal inputs, treat them as real visual inputs available in the conversation. ' +
+            'Do not claim they are merely thumbnails, previews, display images, or unavailable source files unless a tool explicitly reports that limitation.';
         let payload;
         if (runtimeConfig.apiStyle === 'responses') {
             payload = {
@@ -739,6 +741,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (options.fastMode) {
             return true;
         }
+        return requiresDirectMultimodalRequest(messages);
+    }
+    function requiresDirectMultimodalRequest(messages = []) {
         return messages.some((message) => getMessageAttachmentsList(message).some((attachment) => attachment.kind === 'image' && attachment.dataUrl));
     }
     function buildMirroredUserMessageText(sessionUser = 'command-center', messageText = '', options = {}) {
@@ -760,6 +765,21 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
     async function mirrorOpenClawUserMessage(sessionUser = 'command-center', messageText = '', options = {}) {
         const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
         const trimmedMessage = buildMirroredUserMessageText(sessionUser, messageText, options);
+        if (!deliveryRoute || !trimmedMessage) {
+            return null;
+        }
+        const agentId = resolveAgentId(sessionUser);
+        const sessionKey = getSessionKey(agentId, sessionUser);
+        return await invokeOpenClawTool('message', {
+            channel: deliveryRoute.channel,
+            target: deliveryRoute.to,
+            accountId: deliveryRoute.accountId,
+            message: trimmedMessage,
+        }, sessionKey, 'send');
+    }
+    async function mirrorOpenClawAssistantMessage(sessionUser = 'command-center', messageText = '') {
+        const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
+        const trimmedMessage = String(messageText || '').trim();
         if (!deliveryRoute || !trimmedMessage) {
             return null;
         }
@@ -1366,19 +1386,49 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         return await pollOpenClawSessionRun(runState, timeoutMs, options);
     }
     async function dispatchOpenClaw(messages, fastMode, sessionUser = 'command-center', options = {}) {
+        const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
+        const requiresDirectMultimodal = requiresDirectMultimodalRequest(messages);
         if (isResetDingTalkSessionUser(sessionUser)) {
             return await callOpenClawSession(messages, sessionUser);
         }
-        if (!resolveSessionDeliveryRoute(sessionUser) && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
+        if (deliveryRoute && requiresDirectMultimodal) {
+            const result = await callOpenClaw(messages, fastMode, sessionUser, options);
+            try {
+                await mirrorOpenClawAssistantMessage(sessionUser, result.outputText);
+            }
+            catch (error) {
+                console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
+                    error: error instanceof Error ? error.message : String(error || ''),
+                    sessionUser,
+                });
+            }
+            return result;
+        }
+        if (!deliveryRoute && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
             return await callOpenClaw(messages, fastMode, sessionUser, options);
         }
         return await callOpenClawSession(messages, sessionUser);
     }
     async function dispatchOpenClawStream(messages, fastMode, sessionUser = 'command-center', options = {}) {
+        const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
+        const requiresDirectMultimodal = requiresDirectMultimodalRequest(messages);
         if (isResetDingTalkSessionUser(sessionUser)) {
             return await callOpenClawSessionStream(messages, sessionUser, 30000, options);
         }
-        if (!resolveSessionDeliveryRoute(sessionUser) && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
+        if (deliveryRoute && requiresDirectMultimodal) {
+            const result = await callOpenClawStream(messages, fastMode, sessionUser, options);
+            try {
+                await mirrorOpenClawAssistantMessage(sessionUser, result.outputText);
+            }
+            catch (error) {
+                console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
+                    error: error instanceof Error ? error.message : String(error || ''),
+                    sessionUser,
+                });
+            }
+            return result;
+        }
+        if (!deliveryRoute && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
             return await callOpenClawStream(messages, fastMode, sessionUser, options);
         }
         return await callOpenClawSessionStream(messages, sessionUser, 30000, options);
@@ -1477,6 +1527,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         dispatchOpenClawStream,
         fetchBrowserPeek,
         invokeOpenClawTool,
+        mirrorOpenClawAssistantMessage,
         mirrorOpenClawUserMessage,
         parseOpenClawResponse,
         subscribeGatewayEvents,

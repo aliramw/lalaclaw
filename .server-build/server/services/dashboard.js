@@ -26,21 +26,211 @@ function normalizeConversationContent(content = '') {
         .replace(/\s+/g, ' ')
         .trim();
 }
+function extractSyntheticAttachmentPrompt(content = '') {
+    const normalized = String(content || '').trim();
+    if (!normalized) {
+        return { attachmentNames: [], baseContent: '' };
+    }
+    const blocks = normalized
+        .split(/\n{2,}/)
+        .map((block) => String(block || '').trim())
+        .filter(Boolean);
+    const attachmentNames = [];
+    while (blocks.length) {
+        const lastBlock = blocks[blocks.length - 1] || '';
+        const attachmentMatch = lastBlock.match(/^附件\s+(.+?)(?:\s*\([^)]+\))?\s*已附加。$/);
+        if (!attachmentMatch?.[1]) {
+            break;
+        }
+        attachmentNames.unshift(String(attachmentMatch[1] || '').trim());
+        blocks.pop();
+    }
+    if (blocks.length && /^用户附加了\s+\d+\s+个附件，请结合附件内容处理请求。$/i.test(blocks[blocks.length - 1] || '')) {
+        blocks.pop();
+    }
+    return {
+        attachmentNames,
+        baseContent: blocks.join('\n\n').trim(),
+    };
+}
+function getConversationAttachmentFingerprint(attachments = '') {
+    if (!Array.isArray(attachments)) {
+        return '';
+    }
+    return attachments
+        .map((attachment) => {
+        const record = attachment;
+        return [
+            String(record?.kind || '').trim(),
+            String(record?.name || '').trim(),
+            String(record?.fullPath || record?.path || '').trim(),
+            String(record?.mimeType || '').trim(),
+        ].join('::');
+    })
+        .filter(Boolean)
+        .join('|');
+}
+function getConversationAttachmentPayloadScore(attachments = '') {
+    if (!Array.isArray(attachments)) {
+        return 0;
+    }
+    return attachments.reduce((score, attachment) => {
+        const record = attachment;
+        let nextScore = score;
+        if (String(record?.dataUrl || '').trim()) {
+            nextScore += 4;
+        }
+        if (String(record?.previewUrl || '').trim()) {
+            nextScore += 3;
+        }
+        if (String(record?.textContent || '').length) {
+            nextScore += 2;
+        }
+        if (String(record?.fullPath || record?.path || '').trim()) {
+            nextScore += 1;
+        }
+        return nextScore;
+    }, 0);
+}
+function hasConversationPayload(entry) {
+    return Boolean(String(entry?.content || '').trim()) || Boolean(entry?.attachments?.length);
+}
+function getConversationAttachmentNames(entry) {
+    const attachmentNames = Array.isArray(entry?.attachments)
+        ? entry.attachments
+            .map((attachment) => String(attachment?.name || '').trim())
+            .filter(Boolean)
+        : [];
+    if (attachmentNames.length) {
+        return [...attachmentNames].sort();
+    }
+    return extractSyntheticAttachmentPrompt(entry?.content).attachmentNames
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+        .sort();
+}
+function getConversationComparableText(entry) {
+    const syntheticPrompt = extractSyntheticAttachmentPrompt(entry?.content);
+    return normalizeConversationContent(syntheticPrompt.baseContent || entry?.content || '');
+}
+function shouldCollapseSyntheticAttachmentDuplicate(previous, next) {
+    if (previous?.role !== 'user' || next?.role !== 'user') {
+        return false;
+    }
+    const previousTimestamp = Number(previous.timestamp || 0);
+    const nextTimestamp = Number(next.timestamp || 0);
+    if (previousTimestamp > 0
+        && nextTimestamp > 0
+        && nextTimestamp - previousTimestamp > DUPLICATE_CONVERSATION_TURN_WINDOW_MS) {
+        return false;
+    }
+    const previousAttachmentNames = getConversationAttachmentNames(previous);
+    const nextAttachmentNames = getConversationAttachmentNames(next);
+    if (!previousAttachmentNames.length || !nextAttachmentNames.length) {
+        return false;
+    }
+    const previousText = getConversationComparableText(previous);
+    const nextText = getConversationComparableText(next);
+    return previousText === nextText && previousAttachmentNames.join('|') === nextAttachmentNames.join('|');
+}
+function choosePreferredSyntheticAttachmentTurn(previous, next) {
+    const previousHasAttachments = Boolean(previous.attachments?.length);
+    const nextHasAttachments = Boolean(next.attachments?.length);
+    if (previousHasAttachments !== nextHasAttachments) {
+        return nextHasAttachments ? next : previous;
+    }
+    const previousText = String(previous.content || '').trim();
+    const nextText = String(next.content || '').trim();
+    if (previousText !== nextText) {
+        return nextText.length <= previousText.length ? next : previous;
+    }
+    return next;
+}
+function choosePreferredReplayTurn(previous, next) {
+    const previousHasAttachments = Boolean(previous.attachments?.length);
+    const nextHasAttachments = Boolean(next.attachments?.length);
+    if (previousHasAttachments !== nextHasAttachments) {
+        return nextHasAttachments ? next : previous;
+    }
+    const previousAttachmentScore = getConversationAttachmentPayloadScore(previous.attachments);
+    const nextAttachmentScore = getConversationAttachmentPayloadScore(next.attachments);
+    if (previousAttachmentScore !== nextAttachmentScore) {
+        return nextAttachmentScore > previousAttachmentScore ? next : previous;
+    }
+    const previousAttachmentFingerprint = getConversationAttachmentFingerprint(previous.attachments);
+    const nextAttachmentFingerprint = getConversationAttachmentFingerprint(next.attachments);
+    if (!previousAttachmentFingerprint && nextAttachmentFingerprint) {
+        return next;
+    }
+    if (previousAttachmentFingerprint && !nextAttachmentFingerprint) {
+        return previous;
+    }
+    const previousText = String(previous.content || '').trim();
+    const nextText = String(next.content || '').trim();
+    if (previousText !== nextText) {
+        return nextText.length >= previousText.length ? next : previous;
+    }
+    return next;
+}
+function choosePreferredAssistantReplay(previous, next) {
+    const previousAttachmentScore = getConversationAttachmentPayloadScore(previous.attachments);
+    const nextAttachmentScore = getConversationAttachmentPayloadScore(next.attachments);
+    if (previousAttachmentScore !== nextAttachmentScore) {
+        return nextAttachmentScore > previousAttachmentScore ? next : previous;
+    }
+    const previousTokenBadge = String(previous.tokenBadge || '').trim();
+    const nextTokenBadge = String(next.tokenBadge || '').trim();
+    if (previousTokenBadge !== nextTokenBadge) {
+        return nextTokenBadge.length > previousTokenBadge.length ? next : previous;
+    }
+    const previousContent = String(previous.content || '').trim();
+    const nextContent = String(next.content || '').trim();
+    if (previousContent !== nextContent) {
+        return nextContent.length >= previousContent.length ? next : previous;
+    }
+    return previous;
+}
 function collapseDuplicateConversationTurns(entries = []) {
     const collapsed = [];
     let lastUserFingerprint = '';
     let lastUserTimestamp = 0;
+    let lastUserIndex = -1;
     let lastAssistantTimestamp = 0;
     let lastAssistantFingerprint = '';
     let assistantSeenForCurrentTurn = false;
     let pendingReplayBeforeAssistant = false;
     let suppressAssistantReplay = false;
     for (const entry of entries) {
-        if (!entry?.role || !entry?.content) {
+        if (!entry?.role || !hasConversationPayload(entry)) {
             continue;
         }
         if (entry.role === 'user') {
-            const fingerprint = normalizeConversationContent(entry.content);
+            const previousEntry = collapsed[collapsed.length - 1];
+            if (!assistantSeenForCurrentTurn && shouldCollapseSyntheticAttachmentDuplicate(previousEntry, entry)) {
+                collapsed[collapsed.length - 1] = choosePreferredSyntheticAttachmentTurn(previousEntry, entry);
+                const preferred = collapsed[collapsed.length - 1];
+                lastUserFingerprint =
+                    getConversationComparableText(preferred)
+                        || getConversationAttachmentNames(preferred).join('|');
+                lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
+                lastUserIndex = collapsed.length - 1;
+                continue;
+            }
+            const previousUserEntry = lastUserIndex >= 0 ? collapsed[lastUserIndex] : null;
+            if (assistantSeenForCurrentTurn
+                && previousUserEntry
+                && shouldCollapseSyntheticAttachmentDuplicate(previousUserEntry, entry)) {
+                const preferred = choosePreferredSyntheticAttachmentTurn(previousUserEntry, entry);
+                collapsed[lastUserIndex] = preferred;
+                lastUserFingerprint =
+                    getConversationComparableText(preferred)
+                        || getConversationAttachmentNames(preferred).join('|');
+                lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
+                continue;
+            }
+            const fingerprint = getConversationComparableText(entry)
+                || getConversationAttachmentFingerprint(entry.attachments)
+                || getConversationAttachmentNames(entry).join('|');
             const timestamp = Number(entry.timestamp || 0);
             const withinShortReplayWindow = timestamp > 0
                 && lastUserTimestamp > 0
@@ -56,9 +246,27 @@ function collapseDuplicateConversationTurns(entries = []) {
                     || (!assistantSeenForCurrentTurn && withinShortReplayWindow));
             if (isReplay) {
                 if (!assistantSeenForCurrentTurn && withinShortReplayWindow) {
+                    if (lastUserIndex >= 0 && collapsed[lastUserIndex]) {
+                        const preferred = choosePreferredReplayTurn(collapsed[lastUserIndex], entry);
+                        collapsed[lastUserIndex] = preferred;
+                        lastUserFingerprint =
+                            getConversationComparableText(preferred)
+                                || getConversationAttachmentFingerprint(preferred.attachments)
+                                || getConversationAttachmentNames(preferred).join('|');
+                        lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
+                    }
                     pendingReplayBeforeAssistant = true;
                     suppressAssistantReplay = false;
                     continue;
+                }
+                if (lastUserIndex >= 0 && collapsed[lastUserIndex]) {
+                    const preferred = choosePreferredReplayTurn(collapsed[lastUserIndex], entry);
+                    collapsed[lastUserIndex] = preferred;
+                    lastUserFingerprint =
+                        getConversationComparableText(preferred)
+                            || getConversationAttachmentFingerprint(preferred.attachments)
+                            || getConversationAttachmentNames(preferred).join('|');
+                    lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
                 }
                 suppressAssistantReplay = true;
                 continue;
@@ -66,6 +274,7 @@ function collapseDuplicateConversationTurns(entries = []) {
             collapsed.push(entry);
             lastUserFingerprint = fingerprint;
             lastUserTimestamp = timestamp;
+            lastUserIndex = collapsed.length - 1;
             assistantSeenForCurrentTurn = false;
             lastAssistantFingerprint = '';
             pendingReplayBeforeAssistant = false;
@@ -73,17 +282,19 @@ function collapseDuplicateConversationTurns(entries = []) {
             continue;
         }
         if (entry.role === 'assistant') {
-            const fingerprint = normalizeConversationContent(entry.content);
+            const fingerprint = normalizeConversationContent(entry.content)
+                || getConversationAttachmentFingerprint(entry.attachments);
             const timestamp = Number(entry.timestamp || 0);
             const isImmediateDuplicateAssistant = assistantSeenForCurrentTurn
                 && !pendingReplayBeforeAssistant
                 && !suppressAssistantReplay
                 && Boolean(fingerprint)
-                && fingerprint === lastAssistantFingerprint
-                && timestamp > 0
-                && lastAssistantTimestamp > 0
-                && timestamp - lastAssistantTimestamp <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS;
+                && fingerprint === lastAssistantFingerprint;
             if (isImmediateDuplicateAssistant) {
+                const previousAssistantEntry = collapsed[collapsed.length - 1];
+                if (previousAssistantEntry?.role === 'assistant') {
+                    collapsed[collapsed.length - 1] = choosePreferredAssistantReplay(previousAssistantEntry, entry);
+                }
                 continue;
             }
             if (pendingReplayBeforeAssistant) {
@@ -114,7 +325,7 @@ function collapseDuplicateConversationTurns(entries = []) {
 }
 function mergeConversationMessages(primary = [], secondary = []) {
     return collapseDuplicateConversationTurns([...primary, ...secondary]
-        .filter((entry) => entry?.role && entry?.content)
+        .filter((entry) => entry?.role && hasConversationPayload(entry))
         .sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0))).slice(-80);
 }
 function mergeProjectedFiles(primary = [], secondary = []) {

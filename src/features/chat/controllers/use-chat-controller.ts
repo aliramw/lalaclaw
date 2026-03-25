@@ -51,6 +51,122 @@ type PersistOptimisticPayload = {
   pendingEntry?: PendingChatTurn;
   clearPendingKey?: string;
 };
+
+function normalizeAttachmentSignaturePart(value: unknown = "") {
+  return String(value || "").trim();
+}
+
+function getComposerAttachmentMergeSignatures(attachment: ChatAttachment | null | undefined, index = 0) {
+  const normalizedAttachment = attachment && typeof attachment === "object" ? attachment : {};
+  const signatures: string[] = [];
+  const previewUrl = normalizeAttachmentSignaturePart(normalizedAttachment.previewUrl);
+  const dataUrl = normalizeAttachmentSignaturePart(normalizedAttachment.dataUrl);
+  const resolvedPath = normalizeAttachmentSignaturePart(normalizedAttachment.fullPath || normalizedAttachment.path);
+  const textContent = normalizeAttachmentSignaturePart(normalizedAttachment.textContent);
+  const name = normalizeAttachmentSignaturePart(normalizedAttachment.name).toLowerCase();
+  const mimeType = normalizeAttachmentSignaturePart(normalizedAttachment.mimeType).toLowerCase();
+  const kind = normalizeAttachmentSignaturePart(normalizedAttachment.kind).toLowerCase();
+  const size = Number.isFinite(normalizedAttachment.size) ? String(normalizedAttachment.size) : "";
+
+  if (previewUrl) {
+    signatures.push(`preview|${previewUrl}`);
+  }
+  if (dataUrl) {
+    signatures.push(`data|${dataUrl}`);
+  }
+  if (resolvedPath) {
+    signatures.push(`path|${resolvedPath}`);
+  }
+  if (textContent) {
+    signatures.push(`text|${name}|${mimeType}|${textContent}`);
+  }
+  if (name && (mimeType || kind || size)) {
+    signatures.push(`named|${name}|${mimeType}|${kind}|${size}`);
+  }
+  if (!signatures.length) {
+    signatures.push(`index|${index}`);
+  }
+
+  return signatures;
+}
+
+function getComposerAttachmentPayloadScore(attachment: ChatAttachment | null | undefined) {
+  const normalizedAttachment = attachment && typeof attachment === "object" ? attachment : {};
+  let score = 0;
+
+  if (normalizeAttachmentSignaturePart(normalizedAttachment.previewUrl)) {
+    score += 64;
+  }
+  if (normalizeAttachmentSignaturePart(normalizedAttachment.dataUrl)) {
+    score += 32;
+  }
+  if (normalizeAttachmentSignaturePart(normalizedAttachment.fullPath)) {
+    score += 16;
+  }
+  if (normalizeAttachmentSignaturePart(normalizedAttachment.path)) {
+    score += 8;
+  }
+  if (normalizeAttachmentSignaturePart(normalizedAttachment.textContent)) {
+    score += 4;
+  }
+  if (normalizeAttachmentSignaturePart(normalizedAttachment.mimeType)) {
+    score += 2;
+  }
+  if (normalizeAttachmentSignaturePart(normalizedAttachment.name)) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function mergeComposerAttachmentRecords(
+  left: ChatAttachment | null | undefined,
+  right: ChatAttachment | null | undefined,
+): ChatAttachment {
+  const leftAttachment = left && typeof left === "object" ? left : {};
+  const rightAttachment = right && typeof right === "object" ? right : {};
+  const preferredAttachment =
+    getComposerAttachmentPayloadScore(rightAttachment) >= getComposerAttachmentPayloadScore(leftAttachment)
+      ? rightAttachment
+      : leftAttachment;
+  const fallbackAttachment = preferredAttachment === rightAttachment ? leftAttachment : rightAttachment;
+
+  return {
+    ...fallbackAttachment,
+    ...preferredAttachment,
+    id: preferredAttachment.id || fallbackAttachment.id,
+    kind: preferredAttachment.kind || fallbackAttachment.kind,
+    name: preferredAttachment.name || fallbackAttachment.name,
+    mimeType: preferredAttachment.mimeType || fallbackAttachment.mimeType,
+    size: preferredAttachment.size ?? fallbackAttachment.size,
+    path: preferredAttachment.path || fallbackAttachment.path,
+    fullPath: preferredAttachment.fullPath || fallbackAttachment.fullPath,
+    dataUrl: preferredAttachment.dataUrl || fallbackAttachment.dataUrl,
+    previewUrl: preferredAttachment.previewUrl || fallbackAttachment.previewUrl,
+    textContent: preferredAttachment.textContent || fallbackAttachment.textContent,
+    truncated: preferredAttachment.truncated ?? fallbackAttachment.truncated,
+  };
+}
+
+function dedupeComposerAttachments(attachments: ChatAttachment[] = []) {
+  const dedupedAttachments: ChatAttachment[] = [];
+
+  attachments.forEach((attachment, index) => {
+    const signatures = new Set(getComposerAttachmentMergeSignatures(attachment, index));
+    const existingIndex = dedupedAttachments.findIndex((candidate, candidateIndex) =>
+      getComposerAttachmentMergeSignatures(candidate, candidateIndex).some((signature) => signatures.has(signature)));
+
+    if (existingIndex === -1) {
+      dedupedAttachments.push(attachment);
+      return;
+    }
+
+    dedupedAttachments[existingIndex] = mergeComposerAttachmentRecords(dedupedAttachments[existingIndex], attachment);
+  });
+
+  return dedupedAttachments;
+}
+
 type UseChatControllerInput = {
   activateStopOverride?: () => void;
   activeConversationKey?: string;
@@ -661,7 +777,7 @@ export function useChatController({
       }),
     );
 
-    setComposerAttachments((current) => [...current, ...nextAttachments]);
+    setComposerAttachments((current) => dedupeComposerAttachments([...current, ...nextAttachments]));
   };
 
   const handleRemoveAttachment = (attachmentId: string) => {

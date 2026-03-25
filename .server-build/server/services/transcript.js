@@ -25,6 +25,16 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
         /^Chat history since last reply \(untrusted, for context\):/i,
     ];
     const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
+    const INTERNAL_MEMORY_FLUSH_SENTINELS = [
+        /^Pre-compaction memory flush\./i,
+        /Store durable memories only in memory\/\d{4}-\d{2}-\d{2}\.md/i,
+        /If nothing to store,\s*reply with NO_REPLY\./i,
+    ];
+    const INTERNAL_SESSION_STARTUP_SENTINELS = [
+        /^A new session was started via \/new or \/reset\./i,
+        /Run your Session Startup sequence - read the required files before responding to the user\./i,
+        /Do not mention internal steps, files, tools, or reasoning\./i,
+    ];
     const QUEUED_BUSY_TITLE_LINE = /^\[Queued messages while agent was busy\]\s*$/i;
     const QUEUED_BUSY_ITEM_LINE = /^Queued #\d+\s*$/i;
     function getSessionsIndexPath(agentId) {
@@ -120,11 +130,248 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
         }
         return cleaned;
     }
-    function cleanSingleUserMessage(text) {
-        let lines = String(text || '').trim().split('\n');
+    function buildInboundMediaAttachment(mediaPath = '', mimeType = '') {
+        const normalizedPath = String(mediaPath || '').trim();
+        const normalizedMimeType = String(mimeType || '').trim().toLowerCase();
+        if (!normalizedPath) {
+            return null;
+        }
+        const isImage = /^image\//.test(normalizedMimeType)
+            || /\.(?:png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)$/i.test(normalizedPath);
+        return {
+            kind: isImage ? 'image' : 'file',
+            name: node_path_1.default.basename(normalizedPath) || (isImage ? 'image' : 'attachment'),
+            ...(normalizedMimeType ? { mimeType: normalizedMimeType } : {}),
+            path: normalizedPath,
+            fullPath: normalizedPath,
+        };
+    }
+    function normalizeTranscriptAttachmentRecord(attachment = {}) {
+        const normalizedPath = String(attachment?.fullPath || attachment?.path || '').trim();
+        const normalizedName = String(attachment?.name || '').trim()
+            || (normalizedPath ? node_path_1.default.basename(normalizedPath) : '');
+        const normalizedMimeType = String(attachment?.mimeType || '').trim().toLowerCase();
+        const normalizedKind = String(attachment?.kind || '').trim().toLowerCase()
+            || (/^image\//.test(normalizedMimeType) ? 'image' : 'file');
+        if (!normalizedName && !normalizedPath) {
+            return null;
+        }
+        return {
+            kind: normalizedKind || 'file',
+            name: normalizedName || (normalizedKind === 'image' ? 'image' : 'attachment'),
+            ...(normalizedMimeType ? { mimeType: normalizedMimeType } : {}),
+            path: normalizedPath,
+            fullPath: normalizedPath,
+        };
+    }
+    function inferMimeTypeFromContentItem(item = {}) {
+        const explicitMimeType = String(item?.mimeType || item?.mime || '').trim().toLowerCase();
+        if (explicitMimeType) {
+            return explicitMimeType;
+        }
+        const imageUrlValue = typeof item?.image_url === 'string'
+            ? item.image_url
+            : typeof item?.image_url?.url === 'string'
+                ? item.image_url.url
+                : '';
+        const dataUrlMatch = String(imageUrlValue || '').match(/^data:([^;,]+)[;,]/i);
+        return dataUrlMatch?.[1] ? String(dataUrlMatch[1]).trim().toLowerCase() : '';
+    }
+    function extractGeneratedAttachmentDetails(text) {
+        const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+        const cleanedLines = [];
+        const descriptors = [];
+        for (let index = 0; index < lines.length; index += 1) {
+            const currentLine = String(lines[index] || '');
+            const trimmedLine = currentLine.trim();
+            if (/^用户附加了\s+\d+\s+个附件，请结合附件内容处理请求。$/i.test(trimmedLine)) {
+                continue;
+            }
+            const attachmentMatch = trimmedLine.match(/^附件\s+(.+?)(?:\s+\(([^)\n]+)\))?\s+已附加。$/);
+            if (!attachmentMatch?.[1]) {
+                cleanedLines.push(currentLine);
+                continue;
+            }
+            let attachmentPath = '';
+            const nextTrimmedLine = String(lines[index + 1] || '').trim();
+            const pathMatch = nextTrimmedLine.match(/^路径:\s*(.+)$/i);
+            if (pathMatch?.[1]) {
+                attachmentPath = String(pathMatch[1] || '').trim();
+                index += 1;
+            }
+            const attachmentDetails = String(attachmentMatch[2] || '')
+                .split(',')
+                .map((segment) => segment.trim())
+                .filter(Boolean);
+            const mimeType = attachmentDetails.find((segment) => /^[a-z]+\/[a-z0-9.+-]+$/i.test(segment)) || '';
+            descriptors.push({
+                kind: /^image\//.test(mimeType)
+                    || /\.(?:png|jpe?g|gif|webp|bmp|svg|avif|heic|heif)$/i.test(attachmentPath || attachmentMatch[1])
+                    ? 'image'
+                    : 'file',
+                mimeType: mimeType || undefined,
+                name: String(attachmentMatch[1] || '').trim(),
+                path: attachmentPath,
+            });
+        }
+        return {
+            cleanedText: cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+            descriptors,
+        };
+    }
+    function mergeTranscriptConversationAttachments(attachments = []) {
+        const merged = new Map();
+        attachments.forEach((attachment) => {
+            const normalized = normalizeTranscriptAttachmentRecord(attachment);
+            if (!normalized) {
+                return;
+            }
+            const key = `${normalized.kind}|${normalized.fullPath || normalized.path || ''}|${normalized.name || ''}|${normalized.mimeType || ''}`;
+            if (!merged.has(key)) {
+                merged.set(key, normalized);
+                return;
+            }
+            const current = merged.get(key);
+            merged.set(key, {
+                ...current,
+                ...normalized,
+                mimeType: current.mimeType || normalized.mimeType,
+                path: current.path || normalized.path,
+                fullPath: current.fullPath || normalized.fullPath,
+            });
+        });
+        return [...merged.values()];
+    }
+    function projectTranscriptUserMessage(payload = {}) {
+        const contentItems = Array.isArray(payload?.content) ? payload.content : [];
+        const rawText = extractPlainTextSegments(contentItems).join('\n\n');
+        const generatedAttachmentDetails = extractGeneratedAttachmentDetails(rawText);
+        const transcriptPayloadAttachments = Array.isArray(payload?.attachments)
+            ? payload.attachments
+                .map((attachment) => normalizeTranscriptAttachmentRecord(attachment))
+                .filter(Boolean)
+            : [];
+        let projectedAttachmentIndex = 0;
+        const projectedContentAttachments = contentItems
+            .map((item) => {
+            const normalizedType = String(item?.type || '').trim().toLowerCase();
+            if (!['image', 'image_url', 'input_image'].includes(normalizedType)) {
+                return null;
+            }
+            const descriptor = generatedAttachmentDetails.descriptors[projectedAttachmentIndex]
+                || generatedAttachmentDetails.descriptors[0]
+                || null;
+            projectedAttachmentIndex += 1;
+            const descriptorPath = String(descriptor?.path || '').trim();
+            const inferredMimeType = inferMimeTypeFromContentItem(item) || String(descriptor?.mimeType || '').trim().toLowerCase();
+            const inferredKind = String(descriptor?.kind || 'image').trim().toLowerCase() || 'image';
+            const inferredName = String(descriptor?.name || '').trim()
+                || (descriptorPath ? node_path_1.default.basename(descriptorPath) : '')
+                || 'image';
+            return normalizeTranscriptAttachmentRecord({
+                kind: inferredKind,
+                mimeType: inferredMimeType,
+                name: inferredName,
+                path: descriptorPath,
+                fullPath: descriptorPath,
+            });
+        })
+            .filter(Boolean);
+        const hasStructuredAttachments = transcriptPayloadAttachments.length > 0 || projectedContentAttachments.length > 0;
+        const normalizedUserMessage = normalizeUserMessage(hasStructuredAttachments ? generatedAttachmentDetails.cleanedText : rawText);
+        return {
+            content: normalizedUserMessage.content,
+            attachments: mergeTranscriptConversationAttachments([
+                ...normalizedUserMessage.attachments,
+                ...transcriptPayloadAttachments,
+                ...projectedContentAttachments,
+            ]),
+        };
+    }
+    function stripLeadingGeneratedExecBlock(text = '') {
+        let remaining = String(text || '').trimStart();
+        const leadingExecBlockPattern = /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::[\s\S]*?(?=\n\s*\n|$)/i;
+        while (leadingExecBlockPattern.test(remaining)) {
+            const match = remaining.match(leadingExecBlockPattern);
+            if (!match?.[0]) {
+                break;
+            }
+            remaining = remaining.slice(match[0].length).trimStart();
+        }
+        return remaining;
+    }
+    function normalizeQueuedBusyUserMessage(text) {
+        const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+        if (!normalized || !QUEUED_BUSY_TITLE_LINE.test(normalized.split('\n')[0] || '')) {
+            return { content: '', attachments: [] };
+        }
+        const lines = normalized.split('\n');
+        const cleanedItems = [];
+        const attachments = [];
+        let index = 1;
+        while (index < lines.length) {
+            const trimmed = String(lines[index] || '').trim();
+            if (trimmed === '---' && QUEUED_BUSY_ITEM_LINE.test(String(lines[index + 1] || '').trim())) {
+                index += 1;
+                continue;
+            }
+            if (!QUEUED_BUSY_ITEM_LINE.test(trimmed)) {
+                index += 1;
+                continue;
+            }
+            index += 1;
+            const itemLines = [];
+            while (index < lines.length) {
+                const currentTrimmed = String(lines[index] || '').trim();
+                if (QUEUED_BUSY_ITEM_LINE.test(currentTrimmed)
+                    || (currentTrimmed === '---' && QUEUED_BUSY_ITEM_LINE.test(String(lines[index + 1] || '').trim()))) {
+                    break;
+                }
+                itemLines.push(lines[index] || '');
+                index += 1;
+            }
+            const normalizedItem = normalizeSingleUserMessage(itemLines.join('\n'));
+            if (normalizedItem.content) {
+                cleanedItems.push(normalizedItem.content);
+            }
+            if (normalizedItem.attachments.length) {
+                attachments.push(...normalizedItem.attachments);
+            }
+        }
+        return {
+            content: cleanedItems.join('\n\n').trim(),
+            attachments,
+        };
+    }
+    function normalizeSingleUserMessage(text, options = {}) {
+        const { allowMediaNormalization = true } = options;
+        const rawText = String(text || '').replace(/\r\n/g, '\n').trim();
+        if (allowMediaNormalization) {
+            const mediaMatch = rawText.match(/^\[media attached:\s*(.+?)\s+\(([^)\n]+)\)\]\s*/i);
+            if (mediaMatch?.[1]) {
+                const attachment = buildInboundMediaAttachment(mediaMatch[1], mediaMatch[2] || '');
+                let remainder = rawText.slice(mediaMatch[0].length);
+                remainder = remainder.replace(/^\s*To send (?:an image|media) back, prefer the message tool[\s\S]*?Keep caption in the text body\.?/i, '');
+                remainder = stripLeadingGeneratedExecBlock(remainder);
+                const cleanedCaption = normalizeSingleUserMessage(remainder, { allowMediaNormalization: false });
+                return {
+                    content: cleanedCaption.content,
+                    attachments: [
+                        ...(attachment ? [attachment] : []),
+                        ...(cleanedCaption.attachments || []),
+                    ],
+                };
+            }
+        }
+        let lines = rawText.split('\n');
         const stripLeadingBlankLines = () => {
             while (lines.length && !String(lines[0] || '').trim()) {
                 lines.shift();
+            }
+        };
+        const stripTrailingBlankLines = () => {
+            while (lines.length && !String(lines[lines.length - 1] || '').trim()) {
+                lines.pop();
             }
         };
         const isMetadataSentinelLine = (value = '') => {
@@ -173,6 +420,32 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
             stripLeadingBlankLines();
             return true;
         };
+        const stripTrailingMetadataBlock = () => {
+            stripTrailingBlankLines();
+            if (!lines.length || !/^```\s*$/.test(String(lines[lines.length - 1] || '').trim())) {
+                return false;
+            }
+            let fenceStartIndex = lines.length - 2;
+            while (fenceStartIndex >= 0) {
+                if (/^```(?:json)?\s*$/i.test(String(lines[fenceStartIndex] || '').trim())) {
+                    break;
+                }
+                fenceStartIndex -= 1;
+            }
+            if (fenceStartIndex <= 0) {
+                return false;
+            }
+            let sentinelIndex = fenceStartIndex - 1;
+            while (sentinelIndex >= 0 && !String(lines[sentinelIndex] || '').trim()) {
+                sentinelIndex -= 1;
+            }
+            if (sentinelIndex < 0 || !isMetadataSentinelLine(lines[sentinelIndex])) {
+                return false;
+            }
+            lines.splice(sentinelIndex);
+            stripTrailingBlankLines();
+            return true;
+        };
         stripLeadingBlankLines();
         while (lines.length &&
             /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::/i.test(String(lines[0] || '').trim())) {
@@ -189,57 +462,36 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
             lines.shift();
             stripLeadingBlankLines();
         }
+        while (stripTrailingMetadataBlock()) {
+            // Strip IM metadata blocks appended after generated helper text.
+        }
         let cleaned = lines.join('\n').trim();
         cleaned = cleaned.replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*/i, '');
         cleaned = cleaned.replace(/^(?:ou_[a-z0-9_-]+|on_[a-z0-9_-]+|oc_[a-z0-9_-]+)\s*:\s*/i, '');
+        if (INTERNAL_MEMORY_FLUSH_SENTINELS.every((pattern) => pattern.test(cleaned))) {
+            return { content: '', attachments: [] };
+        }
+        if (INTERNAL_SESSION_STARTUP_SENTINELS.every((pattern) => pattern.test(cleaned))) {
+            return { content: '', attachments: [] };
+        }
         if (/^OpenClaw runtime context \(internal\):/i.test(cleaned) &&
             /runtime-generated,\s*not user-authored/i.test(cleaned)) {
-            return '';
+            return { content: '', attachments: [] };
         }
-        return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+        return {
+            content: cleaned.replace(/\n{3,}/g, '\n\n').trim(),
+            attachments: [],
+        };
     }
-    function cleanQueuedBusyUserMessage(text) {
-        const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
-        if (!normalized || !QUEUED_BUSY_TITLE_LINE.test(normalized.split('\n')[0] || '')) {
-            return '';
+    function normalizeUserMessage(text) {
+        const normalizedQueued = normalizeQueuedBusyUserMessage(text);
+        if (normalizedQueued.content || normalizedQueued.attachments.length) {
+            return normalizedQueued;
         }
-        const lines = normalized.split('\n');
-        const cleanedItems = [];
-        let index = 1;
-        while (index < lines.length) {
-            const trimmed = String(lines[index] || '').trim();
-            if (trimmed === '---' && QUEUED_BUSY_ITEM_LINE.test(String(lines[index + 1] || '').trim())) {
-                index += 1;
-                continue;
-            }
-            if (!QUEUED_BUSY_ITEM_LINE.test(trimmed)) {
-                index += 1;
-                continue;
-            }
-            index += 1;
-            const itemLines = [];
-            while (index < lines.length) {
-                const currentTrimmed = String(lines[index] || '').trim();
-                if (QUEUED_BUSY_ITEM_LINE.test(currentTrimmed)
-                    || (currentTrimmed === '---' && QUEUED_BUSY_ITEM_LINE.test(String(lines[index + 1] || '').trim()))) {
-                    break;
-                }
-                itemLines.push(lines[index] || '');
-                index += 1;
-            }
-            const cleanedItem = cleanSingleUserMessage(itemLines.join('\n'));
-            if (cleanedItem) {
-                cleanedItems.push(cleanedItem);
-            }
-        }
-        return cleanedItems.join('\n\n').trim();
+        return normalizeSingleUserMessage(text);
     }
     function cleanUserMessage(text) {
-        const cleanedQueued = cleanQueuedBusyUserMessage(text);
-        if (cleanedQueued) {
-            return cleanedQueued;
-        }
-        return cleanSingleUserMessage(text);
+        return normalizeUserMessage(text).content;
     }
     function normalizeConversationFingerprint(text = '') {
         return String(text || '')
@@ -665,8 +917,10 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
             const timestamp = payload.timestamp || Date.parse(entry.timestamp) || Date.now();
             if (payload.role === 'user') {
                 const rawContent = extractPlainTextSegments(payload.content).join('\n\n');
-                const content = cleanUserMessage(rawContent);
-                if (!content) {
+                const normalizedUserMessage = projectTranscriptUserMessage(payload);
+                const content = normalizedUserMessage.content;
+                const attachments = Array.isArray(normalizedUserMessage.attachments) ? normalizedUserMessage.attachments : [];
+                if (!content && !attachments.length) {
                     return;
                 }
                 const latestConversationEntry = conversation[conversation.length - 1];
@@ -678,6 +932,7 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
                         role: 'user',
                         content: normalizedMirroredUserContent,
                         timestamp,
+                        ...(attachments.length ? { attachments } : {}),
                     });
                     lastVisibleUserFingerprint = normalizeConversationFingerprint(normalizedMirroredUserContent);
                     lastVisibleUserTimestamp = timestamp;
@@ -704,6 +959,7 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
                     role: 'user',
                     content,
                     timestamp,
+                    ...(attachments.length ? { attachments } : {}),
                 });
                 lastVisibleUserFingerprint = fingerprint;
                 lastVisibleUserTimestamp = timestamp;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDashboardService } from "../server/services/dashboard.ts";
+import { createDashboardService, mergeConversationMessages } from "../server/services/dashboard.ts";
 const { version: lalaclawVersion } = require("../package.json");
 
 function createService(overrides = {}) {
@@ -109,6 +109,281 @@ describe("createDashboardService", () => {
     ]);
     expect(snapshot.peeks.workspace.totalCount).toBe(5);
     expect(snapshot.peeks.terminal.items[2].value).toContain("line-1");
+  });
+
+  it("keeps attachment-only conversation entries when merging runtime and local messages", () => {
+    expect(
+      mergeConversationMessages(
+        [
+          {
+            role: "user",
+            content: "",
+            timestamp: 10,
+            attachments: [
+              {
+                kind: "image",
+                name: "photo.jpg",
+                path: "/workspace/media/photo.jpg",
+                fullPath: "/workspace/media/photo.jpg",
+              },
+            ],
+          },
+        ],
+        [],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "",
+        timestamp: 10,
+        attachments: [
+          {
+            kind: "image",
+            name: "photo.jpg",
+            path: "/workspace/media/photo.jpg",
+            fullPath: "/workspace/media/photo.jpg",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("prefers the structured attachment turn over a synthetic attachment prompt duplicate", () => {
+    expect(
+      mergeConversationMessages(
+        [
+          {
+            role: "user",
+            content: "给我改成米白色的布衣\n\n附件 avatar.JPG.png (image/png, 217 KB) 已附加。",
+            timestamp: 10,
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "给我改成米白色的布衣",
+            timestamp: 10,
+            attachments: [
+              {
+                kind: "image",
+                name: "avatar.JPG.png",
+                path: "/workspace/media/avatar.JPG.png",
+                fullPath: "/workspace/media/avatar.JPG.png",
+              },
+            ],
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "给我改成米白色的布衣",
+        timestamp: 10,
+        attachments: [
+          {
+            kind: "image",
+            name: "avatar.JPG.png",
+            path: "/workspace/media/avatar.JPG.png",
+            fullPath: "/workspace/media/avatar.JPG.png",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps the richer local image payload when the transcript turn only adds a materialized file path", () => {
+    expect(
+      mergeConversationMessages(
+        [
+          {
+            role: "user",
+            content: "修改这张图。把上衣改成姜黄色",
+            timestamp: 10,
+            attachments: [
+              {
+                kind: "image",
+                name: "wukong-mibai-eyes-brave.png",
+                mimeType: "image/png",
+                path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+                fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+              },
+            ],
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "修改这张图。把上衣改成姜黄色",
+            timestamp: 10,
+            attachments: [
+              {
+                id: "img-1",
+                kind: "image",
+                name: "wukong-mibai-eyes-brave.png",
+                mimeType: "image/png",
+                path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+                fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+                dataUrl: "data:image/png;base64,local-rich",
+                previewUrl: "data:image/png;base64,local-preview",
+              },
+            ],
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "修改这张图。把上衣改成姜黄色",
+        timestamp: 10,
+        attachments: [
+          {
+            id: "img-1",
+            kind: "image",
+            name: "wukong-mibai-eyes-brave.png",
+            mimeType: "image/png",
+            path: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+            fullPath: "/Users/marila/.openclaw/media/web-uploads/2026-03-25/1774370829820-673f7668-wukong-mibai-eyes-brave.png",
+            dataUrl: "data:image/png;base64,local-rich",
+            previewUrl: "data:image/png;base64,local-preview",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("collapses a delayed synthetic attachment prompt even after an assistant reply", () => {
+    expect(
+      mergeConversationMessages(
+        [
+          {
+            role: "user",
+            content: "看得到图吗",
+            timestamp: 1_000,
+            attachments: [
+              {
+                kind: "image",
+                name: "image.png",
+                path: "/workspace/media/image.png",
+                fullPath: "/workspace/media/image.png",
+              },
+            ],
+          },
+          {
+            role: "assistant",
+            content: "能，这次我看得到你发来的图片附件了。",
+            timestamp: 1_001,
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "看得到图吗\n\n附件 image.png (image/png, 1829 KB) 已附加。",
+            timestamp: 1_002,
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "看得到图吗",
+        timestamp: 1_000,
+        attachments: [
+          {
+            kind: "image",
+            name: "image.png",
+            path: "/workspace/media/image.png",
+            fullPath: "/workspace/media/image.png",
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: "能，这次我看得到你发来的图片附件了。",
+        timestamp: 1_001,
+      },
+    ]);
+  });
+
+  it("collapses delayed duplicate assistant greetings when no real user turn happened in between", () => {
+    expect(
+      mergeConversationMessages(
+        [
+          {
+            role: "assistant",
+            content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
+            timestamp: 1_000,
+            tokenBadge: "↑3.8k ↓99 R24.3k",
+          },
+        ],
+        [
+          {
+            role: "assistant",
+            content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
+            timestamp: 1_025,
+            tokenBadge: "↑3.8k ↓99 R24.3k",
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "assistant",
+        content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
+        timestamp: 1_000,
+        tokenBadge: "↑3.8k ↓99 R24.3k",
+      },
+    ]);
+  });
+
+  it("prefers the richer local attachment payload when gateway and local user turns replay the same image message", () => {
+    expect(
+      mergeConversationMessages(
+        [
+          {
+            role: "user",
+            content: "只用一句话说你看到了什么",
+            timestamp: 10,
+            attachments: [
+              {
+                kind: "image",
+                name: "avatar.png",
+                mimeType: "image/png",
+              },
+            ],
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "只用一句话说你看到了什么",
+            timestamp: 10,
+            attachments: [
+              {
+                kind: "image",
+                name: "avatar.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,AAAA",
+                previewUrl: "data:image/png;base64,AAAA",
+              },
+            ],
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "只用一句话说你看到了什么",
+        timestamp: 10,
+        attachments: [
+          {
+            kind: "image",
+            name: "avatar.png",
+            mimeType: "image/png",
+            dataUrl: "data:image/png;base64,AAAA",
+            previewUrl: "data:image/png;base64,AAAA",
+          },
+        ],
+      },
+    ]);
   });
 
   it("builds an openclaw snapshot from transcript data and fallback browser state", async () => {

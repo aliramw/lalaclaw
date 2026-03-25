@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createOpenClawClient, resolveOpenClawGatewaySdkArtifactsForPackageRoot } from './openclaw-client.ts';
+import { buildOpenClawMessageContent, describeAttachmentForModel } from '../formatters/chat-format.ts';
 const unavailableGatewaySdk = async () => {
   throw new Error('Gateway SDK unavailable in this test');
 };
@@ -333,6 +334,128 @@ describe('createOpenClawClient', () => {
         target: 'user:ou_d249239ddfd11c4c3c4f5f1581c97a58',
         accountId: 'default',
         message: 'marila：测试飞书',
+      },
+      sessionKey: feishuSessionKey,
+      tool: 'message',
+    });
+  });
+
+  it('uses direct multimodal HTTP requests for Feishu sessions with image attachments and mirrors the assistant reply back', async () => {
+    const feishuSessionKey = 'agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58';
+    const originalFetch = global.fetch;
+    const fetchCalls = [];
+    global.fetch = async (url, options = {}) => {
+      const parsedBody = options.body ? JSON.parse(options.body) : null;
+      fetchCalls.push({
+        body: parsedBody,
+        url: String(url),
+      });
+
+      if (String(url) === 'http://127.0.0.1:3000/v1/responses') {
+        return {
+          ok: true,
+          body: null,
+          json: async () => ({
+            output_text: '我看到一张人物头像插画。',
+            usage: { total_tokens: 18 },
+          }),
+        };
+      }
+
+      if (String(url) === 'http://127.0.0.1:3000/tools/invoke') {
+        return {
+          ok: true,
+          json: async () => ({ ok: true, result: { messageId: 'msg-feishu-assistant-1' } }),
+        };
+      }
+
+      throw new Error(`Unexpected fetch url: ${String(url)}`);
+    };
+
+    try {
+      const client = createOpenClawClient({
+        config: {
+          apiKey: '',
+          apiPath: '/v1/responses',
+          apiStyle: 'responses',
+          baseUrl: 'http://127.0.0.1:3000',
+          mode: 'openclaw',
+        },
+        execFileAsync: async () => {
+          throw new Error('execFileAsync should not be used for direct multimodal Feishu requests');
+        },
+        PROJECT_ROOT: process.cwd(),
+        OPENCLAW_BIN: 'openclaw',
+        clip: (text, maxLength = 180) => String(text || '').slice(0, maxLength),
+        normalizeSessionUser: (value) => String(value || '').trim(),
+        normalizeChatMessage: (message) => String(message?.content || message || '').trim(),
+        getMessageAttachments: (message) => message?.attachments || [],
+        describeAttachmentForModel,
+        buildOpenClawMessageContent,
+        getCommandCenterSessionKey: (_agentId, sessionUser) => String(sessionUser || '').trim(),
+        resolveSessionAgentId: () => 'main',
+        resolveSessionModel: () => 'openai-codex/gpt-5.4',
+        readTextIfExists: () => '',
+        tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
+      });
+
+      const reply = await client.dispatchOpenClawStream(
+        [
+          {
+            role: 'user',
+            content: '看到啥',
+            attachments: [
+              {
+                kind: 'image',
+                name: 'avatar.png',
+                dataUrl: 'data:image/png;base64,AAAA',
+                fullPath: '/Users/marila/.openclaw/workspace/test/avatar.png',
+              },
+            ],
+          },
+        ],
+        false,
+        feishuSessionKey,
+        { onDelta: () => {} },
+      );
+
+      expect(reply).toEqual({
+        outputText: '我看到一张人物头像插画。',
+        usage: { total_tokens: 18 },
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    expect(fetchCalls).toHaveLength(2);
+    expect(fetchCalls[0].url).toBe('http://127.0.0.1:3000/v1/responses');
+    expect(fetchCalls[0].body).toMatchObject({
+      model: 'openai-codex/gpt-5.4',
+      stream: true,
+      input: [
+        expect.objectContaining({ role: 'system' }),
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: '看到啥' },
+            {
+              type: 'input_text',
+              text: '附件 avatar.png 已附加。\n路径: /Users/marila/.openclaw/workspace/test/avatar.png',
+            },
+            { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+          ],
+        },
+      ],
+    });
+    expect(fetchCalls[1].url).toBe('http://127.0.0.1:3000/tools/invoke');
+    expect(fetchCalls[1].body).toEqual({
+      action: 'send',
+      args: {
+        channel: 'feishu',
+        target: 'user:ou_d249239ddfd11c4c3c4f5f1581c97a58',
+        accountId: 'default',
+        message: '我看到一张人物头像插画。',
       },
       sessionKey: feishuSessionKey,
       tool: 'message',

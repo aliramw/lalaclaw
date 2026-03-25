@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import {
   legacyStorageKey,
+  mergeConversationAttachments,
   pendingChatStorageKey,
   promptDraftStorageKey,
   promptHistoryStorageKey,
@@ -72,6 +73,159 @@ type SerializedAttachmentState = {
   messagesByKey: Record<string, ChatMessage[]>;
   pendingChatTurns: PendingChatTurns;
 };
+
+function hasInlineAttachmentPayload(attachment: Record<string, unknown> = {}) {
+  return Boolean(
+    String(attachment?.dataUrl || "").trim()
+    || String(attachment?.previewUrl || "").trim()
+    || String(attachment?.textContent || "").trim(),
+  );
+}
+
+function hasInlineAttachmentPayloadInMessage(message: PersistedMessage | Record<string, unknown> = {}) {
+  return Array.isArray(message?.attachments) && message.attachments.some((attachment) =>
+    attachment && typeof attachment === "object" && hasInlineAttachmentPayload(attachment as Record<string, unknown>),
+  );
+}
+
+function hasInlineAttachmentPayloadInState(
+  messagesByTabId: MessagesByTabId = {},
+  pendingChatTurns: PendingChatTurns = {},
+) {
+  const messagesContainInlinePayload = Object.values(messagesByTabId || {}).some((messages) =>
+    Array.isArray(messages) && messages.some((message) => hasInlineAttachmentPayloadInMessage(message)),
+  );
+  if (messagesContainInlinePayload) {
+    return true;
+  }
+
+  return Object.values(pendingChatTurns || {}).some((entry) => {
+    const pendingEntry = entry && typeof entry === "object" ? entry as Record<string, unknown> : null;
+    const userMessage = pendingEntry?.userMessage && typeof pendingEntry.userMessage === "object"
+      ? pendingEntry.userMessage as Record<string, unknown>
+      : null;
+    return hasInlineAttachmentPayloadInMessage(userMessage || {});
+  });
+}
+
+function mergeHydratedMessagesByKey(
+  currentMessagesByKey: MessagesByTabId = {},
+  hydratedMessagesByKey: Record<string, ChatMessage[]> = {},
+) {
+  const keys = new Set([
+    ...Object.keys(currentMessagesByKey || {}),
+    ...Object.keys(hydratedMessagesByKey || {}),
+  ]);
+  let changed = false;
+
+  const merged = Object.fromEntries(
+    [...keys].map((key) => {
+      const currentMessages = Array.isArray(currentMessagesByKey?.[key]) ? currentMessagesByKey[key] : [];
+      const hydratedMessages = Array.isArray(hydratedMessagesByKey?.[key]) ? hydratedMessagesByKey[key] : [];
+
+      if (!currentMessages.length) {
+        if (hydratedMessages.length) {
+          changed = true;
+        }
+        return [key, hydratedMessages];
+      }
+
+      if (!hydratedMessages.length) {
+        return [key, currentMessages];
+      }
+
+      const mergedMessages = mergeConversationAttachments(currentMessages, hydratedMessages);
+      if (mergedMessages.some((message, index) => message !== currentMessages[index])) {
+        changed = true;
+      }
+      return [key, mergedMessages];
+    }),
+  );
+
+  return changed ? merged : currentMessagesByKey;
+}
+
+function shouldMergeHydratedPendingUserMessage(currentUserMessage: Record<string, unknown> = {}, hydratedUserMessage: Record<string, unknown> = {}) {
+  const currentUserId = String(currentUserMessage?.id || "").trim();
+  const hydratedUserId = String(hydratedUserMessage?.id || "").trim();
+  if (currentUserId && hydratedUserId) {
+    return currentUserId === hydratedUserId;
+  }
+
+  return String(currentUserMessage?.content || "") === String(hydratedUserMessage?.content || "")
+    && Number(currentUserMessage?.timestamp || 0) === Number(hydratedUserMessage?.timestamp || 0);
+}
+
+function mergeHydratedPendingChatTurns(
+  currentPendingChatTurns: PendingChatTurns = {},
+  hydratedPendingChatTurns: PendingChatTurns = {},
+) {
+  const keys = new Set([
+    ...Object.keys(currentPendingChatTurns || {}),
+    ...Object.keys(hydratedPendingChatTurns || {}),
+  ]);
+  let changed = false;
+
+  const merged = Object.fromEntries(
+    [...keys].map((key) => {
+      const currentEntry = currentPendingChatTurns?.[key];
+      const hydratedEntry = hydratedPendingChatTurns?.[key];
+
+      if (!currentEntry || typeof currentEntry !== "object") {
+        if (hydratedEntry && typeof hydratedEntry === "object") {
+          changed = true;
+        }
+        return [key, hydratedEntry];
+      }
+
+      if (!hydratedEntry || typeof hydratedEntry !== "object") {
+        return [key, currentEntry];
+      }
+
+      const currentUserMessage =
+        currentEntry.userMessage && typeof currentEntry.userMessage === "object"
+          ? currentEntry.userMessage as Record<string, unknown>
+          : null;
+      const hydratedUserMessage =
+        hydratedEntry.userMessage && typeof hydratedEntry.userMessage === "object"
+          ? hydratedEntry.userMessage as Record<string, unknown>
+          : null;
+
+      if (!hydratedUserMessage?.attachments?.length) {
+        return [key, currentEntry];
+      }
+
+      if (!currentUserMessage) {
+        changed = true;
+        return [
+          key,
+          {
+            ...currentEntry,
+            userMessage: hydratedUserMessage,
+          },
+        ];
+      }
+
+      if (!shouldMergeHydratedPendingUserMessage(currentUserMessage, hydratedUserMessage)) {
+        return [key, currentEntry];
+      }
+
+      changed = true;
+      return [
+        key,
+        {
+          ...currentEntry,
+          userMessage: {
+            ...currentUserMessage,
+            attachments: hydratedUserMessage.attachments,
+          },
+        },
+      ];
+    }),
+  );
+
+  return changed ? merged : currentPendingChatTurns;
+}
 
 export function useAppPersistence({
   activeChatTabId = "",
@@ -281,12 +435,13 @@ export function useAppPersistence({
       previousMessagesByTabIdRef.current !== messagesByTabId
       || previousPendingChatTurnsRef.current !== pendingChatTurns
       || previousPromptDraftsByConversationRef.current !== promptDraftsByConversation;
+    const shouldPersistInlineAttachmentsImmediately = hasInlineAttachmentPayloadInState(messagesByTabId, pendingChatTurns);
 
     previousMessagesByTabIdRef.current = messagesByTabId;
     previousPendingChatTurnsRef.current = pendingChatTurns;
     previousPromptDraftsByConversationRef.current = promptDraftsByConversation;
 
-    if (!shouldDebouncePersistence) {
+    if (!shouldDebouncePersistence || shouldPersistInlineAttachmentsImmediately) {
       flushPendingPersistence();
       return undefined;
     }
@@ -389,13 +544,26 @@ export function useAppPersistence({
 
     void hydrateAttachmentStateByKeyFromStorage(initialMessagesByTabId, initialPendingChatTurns).then((hydratedState) => {
       const nextMessagesByTabId = hydratedState.messagesByKey || {};
-      setMessagesByTabId((current) => (current === initialMessagesByTabId ? nextMessagesByTabId : current));
+      const hydratedActiveMessages = nextMessagesByTabId[activeChatTabId] || [];
 
-      if (messagesRef.current === initialActiveMessages) {
-        setMessagesSynced(nextMessagesByTabId[activeChatTabId] || []);
+      setMessagesByTabId((current) => (
+        current === initialMessagesByTabId
+          ? nextMessagesByTabId
+          : mergeHydratedMessagesByKey(current, nextMessagesByTabId)
+      ));
+
+      const nextActiveMessages = messagesRef.current === initialActiveMessages
+        ? hydratedActiveMessages
+        : mergeConversationAttachments(messagesRef.current || [], hydratedActiveMessages);
+      if (nextActiveMessages !== messagesRef.current) {
+        setMessagesSynced(nextActiveMessages);
       }
 
-      setPendingChatTurns((current) => (current === initialPendingChatTurns ? hydratedState.pendingChatTurns : current));
+      setPendingChatTurns((current) => (
+        current === initialPendingChatTurns
+          ? hydratedState.pendingChatTurns
+          : mergeHydratedPendingChatTurns(current, hydratedState.pendingChatTurns)
+      ));
     });
   }, [activeChatTabId, initialStoredMessagesByTabIdRef, initialStoredPendingRef, messagesRef, setMessagesByTabId, setMessagesSynced, setPendingChatTurns]);
 }

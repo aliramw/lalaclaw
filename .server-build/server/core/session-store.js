@@ -6,8 +6,36 @@ exports.normalizeThinkMode = normalizeThinkMode;
 exports.extractAgentIdFromNativeSessionKey = extractAgentIdFromNativeSessionKey;
 exports.createSessionStore = createSessionStore;
 exports.THINK_MODES = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive'];
-function isNormalizedSessionFileEntry(value) {
-    return value !== null;
+function normalizeSessionAttachments(attachments = [], { preserveInlineContent = false } = {}) {
+    return Array.isArray(attachments)
+        ? attachments
+            .map((attachment) => ({
+            id: attachment?.id || '',
+            kind: attachment?.kind || '',
+            name: String(attachment?.name || '').trim(),
+            size: Number(attachment?.size) || 0,
+            mimeType: String(attachment?.mimeType || '').trim(),
+            path: String(attachment?.path || '').trim(),
+            fullPath: String(attachment?.fullPath || '').trim(),
+            ...(preserveInlineContent && typeof attachment?.dataUrl === 'string' && attachment.dataUrl.trim()
+                ? { dataUrl: attachment.dataUrl.trim() }
+                : {}),
+            ...(preserveInlineContent && typeof attachment?.previewUrl === 'string' && attachment.previewUrl.trim()
+                ? { previewUrl: attachment.previewUrl.trim() }
+                : {}),
+            ...(preserveInlineContent && typeof attachment?.textContent === 'string' && attachment.textContent
+                ? { textContent: attachment.textContent }
+                : {}),
+            ...(preserveInlineContent && attachment?.truncated ? { truncated: true } : {}),
+            ...(preserveInlineContent && typeof attachment?.storageKey === 'string' && attachment.storageKey.trim()
+                ? { storageKey: attachment.storageKey.trim() }
+                : {}),
+        }))
+            .filter((attachment) => attachment.name
+            || attachment.path
+            || attachment.fullPath
+            || (preserveInlineContent && (attachment.dataUrl || attachment.textContent)))
+        : [];
 }
 function normalizeSessionUser(sessionUser = '') {
     const normalized = String(sessionUser || 'command-center')
@@ -96,13 +124,21 @@ function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolv
         const current = localSessionConversation.get(key) || [];
         const normalizedEntries = entries
             .filter(Boolean)
-            .map((entry) => ({
-            role: entry.role,
-            content: String(entry.content || '').trim(),
-            timestamp: Number(entry.timestamp) || Date.now(),
-            ...(entry.tokenBadge ? { tokenBadge: String(entry.tokenBadge) } : {}),
-        }))
-            .filter((entry) => entry.role && entry.content);
+            .reduce((list, entry) => {
+            const content = String(entry.content || '').trim();
+            const attachments = normalizeSessionAttachments(entry.attachments, { preserveInlineContent: true });
+            if (!entry.role || (!content && !attachments.length)) {
+                return list;
+            }
+            list.push({
+                role: entry.role,
+                content,
+                timestamp: Number(entry.timestamp) || Date.now(),
+                ...(entry.tokenBadge ? { tokenBadge: String(entry.tokenBadge) } : {}),
+                ...(attachments.length ? { attachments } : {}),
+            });
+            return list;
+        }, []);
         if (!normalizedEntries.length) {
             return current;
         }
@@ -120,23 +156,13 @@ function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolv
         const current = localSessionFileEntries.get(key) || [];
         const normalizedEntries = entries
             .filter(Boolean)
-            .map((entry) => {
+            .reduce((list, entry) => {
             const content = String(entry.content || '').trim();
-            const attachments = Array.isArray(entry.attachments)
-                ? entry.attachments
-                    .map((attachment) => ({
-                    id: attachment?.id || '',
-                    kind: attachment?.kind || '',
-                    name: String(attachment?.name || '').trim(),
-                    path: String(attachment?.path || '').trim(),
-                    fullPath: String(attachment?.fullPath || '').trim(),
-                }))
-                    .filter((attachment) => attachment.name || attachment.path || attachment.fullPath)
-                : [];
+            const attachments = normalizeSessionAttachments(entry.attachments);
             if (!entry.role || (!content && !attachments.length)) {
-                return null;
+                return list;
             }
-            return {
+            list.push({
                 type: 'message',
                 timestamp: Number(entry.timestamp) || Date.now(),
                 message: {
@@ -145,9 +171,9 @@ function createSessionStore({ getDefaultAgentId, getDefaultModelForAgent, resolv
                     content: content ? [{ type: 'text', text: content }] : [],
                     ...(attachments.length ? { attachments } : {}),
                 },
-            };
-        })
-            .filter(isNormalizedSessionFileEntry);
+            });
+            return list;
+        }, []);
         if (!normalizedEntries.length) {
             return current;
         }

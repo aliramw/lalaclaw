@@ -265,6 +265,249 @@ describe("useAppPersistence", () => {
     expect(pendingUpdater(initialPending)).toEqual(hydratedState.pendingChatTurns);
   });
 
+  it("persists inline image attachments immediately instead of waiting for the debounce window", async () => {
+    vi.useFakeTimers();
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [
+          {
+            role: "user",
+            content: "看图",
+            timestamp: 1,
+            attachments: [
+              {
+                id: "image-1",
+                kind: "image",
+                name: "avatar.png",
+                mimeType: "image/png",
+                storageKey: "image-1",
+              },
+            ],
+          },
+        ],
+      },
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+
+    const imageMessage = {
+      role: "user",
+      content: "看图",
+      timestamp: 1,
+      attachments: [
+        {
+          id: "image-1",
+          kind: "image",
+          name: "avatar.png",
+          mimeType: "image/png",
+          dataUrl: "data:image/png;base64,AAAA",
+          previewUrl: "data:image/png;base64,AAAA",
+        },
+      ],
+    };
+
+    renderHook(() => useAppPersistence(createProps({
+      messages: [imageMessage],
+      messagesByTabId: {
+        "agent:main": [imageMessage],
+      },
+    })));
+
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledTimes(1);
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).toHaveBeenCalledWith(
+      {
+        "agent:main": [imageMessage],
+      },
+      {},
+    );
+
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockClear();
+    await vi.advanceTimersByTimeAsync(449);
+    expect(attachmentStorageMocks.serializeAttachmentStateByKeyForStorage).not.toHaveBeenCalled();
+  });
+
+  it("merges hydrated attachment payloads into newer runtime conversation state", async () => {
+    let resolveHydration;
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockReturnValue(
+      new Promise((resolve) => {
+        resolveHydration = resolve;
+      }),
+    );
+
+    const initialMessages = [
+      {
+        role: "user",
+        content: "只用一句话说你看到了什么",
+        timestamp: 1,
+        attachments: [
+          {
+            id: "image-1",
+            kind: "image",
+            name: "avatar.png",
+            storageKey: "image-1",
+          },
+        ],
+      },
+    ];
+    const initialMessagesByTabId = { "agent:main": initialMessages };
+    const initialPending = {
+      "command-center:main": {
+        key: "command-center:main",
+        userMessage: initialMessages[0],
+      },
+    };
+    const runtimeMessages = [
+      initialMessages[0],
+      { role: "assistant", content: "我看到一个卡通化的大头公仔人物。", timestamp: 2 },
+    ];
+    const messagesRef = { current: runtimeMessages };
+    const setMessagesByTabId = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+
+    renderHook(() =>
+      useAppPersistence({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        chatFontSize: "small",
+        composerSendMode: "enter-send",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        dismissedTaskRelationshipIdsByConversation: {},
+        fastMode: false,
+        initialStoredMessagesByTabIdRef: { current: initialMessagesByTabId },
+        initialStoredPendingRef: { current: initialPending },
+        inspectorPanelWidth: 380,
+        messages: runtimeMessages,
+        messagesByTabId: { "agent:main": runtimeMessages },
+        messagesRef,
+        model: "",
+        pendingChatTurns: initialPending,
+        promptDraftsByConversation: {},
+        promptHistoryByConversation: {},
+        session: createSession(),
+        setMessagesByTabId,
+        setMessagesSynced,
+        setPendingChatTurns,
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    resolveHydration({
+      messagesByKey: {
+        "agent:main": [
+          {
+            role: "user",
+            content: "只用一句话说你看到了什么",
+            timestamp: 1,
+            attachments: [
+              {
+                id: "image-1",
+                kind: "image",
+                name: "avatar.png",
+                storageKey: "image-1",
+                dataUrl: "data:image/png;base64,AAAA",
+                previewUrl: "data:image/png;base64,AAAA",
+              },
+            ],
+          },
+        ],
+      },
+      pendingChatTurns: {
+        "command-center:main": {
+          key: "command-center:main",
+          userMessage: {
+            role: "user",
+            content: "只用一句话说你看到了什么",
+            timestamp: 1,
+            attachments: [
+              {
+                id: "image-1",
+                kind: "image",
+                name: "avatar.png",
+                storageKey: "image-1",
+                dataUrl: "data:image/png;base64,AAAA",
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(setMessagesByTabId).toHaveBeenCalled();
+      expect(setMessagesSynced).toHaveBeenCalled();
+      expect(setPendingChatTurns).toHaveBeenCalled();
+    });
+
+    const messagesByTabUpdater = setMessagesByTabId.mock.calls[0][0];
+    expect(messagesByTabUpdater({ "agent:main": runtimeMessages })).toEqual({
+      "agent:main": [
+        {
+          role: "user",
+          content: "只用一句话说你看到了什么",
+          timestamp: 1,
+          attachments: [
+            expect.objectContaining({
+              id: "image-1",
+              dataUrl: "data:image/png;base64,AAAA",
+              previewUrl: "data:image/png;base64,AAAA",
+            }),
+          ],
+        },
+        { role: "assistant", content: "我看到一个卡通化的大头公仔人物。", timestamp: 2 },
+      ],
+    });
+
+    expect(setMessagesSynced).toHaveBeenCalledWith([
+      {
+        role: "user",
+        content: "只用一句话说你看到了什么",
+        timestamp: 1,
+        attachments: [
+          expect.objectContaining({
+            id: "image-1",
+            dataUrl: "data:image/png;base64,AAAA",
+            previewUrl: "data:image/png;base64,AAAA",
+          }),
+        ],
+      },
+      { role: "assistant", content: "我看到一个卡通化的大头公仔人物。", timestamp: 2 },
+    ]);
+
+    const pendingUpdater = setPendingChatTurns.mock.calls[0][0];
+    expect(pendingUpdater(initialPending)).toEqual({
+      "command-center:main": {
+        key: "command-center:main",
+        userMessage: {
+          role: "user",
+          content: "只用一句话说你看到了什么",
+          timestamp: 1,
+          attachments: [
+            expect.objectContaining({
+              id: "image-1",
+              dataUrl: "data:image/png;base64,AAAA",
+            }),
+          ],
+        },
+      },
+    });
+  });
+
   it("debounces persistence while chat messages update rapidly", async () => {
     vi.useFakeTimers();
     const sanitizeSpy = vi.spyOn(appStorage, "sanitizeMessagesForStorage");

@@ -154,8 +154,9 @@ export function replacePendingAssistantMessage(
     .reverse()
     .find(({ item }) => item?.role === "assistant")?.index ?? -1;
   if (trailingAssistantIndex >= 0 && trailingAssistantIndex === next.length - 1) {
+    const { pending: _previousPending, streaming: _previousStreaming, ...previousAssistantMessage } = next[trailingAssistantIndex] || {};
     next[trailingAssistantIndex] = {
-      ...next[trailingAssistantIndex],
+      ...previousAssistantMessage,
       ...assistantMessage,
     };
     return next;

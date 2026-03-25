@@ -17,6 +17,11 @@ import {
   TooltipSurface as Tooltip,
   TooltipTriggerSurface as TooltipTrigger,
 } from "@/components/command-center/chat-panel-surfaces";
+import {
+  ComposerAttachments,
+  MessageAttachments,
+} from "@/components/command-center/chat-panel-attachments";
+import { messageHasVisualMedia } from "@/components/command-center/chat-panel-attachment-utils";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton, shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { getImSessionDisplayName, isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
@@ -81,6 +86,7 @@ type MessageBubbleProps = {
   separated?: boolean;
   sessionUser?: string;
   showStreamingTail?: boolean;
+  suppressOutline?: boolean;
   staleWarning?: string | null;
   chatFontSize?: string;
   userLabel?: string;
@@ -107,6 +113,8 @@ type ChatTabsStripProps = {
   resolvedTheme?: string;
   trailingControl?: ReactNode;
 };
+
+const busyIndicatorVisualHoldMs = 420;
 
 type TabDragSession = {
   active: boolean;
@@ -146,6 +154,39 @@ type MessageOutlineItem = {
   level: number;
   text: string;
 };
+
+function useLatchedBoolean(value: boolean, releaseDelayMs = busyIndicatorVisualHoldMs) {
+  const [latchedValue, setLatchedValue] = useState(Boolean(value));
+  const releaseTimeoutRef = useRef(0);
+
+  useEffect(() => {
+    window.clearTimeout(releaseTimeoutRef.current);
+
+    if (value) {
+      setLatchedValue(true);
+      return () => {
+        window.clearTimeout(releaseTimeoutRef.current);
+      };
+    }
+
+    if (!latchedValue) {
+      return () => {
+        window.clearTimeout(releaseTimeoutRef.current);
+      };
+    }
+
+    releaseTimeoutRef.current = window.setTimeout(() => {
+      setLatchedValue(false);
+      releaseTimeoutRef.current = 0;
+    }, releaseDelayMs);
+
+    return () => {
+      window.clearTimeout(releaseTimeoutRef.current);
+    };
+  }, [latchedValue, releaseDelayMs, value]);
+
+  return latchedValue;
+}
 
 type ChatPanelProps = {
   agentLabel?: string;
@@ -319,13 +360,6 @@ function stripDingTalkImagePlaceholderForDisplay(content = "", sessionUser = "")
   return text.replace(/^\[(?:图片|image)\]\s*\n+(?=!\[[^\]]*\]\([^)]+\))/iu, "");
 }
 
-function formatAttachmentSize(size = 0) {
-  const numeric = Number(size) || 0;
-  if (numeric < 1024) return `${numeric} B`;
-  if (numeric < 1024 * 1024) return `${(numeric / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
-  return `${(numeric / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
-}
-
 function splitImTabTitleForDisplay(title = "", agentId = "", sessionUser = "") {
   const normalizedTitle = String(title || "").trim();
   const normalizedAgentId = String(agentId || "").trim();
@@ -463,137 +497,6 @@ function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
       </div>
     </div>,
     document.body,
-  );
-}
-
-function isImageAttachment(attachment) {
-  return attachment?.kind === "image" || /^image\//i.test(attachment?.mimeType || "");
-}
-
-function buildLocalFilePreviewUrl(filePath = "") {
-  const normalizedPath = String(filePath || "").trim();
-  return normalizedPath ? `/api/file-preview/content?path=${encodeURIComponent(normalizedPath)}` : "";
-}
-
-function getAttachmentImageSource(attachment: AttachmentLike = {}) {
-  return String(
-    attachment.previewUrl
-    || attachment.dataUrl
-    || buildLocalFilePreviewUrl(attachment.fullPath || attachment.path),
-  ).trim();
-}
-
-function messageHasVisualMedia(message: MessageLike = {}) {
-  const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
-  if (attachments.some(isImageAttachment)) {
-    return true;
-  }
-
-  const content = String(message?.content || "");
-  if (!content) {
-    return false;
-  }
-
-  if (/!\[[^\]]*]\([^)]+\)/.test(content)) {
-    return true;
-  }
-
-  return /(^|\n)\s*https?:\/\/\S+\.(png|jpe?g|gif|webp|svg)(\?\S+)?\s*($|\n)/i.test(content);
-}
-
-function MessageAttachments({ attachments, mode = "message", onPreviewImage, scrollAnchorBaseId = "" }) {
-  if (!attachments?.length) {
-    return null;
-  }
-
-  const imageAttachments = attachments.filter(isImageAttachment);
-  const fileAttachments = attachments.filter((attachment) => !isImageAttachment(attachment));
-  const imageSizeClassName = mode === "composer" ? "h-16 w-16" : "h-[72px] w-[72px]";
-
-  return (
-    <div className="space-y-2">
-      {imageAttachments.length ? (
-        <div className="flex flex-wrap gap-2">
-          {imageAttachments.map((attachment) => (
-            <button
-              key={attachment.id}
-              type="button"
-              data-scroll-anchor-id={scrollAnchorBaseId ? `${scrollAnchorBaseId}-image-${attachment.id}` : undefined}
-              className="overflow-hidden rounded-md border border-border/70 bg-background/80"
-              onClick={() => onPreviewImage?.(attachment)}
-            >
-              <img
-                src={getAttachmentImageSource(attachment)}
-                alt={attachment.name}
-                className={cn(imageSizeClassName, "object-cover")}
-              />
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {fileAttachments.length ? (
-        <div className="grid gap-2">
-          {fileAttachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              data-scroll-anchor-id={scrollAnchorBaseId ? `${scrollAnchorBaseId}-file-${attachment.id}` : undefined}
-              className="flex items-center gap-2 rounded-md border border-border/70 bg-background/75 px-2.5 py-2 text-[11px] leading-4"
-            >
-              <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <div className="min-w-0">
-                <div className="truncate font-medium">{attachment.name}</div>
-                <div className="text-muted-foreground">{formatAttachmentSize(attachment.size)}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ComposerAttachments({ attachments, onPreviewImage, onRemoveAttachment }) {
-  const { messages } = useI18n();
-
-  if (!attachments?.length) {
-    return null;
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
-      <div className="mr-1 text-[10px] text-muted-foreground">{messages.common.attachment}</div>
-      <div className="flex flex-wrap gap-1.5">
-        {attachments.map((attachment) => (
-          <div key={attachment.id} className="group relative">
-            {isImageAttachment(attachment) ? (
-              <button
-                type="button"
-                className="overflow-hidden rounded-sm border border-border/60 bg-background"
-                onClick={() => onPreviewImage?.(attachment)}
-              >
-                <img src={getAttachmentImageSource(attachment)} alt={attachment.name} className="h-[22px] w-[22px] object-cover" />
-              </button>
-            ) : (
-              <div className="flex w-20 items-center gap-1 rounded-sm border border-border/60 bg-background px-1.5 py-1 text-[9px] leading-3">
-                <Paperclip className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{attachment.name}</div>
-                  <div className="truncate text-muted-foreground">{formatAttachmentSize(attachment.size)}</div>
-                </div>
-              </div>
-            )}
-            <button
-              type="button"
-              className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground text-background shadow-sm"
-              aria-label={`${messages.common.removeAttachment} ${attachment.name}`}
-              onClick={() => onRemoveAttachment?.(attachment.id)}
-            >
-              <X className="h-2 w-2" />
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -810,6 +713,12 @@ function getConversationMessageId(message: MessageLike = {}, index = 0) {
   const explicitId = String(message?.id || "").trim();
   if (explicitId) {
     return explicitId;
+  }
+
+  // Keep transient assistant bubbles stable even if upstream streaming snapshots
+  // refresh their timestamps on every delta.
+  if (message?.role === "assistant" && (message?.pending || message?.streaming)) {
+    return `assistant-live-${index}`;
   }
 
   return `${message?.timestamp || "message"}-${index}`;
@@ -1298,6 +1207,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.previousMessageId === next.previousMessageId
     && previous.resolvedTheme === next.resolvedTheme
     && previous.sessionUser === next.sessionUser
+    && Boolean(previous.suppressOutline) === Boolean(next.suppressOutline)
     && previous.staleWarning === next.staleWarning
     && previous.chatFontSize === next.chatFontSize
     && previous.userLabel === next.userLabel
@@ -1322,6 +1232,7 @@ const MessageBubble = memo(function MessageBubble({
   isLatestAssistant,
   isStreamingAssistant,
   showStreamingTail,
+  suppressOutline,
   markUserScrollTakeover,
   message,
   messageId,
@@ -1356,8 +1267,8 @@ const MessageBubble = memo(function MessageBubble({
   const visualLineCount = estimateVisualLineCount(renderedContent);
   const compactMeta = visualLineCount <= 1;
   const outlineItems = useMemo(
-    () => (!isUser && !isPending && !assistantTurnInProgress ? extractHeadingOutline(renderedContent) : []),
-    [assistantTurnInProgress, isPending, isUser, renderedContent],
+    () => (!isUser && !isPending && !assistantTurnInProgress && !suppressOutline ? extractHeadingOutline(renderedContent) : []),
+    [assistantTurnInProgress, isPending, isUser, renderedContent, suppressOutline],
   );
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
@@ -2017,10 +1928,86 @@ export function ChatTabsStrip({
   const cachedTabRectsRef = useRef<Map<string, DOMRect>>(new Map());
   const itemsRef = useRef(items);
   const onReorderRef = useRef(onReorder);
+  const [latchedBusyByTabId, setLatchedBusyByTabId] = useState<Record<string, boolean>>({});
+  const busyReleaseTimeoutsRef = useRef<Record<string, number>>({});
 
   itemsRef.current = items;
   onReorderRef.current = onReorder;
   void activeChatTabId;
+
+  useEffect(() => {
+    const activeIds = new Set(items.map((item) => item.id));
+
+    setLatchedBusyByTabId((current) => {
+      let next = current;
+
+      items.forEach((item) => {
+        if (!item?.id || !item.busy || current[item.id]) {
+          return;
+        }
+
+        if (next === current) {
+          next = { ...current };
+        }
+        next[item.id] = true;
+      });
+
+      Object.keys(current).forEach((tabId) => {
+        if (activeIds.has(tabId)) {
+          return;
+        }
+        if (next === current) {
+          next = { ...current };
+        }
+        delete next[tabId];
+      });
+
+      return next;
+    });
+
+    items.forEach((item) => {
+      const tabId = String(item?.id || "");
+      if (!tabId) {
+        return;
+      }
+
+      window.clearTimeout(busyReleaseTimeoutsRef.current[tabId]);
+
+      if (item.busy) {
+        delete busyReleaseTimeoutsRef.current[tabId];
+        return;
+      }
+
+      busyReleaseTimeoutsRef.current[tabId] = window.setTimeout(() => {
+        setLatchedBusyByTabId((current) => {
+          if (!current[tabId]) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[tabId];
+          return next;
+        });
+        delete busyReleaseTimeoutsRef.current[tabId];
+      }, busyIndicatorVisualHoldMs);
+    });
+
+    return () => {
+      items.forEach((item) => {
+        const tabId = String(item?.id || "");
+        if (!tabId) {
+          return;
+        }
+        window.clearTimeout(busyReleaseTimeoutsRef.current[tabId]);
+      });
+    };
+  }, [items]);
+
+  useEffect(() => () => {
+    Object.values(busyReleaseTimeoutsRef.current).forEach((timeoutId) => {
+      window.clearTimeout(timeoutId);
+    });
+    busyReleaseTimeoutsRef.current = {};
+  }, []);
 
   const updateTabScrollState = useCallback(() => {
     const viewport = scrollViewportRef.current;
@@ -2413,6 +2400,7 @@ export function ChatTabsStrip({
                 const isClosableActiveTab = closable && item.active;
                 const tabTitle = item.title || item.agentId;
                 const imTitleParts = splitImTabTitleForDisplay(tabTitle, item.agentId, item.sessionUser);
+                const showBusyDot = Boolean(item.busy || latchedBusyByTabId[item.id]);
 
                 return (
                   <div
@@ -2518,7 +2506,7 @@ export function ChatTabsStrip({
                         <span
                           className={cn(
                             "h-1.5 w-1.5 shrink-0 rounded-full",
-                            item.busy
+                            showBusyDot
                               ? "cc-chat-tab-busy-dot bg-emerald-500"
                               : item.active ? "bg-white/65" : "bg-muted-foreground/35",
                           )}
@@ -2584,6 +2572,7 @@ export function ChatTabsStrip({
           : null;
         const tabTitle = draggedItem.title || draggedItem.agentId;
         const imTitleParts = splitImTabTitleForDisplay(tabTitle, draggedItem.agentId, draggedItem.sessionUser);
+        const draggedItemBusy = Boolean(draggedItem.busy || latchedBusyByTabId[draggedItem.id]);
 
         return createPortal(
           <div
@@ -2620,7 +2609,7 @@ export function ChatTabsStrip({
                 <span
                   className={cn(
                     "h-1.5 w-1.5 shrink-0 rounded-full",
-                    draggedItem.busy
+                    draggedItemBusy
                       ? "cc-chat-tab-busy-dot bg-emerald-500"
                       : draggedItem.active ? "bg-white/65" : "bg-muted-foreground/35",
                   )}
@@ -2846,8 +2835,9 @@ export function ChatPanel({
       isImSessionUser(session.sessionUser)
       && ["running", "dispatching"].includes(normalizeStatusKey(session.status))
     );
+  const stableShowBusyBadge = useLatchedBoolean(showBusyBadge);
   const showStopButton = Boolean(onStop) && showBusyBadge;
-  const { isStaleRunning, staleSeconds } = useStaleRunningDetector({ busy: showBusyBadge, messages });
+  const { isStaleRunning, staleSeconds } = useStaleRunningDetector({ busy: stableShowBusyBadge, messages });
   const latestAssistantMessage = useMemo(() => {
     if (!latestAssistantMessageId) {
       return null;
@@ -4251,6 +4241,7 @@ export function ChatPanel({
           previousMessageId={previousMessageId}
           resolvedTheme={resolvedTheme}
           sessionUser={session?.sessionUser}
+          suppressOutline={isLatestAssistant && stableShowBusyBadge}
           staleWarning={message.pending && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
           separated={index > 0 && messages[index - 1]?.role !== message.role}
           chatFontSize={chatFontSize}
@@ -4280,6 +4271,7 @@ export function ChatPanel({
     resolvedTheme,
     session?.sessionUser,
     resolvedUserLabel,
+    stableShowBusyBadge,
     staleSeconds,
   ]);
 
@@ -4319,11 +4311,11 @@ export function ChatPanel({
                 <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Badge variant={isStaleRunning ? "outline" : showBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
-                      {isStaleRunning ? i18n.chat.agentStaleRunning : showBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
+                    <Badge variant={isStaleRunning ? "outline" : stableShowBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
+                      {isStaleRunning ? i18n.chat.agentStaleRunning : stableShowBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
                     </Badge>
                   </TooltipTrigger>
-                  <TooltipContent>{isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : showBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
+                  <TooltipContent>{isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : stableShowBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
                 </Tooltip>
               </div>
 

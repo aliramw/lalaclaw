@@ -5,16 +5,12 @@ import type {
   ChatTab,
   ChatTabMeta,
   ConversationPendingMap,
-  SessionFile,
-  SessionFileRewrite,
   StoredUiState,
 } from "@/types/chat";
 import type { AppSession, RuntimePeeks, RuntimeSnapshot } from "@/types/runtime";
 import {
   appendPromptHistory,
-  createAgentSessionUser,
   createAgentTabId,
-  createResetSessionUser,
   createConversationKey,
   defaultChatFontSize,
   defaultComposerSendMode,
@@ -28,228 +24,75 @@ import {
   loadStoredPromptDrafts,
   loadStoredPromptHistory,
   loadStoredState,
-  mergeConversationAttachments,
-  mergeConversationIdentity,
-  mergePendingConversation,
-  mergeStaleLocalConversationTail,
-  pruneCompletedPendingChatTurns,
   persistUiStateSnapshot,
   persistChatScrollTops,
   sanitizeInspectorPanelWidth,
   sanitizeUserLabel,
-  resolveRuntimePendingEntry,
 } from "@/features/app/storage";
-import { createBaseSession } from "@/features/app/state";
 import { useAppHotkeys } from "@/features/app/controllers/use-app-hotkeys";
 import { useAppPersistence } from "@/features/app/storage";
-import { formatCompactK, formatTime, maxPromptRows } from "@/features/chat/utils";
+import { formatCompactK, formatTime } from "@/features/chat/utils";
 import { useChatController, usePromptHistory } from "@/features/chat/controllers";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
 import { mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
-import {
-  createImBootstrapSessionUser,
-  createImRuntimeAnchorSessionUser,
-  createResetImSessionUser,
-  getImSessionDisplayName,
-  isImBootstrapSessionUser,
-  isImSessionUser,
-  resolveImSessionType,
-} from "@/features/session/im-session";
-import { normalizeStatusKey } from "@/features/session/status-display";
 import { useTheme } from "@/features/theme/use-theme";
 import { apiFetch } from "@/lib/api-client";
 import { pushCcDebugEvent } from "@/lib/cc-debug-events";
 import { useI18n } from "@/lib/i18n";
-import { buildCanonicalImSessionUser } from "@/lib/im-session-key";
+import {
+  buildInitialBusyByTabId,
+  buildInitialHydratedMessagesByTabId,
+  buildInitialSessionByTabId,
+  buildInitialSettledMessageKeysByTabId,
+  buildStoredPendingChatTurns,
+  resolveInitialActiveChatTabId,
+} from "@/features/app/controllers/use-command-center-hydration";
+import { useCommandCenterBackgroundRuntimeSync } from "@/features/app/controllers/use-command-center-background-runtime-sync";
+import { useCommandCenterEnvironmentActions } from "@/features/app/controllers/use-command-center-environment-actions";
+import { useCommandCenterImSession } from "@/features/app/controllers/use-command-center-im-session";
+import { useCommandCenterReset } from "@/features/app/controllers/use-command-center-reset";
+import { useCommandCenterSessionActions } from "@/features/app/controllers/use-command-center-session-actions";
+import { resolveCommandCenterSendTarget } from "@/features/app/controllers/use-command-center-send-target";
+import { useCommandCenterSessionSelection } from "@/features/app/controllers/use-command-center-session-selection";
+import { useCommandCenterTabNavigation } from "@/features/app/controllers/use-command-center-tab-navigation";
+import { useCommandCenterTabState } from "@/features/app/controllers/use-command-center-tab-state";
+import { useCommandCenterUiState } from "@/features/app/controllers/use-command-center-ui-state";
+import {
+  applySessionFileRewrites,
+  areJsonEqual,
+  buildChatTabTitle,
+  buildInitialChatTabs,
+  buildInitialMessagesByTabId,
+  buildInitialTabMetaById,
+  createSessionForTab,
+  createTabMeta,
+  deriveUnreadTabState,
+  getLatestUserMessageKey,
+  getSettledMessageKeys,
+  isChatTabBusy,
+  resolveAgentIdFromTabId,
+  resolveImRuntimeSessionUser,
+} from "@/features/app/controllers/use-command-center-helpers";
 
-function areJsonEqual(left, right) {
-  if (left === right) {
-    return true;
-  }
-
-  try {
-    return JSON.stringify(left) === JSON.stringify(right);
-  } catch {
-    return false;
-  }
-}
-
-export function shouldReuseTabState(previous, next) {
-  return areJsonEqual(previous, next);
-}
-
-export function areEquivalentChatScrollState(previous, next) {
-  if (previous === next) {
-    return true;
-  }
-  if (!previous || !next) {
-    return false;
-  }
-
-  return Number(previous.scrollTop || 0) === Number(next.scrollTop || 0)
-    && Boolean(previous.atBottom) === Boolean(next.atBottom)
-    && String(previous.anchorNodeId || "") === String(next.anchorNodeId || "")
-    && String(previous.anchorMessageId || "") === String(next.anchorMessageId || "")
-    && Number(previous.anchorOffset || 0) === Number(next.anchorOffset || 0);
-}
-
-function createTabMeta(tab, overrides = {}): ChatTabMeta {
-  const canonicalAgentId = resolveAgentIdFromTabId(tab?.id) || tab?.agentId || "main";
-  return {
-    agentId: canonicalAgentId,
-    sessionUser: tab?.sessionUser || defaultSessionUser,
-    model: "",
-    fastMode: false,
-    thinkMode: "off",
-    sessionFiles: [],
-    sessionFileRewrites: [],
-    ...overrides,
-  };
-}
-
-function replacePathPrefix(sourcePath = "", previousPath = "", nextPath = "") {
-  const normalizedSource = String(sourcePath || "");
-  const normalizedPrevious = String(previousPath || "");
-  const normalizedNext = String(nextPath || "");
-
-  if (!normalizedSource || !normalizedPrevious || normalizedSource === normalizedPrevious) {
-    return normalizedSource === normalizedPrevious ? normalizedNext : normalizedSource;
-  }
-
-  if (!normalizedSource.startsWith(`${normalizedPrevious}/`)) {
-    return normalizedSource;
-  }
-
-  return `${normalizedNext}${normalizedSource.slice(normalizedPrevious.length)}`;
-}
-
-function renameSessionFiles(items: SessionFile[] = [], previousPath = "", nextPath = ""): SessionFile[] {
-  return (items || []).map((item) => {
-    const currentPath = String(item?.fullPath || item?.path || "").trim();
-    if (currentPath !== previousPath && !currentPath.startsWith(`${previousPath}/`)) {
-      return item;
-    }
-
-    const renamedPath = replacePathPrefix(currentPath, previousPath, nextPath);
-    return {
-      ...item,
-      path: renamedPath || item.path,
-      fullPath: renamedPath || item.fullPath,
-      name: renamedPath.split("/").filter(Boolean).pop() || item.name,
-    };
-  });
-}
-
-function applySessionFileRewrites(items: SessionFile[] = [], rewrites: SessionFileRewrite[] = []): SessionFile[] {
-  return (rewrites || []).reduce(
-    (current, rewrite) => renameSessionFiles(current, rewrite?.previousPath, rewrite?.nextPath),
-    items,
-  );
-}
-
-function mergeSessionFileRewrites(
-  previousRewrites: SessionFileRewrite[] = [],
-  nextRewrites: SessionFileRewrite[] = [],
-): SessionFileRewrite[] {
-  const merged: SessionFileRewrite[] = [...(previousRewrites || [])];
-
-  for (const rewrite of nextRewrites || []) {
-    const previousPath = String(rewrite?.previousPath || "").trim();
-    const nextPath = String(rewrite?.nextPath || "").trim();
-    if (!previousPath || !nextPath) {
-      continue;
-    }
-
-    if (merged.some((entry) => entry.previousPath === previousPath && entry.nextPath === nextPath)) {
-      continue;
-    }
-
-    merged.push({ previousPath, nextPath });
-  }
-
-  return merged;
-}
-
-function createSessionForTab(messages, tab, meta, cachedSession = null) {
-  if (cachedSession) {
-    return cachedSession;
-  }
-
-  const canonicalAgentId = resolveAgentIdFromTabId(tab?.id) || meta?.agentId || tab?.agentId || "main";
-
-  return createBaseSession(messages, {
-    agentId: canonicalAgentId,
-    selectedAgentId: canonicalAgentId,
-    sessionUser: meta?.sessionUser || tab?.sessionUser || defaultSessionUser,
-    thinkMode: meta?.thinkMode || "off",
-    model: meta?.model || "",
-    selectedModel: meta?.model || "",
-    fastMode: meta?.fastMode ? messages.sessionOverview.fastMode.on : messages.sessionOverview.fastMode.off,
-  });
-}
-
-function buildOptimisticSessionKey(agentId = "main", sessionUser = defaultSessionUser) {
-  const normalizedAgentId = String(agentId || "main").trim() || "main";
-  const normalizedSessionUser = String(sessionUser || defaultSessionUser).trim() || defaultSessionUser;
-
-  if (normalizedSessionUser.startsWith("agent:")) {
-    return normalizedSessionUser;
-  }
-
-  const canonicalImSessionUser = buildCanonicalImSessionUser(normalizedSessionUser, { agentId: normalizedAgentId });
-  if (canonicalImSessionUser) {
-    return canonicalImSessionUser.startsWith("agent:")
-      ? canonicalImSessionUser
-      : `agent:${normalizedAgentId}:${canonicalImSessionUser}`;
-  }
-
-  return `agent:${normalizedAgentId}:openai-user:${normalizedSessionUser}`;
-}
-
-function escapeRegExp(value = "") {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function isGeneratedAgentBootstrapSessionUser(sessionUser = "", agentId = "main") {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  const normalizedAgentId = String(agentId || "main")
-    .trim()
-    .replace(/[^\w:-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-:]+|[-:]+$/g, "");
-
-  if (!normalizedSessionUser || !normalizedAgentId) {
-    return false;
-  }
-
-  return new RegExp(`^command-center-${escapeRegExp(normalizedAgentId)}-\\d+$`).test(normalizedSessionUser);
-}
-
-function resolveAgentIdFromTabId(tabId = "") {
-  const normalized = String(tabId || "").trim();
-  if (!normalized.startsWith("agent:")) {
-    return "main";
-  }
-  return (normalized.slice("agent:".length).split("::")[0] || "").trim() || "main";
-}
-
-function hashSessionUser(value = "") {
-  const text = String(value || "").trim();
-  let hash = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash).toString(36) || "session";
-}
+export {
+  areEquivalentChatScrollState,
+  buildChatScrollStateSnapshot,
+  buildChatTabTitle,
+  deriveUnreadTabState,
+  getLatestSettledMessageKey,
+  getLatestUserMessageKey,
+  getSettledMessageKeys,
+  hasActiveAssistantReply,
+  isChatTabBusy,
+  planSearchedSessionTabTarget,
+  resolveImRuntimeSessionUser,
+  resolveRuntimeTabAgentId,
+  resolveViewportAnchorCandidate,
+  shouldApplyRuntimeSnapshotToTab,
+  shouldReuseTabState,
+} from "@/features/app/controllers/use-command-center-helpers";
 
 const chatScrollPersistenceDebounceMs = 180;
-const chatScrollBottomThresholdPx = 48;
-const viewportAnchorProbeInsetPx = 24;
-const viewportAnchorProbeTopOffsetPx = 8;
-
-type BuildChatTabTitleOptions = {
-  locale?: string;
-};
 
 type PersistCurrentUiOverrides = {
   activeChatTabId?: string;
@@ -258,15 +101,6 @@ type PersistCurrentUiOverrides = {
   composerSendMode?: StoredUiState["composerSendMode"];
   userLabel?: string;
   workspaceFilesOpenByConversation?: StoredUiState["workspaceFilesOpenByConversation"];
-};
-
-type PromptConversationOptions = {
-  flushDrafts?: boolean;
-  syncVisible?: boolean;
-};
-
-type SearchSessionsOptions = {
-  channel?: string;
 };
 
 type RuntimeCacheEntry = {
@@ -312,487 +146,6 @@ type FocusMessageRequest = {
   timestamp?: number;
 } | null;
 
-type TabIdentity = {
-  agentId?: string;
-  sessionUser?: string;
-};
-
-type TabMutation<T> = T | ((current: T) => T);
-
-export function buildChatTabTitle(agentId = "main", sessionUser = "", options: BuildChatTabTitleOptions = {}) {
-  const normalizedAgentId = String(agentId || "main").trim() || "main";
-  const imLabel = getImSessionDisplayName(sessionUser, { locale: options.locale, shortWecom: true });
-  if (imLabel) {
-    return `${imLabel} ${normalizedAgentId}`;
-  }
-  return normalizedAgentId;
-}
-
-export function resolveRuntimeTabAgentId({
-  requestedAgentId = "main",
-  currentAgentId = "",
-  snapshotAgentId = "",
-  sessionUser = "",
-} = {}) {
-  const normalizedRequestedAgentId = String(requestedAgentId || "main").trim() || "main";
-  const normalizedCurrentAgentId = String(currentAgentId || "").trim();
-  const normalizedSnapshotAgentId = String(snapshotAgentId || "").trim();
-  const normalizedSessionUser = String(sessionUser || "").trim();
-
-  if (isImSessionUser(normalizedSessionUser)) {
-    return normalizedCurrentAgentId || normalizedRequestedAgentId;
-  }
-
-  return normalizedSnapshotAgentId || normalizedCurrentAgentId || normalizedRequestedAgentId;
-}
-
-function resolveImChannelKey(channelOrSessionUser = "") {
-  const normalizedChannel = String(channelOrSessionUser || "").trim();
-  if (!normalizedChannel) {
-    return "";
-  }
-
-  if (normalizedChannel === "dingtalk-connector" || normalizedChannel.includes("dingtalk-connector")) {
-    return "dingtalk-connector";
-  }
-
-  const imType = resolveImSessionType(normalizedChannel);
-  if (imType === "feishu") {
-    return "feishu";
-  }
-  if (imType === "wecom") {
-    return "wecom";
-  }
-  if (imType === "weixin") {
-    return "openclaw-weixin";
-  }
-
-  return normalizedChannel;
-}
-
-function resolveConfiguredImAgentId(imChannelConfigs: ImChannelConfigMap | null, channelOrSessionUser = "", fallbackAgentId = "main") {
-  const normalizedFallbackAgentId = String(fallbackAgentId || "main").trim() || "main";
-  const channelKey = resolveImChannelKey(channelOrSessionUser);
-  if (!channelKey) {
-    return normalizedFallbackAgentId;
-  }
-
-  return String(imChannelConfigs?.[channelKey]?.defaultAgentId || "").trim() || normalizedFallbackAgentId;
-}
-
-function createSessionScopedTabId(agentId = "main", sessionUser = "") {
-  return `${createAgentTabId(agentId)}::${hashSessionUser(sessionUser)}`;
-}
-
-export function resolveImRuntimeSessionUser({
-  tabId = "",
-  agentId = "main",
-  sessionUser = "",
-} = {}) {
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  if (!isImSessionUser(normalizedSessionUser) || isImBootstrapSessionUser(normalizedSessionUser)) {
-    return normalizedSessionUser;
-  }
-
-  const normalizedAgentId = String(agentId || "main").trim() || "main";
-  const runtimeAnchorSessionUser = createImRuntimeAnchorSessionUser(normalizedSessionUser);
-  if (!runtimeAnchorSessionUser) {
-    return normalizedSessionUser;
-  }
-
-  return String(tabId || "").trim() === createSessionScopedTabId(normalizedAgentId, runtimeAnchorSessionUser)
-    ? runtimeAnchorSessionUser
-    : normalizedSessionUser;
-}
-
-export function planSearchedSessionTabTarget({
-  activeTabId = "",
-  agentId = "main",
-  chatTabs = [] as ChatTab[],
-  sessionUser = "",
-  locale = "zh",
-} = {}) {
-  const normalizedAgentId = String(agentId || "main").trim() || "main";
-  const normalizedSessionUser = String(sessionUser || "").trim();
-  const normalizedActiveTabId = String(activeTabId || "").trim();
-
-  const existingTab = (chatTabs || []).find((tab) =>
-    String(resolveAgentIdFromTabId(tab?.id) || tab?.agentId || "").trim() === normalizedAgentId
-    && String(tab?.sessionUser || "").trim() === normalizedSessionUser,
-  );
-  if (existingTab?.id) {
-    return {
-      create: false,
-      tabId: existingTab.id,
-      title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser, { locale }),
-    };
-  }
-
-  if (isImSessionUser(normalizedSessionUser)) {
-    return {
-      create: true,
-      tabId: createSessionScopedTabId(normalizedAgentId, normalizedSessionUser),
-      title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser, { locale }),
-    };
-  }
-
-  return {
-    create: false,
-    tabId: normalizedActiveTabId,
-    title: buildChatTabTitle(normalizedAgentId, normalizedSessionUser, { locale }),
-  };
-}
-
-export function isChatTabBusy({
-  tabId = "",
-  sessionUser = "",
-  activeChatTabId = "",
-  sessionStatus = "",
-  busyByTabId = {},
-  messagesByTabId = {},
-  pendingChatTurns = {},
-}: {
-  tabId?: string;
-  sessionUser?: string;
-  activeChatTabId?: string;
-  sessionStatus?: string;
-  busyByTabId?: Record<string, boolean>;
-  messagesByTabId?: Record<string, ChatMessage[]>;
-  pendingChatTurns?: ConversationPendingMap;
-} = {}) {
-  const normalizedTabId = String(tabId || "").trim();
-  const hasPendingTurn = Object.values(pendingChatTurns || {}).some((entry) => String(entry?.tabId || "").trim() === normalizedTabId);
-  if (hasPendingTurn) {
-    return true;
-  }
-
-  if (hasActiveAssistantReply(messagesByTabId?.[tabId] || [])) {
-    return true;
-  }
-
-  if (
-    tabId === activeChatTabId
-    && isImSessionUser(sessionUser)
-    && ["running", "dispatching"].includes(normalizeStatusKey(sessionStatus))
-  ) {
-    return true;
-  }
-
-  return Boolean(busyByTabId?.[tabId]);
-}
-
-function normalizeRuntimeIdentityValue(value = "") {
-  return String(value || "").trim();
-}
-
-export function hasActiveAssistantReply(messages: ChatMessage[] = []) {
-  return (messages || []).some((message) => message?.role === "assistant" && (message?.pending || message?.streaming));
-}
-
-export function shouldApplyRuntimeSnapshotToTab({
-  currentAgentId = "",
-  currentSessionUser = "",
-  requestedAgentId = "",
-  requestedSessionUser = "",
-  resolvedSessionUser = "",
-} = {}) {
-  const normalizedCurrentAgentId = normalizeRuntimeIdentityValue(currentAgentId);
-  const normalizedCurrentSessionUser = normalizeRuntimeIdentityValue(currentSessionUser);
-  const normalizedRequestedAgentId = normalizeRuntimeIdentityValue(requestedAgentId);
-  const normalizedRequestedSessionUser = normalizeRuntimeIdentityValue(requestedSessionUser);
-  const normalizedResolvedSessionUser = normalizeRuntimeIdentityValue(resolvedSessionUser);
-
-  if (
-    normalizedRequestedAgentId
-    && normalizedCurrentAgentId
-    && normalizedRequestedAgentId !== normalizedCurrentAgentId
-  ) {
-    return false;
-  }
-
-  if (!normalizedCurrentSessionUser) {
-    return true;
-  }
-
-  if (
-    normalizedResolvedSessionUser
-    && normalizedRequestedSessionUser
-    && normalizedResolvedSessionUser !== normalizedRequestedSessionUser
-  ) {
-    const allowImBootstrapResolution =
-      isImBootstrapSessionUser(normalizedRequestedSessionUser)
-      && isImSessionUser(normalizedResolvedSessionUser)
-      && !isImBootstrapSessionUser(normalizedResolvedSessionUser);
-    const allowGeneratedBootstrapFallback =
-      normalizedRequestedAgentId
-      && normalizedResolvedSessionUser === "command-center"
-      && isGeneratedAgentBootstrapSessionUser(normalizedRequestedSessionUser, normalizedRequestedAgentId);
-
-    if (!allowGeneratedBootstrapFallback && !allowImBootstrapResolution && normalizedCurrentSessionUser !== normalizedResolvedSessionUser) {
-      return false;
-    }
-  }
-
-  if (
-    normalizedCurrentSessionUser !== normalizedRequestedSessionUser
-    && normalizedCurrentSessionUser !== normalizedResolvedSessionUser
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function buildInitialChatTabs(stored) {
-  if (Array.isArray(stored?.chatTabs) && stored.chatTabs.length) {
-    return stored.chatTabs;
-  }
-
-  return [
-    {
-      id: createAgentTabId(stored?.agentId || "main"),
-      agentId: stored?.agentId || "main",
-      sessionUser: stored?.sessionUser || defaultSessionUser,
-    },
-  ];
-}
-
-function buildInitialTabMetaById(stored, chatTabs) {
-  return Object.fromEntries(
-    chatTabs.map((tab) => [
-      tab.id,
-      createTabMeta(tab, stored?.tabMetaById?.[tab.id] || {
-        agentId: tab.agentId,
-        sessionUser: tab.sessionUser,
-        model: tab.agentId === (stored?.agentId || "main") ? stored?.model || "" : "",
-        fastMode: tab.agentId === (stored?.agentId || "main") ? Boolean(stored?.fastMode) : false,
-        thinkMode: tab.agentId === (stored?.agentId || "main") ? stored?.thinkMode || "off" : "off",
-      }),
-    ]),
-  );
-}
-
-function buildInitialMessagesByTabId(stored, activeChatTabId) {
-  if (stored?.messagesByTabId && typeof stored.messagesByTabId === "object") {
-    return stored.messagesByTabId;
-  }
-
-  return {
-    [activeChatTabId]: stored?.messages || [],
-  };
-}
-
-function resolveViewportAnchorCandidateFromPoint(viewport, selector, viewportRect) {
-  if (!viewport || !selector) {
-    return null;
-  }
-
-  const ownerDocument = viewport.ownerDocument || document;
-  const elementsFromPoint = ownerDocument?.elementsFromPoint?.bind(ownerDocument);
-  if (typeof elementsFromPoint !== "function") {
-    return null;
-  }
-
-  const viewportTop = Number(viewportRect?.top) || 0;
-  const viewportLeft = Number(viewportRect?.left) || 0;
-  const viewportRight = Number.isFinite(Number(viewportRect?.right))
-    ? Number(viewportRect.right)
-    : viewportLeft + (Number(viewportRect?.width) || 0);
-  const viewportBottom = Number.isFinite(Number(viewportRect?.bottom))
-    ? Number(viewportRect.bottom)
-    : viewportTop + (Number(viewportRect?.height) || 0);
-  const viewportWidth = Math.max(0, viewportRight - viewportLeft);
-  const probeInset = Math.min(viewportAnchorProbeInsetPx, viewportWidth / 2 || 0);
-  const probeY = Math.max(
-    viewportTop + 1,
-    Math.min(viewportBottom - 2, viewportTop + viewportAnchorProbeTopOffsetPx),
-  );
-  const probeXs = [...new Set(
-    [
-      viewportLeft + viewportWidth / 2,
-      viewportLeft + probeInset,
-      viewportRight - probeInset,
-    ]
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value)),
-  )];
-
-  for (const probeX of probeXs) {
-    const stack = elementsFromPoint(probeX, probeY) || [];
-    for (const node of stack) {
-      if (!(node instanceof ownerDocument.defaultView.Element) || !viewport.contains(node)) {
-        continue;
-      }
-
-      const match = node.matches?.(selector) ? node : node.closest?.(selector);
-      if (!match || !viewport.contains(match)) {
-        continue;
-      }
-
-      const rect = match.getBoundingClientRect();
-      if (rect.bottom <= viewportTop + 1 || rect.top >= viewportBottom - 1) {
-        continue;
-      }
-
-      return { node: match, rect };
-    }
-  }
-
-  return null;
-}
-
-export function resolveViewportAnchorCandidate(viewport, selector, viewportRect) {
-  if (!viewport || !selector) {
-    return null;
-  }
-
-  const probedCandidate = resolveViewportAnchorCandidateFromPoint(viewport, selector, viewportRect);
-  if (probedCandidate) {
-    return probedCandidate;
-  }
-
-  const viewportTop = Number(viewportRect?.top) || 0;
-  const viewportBottom = Number.isFinite(Number(viewportRect?.bottom))
-    ? Number(viewportRect.bottom)
-    : viewportTop + (Number(viewportRect?.height) || 0);
-
-  for (const node of viewport.querySelectorAll(selector)) {
-    const rect = node.getBoundingClientRect();
-    if (rect.bottom <= viewportTop + 1) {
-      continue;
-    }
-    if (rect.top >= viewportBottom - 1) {
-      break;
-    }
-    return { node, rect };
-  }
-
-  return null;
-}
-
-export function buildChatScrollStateSnapshot({
-  viewport = null,
-  scrollTop = 0,
-}: {
-  viewport?: HTMLDivElement | null;
-  scrollTop?: number;
-} = {}): ChatScrollState {
-  const normalizedTop = Math.max(0, Math.round(Number(scrollTop) || 0));
-  const distanceFromBottom = viewport
-    ? Math.max(0, viewport.scrollHeight - normalizedTop - viewport.clientHeight)
-    : 0;
-  const atBottom = distanceFromBottom <= chatScrollBottomThresholdPx;
-  const nextState = {
-    scrollTop: normalizedTop,
-    ...(atBottom ? { atBottom: true } : {}),
-  };
-
-  if (!viewport || atBottom) {
-    return nextState;
-  }
-
-  const viewportRect = viewport.getBoundingClientRect?.() || { top: 0, left: 0, width: 0, height: 0 };
-  const viewportTop = Number(viewportRect.top) || 0;
-  const blockAnchorCandidate = resolveViewportAnchorCandidate(viewport, "[data-scroll-anchor-id]", viewportRect);
-  const messageAnchorCandidate = resolveViewportAnchorCandidate(viewport, "[data-message-id]", viewportRect);
-  const anchorNodeId = String(blockAnchorCandidate?.node?.getAttribute?.("data-scroll-anchor-id") || "").trim();
-  const anchorMessageId = String(messageAnchorCandidate?.node?.getAttribute?.("data-message-id") || "").trim();
-  const anchorBasisCandidate = blockAnchorCandidate || messageAnchorCandidate;
-  const anchorOffset = anchorBasisCandidate
-    ? Math.round((anchorBasisCandidate.rect?.top || 0) - viewportTop)
-    : 0;
-
-  return {
-    ...nextState,
-    ...(anchorNodeId ? { anchorNodeId } : {}),
-    ...(anchorMessageId ? { anchorMessageId, anchorOffset } : {}),
-    ...(anchorNodeId ? { anchorOffset } : {}),
-  };
-}
-
-export function getLatestUserMessageKey(messages: ChatMessage[] = []) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role !== "user") {
-      continue;
-    }
-
-    return String(message?.id || `${message?.timestamp || "user"}-${index}`);
-  }
-
-  return "";
-}
-
-export function getLatestSettledMessageKey(messages: ChatMessage[] = []) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!message || message.pending || message.streaming) {
-      continue;
-    }
-
-    const role = String(message.role || "").trim();
-    if (!role) {
-      continue;
-    }
-
-    return String(message.id || `${role}-${message.timestamp || "message"}-${index}`);
-  }
-
-  return "";
-}
-
-export function getSettledMessageKeys(messages: ChatMessage[] = []): string[] {
-  return (messages || []).reduce<string[]>((keys, message, index) => {
-    if (!message || message.pending || message.streaming) {
-      return keys;
-    }
-
-    const role = String(message.role || "").trim();
-    if (!role) {
-      return keys;
-    }
-
-    keys.push(String(message.id || `${role}-${message.timestamp || "message"}-${index}`));
-    return keys;
-  }, []);
-}
-
-export function deriveUnreadTabState({
-  activeChatTabId = "",
-  chatTabs = [] as ChatTab[],
-  settledMessageKeysByTabId = {},
-  previousSettledMessageKeysByTabId = {},
-  previousUnreadCountByTabId = {},
-} = {}) {
-  const trackedTabIds = new Set(
-    (Array.isArray(chatTabs) ? chatTabs : [])
-      .map((tab) => String(tab?.id || "").trim())
-      .filter(Boolean),
-  );
-  const nextUnreadCountByTabId: Record<string, number> = {};
-
-  for (const tabId of trackedTabIds) {
-    if (tabId === activeChatTabId) {
-      continue;
-    }
-
-    const settledMessageKeys = Array.isArray(settledMessageKeysByTabId?.[tabId]) ? settledMessageKeysByTabId[tabId] : [];
-    const previousSettledMessageKeys = Array.isArray(previousSettledMessageKeysByTabId?.[tabId]) ? previousSettledMessageKeysByTabId[tabId] : [];
-    const previousSettledMessageKeySet = new Set(previousSettledMessageKeys);
-    const previousUnreadCount = Number(previousUnreadCountByTabId?.[tabId] || 0);
-    const nextUnreadDelta = settledMessageKeys.reduce(
-      (count, key) => (previousSettledMessageKeySet.has(key) ? count : count + 1),
-      0,
-    );
-    const nextUnreadCount = previousUnreadCount + nextUnreadDelta;
-
-    if (nextUnreadCount > 0) {
-      nextUnreadCountByTabId[tabId] = nextUnreadCount;
-    }
-  }
-
-  return nextUnreadCountByTabId;
-}
 
 export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabel }: { userLabel?: string } = {}) {
   const { intlLocale, messages: i18n } = useI18n();
@@ -801,66 +154,27 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const storedPromptHistory = useMemo(() => loadStoredPromptHistory(), []);
   const rawStoredPendingChatTurns = useMemo(() => loadPendingChatTurns(), []);
   const initialChatTabs = useMemo(() => buildInitialChatTabs(stored), [stored]);
-  const initialActiveChatTabId = useMemo(() => {
-    const requested = String(stored?.activeChatTabId || "").trim();
-    return initialChatTabs.some((tab) => tab.id === requested) ? requested : initialChatTabs[0]?.id || createAgentTabId("main");
-  }, [initialChatTabs, stored]);
+  const initialActiveChatTabId = useMemo(
+    () => resolveInitialActiveChatTabId(stored, initialChatTabs) || createAgentTabId("main"),
+    [initialChatTabs, stored],
+  );
   const initialTabMetaById = useMemo(() => buildInitialTabMetaById(stored, initialChatTabs), [initialChatTabs, stored]);
   const initialMessagesByTabId = useMemo(
     () => buildInitialMessagesByTabId(stored, initialActiveChatTabId),
     [initialActiveChatTabId, stored],
   );
   const storedPendingChatTurns = useMemo(
-    () => {
-      const pruned = pruneCompletedPendingChatTurns(rawStoredPendingChatTurns, initialMessagesByTabId, initialTabMetaById);
-      const tabIdByConversationKey = Object.fromEntries(
-        Object.entries(initialTabMetaById || {}).map(([tabId, meta]) => [
-          createConversationKey(meta?.sessionUser || defaultSessionUser, meta?.agentId || "main"),
-          {
-            tabId,
-            agentId: meta?.agentId || "main",
-            sessionUser: meta?.sessionUser || defaultSessionUser,
-          },
-        ]),
-      );
-
-      return Object.fromEntries(
-        Object.entries(pruned || {}).map(([conversationKey, entry]) => {
-          const fallbackIdentity = tabIdByConversationKey[conversationKey] || null;
-          return [
-            conversationKey,
-            {
-              ...entry,
-              ...(fallbackIdentity?.tabId && !String(entry?.tabId || "").trim() ? { tabId: fallbackIdentity.tabId } : {}),
-              ...(fallbackIdentity?.agentId && !String(entry?.agentId || "").trim() ? { agentId: fallbackIdentity.agentId } : {}),
-              ...(fallbackIdentity?.sessionUser && !String(entry?.sessionUser || "").trim() ? { sessionUser: fallbackIdentity.sessionUser } : {}),
-            },
-          ];
-        }),
-      );
-    },
+    () => buildStoredPendingChatTurns(rawStoredPendingChatTurns, initialMessagesByTabId, initialTabMetaById),
     [initialMessagesByTabId, initialTabMetaById, rawStoredPendingChatTurns],
   );
   const initialHydratedMessagesByTabId = useMemo(
-    () =>
-      Object.fromEntries(
-        initialChatTabs.map((tab) => {
-          const meta = initialTabMetaById[tab.id] || createTabMeta(tab);
-          const conversationKey = createConversationKey(meta.sessionUser, meta.agentId);
-          const pendingEntry = storedPendingChatTurns[conversationKey] || null;
-          const baseMessages = initialMessagesByTabId[tab.id] || [];
-
-          return [
-            tab.id,
-            mergePendingConversation(
-              baseMessages,
-              pendingEntry,
-              i18n.chat.thinkingPlaceholder,
-              baseMessages,
-            ),
-          ];
-        }),
-      ),
+    () => buildInitialHydratedMessagesByTabId(
+      initialChatTabs,
+      initialTabMetaById,
+      initialMessagesByTabId,
+      storedPendingChatTurns,
+      i18n.chat.thinkingPlaceholder,
+    ),
     [i18n.chat.thinkingPlaceholder, initialChatTabs, initialMessagesByTabId, initialTabMetaById, storedPendingChatTurns],
   );
   const initialStoredMessagesByTabIdRef = useRef(initialHydratedMessagesByTabId);
@@ -870,35 +184,15 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const initialConversationKey = createConversationKey(initialActiveMeta.sessionUser, initialActiveMeta.agentId);
   const storedPromptDrafts = useMemo(() => stored?.promptDraftsByConversation || loadStoredPromptDrafts(), [stored]);
   const initialSessionByTabId = useMemo(
-    () =>
-      Object.fromEntries(
-        initialChatTabs.map((tab) => [
-          tab.id,
-          createSessionForTab(i18n, tab, initialTabMetaById[tab.id]),
-        ]),
-      ),
+    () => buildInitialSessionByTabId(i18n, initialChatTabs, initialTabMetaById),
     [i18n, initialChatTabs, initialTabMetaById],
   );
   const initialBusyByTabId = useMemo(
-    () =>
-      Object.fromEntries(
-        initialChatTabs.map((tab) => {
-          const meta = initialTabMetaById[tab.id] || createTabMeta(tab);
-          const conversationKey = createConversationKey(meta.sessionUser, meta.agentId);
-          const pendingEntry = storedPendingChatTurns[conversationKey];
-          return [tab.id, Boolean(pendingEntry)];
-        }),
-      ),
+    () => buildInitialBusyByTabId(initialChatTabs, initialTabMetaById, storedPendingChatTurns),
     [initialChatTabs, initialTabMetaById, storedPendingChatTurns],
   );
   const initialSettledMessageKeysByTabId = useMemo(
-    () =>
-      Object.fromEntries(
-        initialChatTabs.map((tab) => [
-          tab.id,
-          getSettledMessageKeys(initialHydratedMessagesByTabId[tab.id] || []),
-        ]),
-      ),
+    () => buildInitialSettledMessageKeysByTabId(initialChatTabs, initialHydratedMessagesByTabId),
     [initialChatTabs, initialHydratedMessagesByTabId],
   );
 
@@ -1193,167 +487,35 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     void loadImChannelConfigs();
   }, [loadImChannelConfigs]);
 
-  const setMessagesForTab = useCallback((tabId, value) => {
-    setMessagesByTabId((current) => {
-      const previous = current[tabId] || [];
-      const next = typeof value === "function" ? value(previous) : value;
-
-      if (current[tabId] === next || shouldReuseTabState(previous, next)) {
-        return current;
-      }
-
-      const updated = {
-        ...current,
-        [tabId]: next,
-      };
-      messagesByTabIdRef.current = updated;
-
-      if (activeChatTabIdRef.current === tabId) {
-        messagesRef.current = next;
-        setMessages(next);
-      }
-
-      return updated;
-    });
-  }, []);
-
-  const setMessagesSynced = useCallback((value) => {
-    if (!activeChatTabIdRef.current) {
-      return;
-    }
-    setMessagesForTab(activeChatTabIdRef.current, value);
-  }, [setMessagesForTab]);
-
-  const setBusyForTab = useCallback((tabId, value) => {
-    setBusyByTabId((current) => {
-      const previous = Boolean(current[tabId]);
-      const next = typeof value === "function" ? Boolean(value(previous)) : Boolean(value);
-      if (previous === next) {
-        return current;
-      }
-
-      pushCcDebugEvent("command-center.busy", {
-        tabId,
-        previous,
-        next,
-      });
-
-      const updated = {
-        ...current,
-        [tabId]: next,
-      };
-      busyByTabIdRef.current = updated;
-
-      if (activeChatTabIdRef.current === tabId) {
-        setBusy(next);
-      }
-
-      return updated;
-    });
-  }, []);
-
-  const updateTabSession = useCallback((tabId, value) => {
-    setSessionByTabId((current) => {
-      const tab = chatTabsRef.current.find((entry) => entry.id === tabId) || {
-        id: tabId,
-        agentId: tabMetaByIdRef.current[tabId]?.agentId || "main",
-        sessionUser: tabMetaByIdRef.current[tabId]?.sessionUser || defaultSessionUser,
-      };
-      const meta = tabMetaByIdRef.current[tabId] || createTabMeta(tab);
-      const previous = current[tabId] || createSessionForTab(i18n, tab, meta);
-      const next = typeof value === "function" ? value(previous) : value;
-
-      if (current[tabId] === next || shouldReuseTabState(previous, next)) {
-        return current;
-      }
-
-      const updated = {
-        ...current,
-        [tabId]: next,
-      };
-      sessionByTabIdRef.current = updated;
-
-      if (activeChatTabIdRef.current === tabId) {
-        setSession(next);
-      }
-
-      return updated;
-    });
-  }, [i18n]);
-
-  const updateTabMeta = useCallback((tabId, value) => {
-    setTabMetaById((current) => {
-      const tab = chatTabsRef.current.find((entry) => entry.id === tabId) || {
-        id: tabId,
-        agentId: "main",
-        sessionUser: defaultSessionUser,
-      };
-      const previous = current[tabId] || createTabMeta(tab);
-      const nextBase = typeof value === "function" ? value(previous) : { ...previous, ...value };
-      const identityChanged =
-        previous.agentId !== nextBase.agentId
-        || previous.sessionUser !== nextBase.sessionUser;
-      const next = identityChanged
-        ? {
-            ...nextBase,
-            sessionFiles: [],
-            sessionFileRewrites: [],
-          }
-        : nextBase;
-
-      if (
-        previous.agentId === next.agentId
-        && previous.sessionUser === next.sessionUser
-        && previous.model === next.model
-        && previous.fastMode === next.fastMode
-        && previous.thinkMode === next.thinkMode
-        && previous.title === next.title
-        && JSON.stringify(previous.sessionFiles || []) === JSON.stringify(next.sessionFiles || [])
-        && JSON.stringify(previous.sessionFileRewrites || []) === JSON.stringify(next.sessionFileRewrites || [])
-      ) {
-        return current;
-      }
-
-      const updated = {
-        ...current,
-        [tabId]: next,
-      };
-      tabMetaByIdRef.current = updated;
-
-      if (activeChatTabIdRef.current === tabId) {
-        setModel(next.model || "");
-        setFastMode(Boolean(next.fastMode));
-      }
-
-      return updated;
-    });
-  }, []);
-
-  const updateTabIdentity = useCallback((tabId: string, value: TabMutation<TabIdentity> = {}) => {
-    setChatTabs((current) => {
-      const currentIdentity = current.find((tab) => tab.id === tabId) || null;
-      const nextIdentity = typeof value === "function"
-        ? value({
-            agentId: currentIdentity?.agentId,
-            sessionUser: currentIdentity?.sessionUser,
-          })
-        : value;
-      const updated = current.map((tab) =>
-        tab.id === tabId
-          ? {
-              ...tab,
-              ...(nextIdentity.agentId ? { agentId: nextIdentity.agentId } : {}),
-              ...(nextIdentity.sessionUser ? { sessionUser: nextIdentity.sessionUser } : {}),
-            }
-          : tab,
-      );
-      chatTabsRef.current = updated;
-      return updated;
-    });
-  }, []);
-
-  const getMessagesForTab = useCallback((tabId) => messagesByTabIdRef.current[tabId] || [], []);
-  const isTabActive = useCallback((tabId) => activeChatTabIdRef.current === tabId, []);
+  const {
+    getMessagesForTab,
+    isTabActive,
+    setBusyForTab,
+    setMessagesForTab,
+    setMessagesSynced,
+    updateTabIdentity,
+    updateTabMeta,
+    updateTabSession,
+  } = useCommandCenterTabState({
+    i18n,
+    activeChatTabIdRef,
+    chatTabsRef,
+    tabMetaByIdRef,
+    messagesByTabIdRef,
+    sessionByTabIdRef,
+    busyByTabIdRef,
+    messagesRef,
+    setBusy,
+    setBusyByTabId,
+    setChatTabs,
+    setFastMode,
+    setMessages,
+    setMessagesByTabId,
+    setModel,
+    setSession,
+    setSessionByTabId,
+    setTabMetaById,
+  });
 
   const {
     activateStopOverride,
@@ -1438,163 +600,29 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     setSession((current) => ({ ...current, status: i18n.common.running }));
   }, [busy, i18n.common.running, session.status]);
 
-  const focusPrompt = useCallback(() => {
-    window.requestAnimationFrame(() => {
-      const textarea = promptRef.current;
-      if (!textarea) return;
-      if (document.activeElement !== textarea) {
-        textarea.focus({ preventScroll: true });
-      }
-      const end = textarea.value.length;
-      if (
-        end > 0 &&
-        (textarea.selectionStart !== end || textarea.selectionEnd !== end)
-      ) {
-        textarea.setSelectionRange(end, end);
-      }
-    });
-  }, []);
-
-  const resolvePromptMaxHeight = useCallback((textarea) => {
-    const cached = promptHeightMetricsRef.current;
-    if (cached.node === textarea && cached.maxHeight > 0) {
-      return cached.maxHeight;
-    }
-
-    const computed = window.getComputedStyle(textarea);
-    const lineHeight = Number.parseFloat(computed.lineHeight) || 20;
-    const paddingTop = Number.parseFloat(computed.paddingTop) || 0;
-    const paddingBottom = Number.parseFloat(computed.paddingBottom) || 0;
-    const borderTop = Number.parseFloat(computed.borderTopWidth) || 0;
-    const borderBottom = Number.parseFloat(computed.borderBottomWidth) || 0;
-    const maxHeight = lineHeight * maxPromptRows + paddingTop + paddingBottom + borderTop + borderBottom;
-
-    promptHeightMetricsRef.current = { node: textarea, maxHeight };
-    return maxHeight;
-  }, []);
-
-  const adjustPromptHeight = useCallback(() => {
-    const textarea = promptRef.current;
-    if (!textarea) return;
-    if (!String(textarea.value || "")) {
-      textarea.style.height = "";
-      textarea.style.overflowY = "hidden";
-      return;
-    }
-    const maxHeight = resolvePromptMaxHeight(textarea);
-
-    textarea.style.height = "auto";
-    const scrollHeight = textarea.scrollHeight;
-    textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
-    textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [resolvePromptMaxHeight]);
-
-  const schedulePromptHeightAdjustment = useCallback(() => {
-    window.cancelAnimationFrame(promptHeightFrameRef.current);
-    promptHeightFrameRef.current = window.requestAnimationFrame(() => {
-      promptHeightFrameRef.current = 0;
-      adjustPromptHeight();
-    });
-  }, [adjustPromptHeight]);
-
-  const flushPromptDraftsState = useCallback(() => {
-    window.clearTimeout(promptDraftFlushTimeoutRef.current);
-    promptDraftFlushTimeoutRef.current = 0;
-    setPromptDraftsByConversation((current) => (
-      current === promptDraftsByConversationRef.current ? current : promptDraftsByConversationRef.current
-    ));
-  }, []);
-
-  const schedulePromptDraftsStateFlush = useCallback((delayMs = 180) => {
-    window.clearTimeout(promptDraftFlushTimeoutRef.current);
-    promptDraftFlushTimeoutRef.current = window.setTimeout(() => {
-      flushPromptDraftsState();
-    }, delayMs);
-  }, [flushPromptDraftsState]);
-
-  const setPromptForConversation = useCallback((value: string | ((current: string) => string), conversationKey = activeConversationKey, options: PromptConversationOptions = {}) => {
-    const { flushDrafts = false, syncVisible = true } = options;
-    const normalizedConversationKey = String(conversationKey || activeConversationKey || "").trim();
-    const currentPromptValue =
-      normalizedConversationKey === activeConversationKey
-        ? promptValueRef.current
-        : (promptDraftsByConversationRef.current[normalizedConversationKey] || "");
-    const next = typeof value === "function" ? value(currentPromptValue) : value;
-    const normalized = typeof next === "string" ? next : String(next || "");
-
-    if (normalizedConversationKey === activeConversationKey) {
-      promptValueRef.current = normalized;
-      if (syncVisible) {
-        setPrompt((current) => (current === normalized ? current : normalized));
-        if (prompt === normalized) {
-          setPromptSyncVersion((current) => current + 1);
-        }
-      }
-    }
-
-    const drafts = promptDraftsByConversationRef.current;
-    let nextDrafts = drafts;
-
-    if (!normalized) {
-      if (Object.prototype.hasOwnProperty.call(drafts, normalizedConversationKey)) {
-        nextDrafts = { ...drafts };
-        delete nextDrafts[normalizedConversationKey];
-      }
-    } else if (drafts[normalizedConversationKey] !== normalized) {
-      nextDrafts = {
-        ...drafts,
-        [normalizedConversationKey]: normalized,
-      };
-    }
-
-    if (nextDrafts !== drafts) {
-      promptDraftsByConversationRef.current = nextDrafts;
-      if (flushDrafts) {
-        flushPromptDraftsState();
-      } else {
-        schedulePromptDraftsStateFlush();
-      }
-    }
-
-    return normalized;
-  }, [activeConversationKey, flushPromptDraftsState, prompt, schedulePromptDraftsStateFlush]);
-
-  const persistConversationScrollTop = useCallback((conversationKey, scrollTop) => {
-    const normalizedKey = String(conversationKey || "").trim();
-    if (!normalizedKey) {
-      return;
-    }
-
-    const viewport = messageViewportRef.current;
-    const nextState = buildChatScrollStateSnapshot({ viewport, scrollTop });
-
-    const current = chatScrollTopByConversationRef.current;
-    if (areEquivalentChatScrollState(current[normalizedKey] || null, nextState)) {
-      return;
-    }
-
-    const next = {
-      ...current,
-      [normalizedKey]: nextState,
-    };
-    chatScrollTopByConversationRef.current = next;
-    schedulePersistedChatScrollTops();
-  }, [schedulePersistedChatScrollTops]);
-
-  const flushVisibleConversationScrollTop = useCallback(() => {
-    const viewport = messageViewportRef.current;
-    const currentSessionUser = String(sessionStateRef.current.sessionUser || "").trim();
-    const currentAgentId = String(sessionStateRef.current.agentId || "main").trim() || "main";
-
-    if (!viewport || !currentSessionUser) {
-      return;
-    }
-
-    persistConversationScrollTop(
-      createConversationKey(currentSessionUser, currentAgentId),
-      viewport.scrollTop,
-    );
-  }, [persistConversationScrollTop]);
+  const {
+    focusPrompt,
+    flushVisibleConversationScrollTop,
+    persistConversationScrollTop,
+    schedulePromptHeightAdjustment,
+    setPromptForConversation,
+  } = useCommandCenterUiState({
+    activeConversationKey,
+    prompt,
+    promptRef,
+    promptValueRef,
+    promptDraftFlushTimeoutRef,
+    promptDraftsByConversationRef,
+    promptHeightMetricsRef,
+    promptHeightFrameRef,
+    messageViewportRef,
+    chatScrollTopByConversationRef,
+    sessionStateRef,
+    setPrompt,
+    setPromptDraftsByConversation,
+    setPromptSyncVersion,
+    schedulePersistedChatScrollTops,
+  });
 
   useEffect(() => {
     activeChatTabIdRef.current = activeChatTabId;
@@ -1692,7 +720,8 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
 
   useEffect(() => {
     schedulePromptHeightAdjustment();
-    return () => window.cancelAnimationFrame(promptHeightFrameRef.current);
+    const scheduledFrame = promptHeightFrameRef.current;
+    return () => window.cancelAnimationFrame(scheduledFrame);
   }, [prompt, schedulePromptHeightAdjustment]);
 
   useEffect(() => () => {
@@ -1934,369 +963,37 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     });
   }, [activeChatTabId, agents, artifacts, availableAgents, availableModels, files, peeks, runtimeOverviewReady, snapshots, taskRelationships, taskTimeline]);
 
-  useEffect(() => {
-    const backgroundTabs = chatTabs.filter((tab) => tab.id !== activeChatTabId && isImSessionUser(tab.sessionUser));
-    if (!backgroundTabs.length) {
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const syncTabRuntime = async (tab) => {
-      const tabId = String(tab?.id || "").trim();
-      const sessionUser = String(tab?.sessionUser || "").trim();
-      const agentId = String(resolveAgentIdFromTabId(tabId) || tab?.agentId || "main").trim() || "main";
-      const runtimeSessionUser = resolveImRuntimeSessionUser({
-        tabId,
-        agentId,
-        sessionUser,
-      });
-
-      if (!tabId || !sessionUser) {
-        return;
-      }
-
-      if (backgroundRuntimeAbortByTabIdRef.current[tabId]) {
-        return;
-      }
-
-      const requestVersion = (runtimeRequestByTabIdRef.current[tabId] || 0) + 1;
-      runtimeRequestByTabIdRef.current = {
-        ...runtimeRequestByTabIdRef.current,
-        [tabId]: requestVersion,
-      };
-      const controller = new AbortController();
-      backgroundRuntimeAbortByTabIdRef.current = {
-        ...backgroundRuntimeAbortByTabIdRef.current,
-        [tabId]: controller,
-      };
-
-      try {
-        const params = new URLSearchParams({
-          sessionUser: runtimeSessionUser || sessionUser,
-          agentId,
-        });
-        const response = await apiFetch(`/api/runtime?${params.toString()}`, {
-          signal: controller.signal,
-        });
-        const payload = await response.json();
-        if (
-          !response.ok
-          || !payload.ok
-          || cancelled
-          || controller.signal.aborted
-          || runtimeRequestByTabIdRef.current[tabId] !== requestVersion
-        ) {
-          return;
-        }
-
-        const snapshotSession = payload.session || {};
-        const resolvedSessionUser = String(snapshotSession.sessionUser || "").trim();
-        const normalizedStatus = normalizeStatusKey(snapshotSession.status);
-        const nextFastMode =
-          snapshotSession.fastMode === i18n.sessionOverview.fastMode.on
-          || snapshotSession.fastMode === "开启"
-          || snapshotSession.fastMode === true
-          || payload.fastMode === true;
-        const shouldApplySnapshot = shouldApplyRuntimeSnapshotToTab({
-          currentAgentId: resolveAgentIdFromTabId(tabId) || tab?.agentId || agentId,
-          currentSessionUser: tab?.sessionUser || sessionUser,
-          requestedAgentId: agentId,
-          requestedSessionUser: sessionUser,
-          resolvedSessionUser,
-        });
-
-        if (!shouldApplySnapshot) {
-          return;
-        }
-
-        setRuntimeCacheByTabId((current) => {
-          const previous: Partial<RuntimeCacheEntry> = current[tabId] || {};
-          const nextCache = {
-            agents: payload.agents || [],
-            artifacts: payload.artifacts || [],
-            availableAgents: snapshotSession.availableAgents || payload.availableAgents || [],
-            availableModels: snapshotSession.availableModels || payload.availableModels || [],
-            files: mergeRuntimeFiles(previous.files || [], payload.files || []),
-            overviewReady: true,
-            peeks: payload.peeks || { workspace: null, terminal: null, browser: null, environment: null },
-            snapshots: payload.snapshots || [],
-            taskRelationships: payload.taskRelationships || [],
-            taskTimeline: payload.taskTimeline || [],
-          };
-
-          if (shouldReuseTabState(previous, nextCache)) {
-            return current;
-          }
-
-          return {
-            ...current,
-            [tabId]: nextCache,
-          };
-        });
-
-        const currentTabMeta = tabMetaByIdRef.current[tabId] || createTabMeta({ id: tabId, agentId, sessionUser });
-
-        if (Array.isArray(payload.conversation)) {
-          const currentMessages = messagesByTabIdRef.current[tabId] || [];
-          const nextTabSessionUser = resolvedSessionUser || sessionUser;
-          const nextTabAgentId = resolveRuntimeTabAgentId({
-            requestedAgentId: agentId,
-            currentAgentId: currentTabMeta.agentId,
-            snapshotAgentId: snapshotSession.agentId,
-            sessionUser: nextTabSessionUser,
-          });
-          const nextConversationKey = createConversationKey(
-            nextTabSessionUser,
-            nextTabAgentId,
-          );
-          const nextConversationWithAttachments = mergeConversationAttachments(payload.conversation, currentMessages);
-          const baseMergedConversation = mergeConversationIdentity(
-            nextConversationWithAttachments,
-            currentMessages,
-          );
-          const pendingEntry = resolveRuntimePendingEntry({
-            agentId: nextTabAgentId,
-            conversationKey: nextConversationKey,
-            conversationMessages: baseMergedConversation,
-            localMessages: currentMessages,
-            pendingChatTurns: pendingChatTurnsRef.current,
-            sessionStatus: snapshotSession.status,
-            sessionUser: nextTabSessionUser,
-          });
-          const mergedConversation = pendingEntry
-            ? mergeConversationIdentity(
-                nextConversationWithAttachments,
-                currentMessages,
-                pendingEntry,
-              )
-            : baseMergedConversation;
-          const snapshotHasAssistantReply = pendingEntry
-            ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
-            : false;
-          const mergedBackgroundConversation = pendingEntry && !snapshotHasAssistantReply
-            ? mergePendingConversation(
-                mergedConversation,
-                pendingEntry,
-                i18n.chat.thinkingPlaceholder,
-                currentMessages,
-              )
-            : mergeStaleLocalConversationTail(
-                mergedConversation,
-                currentMessages.filter((message) => !message?.pending),
-              );
-
-          setMessagesForTab(tabId, mergedBackgroundConversation);
-        }
-
-        const nextTabSessionUser = resolvedSessionUser || currentTabMeta.sessionUser || sessionUser;
-        const nextTabAgentId = resolveRuntimeTabAgentId({
-          requestedAgentId: agentId,
-          currentAgentId: currentTabMeta.agentId,
-          snapshotAgentId: snapshotSession.agentId,
-          sessionUser: nextTabSessionUser,
-        });
-
-        updateTabMeta(tabId, (current) => ({
-          ...current,
-          agentId: nextTabAgentId,
-          sessionUser: nextTabSessionUser,
-          model: snapshotSession.selectedModel || payload.model || current.model || "",
-          fastMode: nextFastMode,
-          thinkMode: snapshotSession.thinkMode || current.thinkMode || "off",
-          title: buildChatTabTitle(nextTabAgentId, nextTabSessionUser, { locale: intlLocale }),
-        }));
-
-        updateTabSession(tabId, (current) => ({
-          ...current,
-          ...snapshotSession,
-          agentId: nextTabAgentId,
-          selectedAgentId: nextTabAgentId,
-          sessionUser: nextTabSessionUser,
-          mode: snapshotSession.mode || current.mode,
-        }));
-
-        if (resolvedSessionUser && resolvedSessionUser !== sessionUser) {
-          updateTabIdentity(tabId, {
-            agentId: nextTabAgentId,
-            sessionUser: resolvedSessionUser,
-          });
-        }
-
-        const currentMessages = messagesByTabIdRef.current[tabId] || [];
-        const nextConversationKey = createConversationKey(
-          nextTabSessionUser,
-          nextTabAgentId,
-        );
-        const hasTrackedPendingTurn = Boolean(
-          resolveRuntimePendingEntry({
-            agentId: nextTabAgentId,
-            conversationKey: nextConversationKey,
-            localMessages: currentMessages,
-            pendingChatTurns: pendingChatTurnsRef.current,
-            sessionStatus: snapshotSession.status,
-            sessionUser: nextTabSessionUser,
-          }),
-        );
-        const hasLocalActiveAssistantReply = currentMessages.some((message) => message?.role === "assistant" && (message?.pending || message?.streaming));
-        setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching" || hasTrackedPendingTurn || hasLocalActiveAssistantReply);
-      } catch (error) {
-        if (controller.signal.aborted || error?.name === "AbortError") {
-          return;
-        }
-        // Keep background sync best-effort so a stale DingTalk tab never interrupts the active session.
-      } finally {
-        if (backgroundRuntimeAbortByTabIdRef.current[tabId] === controller) {
-          const nextAbortControllers = { ...backgroundRuntimeAbortByTabIdRef.current };
-          delete nextAbortControllers[tabId];
-          backgroundRuntimeAbortByTabIdRef.current = nextAbortControllers;
-        }
-      }
-    };
-
-    const syncAllBackgroundTabs = () => {
-      backgroundTabs.forEach((tab) => {
-        syncTabRuntime(tab);
-      });
-    };
-
-    syncAllBackgroundTabs();
-    const intervalId = window.setInterval(syncAllBackgroundTabs, 4000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      for (const controller of Object.values(backgroundRuntimeAbortByTabIdRef.current)) {
-        controller?.abort?.();
-      }
-      backgroundRuntimeAbortByTabIdRef.current = {};
-    };
-  }, [
+  useCommandCenterBackgroundRuntimeSync({
     activeChatTabId,
+    backgroundRuntimeAbortByTabIdRef,
     chatTabs,
-    i18n.chat.thinkingPlaceholder,
-    i18n.sessionOverview.fastMode.on,
+    i18nFastModeOn: i18n.sessionOverview.fastMode.on,
+    i18nThinkingPlaceholder: i18n.chat.thinkingPlaceholder,
+    intlLocale,
+    messagesByTabIdRef,
+    pendingChatTurnsRef,
+    runtimeRequestByTabIdRef,
     setBusyForTab,
     setMessagesForTab,
+    setRuntimeCacheByTabId,
+    tabMetaByIdRef,
     updateTabIdentity,
     updateTabMeta,
     updateTabSession,
+  });
+
+  const {
+    resolveImSessionUserForSend,
+  } = useCommandCenterImSession({
+    activeChatTabIdRef,
     intlLocale,
-  ]);
-
-  const syncResolvedImTabIdentity = useCallback((tabId, agentId, previousSessionUser, nextSessionUser) => {
-    const normalizedTabId = String(tabId || "").trim();
-    const normalizedAgentId = String(agentId || "main").trim() || "main";
-    const normalizedPreviousSessionUser = String(previousSessionUser || "").trim();
-    const normalizedNextSessionUser = String(nextSessionUser || "").trim();
-
-    if (
-      !normalizedTabId
-      || !normalizedNextSessionUser
-      || normalizedNextSessionUser === normalizedPreviousSessionUser
-    ) {
-      return;
-    }
-
-    updateTabIdentity(normalizedTabId, {
-      agentId: normalizedAgentId,
-      sessionUser: normalizedNextSessionUser,
-    });
-    updateTabMeta(normalizedTabId, {
-      agentId: normalizedAgentId,
-      sessionUser: normalizedNextSessionUser,
-      title: buildChatTabTitle(normalizedAgentId, normalizedNextSessionUser, { locale: intlLocale }),
-    });
-    updateTabSession(normalizedTabId, (current) => ({
-      ...current,
-      agentId: normalizedAgentId,
-      selectedAgentId: normalizedAgentId,
-      sessionUser: normalizedNextSessionUser,
-    }));
-
-    if (normalizedTabId === activeChatTabIdRef.current) {
-      sessionStateRef.current = {
-        ...sessionStateRef.current,
-        agentId: normalizedAgentId,
-        sessionUser: normalizedNextSessionUser,
-      };
-      setActiveTarget({
-        agentId: normalizedAgentId,
-        sessionUser: normalizedNextSessionUser,
-      });
-    }
-  }, [intlLocale, setActiveTarget, updateTabIdentity, updateTabMeta, updateTabSession]);
-
-  const resolveImSessionUserForSend = useCallback(async ({ agentId = "main", sessionUser = "", tabId = "" } = {}) => {
-    const normalizedAgentId = String(agentId || "main").trim() || "main";
-    const normalizedSessionUser = String(sessionUser || "").trim();
-    const normalizedTabId = String(tabId || "").trim();
-
-    if (!isImBootstrapSessionUser(normalizedSessionUser)) {
-      return normalizedSessionUser;
-    }
-
-    let resolvedSessionUser = normalizedSessionUser;
-
-    try {
-      const runtimePayload = await loadRuntime(normalizedSessionUser, { agentId: normalizedAgentId });
-      const runtimeResolvedSessionUser = String(runtimePayload?.session?.sessionUser || "").trim();
-      if (
-        runtimeResolvedSessionUser
-        && runtimeResolvedSessionUser !== normalizedSessionUser
-        && isImSessionUser(runtimeResolvedSessionUser)
-        && !isImBootstrapSessionUser(runtimeResolvedSessionUser)
-      ) {
-        resolvedSessionUser = runtimeResolvedSessionUser;
-      }
-    } catch {
-      // Fall through to the session search fallback.
-    }
-
-    if (resolvedSessionUser === normalizedSessionUser) {
-      const imType = resolveImSessionType(normalizedSessionUser);
-      const channel = imType === "dingtalk"
-        ? "dingtalk-connector"
-        : imType === "weixin"
-          ? "openclaw-weixin"
-          : imType;
-
-      if (channel) {
-        try {
-          const params = new URLSearchParams({
-            agentId: normalizedAgentId,
-            channel,
-            limit: "12",
-          });
-          const response = await apiFetch(`/api/session/search?${params.toString()}`);
-          const data = await response.json();
-          if (response.ok && data.ok) {
-            const matchedSession = (Array.isArray(data.sessions) ? data.sessions : []).find((item) => {
-              const candidateSessionUser = String(item?.sessionUser || "").trim();
-              return (
-                candidateSessionUser
-                && String(item?.agentId || normalizedAgentId).trim() === normalizedAgentId
-                && resolveImSessionType(candidateSessionUser) === imType
-                && !isImBootstrapSessionUser(candidateSessionUser)
-              );
-            });
-
-            if (matchedSession?.sessionUser) {
-              resolvedSessionUser = String(matchedSession.sessionUser).trim();
-            }
-          }
-        } catch {
-          // Keep the bootstrap value and let the chat request surface the error if resolution still fails.
-        }
-      }
-    }
-
-    if (resolvedSessionUser !== normalizedSessionUser) {
-      syncResolvedImTabIdentity(normalizedTabId, normalizedAgentId, normalizedSessionUser, resolvedSessionUser);
-    }
-
-    return resolvedSessionUser;
-  }, [loadRuntime, syncResolvedImTabIdentity]);
+    loadRuntime,
+    sessionStateRef,
+    setActiveTarget,
+    updateTabIdentity,
+    updateTabMeta,
+    updateTabSession,
+  });
 
   const dispatchSessionCommand = async (content, {
     attachments = [],
@@ -2308,49 +1005,30 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     }
 
     shouldAutoScrollRef.current = true;
-    const targetTabId = activeChatTab?.id || activeChatTabId || activeChatTabIdRef.current;
-    const targetTab = chatTabsRef.current.find((tab) => tab.id === targetTabId) || activeChatTab;
-    const targetMeta = (targetTabId && tabMetaByIdRef.current[targetTabId]) || null;
-    const targetSession = (targetTabId && sessionByTabIdRef.current[targetTabId]) || null;
-    const isActiveTargetTab = targetTabId === activeChatTabIdRef.current;
-    const targetAgentId =
-      targetMeta?.agentId
-      || targetSession?.agentId
-      || targetTab?.agentId
-      || (isActiveTargetTab ? session.agentId : "")
-      || sessionStateRef.current.agentId;
-    const rawTargetSessionUser =
-      targetMeta?.sessionUser
-      || targetSession?.sessionUser
-      || targetTab?.sessionUser
-      || (isActiveTargetTab ? session.sessionUser : "")
-      || sessionStateRef.current.sessionUser;
-    const targetSessionUser =
-      targetAgentId && targetAgentId !== "main" && rawTargetSessionUser === defaultSessionUser
-        ? createAgentSessionUser(targetAgentId)
-        : rawTargetSessionUser;
+    const {
+      targetAgentId,
+      targetFastMode,
+      targetModel,
+      targetSessionUser,
+      targetTabId,
+      targetThinkMode,
+    } = resolveCommandCenterSendTarget({
+      activeChatTab,
+      activeChatTabId,
+      activeChatTabIdRef,
+      chatTabsRef,
+      fastMode,
+      model,
+      session,
+      sessionByTabIdRef,
+      sessionStateRef,
+      tabMetaByIdRef,
+    });
     const resolvedTargetSessionUser = await resolveImSessionUserForSend({
       agentId: targetAgentId,
       sessionUser: targetSessionUser,
       tabId: targetTabId,
     });
-    const targetModel =
-      targetMeta?.model
-      || targetSession?.selectedModel
-      || targetSession?.model
-      || (isActiveTargetTab ? model : "")
-      || sessionStateRef.current.model;
-    const targetFastMode =
-      typeof targetMeta?.fastMode === "boolean"
-        ? targetMeta.fastMode
-        : isActiveTargetTab
-          ? fastMode
-          : sessionStateRef.current.fastMode;
-    const targetThinkMode =
-      targetMeta?.thinkMode
-      || targetSession?.thinkMode
-      || (isActiveTargetTab ? session.thinkMode || "off" : "")
-      || sessionStateRef.current.thinkMode;
 
     const entryTimestamp = Date.now();
     const entryId = `${entryTimestamp}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2376,31 +1054,29 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     const attachments = composerAttachments;
     if (!content && !attachments.length) return;
     shouldAutoScrollRef.current = true;
-    const targetTabId = activeChatTab?.id || activeChatTabId || activeChatTabIdRef.current;
+    const {
+      targetAgentId,
+      targetFastMode,
+      targetModel,
+      targetSessionUser,
+      targetTabId,
+      targetThinkMode,
+    } = resolveCommandCenterSendTarget({
+      activeChatTab,
+      activeChatTabId,
+      activeChatTabIdRef,
+      chatTabsRef,
+      fastMode,
+      model,
+      session,
+      sessionByTabIdRef,
+      sessionStateRef,
+      tabMetaByIdRef,
+    });
     const normalizedTargetTabId = String(targetTabId || "").trim();
     if (normalizedTargetTabId && pendingSendPreparationByTabRef.current[normalizedTargetTabId]) {
       return;
     }
-    const targetTab = chatTabsRef.current.find((tab) => tab.id === targetTabId) || activeChatTab;
-    const targetMeta = (targetTabId && tabMetaByIdRef.current[targetTabId]) || null;
-    const targetSession = (targetTabId && sessionByTabIdRef.current[targetTabId]) || null;
-    const isActiveTargetTab = targetTabId === activeChatTabIdRef.current;
-    const targetAgentId =
-      targetMeta?.agentId
-      || targetSession?.agentId
-      || targetTab?.agentId
-      || (isActiveTargetTab ? session.agentId : "")
-      || sessionStateRef.current.agentId;
-    const rawTargetSessionUser =
-      targetMeta?.sessionUser
-      || targetSession?.sessionUser
-      || targetTab?.sessionUser
-      || (isActiveTargetTab ? session.sessionUser : "")
-      || sessionStateRef.current.sessionUser;
-    const targetSessionUser =
-      targetAgentId && targetAgentId !== "main" && rawTargetSessionUser === defaultSessionUser
-        ? createAgentSessionUser(targetAgentId)
-        : rawTargetSessionUser;
     if (normalizedTargetTabId) {
       pendingSendPreparationByTabRef.current = {
         ...pendingSendPreparationByTabRef.current,
@@ -2429,23 +1105,6 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         pendingSendPreparationByTabRef.current = nextPendingPreparation;
       }
     }
-    const targetModel =
-      targetMeta?.model
-      || targetSession?.selectedModel
-      || targetSession?.model
-      || (isActiveTargetTab ? model : "")
-      || sessionStateRef.current.model;
-    const targetFastMode =
-      typeof targetMeta?.fastMode === "boolean"
-        ? targetMeta.fastMode
-        : isActiveTargetTab
-          ? fastMode
-          : sessionStateRef.current.fastMode;
-    const targetThinkMode =
-      targetMeta?.thinkMode
-      || targetSession?.thinkMode
-      || (isActiveTargetTab ? session.thinkMode || "off" : "")
-      || sessionStateRef.current.thinkMode;
 
     const entryTimestamp = Date.now();
     const entryId = `${entryTimestamp}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2691,746 +1350,130 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     return true;
   }, [activeConversationKey, editQueuedEntry, setComposerAttachments, setPromptForConversation, setPromptHistoryNavigation]);
 
-  const handleReset = async () => {
-    const currentSessionUser = String(sessionStateRef.current.sessionUser || "").trim();
-    const currentMode = String(sessionStateRef.current.mode || session.mode || "").trim();
-    if (isImSessionUser(currentSessionUser) && currentMode === "openclaw") {
-      setPromptHistoryNavigation(null);
-      setComposerAttachments([]);
-      await dispatchSessionCommand("/reset", {
-        suppressPendingPlaceholder: true,
-      });
-      focusPrompt();
-      return;
-    }
-
-    const nextSessionUser = isImSessionUser(currentSessionUser)
-      ? createResetImSessionUser(currentSessionUser)
-      : createResetSessionUser(sessionStateRef.current.agentId);
-    const nextAgentId = sessionStateRef.current.agentId;
-    const nextModel = sessionStateRef.current.model;
-    const previousConversationKey = createConversationKey(currentSessionUser, nextAgentId);
-    const activeTabId = activeChatTabIdRef.current;
-    const nextActiveTabId = activeTabId && isImSessionUser(currentSessionUser)
-      ? createSessionScopedTabId(nextAgentId, nextSessionUser)
-      : activeTabId;
-    const nextChatTabs = activeTabId
-      ? chatTabsRef.current.map((tab) => (
-          tab.id === activeTabId
-            ? { ...tab, id: nextActiveTabId || tab.id, sessionUser: nextSessionUser }
-            : tab
-        ))
-      : chatTabsRef.current;
-    const previousTabMeta = activeTabId
-      ? (tabMetaByIdRef.current[activeTabId] || createTabMeta(chatTabsRef.current.find((tab) => tab.id === activeTabId) || {
-          id: nextActiveTabId || activeTabId,
-          agentId: nextAgentId,
-          sessionUser: nextSessionUser,
-        }))
-      : null;
-    const nextTabMetaById = activeTabId && nextActiveTabId
-      ? {
-          ...Object.fromEntries(
-            Object.entries(tabMetaByIdRef.current).filter(([tabId]) => tabId !== activeTabId),
-          ),
-          [nextActiveTabId]: {
-            ...previousTabMeta,
-            agentId: nextAgentId,
-            sessionUser: nextSessionUser,
-            model: nextModel,
-          },
-        }
-      : tabMetaByIdRef.current;
-    const nextMessagesByTabId = nextActiveTabId
-      ? {
-          ...Object.fromEntries(
-            Object.entries(messagesByTabIdRef.current).filter(([tabId]) => tabId !== activeTabId),
-          ),
-          [nextActiveTabId]: [],
-        }
-      : messagesByTabIdRef.current;
-
-    setMessagesSynced([]);
-    setQueuedMessages((current) => current.filter((item) => item.tabId !== activeChatTabIdRef.current));
-    setComposerAttachments([]);
-    setPendingChatTurns((current) => {
-      if (!current[previousConversationKey]) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[previousConversationKey];
-      return next;
-    });
-    clearSnapshotData();
-    if (activeTabId && nextActiveTabId && nextActiveTabId !== activeTabId) {
-      setChatTabs((current) => {
-        const updated = current.map((tab) => (
-          tab.id === activeTabId
-            ? { ...tab, id: nextActiveTabId, sessionUser: nextSessionUser }
-            : tab
-        ));
-        chatTabsRef.current = updated;
-        return updated;
-      });
-      setTabMetaById((current) => {
-        const next = {
-          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
-          [nextActiveTabId]: {
-            ...(current[activeTabId] || previousTabMeta || {}),
-            agentId: nextAgentId,
-            sessionUser: nextSessionUser,
-            model: nextModel,
-          },
-        };
-        tabMetaByIdRef.current = next;
-        return next;
-      });
-      setMessagesByTabId((current) => {
-        const next = {
-          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
-          [nextActiveTabId]: [],
-        };
-        messagesByTabIdRef.current = next;
-        return next;
-      });
-      setSessionByTabId((current) => {
-        const currentSession = current[activeTabId];
-        const next = {
-          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
-          [nextActiveTabId]: currentSession
-            ? {
-                ...currentSession,
-                agentId: nextAgentId,
-                selectedAgentId: nextAgentId,
-                sessionUser: nextSessionUser,
-                model: nextModel || currentSession.model,
-                selectedModel: nextModel || currentSession.selectedModel,
-              }
-            : createSessionForTab(i18n, { id: nextActiveTabId, agentId: nextAgentId, sessionUser: nextSessionUser }, {
-                agentId: nextAgentId,
-                sessionUser: nextSessionUser,
-                model: nextModel,
-                fastMode: Boolean(sessionStateRef.current.fastMode),
-                thinkMode: sessionStateRef.current.thinkMode || "off",
-              }),
-        };
-        sessionByTabIdRef.current = next;
-        return next;
-      });
-      setBusyByTabId((current) => {
-        const next = {
-          ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
-          [nextActiveTabId]: false,
-        };
-        busyByTabIdRef.current = next;
-        return next;
-      });
-      setRuntimeCacheByTabId((current) => {
-        const next = { ...current };
-        delete next[activeTabId];
-        delete next[nextActiveTabId];
-        runtimeCacheByTabIdRef.current = next;
-        return next;
-      });
-      activeChatTabIdRef.current = nextActiveTabId;
-      setActiveChatTabId(nextActiveTabId);
-    } else if (activeTabId) {
-      setRuntimeCacheByTabId((current) => {
-        if (!current[activeTabId]) {
-          return current;
-        }
-        const next = { ...current };
-        delete next[activeTabId];
-        runtimeCacheByTabIdRef.current = next;
-        return next;
-      });
-    }
-    sessionStateRef.current = {
-      ...sessionStateRef.current,
-      sessionUser: nextSessionUser,
-      agentId: nextAgentId,
-      model: nextModel,
-    };
-    if (activeTabId && nextActiveTabId === activeTabId) {
-      updateTabIdentity(activeTabId, { sessionUser: nextSessionUser });
-      updateTabMeta(activeTabId, {
-        agentId: nextAgentId,
-        sessionUser: nextSessionUser,
-        model: nextModel,
-      });
-      updateTabSession(activeTabId, (current) => ({
-        ...current,
-        agentId: nextAgentId,
-        selectedAgentId: nextAgentId,
-        sessionUser: nextSessionUser,
-        model: nextModel || current.model,
-        selectedModel: nextModel || current.selectedModel,
-      }));
-    }
-    setActiveTarget({
-      sessionUser: nextSessionUser,
-      agentId: nextAgentId,
-    });
-    setSession((current) =>
-      createBaseSession(i18n, {
-        ...current,
-        model: nextModel || current.model,
-        selectedModel: nextModel || current.selectedModel,
-        agentId: nextAgentId || current.agentId,
-        selectedAgentId: nextAgentId || current.selectedAgentId,
-        sessionUser: nextSessionUser,
-        contextMax: current.contextMax || 16000,
-        updatedLabel: i18n.common.justReset,
-      }),
-    );
-    setPromptForConversation("");
-    focusPrompt();
-    persistUiStateSnapshot({
-      activeChatTabId: nextActiveTabId || "",
-      activeTab: activeTabRef.current,
-      agentId: nextAgentId,
-      chatFontSize: chatFontSizeRef.current,
-      chatTabs: nextChatTabs,
-      composerSendMode: composerSendModeRef.current,
-      userLabel: userLabelRef.current,
-      dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
-      fastMode: Boolean(sessionStateRef.current.fastMode),
-      inspectorPanelWidth: inspectorPanelWidthRef.current,
-      messages: nextActiveTabId ? [] : messagesRef.current,
-      messagesByTabId: nextMessagesByTabId,
-      model: nextModel,
-      pendingChatTurns: Object.fromEntries(
-        Object.entries(pendingChatTurnsRef.current || {}).filter(([key]) => key !== previousConversationKey),
-      ),
-      promptDraftsByConversation: promptDraftsByConversationRef.current,
-      workspaceFilesOpenByConversation: workspaceFilesOpenByConversationRef.current,
-      sessionUser: nextSessionUser,
-      tabMetaById: nextTabMetaById,
-      thinkMode: sessionStateRef.current.thinkMode || "off",
-    });
-    await loadRuntime(nextSessionUser, {
-      agentId: nextAgentId,
-    }).catch(() => {});
-    focusPrompt();
-  };
-
-  const applySessionUpdate = useCallback(async (payload) => {
-    try {
-      return await updateSessionSettings(payload);
-    } catch {
-      await loadRuntime(sessionStateRef.current.sessionUser, {
-        agentId: sessionStateRef.current.agentId,
-      }).catch(() => {
-        setSession((current) => ({ ...current, status: i18n.common.failed }));
-      });
-      return null;
-    }
-  }, [i18n.common.failed, loadRuntime, updateSessionSettings]);
-
-  const handleSyncCurrentSessionModel = useCallback(async (nextModel) => {
-    const normalizedModel = String(nextModel || "").trim();
-    if (!normalizedModel || normalizedModel === String(sessionStateRef.current.model || model || "").trim()) {
-      return null;
-    }
-    return await applySessionUpdate({ model: normalizedModel });
-  }, [applySessionUpdate, model]);
-
-  const handleModelChange = async (nextModel) => {
-    if (!nextModel || nextModel === model) return;
-
-    setSwitchingModelOverlay({ modelLabel: nextModel });
-    try {
-      await updateSessionSettings({ model: nextModel });
-      setModelSwitchNotice({
-        type: "success",
-        message: i18n.common.modelSwitchSucceeded(nextModel),
-      });
-    } catch (error) {
-      await loadRuntime(sessionStateRef.current.sessionUser, {
-        agentId: sessionStateRef.current.agentId,
-      }).catch(() => {
-        setSession((current) => ({ ...current, status: i18n.common.failed }));
-      });
-      setModelSwitchNotice({
-        type: "error",
-        message: i18n.common.modelSwitchFailed(nextModel, error?.message || ""),
-      });
-    } finally {
-      setSwitchingModelOverlay(null);
-    }
-  };
-
-  const openOrActivateAgentTab = useCallback(async (nextAgent) => {
-    if (!nextAgent) {
-      return { created: false, tabId: null };
-    }
-
-    const nextTabId = createAgentTabId(nextAgent);
-    const existingTab = chatTabsRef.current.find((tab) => tab.id === nextTabId);
-    if (existingTab) {
-      flushVisibleConversationScrollTop();
-      activeChatTabIdRef.current = existingTab.id;
-      setActiveChatTabId(existingTab.id);
-      return { created: false, tabId: existingTab.id };
-    }
-
-    const tabId = nextTabId;
-    const existingMeta = tabMetaByIdRef.current[tabId];
-    const existingMessages = messagesByTabIdRef.current[tabId] || [];
-    const existingSessionUser =
-      existingMeta?.sessionUser
-      || sessionByTabIdRef.current[tabId]?.sessionUser
-      || "";
-    const sessionUser =
-      existingSessionUser &&
-      !(
-        nextAgent !== "main" &&
-        !existingMessages.length &&
-        isGeneratedAgentBootstrapSessionUser(existingSessionUser, nextAgent)
-      )
-        ? existingSessionUser
-        : nextAgent === "main"
-          ? defaultSessionUser
-          : createAgentSessionUser(nextAgent);
-    const nextTab = {
-      id: tabId,
-      agentId: nextAgent,
-      sessionUser,
-    };
-    const nextMeta = createTabMeta(nextTab, existingMeta || {
-      agentId: nextAgent,
-      sessionUser,
-    });
-    const nextSession = sessionByTabIdRef.current[tabId] || {
-      ...createSessionForTab(i18n, nextTab, nextMeta),
-      ...sessionStateRef.current,
-      ...session,
-      agentId: nextAgent,
-      agentLabel: nextAgent,
-      selectedAgentId: nextAgent,
-      sessionUser,
-      sessionKey: buildOptimisticSessionKey(nextAgent, sessionUser),
-      model: nextMeta.model || session.model || "",
-      selectedModel: nextMeta.model || session.selectedModel || session.model || "",
-      fastMode: session.fastMode,
-      thinkMode: nextMeta.thinkMode || session.thinkMode || "off",
-      availableAgents: availableAgents.length ? availableAgents : session.availableAgents || [],
-      availableModels: availableModels.length ? availableModels : session.availableModels || [],
-      availableMentionAgents: session.availableMentionAgents || [],
-      availableSkills: session.availableSkills || [],
-    };
-
-    setChatTabs((current) => {
-      const updated = [...current, nextTab];
-      chatTabsRef.current = updated;
-      return updated;
-    });
-    updateTabMeta(tabId, nextMeta);
-    updateTabSession(tabId, nextSession);
-    flushVisibleConversationScrollTop();
-    activeChatTabIdRef.current = tabId;
-    setActiveChatTabId(tabId);
-
-    return { created: true, tabId };
-  }, [availableAgents, availableModels, flushVisibleConversationScrollTop, i18n, session, updateTabMeta, updateTabSession]);
-
-  const handleAgentChange = async (nextAgent) => {
-    if (!nextAgent) return;
-    if (nextAgent === session.agentId && resolveAgentIdFromTabId(activeChatTab?.id) === nextAgent) return;
-
-    let shouldShowOverlay = false;
-    try {
-      const { created, tabId: targetTabId } = await openOrActivateAgentTab(nextAgent);
-      shouldShowOverlay = created;
-      if (created) {
-        setSwitchingAgentOverlay({
-          agentLabel: nextAgent,
-          mode: "opening-session",
-        });
-      }
-
-      const targetTab = chatTabsRef.current.find((tab) => tab.id === targetTabId);
-      const targetMeta = (targetTabId && tabMetaByIdRef.current[targetTabId]) || null;
-      const targetSession = (targetTabId && sessionByTabIdRef.current[targetTabId]) || null;
-      const existingTargetSessionUser =
-        targetMeta?.sessionUser
-        || targetSession?.sessionUser
-        || targetTab?.sessionUser
-        || "";
-      const targetSessionUser =
-        nextAgent !== "main" && (!existingTargetSessionUser || existingTargetSessionUser === defaultSessionUser)
-          ? createAgentSessionUser(nextAgent)
-          : existingTargetSessionUser || createAgentSessionUser(nextAgent);
-
-      if (targetTabId) {
-        updateTabIdentity(targetTabId, { sessionUser: targetSessionUser });
-        updateTabMeta(targetTabId, {
-          agentId: nextAgent,
-          sessionUser: targetSessionUser,
-        });
-        updateTabSession(targetTabId, (current) => ({
-          ...current,
-          agentId: nextAgent,
-          selectedAgentId: nextAgent,
-          sessionUser: targetSessionUser,
-        }));
-      }
-
-      const sessionUpdate = await applySessionUpdate({
-        agentId: nextAgent,
-        sessionUser: targetSessionUser,
-      });
-      const resolvedSession = sessionUpdate?.session || null;
-
-      if (targetTabId && resolvedSession) {
-        updateTabMeta(targetTabId, {
-          agentId: resolvedSession.agentId || nextAgent,
-          sessionUser: resolvedSession.sessionUser || targetSessionUser,
-          model: resolvedSession.selectedModel || resolvedSession.model || "",
-        });
-        updateTabSession(targetTabId, (current) => ({
-          ...current,
-          ...(resolvedSession || {}),
-          agentId: resolvedSession.agentId || nextAgent,
-          selectedAgentId: resolvedSession.selectedAgentId || resolvedSession.agentId || nextAgent,
-          sessionUser: resolvedSession.sessionUser || targetSessionUser,
-          model: resolvedSession.model || current.model,
-          selectedModel: resolvedSession.selectedModel || resolvedSession.model || current.selectedModel,
-        }));
-      }
-    } finally {
-      if (shouldShowOverlay) {
-        setSwitchingAgentOverlay(null);
-      }
-    }
-  };
-
-  const handleSearchSessions = useCallback(async (searchTerm = "", options: SearchSessionsOptions = {}) => {
-    const channel = String(options.channel || "dingtalk-connector").trim() || "dingtalk-connector";
-    const imConfigs = await loadImChannelConfigs();
-    if (imConfigs?.[channel] && imConfigs[channel].enabled === false) {
-      return [];
-    }
-
-    const agentId = resolveConfiguredImAgentId(
-      imConfigs,
-      channel,
-      String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main",
-    );
-    const params = new URLSearchParams({
-      agentId,
-      channel,
-      limit: "12",
-    });
-    const normalizedSearchTerm = String(searchTerm || "").trim();
-    if (normalizedSearchTerm) {
-      params.set("q", normalizedSearchTerm);
-    }
-
-    const response = await apiFetch(`/api/session/search?${params.toString()}`);
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || i18n.common.requestFailed);
-    }
-
-    return Array.isArray(data.sessions) ? data.sessions : [];
-  }, [i18n.common.requestFailed, loadImChannelConfigs, session.agentId]);
-
-  const handleSelectSearchedSession = useCallback(async (sessionMatch) => {
-    const nextSessionUser = String(sessionMatch?.sessionUser || "").trim();
-    const fallbackAgentId = String(sessionStateRef.current.agentId || "main").trim() || "main";
-    const imConfigs = isImSessionUser(nextSessionUser) ? await loadImChannelConfigs() : imChannelConfigsRef.current;
-    const configuredImAgentId = isImSessionUser(nextSessionUser)
-      ? resolveConfiguredImAgentId(imConfigs, nextSessionUser, fallbackAgentId)
-      : fallbackAgentId;
-    const nextAgentId = String(sessionMatch?.agentId || configuredImAgentId || fallbackAgentId).trim() || "main";
-    const { create, tabId: plannedTabId, title: plannedTitle } = planSearchedSessionTabTarget({
-      activeTabId: activeChatTabIdRef.current,
-      agentId: nextAgentId,
-      chatTabs: chatTabsRef.current,
-      locale: intlLocale,
-      sessionUser: nextSessionUser,
-    });
-    const activeTabId = String(plannedTabId || "").trim();
-
-    if (!nextSessionUser || !activeTabId) {
-      return;
-    }
-
-    if (
-      nextSessionUser === String(sessionStateRef.current.sessionUser || "").trim()
-      && nextAgentId === String(sessionStateRef.current.agentId || "").trim()
-    ) {
-      return;
-    }
-
-    if (create) {
-      const nextTab = {
-        id: activeTabId,
-        agentId: nextAgentId,
-        sessionUser: nextSessionUser,
-      };
-      const nextMeta = createTabMeta(nextTab, {
-        agentId: nextAgentId,
-        sessionUser: nextSessionUser,
-        title: plannedTitle,
-      });
-      const nextSession = {
-        ...createSessionForTab(i18n, nextTab, nextMeta),
-        ...session,
-        agentId: nextAgentId,
-        agentLabel: nextAgentId,
-        selectedAgentId: nextAgentId,
-        sessionUser: nextSessionUser,
-        sessionKey: buildOptimisticSessionKey(nextAgentId, nextSessionUser),
-        model: nextMeta.model || session.model || "",
-        selectedModel: nextMeta.model || session.selectedModel || session.model || "",
-        fastMode: session.fastMode,
-        thinkMode: nextMeta.thinkMode || session.thinkMode || "off",
-        availableAgents: availableAgents.length ? availableAgents : session.availableAgents || [],
-        availableModels: availableModels.length ? availableModels : session.availableModels || [],
-        availableMentionAgents: session.availableMentionAgents || [],
-        availableSkills: session.availableSkills || [],
-      };
-
-      setChatTabs((current) => {
-        const updated = [...current, nextTab];
-        chatTabsRef.current = updated;
-        return updated;
-      });
-      updateTabMeta(activeTabId, nextMeta);
-      updateTabSession(activeTabId, nextSession);
-    } else if (plannedTitle) {
-      updateTabMeta(activeTabId, { title: plannedTitle });
-    }
-
-    if (activeTabId !== activeChatTabIdRef.current) {
-      activeChatTabIdRef.current = activeTabId;
-      setActiveChatTabId(activeTabId);
-    }
-
-    flushVisibleConversationScrollTop();
-    if (!create) {
-      updateTabIdentity(activeTabId, { agentId: nextAgentId, sessionUser: nextSessionUser });
-      updateTabMeta(activeTabId, {
-        agentId: nextAgentId,
-        sessionUser: nextSessionUser,
-        title: plannedTitle,
-      });
-    }
-    updateTabSession(activeTabId, (current) => ({
-      ...current,
-      agentId: nextAgentId,
-      selectedAgentId: nextAgentId,
-      sessionUser: nextSessionUser,
-      status: i18n.common.running,
-    }));
-    setMessagesForTab(activeTabId, []);
-    setBusyForTab(activeTabId, true);
-    clearSnapshotData();
-    setFocusMessageRequest(null);
-    sessionStateRef.current = {
-      ...sessionStateRef.current,
-      agentId: nextAgentId,
-      sessionUser: nextSessionUser,
-    };
-    setActiveTarget({
-      sessionUser: nextSessionUser,
-      agentId: nextAgentId,
-    });
-
-    try {
-      await loadRuntime(nextSessionUser, {
-        agentId: nextAgentId,
-      });
-      focusPrompt();
-    } catch (error) {
-      setBusyForTab(activeTabId, false);
-      setSession((current) => ({ ...current, status: i18n.common.failed }));
-      throw error;
-    }
-  }, [
+  const {
+    handleOpenImSession,
+    handleSearchSessions,
+    handleSelectSearchedSession,
+    openOrActivateAgentTab,
+  } = useCommandCenterSessionSelection({
+    activeChatTabIdRef,
     availableAgents,
     availableModels,
+    chatTabsRef,
     clearSnapshotData,
     flushVisibleConversationScrollTop,
     focusPrompt,
-    loadImChannelConfigs,
     i18n,
+    imChannelConfigsRef,
     intlLocale,
+    loadImChannelConfigs,
     loadRuntime,
+    messagesByTabIdRef,
     session,
-    setBusyForTab,
+    sessionByTabIdRef,
+    sessionStateRef,
     setActiveChatTabId,
-    setMessagesForTab,
     setActiveTarget,
+    setBusyForTab,
+    setChatTabs,
+    setFocusMessageRequest,
+    setMessagesForTab,
+    setSession,
+    tabMetaByIdRef,
     updateTabIdentity,
     updateTabMeta,
     updateTabSession,
-  ]);
+  });
 
-  const handleOpenImSession = useCallback(async (channel) => {
-    const imConfigs = await loadImChannelConfigs();
-    if (imConfigs?.[channel] && imConfigs[channel].enabled === false) {
-      return;
-    }
+  const {
+    handleAgentChange,
+    handleFastModeChange,
+    handleModelChange,
+    handleSyncCurrentSessionModel,
+    handleThinkModeChange,
+  } = useCommandCenterSessionActions({
+    activeChatTab,
+    i18n,
+    loadRuntime,
+    model,
+    openOrActivateAgentTab,
+    session,
+    sessionByTabIdRef,
+    sessionStateRef,
+    setModelSwitchNotice,
+    setSession,
+    setSwitchingAgentOverlay,
+    setSwitchingModelOverlay,
+    tabMetaByIdRef,
+    updateSessionSettings,
+    updateTabIdentity,
+    updateTabMeta,
+    updateTabSession,
+  });
 
-    const nextAgentId = resolveConfiguredImAgentId(
-      imConfigs,
-      channel,
-      String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main",
-    );
-    const bootstrapSessionUser = createImBootstrapSessionUser(channel);
-    const targetImType = resolveImSessionType(bootstrapSessionUser);
+  const {
+    handleActivateAdjacentChatTab,
+    handleActivateChatTab,
+    handleActivateChatTabByIndex,
+    handleCloseChatTab,
+    handleReorderChatTabs,
+  } = useCommandCenterTabNavigation({
+    activeChatTabIdRef,
+    chatTabsRef,
+    flushVisibleConversationScrollTop,
+    setActiveChatTabId,
+    setChatTabs,
+    setUnreadCountByTabId,
+    settledMessageKeysByTabIdRef,
+    unreadCountByTabIdRef,
+  });
 
-    if (!bootstrapSessionUser || !targetImType) {
-      return;
-    }
-
-    const existingImTab = chatTabsRef.current.find((tab) =>
-      String(resolveAgentIdFromTabId(tab?.id) || tab?.agentId || "").trim() === nextAgentId
-      && resolveImSessionType(tab?.sessionUser || "") === targetImType,
-    );
-
-    if (existingImTab?.id) {
-      flushVisibleConversationScrollTop();
-      activeChatTabIdRef.current = existingImTab.id;
-      setActiveChatTabId(existingImTab.id);
-      return;
-    }
-
-    await handleSelectSearchedSession({
-      agentId: nextAgentId,
-      sessionUser: bootstrapSessionUser,
-      title: buildChatTabTitle(nextAgentId, bootstrapSessionUser, { locale: intlLocale }),
-    });
-  }, [flushVisibleConversationScrollTop, handleSelectSearchedSession, intlLocale, loadImChannelConfigs, session.agentId, setActiveChatTabId]);
-
-  const handleActivateChatTab = useCallback((tabId) => {
-    if (!tabId || tabId === activeChatTabIdRef.current) {
-      return;
-    }
-    flushVisibleConversationScrollTop();
-    if (unreadCountByTabIdRef.current[tabId]) {
-      const nextUnreadCountByTabId = { ...unreadCountByTabIdRef.current };
-      delete nextUnreadCountByTabId[tabId];
-      unreadCountByTabIdRef.current = nextUnreadCountByTabId;
-      setUnreadCountByTabId(nextUnreadCountByTabId);
-    }
-    activeChatTabIdRef.current = tabId;
-    setActiveChatTabId(tabId);
-  }, [flushVisibleConversationScrollTop, setActiveChatTabId]);
-
-  const handleActivateChatTabByIndex = useCallback((index) => {
-    const numericIndex = Number(index);
-    if (!Number.isInteger(numericIndex) || numericIndex < 1) {
-      return;
-    }
-
-    const targetTab = chatTabsRef.current[numericIndex - 1];
-    if (!targetTab?.id) {
-      return;
-    }
-
-    handleActivateChatTab(targetTab.id);
-  }, [handleActivateChatTab]);
-
-  const handleActivateAdjacentChatTab = useCallback((direction) => {
-    const normalizedDirection = Number(direction);
-    if (!normalizedDirection) {
-      return;
-    }
-
-    const currentIndex = chatTabsRef.current.findIndex((tab) => tab.id === activeChatTabIdRef.current);
-    if (currentIndex === -1) {
-      return;
-    }
-
-    const targetTab = chatTabsRef.current[currentIndex + (normalizedDirection < 0 ? -1 : 1)];
-    if (!targetTab?.id) {
-      return;
-    }
-
-    handleActivateChatTab(targetTab.id);
-  }, [handleActivateChatTab]);
-
-  const handleCloseChatTab = (tabId) => {
-    if (unreadCountByTabIdRef.current[tabId]) {
-      const nextUnreadCountByTabId = { ...unreadCountByTabIdRef.current };
-      delete nextUnreadCountByTabId[tabId];
-      unreadCountByTabIdRef.current = nextUnreadCountByTabId;
-      setUnreadCountByTabId(nextUnreadCountByTabId);
-    }
-    if (settledMessageKeysByTabIdRef.current[tabId]) {
-      const nextSettledMessageKeysByTabId = { ...settledMessageKeysByTabIdRef.current };
-      delete nextSettledMessageKeysByTabId[tabId];
-      settledMessageKeysByTabIdRef.current = nextSettledMessageKeysByTabId;
-    }
-    setChatTabs((current) => {
-      if (current.length <= 1) {
-        return current;
-      }
-
-      const index = current.findIndex((tab) => tab.id === tabId);
-      if (index === -1) {
-        return current;
-      }
-
-      const nextTabs = current.filter((tab) => tab.id !== tabId);
-      chatTabsRef.current = nextTabs;
-
-      if (activeChatTabIdRef.current === tabId) {
-        const fallbackTab = nextTabs[Math.max(0, index - 1)] || nextTabs[0];
-        if (fallbackTab) {
-          flushVisibleConversationScrollTop();
-          activeChatTabIdRef.current = fallbackTab.id;
-          setActiveChatTabId(fallbackTab.id);
-        }
-      }
-
-      return nextTabs;
-    });
-  };
-
-  const handleReorderChatTabs = useCallback((sourceTabId, targetTabId, placement = "before") => {
-    const normalizedSourceTabId = String(sourceTabId || "").trim();
-    const normalizedTargetTabId = String(targetTabId || "").trim();
-    if (!normalizedSourceTabId || !normalizedTargetTabId || normalizedSourceTabId === normalizedTargetTabId) {
-      return;
-    }
-
-    setChatTabs((current) => {
-      const sourceIndex = current.findIndex((tab) => tab.id === normalizedSourceTabId);
-      const targetIndex = current.findIndex((tab) => tab.id === normalizedTargetTabId);
-      if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) {
-        return current;
-      }
-
-      const updated = [...current];
-      const [movedTab] = updated.splice(sourceIndex, 1);
-      const nextTargetIndex = updated.findIndex((tab) => tab.id === normalizedTargetTabId);
-      if (nextTargetIndex === -1) {
-        return current;
-      }
-      const insertionIndex = placement === "after" ? nextTargetIndex + 1 : nextTargetIndex;
-      if (!movedTab) {
-        return current;
-      }
-      updated.splice(insertionIndex, 0, movedTab);
-      chatTabsRef.current = updated;
-      return updated;
-    });
-  }, []);
-
-  const handleFastModeChange = async (nextFastMode) => {
-    const resolvedFastMode = Boolean(nextFastMode);
-    await applySessionUpdate({ fastMode: resolvedFastMode });
-  };
-
-  const handleThinkModeChange = async (nextThinkMode) => {
-    if (!nextThinkMode || nextThinkMode === session.thinkMode) return;
-    await applySessionUpdate({ thinkMode: nextThinkMode });
-  };
+  const { handleReset } = useCommandCenterReset({
+    activeChatTabIdRef,
+    activeTabRef,
+    busyByTabIdRef,
+    chatFontSizeRef,
+    chatTabsRef,
+    clearSnapshotData,
+    composerSendModeRef,
+    dismissedTaskRelationshipIdsByConversationRef,
+    dispatchSessionCommand,
+    focusPrompt,
+    i18n,
+    initialStoredMessagesByTabIdRef,
+    initialStoredPendingRef,
+    inspectorPanelWidthRef,
+    loadRuntime,
+    messagesByTabIdRef,
+    messagesRef,
+    pendingChatTurnsRef,
+    promptDraftsByConversationRef,
+    runtimeCacheByTabIdRef,
+    session,
+    sessionByTabIdRef,
+    sessionStateRef,
+    setActiveChatTabId,
+    setActiveTarget,
+    setBusyByTabId,
+    setChatTabs,
+    setComposerAttachments,
+    setMessagesByTabId,
+    setMessagesSynced,
+    setPendingChatTurns,
+    setPromptForConversation,
+    setPromptHistoryNavigation,
+    setQueuedMessages,
+    setRuntimeCacheByTabId,
+    setSession,
+    setSessionByTabId,
+    setTabMetaById,
+    tabMetaByIdRef,
+    updateTabIdentity,
+    updateTabMeta,
+    updateTabSession,
+    userLabelRef,
+    workspaceFilesOpenByConversationRef,
+  });
 
   useAppHotkeys({
     handleActivateAdjacentChatTab,
@@ -3441,59 +1484,26 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     setTheme,
   });
 
-  const handleTrackSessionFiles = useCallback(({ files: nextFiles = [], rewrites = [] } = {}) => {
-    const activeTabId = activeChatTabIdRef.current;
-    if (!activeTabId) {
-      return;
-    }
-
-    updateTabMeta(activeTabId, (current) => ({
-      ...current,
-      sessionFiles: mergeRuntimeFiles(current?.sessionFiles || [], nextFiles || []),
-      sessionFileRewrites: mergeSessionFileRewrites(current?.sessionFileRewrites || [], rewrites || []),
-    }));
-  }, [updateTabMeta]);
-
-  const renderPeek = (section, fallback) => {
-    if (!section) return fallback;
-    return [section.summary, ...(section.items || []).map((item) => `${item.label}: ${item.value}`)].filter(Boolean).join("\n");
-  };
-
-  const handleArtifactSelect = (artifact) => {
-    const normalizedDetail = String(artifact?.detail || "")
-      .replace(/\.\.\.$/, "")
-      .replace(/…$/, "")
-      .trim();
-    const assistantMessages = messagesRef.current.filter((message) => message?.role === "assistant");
-
-    if (!assistantMessages.length) {
-      return;
-    }
-
-    const matchedMessage =
-      (artifact?.messageTimestamp
-        ? assistantMessages.find((message) => Number(message?.timestamp || 0) === Number(artifact.messageTimestamp))
-        : null)
-      || (artifact?.timestamp
-        ? assistantMessages.find((message) => Number(message?.timestamp || 0) === Number(artifact.timestamp))
-        : null)
-      || (normalizedDetail
-        ? assistantMessages.find((message) => String(message?.content || "").includes(normalizedDetail))
-        : null)
-      || assistantMessages.at(-1);
-
-    if (!matchedMessage?.timestamp) {
-      return;
-    }
-
-    setFocusMessageRequest({
-      id: `${matchedMessage.timestamp}-${Date.now()}`,
-      messageId: matchedMessage.id || "",
-      role: matchedMessage.role || artifact?.messageRole || "assistant",
-      source: "artifact",
-      timestamp: matchedMessage.timestamp,
-    });
-  };
+  const {
+    handleArtifactSelect,
+    handleRefreshEnvironment,
+    handleTrackSessionFiles,
+    handleWorkspaceFilesOpenChange,
+    renderPeek,
+  } = useCommandCenterEnvironmentActions({
+    activeConversationKey,
+    activeChatTabIdRef,
+    loadImChannelConfigs,
+    loadRuntime,
+    messagesRef,
+    persistCurrentUiStateSnapshot,
+    session,
+    sessionStateRef,
+    setFocusMessageRequest,
+    setWorkspaceFilesOpenByConversation,
+    updateTabMeta,
+    workspaceFilesOpenByConversationRef,
+  });
 
   const visibleChatTabs = useMemo(
     () =>
@@ -3528,35 +1538,6 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     }),
     [activeChatTab?.sessionUser, activeChatTabId, busyByTabId, messagesByTabId, pendingChatTurns, session.status],
   );
-  const handleRefreshEnvironment = useCallback(async () => {
-    await Promise.all([
-      loadRuntime(sessionStateRef.current.sessionUser, {
-        agentId: sessionStateRef.current.agentId || session.agentId || "main",
-      }),
-      loadImChannelConfigs({ force: true }),
-    ]);
-  }, [loadImChannelConfigs, loadRuntime, session.agentId]);
-  const handleWorkspaceFilesOpenChange = useCallback((open) => {
-    const normalizedConversationKey = String(activeConversationKey || "").trim();
-    if (!normalizedConversationKey) {
-      return;
-    }
-
-    const nextOpen = Boolean(open);
-    if (workspaceFilesOpenByConversationRef.current[normalizedConversationKey] === nextOpen) {
-      return;
-    }
-
-    const nextWorkspaceFilesOpenByConversation = {
-      ...workspaceFilesOpenByConversationRef.current,
-      [normalizedConversationKey]: nextOpen,
-    };
-    workspaceFilesOpenByConversationRef.current = nextWorkspaceFilesOpenByConversation;
-    setWorkspaceFilesOpenByConversation(nextWorkspaceFilesOpenByConversation);
-    persistCurrentUiStateSnapshot({
-      workspaceFilesOpenByConversation: nextWorkspaceFilesOpenByConversation,
-    });
-  }, [activeConversationKey, persistCurrentUiStateSnapshot]);
   return {
     activeChatTabId,
     activeQueuedMessages,
