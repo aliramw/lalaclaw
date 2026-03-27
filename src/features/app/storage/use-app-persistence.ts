@@ -1,30 +1,30 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import {
-  legacyStorageKey,
-  mergeConversationAttachments,
-  pendingChatStorageKey,
+  persistUiStateSnapshot,
+} from "@/features/app/storage/app-ui-state-storage";
+import { mergeConversationAttachments } from "@/features/chat/state/chat-conversation-merge";
+import { sanitizeMessagesForStorage } from "@/features/chat/state/chat-persisted-messages";
+import {
   promptDraftStorageKey,
   promptHistoryStorageKey,
-  sanitizePendingChatTurnsMap,
-  sanitizeMessagesForStorage,
   sanitizePromptDraftsMap,
   sanitizePromptHistoryMap,
-  storageKey,
-} from "@/features/app/storage/app-storage";
-import type { ChatMessage } from "@/types/chat";
+} from "@/features/app/state/app-prompt-storage";
+import { pruneCompletedPendingChatTurns } from "@/features/app/state/app-pending-storage";
+import type { ChatMessage, ChatTabMeta, ConversationPendingMap } from "@/types/chat";
 import { hydrateAttachmentStateByKeyFromStorage, serializeAttachmentStateByKeyForStorage } from "@/lib/attachment-storage";
 
 const chatPersistenceDebounceMs = 450;
 
 type PersistedMessage = ChatMessage & Record<string, unknown>;
 
-type PendingChatTurns = Record<string, unknown>;
+type PendingChatTurns = ConversationPendingMap;
 type MessagesByTabId = Record<string, PersistedMessage[]>;
 type PromptDraftsByConversation = Record<string, string>;
 type PromptHistoryByConversation = Record<string, string[]>;
 type DismissedTaskRelationshipIdsByConversation = Record<string, string[]>;
-type TabMetaById = Record<string, Record<string, unknown>>;
+type TabMetaById = Record<string, ChatTabMeta>;
 
 type SessionState = {
   agentId?: string;
@@ -43,7 +43,6 @@ type UseAppPersistenceInput = {
   initialStoredMessagesByTabIdRef: MutableRefObject<MessagesByTabId>;
   initialStoredPendingRef: MutableRefObject<PendingChatTurns>;
   inspectorPanelWidth?: number;
-  messages?: PersistedMessage[];
   messagesByTabId?: MessagesByTabId;
   messagesRef: MutableRefObject<PersistedMessage[]>;
   model?: string;
@@ -60,8 +59,6 @@ type UseAppPersistenceInput = {
 };
 
 type PendingPersistencePayload = {
-  activeChatTabId: string;
-  messages: PersistedMessage[];
   messagesByTabId: MessagesByTabId;
   nextStorageState: Record<string, unknown>;
   pendingChatTurns: PendingChatTurns;
@@ -108,34 +105,36 @@ function hasInlineAttachmentPayloadInState(
   });
 }
 
+function hasHydratableInitialAttachmentState(
+  messagesByTabId: MessagesByTabId = {},
+  pendingChatTurns: PendingChatTurns = {},
+) {
+  const hasStoredMessages = Object.values(messagesByTabId || {}).some((messages) => Array.isArray(messages) && messages.length > 0);
+  if (hasStoredMessages) {
+    return true;
+  }
+
+  return Object.keys(pendingChatTurns || {}).length > 0;
+}
+
 function mergeHydratedMessagesByKey(
   currentMessagesByKey: MessagesByTabId = {},
   hydratedMessagesByKey: Record<string, ChatMessage[]> = {},
 ) {
-  const keys = new Set([
-    ...Object.keys(currentMessagesByKey || {}),
-    ...Object.keys(hydratedMessagesByKey || {}),
-  ]);
+  const serializeAttachments = (attachments: unknown) => JSON.stringify(attachments || []);
   let changed = false;
 
   const merged = Object.fromEntries(
-    [...keys].map((key) => {
+    Object.keys(currentMessagesByKey || {}).map((key) => {
       const currentMessages = Array.isArray(currentMessagesByKey?.[key]) ? currentMessagesByKey[key] : [];
       const hydratedMessages = Array.isArray(hydratedMessagesByKey?.[key]) ? hydratedMessagesByKey[key] : [];
 
-      if (!currentMessages.length) {
-        if (hydratedMessages.length) {
-          changed = true;
-        }
-        return [key, hydratedMessages];
-      }
-
-      if (!hydratedMessages.length) {
+      if (!currentMessages.length || !hydratedMessages.length) {
         return [key, currentMessages];
       }
 
       const mergedMessages = mergeConversationAttachments(currentMessages, hydratedMessages);
-      if (mergedMessages.some((message, index) => message !== currentMessages[index])) {
+      if (mergedMessages.some((message, index) => serializeAttachments(message?.attachments) !== serializeAttachments(currentMessages[index]?.attachments))) {
         changed = true;
       }
       return [key, mergedMessages];
@@ -160,22 +159,16 @@ function mergeHydratedPendingChatTurns(
   currentPendingChatTurns: PendingChatTurns = {},
   hydratedPendingChatTurns: PendingChatTurns = {},
 ) {
-  const keys = new Set([
-    ...Object.keys(currentPendingChatTurns || {}),
-    ...Object.keys(hydratedPendingChatTurns || {}),
-  ]);
+  const serializeAttachments = (attachments: unknown) => JSON.stringify(attachments || []);
   let changed = false;
 
   const merged = Object.fromEntries(
-    [...keys].map((key) => {
+    Object.keys(currentPendingChatTurns || {}).map((key) => {
       const currentEntry = currentPendingChatTurns?.[key];
       const hydratedEntry = hydratedPendingChatTurns?.[key];
 
       if (!currentEntry || typeof currentEntry !== "object") {
-        if (hydratedEntry && typeof hydratedEntry === "object") {
-          changed = true;
-        }
-        return [key, hydratedEntry];
+        return [key, currentEntry];
       }
 
       if (!hydratedEntry || typeof hydratedEntry !== "object") {
@@ -190,13 +183,14 @@ function mergeHydratedPendingChatTurns(
         hydratedEntry.userMessage && typeof hydratedEntry.userMessage === "object"
           ? hydratedEntry.userMessage as Record<string, unknown>
           : null;
+      const hydratedAttachments = Array.isArray(hydratedUserMessage?.attachments) ? hydratedUserMessage.attachments : [];
 
-      if (!hydratedUserMessage?.attachments?.length) {
+      if (!hydratedAttachments.length) {
         return [key, currentEntry];
       }
 
       if (!currentUserMessage) {
-        changed = true;
+        changed = Boolean(hydratedAttachments.length) || changed;
         return [
           key,
           {
@@ -206,7 +200,12 @@ function mergeHydratedPendingChatTurns(
         ];
       }
 
-      if (!shouldMergeHydratedPendingUserMessage(currentUserMessage, hydratedUserMessage)) {
+      if (!shouldMergeHydratedPendingUserMessage(currentUserMessage, hydratedUserMessage || undefined)) {
+        return [key, currentEntry];
+      }
+
+      const mergedAttachments = hydratedAttachments;
+      if (serializeAttachments(currentUserMessage.attachments) === serializeAttachments(mergedAttachments)) {
         return [key, currentEntry];
       }
 
@@ -217,7 +216,7 @@ function mergeHydratedPendingChatTurns(
           ...currentEntry,
           userMessage: {
             ...currentUserMessage,
-            attachments: hydratedUserMessage.attachments,
+            attachments: mergedAttachments,
           },
         },
       ];
@@ -225,6 +224,22 @@ function mergeHydratedPendingChatTurns(
   );
 
   return changed ? merged : currentPendingChatTurns;
+}
+
+function mergeHydratedActiveMessages(
+  currentMessages: PersistedMessage[] = [],
+  hydratedMessages: ChatMessage[] = [],
+) {
+  if (!currentMessages.length || !hydratedMessages.length) {
+    return currentMessages;
+  }
+
+  const serializeAttachments = (attachments: unknown) => JSON.stringify(attachments || []);
+  const mergedMessages = mergeConversationAttachments(currentMessages, hydratedMessages);
+  const changed = mergedMessages.some(
+    (message, index) => serializeAttachments(message?.attachments) !== serializeAttachments(currentMessages[index]?.attachments),
+  );
+  return changed ? mergedMessages : currentMessages;
 }
 
 export function useAppPersistence({
@@ -238,7 +253,6 @@ export function useAppPersistence({
   initialStoredMessagesByTabIdRef,
   initialStoredPendingRef,
   inspectorPanelWidth = 0,
-  messages = [],
   messagesByTabId = {},
   messagesRef,
   model = "",
@@ -257,68 +271,34 @@ export function useAppPersistence({
   const persistenceTimerRef = useRef<number | null>(null);
   const promptDraftPersistenceTimerRef = useRef<number | null>(null);
   const hasPersistedPromptDraftsRef = useRef(false);
+  const activeChatTabIdRef = useRef(activeChatTabId);
+  const hasStartedInitialAttachmentHydrationRef = useRef(false);
   const pendingPersistenceRef = useRef<PendingPersistencePayload | null>(null);
+  const latestMessagesByTabIdRef = useRef(messagesByTabId);
   const previousMessagesByTabIdRef = useRef(messagesByTabId);
   const previousPendingChatTurnsRef = useRef(pendingChatTurns);
   const previousPromptDraftsByConversationRef = useRef(promptDraftsByConversation);
   const latestPromptDraftsByConversationRef = useRef(promptDraftsByConversation);
-  const writeUiState = useCallback((payload: Record<string, unknown>) => {
-    try {
-      const persistedAt = Number(payload?._persistedAt || 0) || Date.now();
-      const readStoredPersistedAt = (raw: string | null) => {
-        if (!raw) {
-          return 0;
-        }
-        try {
-          return Number(JSON.parse(raw)?._persistedAt || 0) || 0;
-        } catch {
-          return 0;
-        }
-      };
-      const currentPersistedAt = Math.max(
-        readStoredPersistedAt(window.localStorage.getItem(storageKey)),
-        readStoredPersistedAt(window.localStorage.getItem(legacyStorageKey)),
-      );
-      if (currentPersistedAt > persistedAt) {
-        return;
-      }
-      const serialized = JSON.stringify({
-        ...payload,
-        _persistedAt: persistedAt,
-      });
-      window.localStorage.setItem(storageKey, serialized);
-      window.localStorage.setItem(legacyStorageKey, serialized);
-    } catch {}
-  }, []);
+  const writePersistedUiSnapshot = useCallback((
+    snapshotState: Record<string, unknown>,
+    nextPendingChatTurns: PendingChatTurns,
+    persistedAt: number,
+    messagesByTabId: MessagesByTabId = {},
+    tabMetaById: TabMetaById = {},
+  ) => {
+    const sanitizedPendingChatTurns = pruneCompletedPendingChatTurns(
+      nextPendingChatTurns,
+      messagesByTabId,
+      tabMetaById,
+    );
 
-  const writePendingChatTurns = useCallback((nextPendingChatTurns: PendingChatTurns, persistedAt: number) => {
-    try {
-      const readStoredPersistedAt = (raw: string | null) => {
-        if (!raw) {
-          return 0;
-        }
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === "object" && parsed.pendingChatTurns) {
-            return Number(parsed._persistedAt || 0) || 0;
-          }
-          return 0;
-        } catch {
-          return 0;
-        }
-      };
-      const currentPersistedAt = readStoredPersistedAt(window.localStorage.getItem(pendingChatStorageKey));
-      if (currentPersistedAt > persistedAt) {
-        return;
-      }
-      window.localStorage.setItem(
-        pendingChatStorageKey,
-        JSON.stringify({
-          _persistedAt: persistedAt,
-          pendingChatTurns: sanitizePendingChatTurnsMap(nextPendingChatTurns),
-        }),
-      );
-    } catch {}
+    persistUiStateSnapshot({
+      ...snapshotState,
+      messagesByTabId,
+      pendingChatTurns: sanitizedPendingChatTurns,
+      persistedAt,
+      tabMetaById,
+    });
   }, []);
 
   const flushPromptDraftPersistence = useCallback(() => {
@@ -357,12 +337,17 @@ export function useAppPersistence({
     const fallbackStoragePayload = {
       ...payload.nextStorageState,
       promptDraftsByConversation: payload.promptDraftsByConversation,
-      messages: sanitizeMessagesForStorage(payload.messages),
       messagesByTabId: fallbackSerializedMessagesByTabId,
     };
+    const fallbackTabMetaById = (payload.nextStorageState.tabMetaById || {}) as TabMetaById;
 
-    writeUiState(fallbackStoragePayload);
-    writePendingChatTurns(payload.pendingChatTurns, payload.persistedAt);
+    writePersistedUiSnapshot(
+      fallbackStoragePayload,
+      payload.pendingChatTurns,
+      payload.persistedAt,
+      fallbackSerializedMessagesByTabId,
+      fallbackTabMetaById,
+    );
 
     if (skipAttachmentSerialization) {
       return;
@@ -374,31 +359,50 @@ export function useAppPersistence({
           return;
         }
 
-        writeUiState({
-          ...payload.nextStorageState,
-          promptDraftsByConversation: payload.promptDraftsByConversation,
-          messages: sanitizeMessagesForStorage(serializedState.messagesByKey[payload.activeChatTabId] || payload.messages),
-          messagesByTabId: Object.fromEntries(
-            Object.entries(serializedState.messagesByKey || {}).map(([key, items]) => [key, sanitizeMessagesForStorage(items)]),
-          ),
-        });
-        writePendingChatTurns(serializedState.pendingChatTurns, payload.persistedAt);
+        const serializedMessagesByTabId = Object.fromEntries(
+          Object.entries(serializedState.messagesByKey || {}).map(([key, items]) => [key, sanitizeMessagesForStorage(items)]),
+        );
+
+        writePersistedUiSnapshot(
+          {
+            ...payload.nextStorageState,
+            promptDraftsByConversation: payload.promptDraftsByConversation,
+            messagesByTabId: serializedMessagesByTabId,
+          },
+          serializedState.pendingChatTurns,
+          payload.persistedAt,
+          serializedMessagesByTabId,
+          fallbackTabMetaById,
+        );
       })
       .catch(() => {
         if (requestId !== storageRequestRef.current) {
           return;
         }
 
-        writeUiState(fallbackStoragePayload);
-        writePendingChatTurns(payload.pendingChatTurns, payload.persistedAt);
+        writePersistedUiSnapshot(
+          fallbackStoragePayload,
+          payload.pendingChatTurns,
+          payload.persistedAt,
+          fallbackSerializedMessagesByTabId,
+          fallbackTabMetaById,
+        );
       });
-  }, [writePendingChatTurns, writeUiState]);
+  }, [writePersistedUiSnapshot]);
 
   useEffect(() => {
     latestPromptDraftsByConversationRef.current = promptDraftsByConversationRef
       ? promptDraftsByConversationRef.current
       : promptDraftsByConversation;
   }, [promptDraftsByConversation, promptDraftsByConversationRef]);
+
+  useEffect(() => {
+    activeChatTabIdRef.current = activeChatTabId;
+  }, [activeChatTabId]);
+
+  useEffect(() => {
+    latestMessagesByTabIdRef.current = messagesByTabId;
+  }, [messagesByTabId]);
 
   useEffect(() => {
     const persistedAt = Date.now();
@@ -422,8 +426,6 @@ export function useAppPersistence({
     };
 
     pendingPersistenceRef.current = {
-      activeChatTabId,
-      messages,
       messagesByTabId,
       nextStorageState,
       pendingChatTurns,
@@ -468,7 +470,6 @@ export function useAppPersistence({
     dismissedTaskRelationshipIdsByConversation,
     fastMode,
     inspectorPanelWidth,
-    messages,
     messagesByTabId,
     model,
     pendingChatTurns,
@@ -536,34 +537,43 @@ export function useAppPersistence({
   useEffect(() => {
     const initialMessagesByTabId = initialStoredMessagesByTabIdRef.current;
     const initialPendingChatTurns = initialStoredPendingRef.current;
-    const initialActiveMessages = initialMessagesByTabId?.[activeChatTabId] || [];
 
-    if (!Object.keys(initialMessagesByTabId || {}).length && !Object.keys(initialPendingChatTurns || {}).length) {
+    if (hasStartedInitialAttachmentHydrationRef.current) {
       return;
     }
 
-    void hydrateAttachmentStateByKeyFromStorage(initialMessagesByTabId, initialPendingChatTurns).then((hydratedState) => {
-      const nextMessagesByTabId = hydratedState.messagesByKey || {};
-      const hydratedActiveMessages = nextMessagesByTabId[activeChatTabId] || [];
+    if (!hasHydratableInitialAttachmentState(initialMessagesByTabId, initialPendingChatTurns)) {
+      initialStoredMessagesByTabIdRef.current = {};
+      initialStoredPendingRef.current = {};
+      return;
+    }
 
-      setMessagesByTabId((current) => (
-        current === initialMessagesByTabId
-          ? nextMessagesByTabId
-          : mergeHydratedMessagesByKey(current, nextMessagesByTabId)
-      ));
+    hasStartedInitialAttachmentHydrationRef.current = true;
 
-      const nextActiveMessages = messagesRef.current === initialActiveMessages
-        ? hydratedActiveMessages
-        : mergeConversationAttachments(messagesRef.current || [], hydratedActiveMessages);
-      if (nextActiveMessages !== messagesRef.current) {
-        setMessagesSynced(nextActiveMessages);
-      }
+    void hydrateAttachmentStateByKeyFromStorage(initialMessagesByTabId, initialPendingChatTurns)
+      .then((hydratedState) => {
+        const nextMessagesByTabId = hydratedState.messagesByKey || {};
+        const hydratedActiveMessages = nextMessagesByTabId[activeChatTabIdRef.current] || [];
 
-      setPendingChatTurns((current) => (
-        current === initialPendingChatTurns
-          ? hydratedState.pendingChatTurns
-          : mergeHydratedPendingChatTurns(current, hydratedState.pendingChatTurns)
-      ));
-    });
-  }, [activeChatTabId, initialStoredMessagesByTabIdRef, initialStoredPendingRef, messagesRef, setMessagesByTabId, setMessagesSynced, setPendingChatTurns]);
+        setMessagesByTabId((current) => mergeHydratedMessagesByKey(current, nextMessagesByTabId));
+
+        const currentVisibleActiveMessages = messagesRef.current || [];
+        const currentSettledActiveMessages = latestMessagesByTabIdRef.current?.[activeChatTabIdRef.current] || [];
+        const hydrationBaseMessages =
+          currentVisibleActiveMessages.length > 0 && currentSettledActiveMessages.length > 0
+            ? currentSettledActiveMessages
+            : currentVisibleActiveMessages;
+        const nextActiveMessages = mergeHydratedActiveMessages(hydrationBaseMessages, hydratedActiveMessages);
+        if (nextActiveMessages !== messagesRef.current) {
+          setMessagesSynced(nextActiveMessages);
+        }
+
+        setPendingChatTurns((current) => mergeHydratedPendingChatTurns(current, hydratedState.pendingChatTurns));
+      })
+      .catch(() => {})
+      .finally(() => {
+        initialStoredMessagesByTabIdRef.current = {};
+        initialStoredPendingRef.current = {};
+      });
+  }, [initialStoredMessagesByTabIdRef, initialStoredPendingRef, messagesRef, setMessagesByTabId, setMessagesSynced, setPendingChatTurns]);
 }

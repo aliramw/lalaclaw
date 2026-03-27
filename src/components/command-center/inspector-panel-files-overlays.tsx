@@ -56,9 +56,9 @@ export function FilesTabOverlays({
         onClose={onCloseMenu}
         onOpenEdit={onOpenEdit}
         onOpenPreview={onOpenPreview}
-        onPasteDirectory={onPasteDirectory}
+        onPasteDirectory={onPasteDirectory ? async (item) => onPasteDirectory(item) : undefined}
         onRename={onRename}
-        onRefreshDirectory={!hasWorkspaceFilter ? onRefreshDirectory : undefined}
+        onRefreshDirectory={!hasWorkspaceFilter && onRefreshDirectory ? async (item) => onRefreshDirectory(item) : undefined}
       />
       {renameState ? (
         <RenameDialog

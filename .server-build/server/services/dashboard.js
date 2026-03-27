@@ -170,7 +170,7 @@ function choosePreferredReplayTurn(previous, next) {
     if (previousText !== nextText) {
         return nextText.length >= previousText.length ? next : previous;
     }
-    return next;
+    return previous;
 }
 function choosePreferredAssistantReplay(previous, next) {
     const previousAttachmentScore = getConversationAttachmentPayloadScore(previous.attachments);

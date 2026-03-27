@@ -104,6 +104,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             resolve = nextResolve;
             reject = nextReject;
         });
+        promise.catch(() => { });
         return { promise, resolve, reject };
     }
     function collectGatewayErrorSignals(error, signals = new Set()) {
@@ -792,6 +793,18 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             message: trimmedMessage,
         }, sessionKey, 'send');
     }
+    function shouldMirrorAssistantReply(deliveryRoute, requiresDirectMultimodal = false) {
+        if (!deliveryRoute) {
+            return false;
+        }
+        return requiresDirectMultimodal || deliveryRoute.channel === 'dingtalk-connector';
+    }
+    async function maybeMirrorAssistantReply(sessionUser = 'command-center', messageText = '', deliveryRoute = null, requiresDirectMultimodal = false) {
+        if (!shouldMirrorAssistantReply(deliveryRoute, requiresDirectMultimodal)) {
+            return null;
+        }
+        return await mirrorOpenClawAssistantMessage(sessionUser, messageText);
+    }
     async function callOpenClawSession(messages, sessionUser = 'command-center', timeoutMs = 30000) {
         const result = await startOpenClawSessionRun(messages, sessionUser);
         const finalAssistant = await waitForOpenClawSessionCompletion(result, timeoutMs);
@@ -1394,7 +1407,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (deliveryRoute && requiresDirectMultimodal) {
             const result = await callOpenClaw(messages, fastMode, sessionUser, options);
             try {
-                await mirrorOpenClawAssistantMessage(sessionUser, result.outputText);
+                await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, requiresDirectMultimodal);
             }
             catch (error) {
                 console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
@@ -1407,7 +1420,17 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (!deliveryRoute && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
             return await callOpenClaw(messages, fastMode, sessionUser, options);
         }
-        return await callOpenClawSession(messages, sessionUser);
+        const result = await callOpenClawSession(messages, sessionUser);
+        try {
+            await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, false);
+        }
+        catch (error) {
+            console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
+                error: error instanceof Error ? error.message : String(error || ''),
+                sessionUser,
+            });
+        }
+        return result;
     }
     async function dispatchOpenClawStream(messages, fastMode, sessionUser = 'command-center', options = {}) {
         const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
@@ -1418,7 +1441,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (deliveryRoute && requiresDirectMultimodal) {
             const result = await callOpenClawStream(messages, fastMode, sessionUser, options);
             try {
-                await mirrorOpenClawAssistantMessage(sessionUser, result.outputText);
+                await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, requiresDirectMultimodal);
             }
             catch (error) {
                 console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
@@ -1431,7 +1454,17 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (!deliveryRoute && requiresDirectOpenClawRequest(messages, { ...options, fastMode })) {
             return await callOpenClawStream(messages, fastMode, sessionUser, options);
         }
-        return await callOpenClawSessionStream(messages, sessionUser, 30000, options);
+        const result = await callOpenClawSessionStream(messages, sessionUser, 30000, options);
+        try {
+            await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, false);
+        }
+        catch (error) {
+            console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
+                error: error instanceof Error ? error.message : String(error || ''),
+                sessionUser,
+            });
+        }
+        return result;
     }
     function parseOpenClawResponse(data) {
         if (typeof data.output_text === 'string') {

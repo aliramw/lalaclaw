@@ -25,8 +25,9 @@ import { messageHasVisualMedia } from "@/components/command-center/chat-panel-at
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton, shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { getImSessionDisplayName, isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
-import { isOfflineStatus, normalizeStatusKey } from "@/features/session/status-display";
-import { createConversationKey } from "@/features/app/storage";
+import { isOfflineStatus } from "@/features/session/status-display";
+import { createConversationKey } from "@/features/app/state/app-session-identity";
+import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
 import { maxPromptRows } from "@/features/chat/utils";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
@@ -44,6 +45,7 @@ type AttachmentLike = {
   path?: string;
   previewUrl?: string;
   size?: number;
+  storageKey?: string;
 };
 
 type MessageLike = {
@@ -67,6 +69,7 @@ type NodeRefTarget<T> =
 
 type MessageBubbleProps = {
   agentLabel?: string;
+  assistantVisualState?: "settled" | "pending" | "streaming";
   animateViewportScroll?: (viewport: HTMLElement | null, top: number, duration?: number) => void;
   bubbleAnchorRef?: ((node: HTMLElement | null) => void) | { current: HTMLElement | null } | null;
   files?: Array<Record<string, unknown>>;
@@ -222,6 +225,7 @@ type ChatPanelProps = {
   promptRef?: NodeRefTarget<HTMLTextAreaElement>;
   queuedMessages?: Array<Record<string, unknown>>;
   resolvedTheme?: string;
+  run?: Partial<ChatRunState> | null;
   restoredScrollKey?: string;
   restoredScrollRevision?: number;
   restoredScrollState?: ChatScrollState | null;
@@ -699,17 +703,162 @@ function normalizeSkillMention(skill) {
   };
 }
 
-function findLatestAssistantMessageId(messages: MessageLike[] = []) {
+function findLatestAssistantMessageMeta(
+  messages: MessageLike[] = [],
+  {
+    latestMessageIsAssistant = false,
+    preferRunState = false,
+    run = null,
+  }: {
+    latestMessageIsAssistant?: boolean;
+    preferRunState?: boolean;
+    run?: Partial<ChatRunState> | null;
+  } = {},
+) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const entry = messages[index];
     if (entry?.role === "assistant") {
-      return getConversationMessageId(entry, index);
+      const assistantVisualState = resolveAssistantVisualState({
+        message: entry,
+        isLatestAssistant: true,
+        latestMessageIsAssistant,
+        preferRunState,
+        run,
+      });
+      return {
+        id: getConversationMessageId(entry, index, { assistantVisualState }),
+        index,
+      };
     }
   }
-  return "";
+  return { id: "", index: -1 };
 }
 
-function getConversationMessageId(message: MessageLike = {}, index = 0) {
+function isTransientAssistantVisualState({
+  assistantVisualState = "settled",
+  message,
+}: {
+  assistantVisualState?: "settled" | "pending" | "streaming";
+  message?: MessageLike;
+} = {}) {
+  return message?.role === "assistant" && (assistantVisualState === "pending" || assistantVisualState === "streaming");
+}
+
+function resolveAssistantVisualState({
+  isLatestAssistant = null,
+  message,
+  messageId = "",
+  latestAssistantMessageId = "",
+  latestMessageIsAssistant = false,
+  preferRunState = false,
+  run = null,
+}: {
+  isLatestAssistant?: boolean | null;
+  message?: MessageLike;
+  messageId?: string;
+  latestAssistantMessageId?: string;
+  latestMessageIsAssistant?: boolean;
+  preferRunState?: boolean;
+  run?: Partial<ChatRunState> | null;
+} = {}) {
+  if (message?.role !== "assistant") {
+    return "settled" as const;
+  }
+
+  const runIsBusy = selectChatRunBusy(run);
+  const matchesLatestAssistant =
+    typeof isLatestAssistant === "boolean"
+      ? isLatestAssistant
+      : Boolean(latestAssistantMessageId && latestAssistantMessageId === messageId);
+  if (runIsBusy && latestMessageIsAssistant && matchesLatestAssistant) {
+    return String(run?.streamText || "").trim() || String(message?.content || "").trim()
+      ? "streaming" as const
+      : "pending" as const;
+  }
+
+  if (preferRunState) {
+    return "settled" as const;
+  }
+
+  if (message?.pending) {
+    return "pending" as const;
+  }
+
+  if (message?.streaming) {
+    return "streaming" as const;
+  }
+
+  return "settled" as const;
+}
+
+function normalizeConversationMessageFingerprintPart(value = "") {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+function hashConversationMessageFingerprint(value = "") {
+  let hash = 5381;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash) + text.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function buildConversationMessageFingerprint(message: MessageLike = {}) {
+  const role = String(message?.role || "message").trim() || "message";
+  const timestamp = Number(message?.timestamp || 0);
+  const content = normalizeConversationMessageFingerprintPart(message?.content || "");
+  const attachmentFingerprint = Array.isArray(message?.attachments)
+    ? message.attachments
+      .map((attachment) => (
+        String(attachment?.id || attachment?.storageKey || attachment?.name || attachment?.path || attachment?.previewUrl || "").trim()
+      ))
+      .filter(Boolean)
+      .join("|")
+    : "";
+  return [role, timestamp || "na", content || "empty", attachmentFingerprint || "no-attachments"].join("::");
+}
+
+function buildConversationMessageRenderKey(
+  message: MessageLike = {},
+  index = 0,
+  {
+    assistantVisualState = "settled",
+  }: {
+    assistantVisualState?: "settled" | "pending" | "streaming";
+  } = {},
+) {
+  const explicitId = String(message?.id || "").trim();
+  if (explicitId) {
+    return explicitId;
+  }
+
+  if (isTransientAssistantVisualState({ assistantVisualState, message })) {
+    const contentSeed = String(message?.content || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean)
+      || "";
+    const normalizedSeed = normalizeConversationMessageFingerprintPart(contentSeed).slice(0, 48);
+    if (normalizedSeed) {
+      return `assistant-live-${hashConversationMessageFingerprint(normalizedSeed)}`;
+    }
+    return `assistant-live-${index}`;
+  }
+
+  return `message-${hashConversationMessageFingerprint(buildConversationMessageFingerprint(message)) || index}`;
+}
+
+function getConversationMessageId(
+  message: MessageLike = {},
+  index = 0,
+  {
+    assistantVisualState = "settled",
+  }: {
+    assistantVisualState?: "settled" | "pending" | "streaming";
+  } = {},
+) {
   const explicitId = String(message?.id || "").trim();
   if (explicitId) {
     return explicitId;
@@ -717,7 +866,7 @@ function getConversationMessageId(message: MessageLike = {}, index = 0) {
 
   // Keep transient assistant bubbles stable even if upstream streaming snapshots
   // refresh their timestamps on every delta.
-  if (message?.role === "assistant" && (message?.pending || message?.streaming)) {
+  if (isTransientAssistantVisualState({ assistantVisualState, message })) {
     return `assistant-live-${index}`;
   }
 
@@ -1190,6 +1339,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
   }
 
   return previous.agentLabel === next.agentLabel
+    && previous.assistantVisualState === next.assistantVisualState
     && previous.animateViewportScroll === next.animateViewportScroll
     && previous.bubbleAnchorRef === next.bubbleAnchorRef
     && previous.files === next.files
@@ -1214,14 +1364,13 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.message?.role === next.message?.role
     && previous.message?.content === next.message?.content
     && previous.message?.timestamp === next.message?.timestamp
-    && Boolean(previous.message?.pending) === Boolean(next.message?.pending)
-    && Boolean(previous.message?.streaming) === Boolean(next.message?.streaming)
     && String(previous.message?.tokenBadge || "") === String(next.message?.tokenBadge || "")
     && areMessageAttachmentsEqual(previous.message?.attachments || [], next.message?.attachments || []);
 }
 
 const MessageBubble = memo(function MessageBubble({
   agentLabel,
+  assistantVisualState = "settled",
   animateViewportScroll,
   bubbleAnchorRef,
   files,
@@ -1250,7 +1399,8 @@ const MessageBubble = memo(function MessageBubble({
   const bubbleSurfaceRef = useRef<HTMLElement | null>(null);
   const bubbleTopSentinelRef = useRef<HTMLDivElement | null>(null);
   const isUser = message.role === "user";
-  const isPending = Boolean(message.pending);
+  const isPending = assistantVisualState === "pending";
+  const bubbleStreaming = assistantVisualState === "streaming";
   const renderedContent = useMemo(
     () => stripDingTalkImagePlaceholderForDisplay(
       unwrapAssistantEnvelope(message.content, message.role),
@@ -1259,10 +1409,10 @@ const MessageBubble = memo(function MessageBubble({
     [message.content, message.role, sessionUser],
   );
   const supportsBubbleTopJump = !messageHasVisualMedia(message);
-  const assistantTurnInProgress = !isUser && !isPending && (isStreamingAssistant || showStreamingTail);
+  const assistantTurnInProgress = !isUser && !isPending && (bubbleStreaming || showStreamingTail);
   const useCompactAssistantBubble = useMemo(
-    () => !isUser && !isPending && !assistantTurnInProgress && shouldUseCompactAssistantBubble(renderedContent),
-    [assistantTurnInProgress, isPending, isUser, renderedContent],
+    () => !isUser && !isPending && shouldUseCompactAssistantBubble(renderedContent),
+    [isPending, isUser, renderedContent],
   );
   const visualLineCount = estimateVisualLineCount(renderedContent);
   const compactMeta = visualLineCount <= 1;
@@ -1436,7 +1586,7 @@ const MessageBubble = memo(function MessageBubble({
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect?.();
     };
-  }, [isPending, isUser, messageViewportRef, message.pending, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
+  }, [assistantVisualState, isPending, isUser, messageViewportRef, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
 
   if (isUser) {
     return (
@@ -1520,7 +1670,7 @@ const MessageBubble = memo(function MessageBubble({
                   fontSize={chatFontSize as any}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
-                  streaming={isStreamingAssistant}
+                  streaming={bubbleStreaming}
                   onOpenFilePreview={handleOpenFilePreview}
                   onOpenImagePreview={handleOpenImagePreview}
                   className={fontSizeStyles.pendingMarkdown}
@@ -1590,7 +1740,7 @@ const MessageBubble = memo(function MessageBubble({
                   content={renderedContent}
                   formatTime={formatTime}
                   onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-                  streaming={isStreamingAssistant}
+                  streaming={bubbleStreaming}
                   textClassName={fontSizeStyles.meta}
                   timestamp={message.timestamp}
                 />
@@ -1608,7 +1758,7 @@ const MessageBubble = memo(function MessageBubble({
                 content={renderedContent}
                 formatTime={formatTime}
                 onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-                streaming={isStreamingAssistant}
+                streaming={bubbleStreaming}
                 sticky
                 textClassName={fontSizeStyles.meta}
                 timestamp={message.timestamp}
@@ -1652,7 +1802,7 @@ const MessageBubble = memo(function MessageBubble({
                   fontSize={chatFontSize as any}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
-                  streaming={isStreamingAssistant}
+                  streaming={bubbleStreaming}
                   onOpenFilePreview={handleOpenFilePreview}
                   onOpenImagePreview={handleOpenImagePreview}
                   className={fontSizeStyles.compactMarkdown}
@@ -1667,7 +1817,7 @@ const MessageBubble = memo(function MessageBubble({
               formatTime={formatTime}
               onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
               compact={compactMeta}
-              streaming={isStreamingAssistant}
+              streaming={bubbleStreaming}
               textClassName={fontSizeStyles.meta}
               timestamp={message.timestamp}
             />
@@ -1713,7 +1863,7 @@ const MessageBubble = memo(function MessageBubble({
                 fontSize={chatFontSize as any}
                 headingScopeId={headingScopeId}
                 resolvedTheme={resolvedTheme}
-                streaming={isStreamingAssistant}
+                streaming={bubbleStreaming}
                 onOpenFilePreview={handleOpenFilePreview}
                 onOpenImagePreview={handleOpenImagePreview}
                 className={fontSizeStyles.markdown}
@@ -1727,7 +1877,7 @@ const MessageBubble = memo(function MessageBubble({
             content={renderedContent}
             formatTime={formatTime}
             onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-            streaming={isStreamingAssistant}
+            streaming={bubbleStreaming}
             sticky
             textClassName={fontSizeStyles.meta}
             timestamp={message.timestamp}
@@ -1821,7 +1971,7 @@ function QueuedMessages({ items, onClearAll, onEditItem, onRemoveItem, textClass
   }
 
   return (
-    <div data-testid="queued-messages-panel" className="rounded-xl border border-border/70 bg-background/85 px-2.5 py-2 shadow-xs">
+    <div data-testid="queued-messages-panel" className="min-w-0 rounded-xl border border-border/70 bg-background/85 px-2.5 py-2 shadow-xs">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
           <Badge variant="default" className="h-5 shrink-0 px-1.5 py-0 text-[10px]">
@@ -1845,13 +1995,13 @@ function QueuedMessages({ items, onClearAll, onEditItem, onRemoveItem, textClass
           </Tooltip>
         ) : null}
       </div>
-      <div className="cc-scroll-region grid max-h-32 gap-1 overflow-y-auto pr-0.5">
+      <div className="cc-scroll-region grid min-w-0 max-h-32 gap-1 overflow-y-auto pr-0.5">
         {items.map((item, index) => {
           const contentText = String(item?.content || "");
           const displayText = contentText.trim() || (item?.attachments?.length ? messages.chat.queuedAttachmentOnly : "");
 
           return (
-            <div key={item.id} className="flex items-center gap-2 rounded-lg border border-border/65 bg-muted/25 px-2 py-1.5">
+            <div key={item.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-border/65 bg-muted/25 px-2 py-1.5">
               <span className="shrink-0 text-[10px] font-medium text-muted-foreground/90">#{index + 1}</span>
               <span className={cn("min-w-0 flex-1 truncate text-foreground/95", textClassName)} title={displayText || contentText}>
                 {displayText}
@@ -2697,6 +2847,7 @@ export function ChatPanel({
   promptRef,
   queuedMessages = [],
   resolvedTheme,
+  run = null,
   restoredScrollKey = "",
   restoredScrollRevision = 0,
   restoredScrollState = null,
@@ -2804,14 +2955,7 @@ export function ChatPanel({
       after: placeholderText.slice(agentIndex + agentName.length),
     };
   }, [currentAgentName, promptPlaceholderVisual]);
-  const latestMessageCardKey = useMemo(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) {
-      return "";
-    }
-
-    return [lastMessage.role || "", lastMessage.timestamp || "", lastMessage.pending ? "pending" : "done"].join("::");
-  }, [messages]);
+  const latestMessageIsAssistant = messages[messages.length - 1]?.role === "assistant";
   const latestUserMessageKey = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const candidate = messages[index];
@@ -2824,59 +2968,95 @@ export function ChatPanel({
 
     return "";
   }, [messages]);
-  const latestAssistantMessageId = useMemo(() => findLatestAssistantMessageId(messages), [messages]);
-  const hasActiveAssistantReply = useMemo(
-    () => messages.some((message) => message?.role === "assistant" && (message?.pending || message?.streaming)),
-    [messages],
+  const effectiveRun = useMemo(
+    () =>
+      run
+        ? {
+            ...createEmptyChatRunState(),
+            ...run,
+          }
+        : deriveLegacyChatRunState({
+            allowSessionStatusBusy: isImSessionUser(session.sessionUser),
+            messages,
+            rawBusy: busy,
+            sessionStatus: session.status,
+            trustBusySignal: true,
+          }),
+    [busy, messages, run, session.sessionUser, session.status],
   );
-  const showBusyBadge = busy
-    || hasActiveAssistantReply
-    || (
-      isImSessionUser(session.sessionUser)
-      && ["running", "dispatching"].includes(normalizeStatusKey(session.status))
-    );
+  const latestAssistantMeta = useMemo(
+    () =>
+      findLatestAssistantMessageMeta(messages, {
+        latestMessageIsAssistant,
+        preferRunState: Boolean(run),
+        run: effectiveRun,
+      }),
+    [effectiveRun, latestMessageIsAssistant, messages, run],
+  );
+  const latestAssistantMessageId = latestAssistantMeta.id;
+  const latestAssistantMessageIndex = latestAssistantMeta.index;
+  const showBusyBadge = selectChatRunBusy(effectiveRun);
   const stableShowBusyBadge = useLatchedBoolean(showBusyBadge);
   const showStopButton = Boolean(onStop) && showBusyBadge;
-  const { isStaleRunning, staleSeconds } = useStaleRunningDetector({ busy: stableShowBusyBadge, messages });
-  const latestAssistantMessage = useMemo(() => {
-    if (!latestAssistantMessageId) {
-      return null;
+  const allowLegacyStreamingVisual = !run || showBusyBadge;
+  const latestMessageCardKey = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) {
+      return "";
     }
 
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const candidate = messages[index];
-      if (candidate?.role !== "assistant") {
-        continue;
-      }
-      if (getConversationMessageId(candidate, index) === latestAssistantMessageId) {
-        return candidate;
-      }
-    }
-
-    return null;
-  }, [latestAssistantMessageId, messages]);
+    const lastMessageVisualState = resolveAssistantVisualState({
+      isLatestAssistant: latestMessageIsAssistant && lastMessage.role === "assistant",
+      message: lastMessage,
+      latestAssistantMessageId,
+      latestMessageIsAssistant,
+      preferRunState: Boolean(run),
+      run: effectiveRun,
+    });
+    return [
+      lastMessage.role || "",
+      lastMessage.timestamp || "",
+      lastMessageVisualState,
+    ].join("::");
+  }, [effectiveRun, latestAssistantMessageId, latestMessageIsAssistant, messages, run]);
+  const { isStaleRunning, staleSeconds } = useStaleRunningDetector({ run: effectiveRun });
+  const latestAssistantMessage = latestAssistantMessageIndex >= 0 ? messages[latestAssistantMessageIndex] || null : null;
+  const latestAssistantVisualState = useMemo(
+    () =>
+      latestAssistantMessage
+        ? resolveAssistantVisualState({
+            message: latestAssistantMessage,
+            messageId: latestAssistantMessageId,
+            latestAssistantMessageId,
+            latestMessageIsAssistant,
+            preferRunState: Boolean(run),
+            run: effectiveRun,
+          })
+        : "settled",
+    [effectiveRun, latestAssistantMessage, latestAssistantMessageId, latestMessageIsAssistant, run],
+  );
   const latestAssistantCanShowStreamingTail = useMemo(
     () => Boolean(
       latestAssistantMessageId
         && latestAssistantMessage?.role === "assistant"
         && messages[messages.length - 1]?.role === "assistant"
-        && !latestAssistantMessage?.pending
+        && latestAssistantVisualState !== "pending"
         && String(latestAssistantMessage?.content || "").trim()
-        && (showBusyBadge || hasActiveAssistantReply),
+        && (showBusyBadge || String(effectiveRun.streamText || "").trim()),
     ),
-    [hasActiveAssistantReply, latestAssistantMessage, latestAssistantMessageId, messages, showBusyBadge],
+    [effectiveRun.streamText, latestAssistantMessage, latestAssistantMessageId, latestAssistantVisualState, messages, showBusyBadge],
   );
   const latestAssistantRenderKey = useMemo(
     () =>
       latestAssistantMessage
         ? [
-            latestAssistantMessage.timestamp,
-            latestAssistantMessage.pending ? "pending" : "done",
+          latestAssistantMessage.timestamp,
+            latestAssistantVisualState,
             latestAssistantMessage.content || "",
             latestAssistantMessage.attachments?.length || 0,
           ].join("::")
         : "",
-    [latestAssistantMessage],
+    [latestAssistantMessage, latestAssistantVisualState],
   );
 
   useEffect(() => {
@@ -3035,7 +3215,6 @@ export function ChatPanel({
       ownerAgentId: skill.ownerAgentId,
     })),
   ];
-  const latestMessageIsAssistant = messages[messages.length - 1]?.role === "assistant";
   const latestAssistantIsCompactIntro = useMemo(
     () =>
       Boolean(
@@ -4058,7 +4237,7 @@ export function ChatPanel({
 
   useLayoutEffect(() => {
     alignLatestAssistantReply();
-  }, [alignLatestAssistantReply, latestAssistantMessage?.streaming, latestAssistantMessageId, latestAssistantRenderKey]);
+  }, [alignLatestAssistantReply, latestAssistantMessageId, latestAssistantRenderKey, latestAssistantVisualState]);
 
   useEffect(() => {
     const viewport = resolvedMessageViewport;
@@ -4193,20 +4372,23 @@ export function ChatPanel({
     let lastAssistantMessageId = "";
 
     return messages.map((message, index) => {
-      const messageId = getConversationMessageId(message, index);
+      const isLatestAssistant = latestAssistantMessageIndex === index;
+      const assistantVisualState = resolveAssistantVisualState({
+        isLatestAssistant,
+        message,
+        messageId: getConversationMessageId(message, index),
+        latestAssistantMessageId,
+        latestMessageIsAssistant,
+        preferRunState: Boolean(run),
+        run: allowLegacyStreamingVisual ? effectiveRun : { status: "idle", streamText: "" },
+      });
+      const messageId = getConversationMessageId(message, index, { assistantVisualState });
+      const messageRenderKey = buildConversationMessageRenderKey(message, index, { assistantVisualState });
       const previousMessageId = message.role === "assistant" ? lastAssistantMessageId : lastUserMessageId;
-      const isLatestAssistant = latestAssistantMessageId === messageId;
-      const isStreamingAssistant = Boolean(
-        isLatestAssistant
-          && latestMessageIsAssistant
-          && message.role === "assistant"
-          && !message.pending
-          && message.streaming
-          && String(message.content || "").trim(),
-      );
+      const isStreamingAssistant = assistantVisualState === "streaming" && Boolean(String(message.content || "").trim());
       const showStreamingTail = Boolean(
         message.role === "assistant"
-          && !message.pending
+          && assistantVisualState !== "pending"
           && isLatestAssistant
           && latchedStreamingTailMessageId
           && latchedStreamingTailMessageId === messageId
@@ -4222,6 +4404,7 @@ export function ChatPanel({
       return (
         <MessageBubble
           agentLabel={agentLabel}
+          assistantVisualState={assistantVisualState}
           animateViewportScroll={animateViewportScroll}
           bubbleAnchorRef={isLatestAssistant ? latestAssistantBubbleRef : undefined}
           handleOpenFilePreview={handleOpenPreview}
@@ -4231,7 +4414,7 @@ export function ChatPanel({
           isStreamingAssistant={isStreamingAssistant}
           showStreamingTail={showStreamingTail}
           markUserScrollTakeover={markUserScrollTakeover}
-          key={messageId}
+          key={messageRenderKey}
           message={message}
           messageId={messageId}
           formatTime={formatTime}
@@ -4242,7 +4425,7 @@ export function ChatPanel({
           resolvedTheme={resolvedTheme}
           sessionUser={session?.sessionUser}
           suppressOutline={isLatestAssistant && stableShowBusyBadge}
-          staleWarning={message.pending && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
+          staleWarning={isLatestAssistant && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
           separated={index > 0 && messages[index - 1]?.role !== message.role}
           chatFontSize={chatFontSize}
           userLabel={resolvedUserLabel}
@@ -4250,6 +4433,7 @@ export function ChatPanel({
       );
     });
   }, [
+    allowLegacyStreamingVisual,
     agentLabel,
     animateViewportScroll,
     busy,
@@ -4261,7 +4445,9 @@ export function ChatPanel({
     highlightedMessageId,
     i18n.chat,
     isStaleRunning,
+    effectiveRun,
     latestAssistantMessageId,
+    latestAssistantMessageIndex,
     latestMessageIsAssistant,
     markUserScrollTakeover,
     messages,
@@ -4269,6 +4455,7 @@ export function ChatPanel({
     openImagePreview,
     latchedStreamingTailMessageId,
     resolvedTheme,
+    run,
     session?.sessionUser,
     resolvedUserLabel,
     stableShowBusyBadge,

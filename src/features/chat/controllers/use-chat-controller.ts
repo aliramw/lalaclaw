@@ -404,13 +404,12 @@ export function useChatController({
     invalidateRuntimeRequestForTab(targetTabId);
     const nextMessages = ensureOptimisticTurnMessages(
       currentMessages,
-      {
-        ...resolvedEntry,
-        pendingTimestamp: resolvedPendingTimestamp,
-        assistantMessageId: resolvedPendingAssistantMessageId,
-      },
+      resolvedEntry,
       i18n.chat.thinkingPlaceholder,
-      { includePendingPlaceholder: !suppressPendingPlaceholder },
+      {
+        includePendingPlaceholder: !suppressPendingPlaceholder,
+        includeUserMessage: true,
+      },
     );
     setMessagesForTab(targetTabId, nextMessages);
     updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.running }));
@@ -425,6 +424,10 @@ export function useChatController({
       pendingEntry: nextPendingEntry,
     });
     let turnStopped = false;
+    let latestPartialOutputText = "";
+    let latestAssistantMessageId = resolvedPendingAssistantMessageId;
+    let latestTokenBadge = "";
+    let retainPendingUntilRuntimeCatchup = false;
     const abortController = new AbortController();
     inFlightTurnsRef.current = {
       ...inFlightTurnsRef.current,
@@ -456,10 +459,34 @@ export function useChatController({
       const payload = isNdjsonStreamResponse(response)
         ? await consumeChatStream(response, {
             entry: streamEntry,
+            onProgress: ({ assistantMessageId, lastDeltaAt, streamText, tokenBadge }) => {
+              latestPartialOutputText = streamText;
+              latestAssistantMessageId = assistantMessageId || latestAssistantMessageId;
+              latestTokenBadge = tokenBadge || latestTokenBadge;
+              setPendingChatTurns((current) => {
+                const currentEntry = current[resolvedEntryKey];
+                if (!currentEntry) {
+                  return current;
+                }
+
+                return {
+                  ...current,
+                  [resolvedEntryKey]: {
+                    ...currentEntry,
+                    ...(assistantMessageId ? { assistantMessageId } : {}),
+                    lastDeltaAt,
+                    streamText,
+                    ...(tokenBadge ? { tokenBadge } : {}),
+                  },
+                };
+              });
+            },
             pendingTimestamp: resolvedPendingTimestamp,
-            setMessagesForTab,
           })
         : await response.json() as ChatStreamPayload;
+      latestPartialOutputText = String(payload.outputText || latestPartialOutputText || "");
+      latestAssistantMessageId = String(payload.assistantMessageId || latestAssistantMessageId || resolvedPendingAssistantMessageId);
+      latestTokenBadge = String(payload.tokenBadge || latestTokenBadge || "");
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Request failed");
       }
@@ -566,10 +593,14 @@ export function useChatController({
         thinkMode: sessionPatch.thinkMode || current.thinkMode || resolvedEntry.thinkMode || "off",
       }));
 
+      const isSessionResetCommand = /^\/(?:new|reset)(?:\s|$)/i.test(String(resolvedEntry.content || "").trim());
+      const payloadIncludesUserTurn = Array.isArray(payload.conversation)
+        && conversationIncludesUserTurn(payload.conversation, resolvedEntry);
+      const canSyncConversationFromPayload = Array.isArray(payload.conversation)
+        && (isSessionResetCommand || payloadIncludesUserTurn);
+      retainPendingUntilRuntimeCatchup = !isSessionResetCommand && !payloadIncludesUserTurn;
+
       if (isTabActive(targetTabId) && payload.session) {
-        const isSessionResetCommand = /^\/(?:new|reset)(?:\s|$)/i.test(String(resolvedEntry.content || "").trim());
-        const canSyncConversationFromPayload = Array.isArray(payload.conversation)
-          && (isSessionResetCommand || conversationIncludesUserTurn(payload.conversation, resolvedEntry));
         applySnapshot?.(payload, { syncConversation: canSyncConversationFromPayload });
       }
     } catch (error) {
@@ -588,6 +619,9 @@ export function useChatController({
         assistantMessageId?: string;
       };
       const partialOutputText = String(runtimeError?.partialOutputText || "");
+      latestPartialOutputText = partialOutputText || latestPartialOutputText;
+      latestAssistantMessageId = String(runtimeError?.assistantMessageId || latestAssistantMessageId || resolvedPendingAssistantMessageId);
+      latestTokenBadge = String(runtimeError?.tokenBadge || latestTokenBadge || "");
       if (stopRequested) {
         turnStopped = true;
         const stoppedContent = partialOutputText.trim() || i18n.chat.stoppedResponse;
@@ -600,9 +634,9 @@ export function useChatController({
             },
             i18n.chat.thinkingPlaceholder,
             stoppedContent,
-            String(runtimeError?.tokenBadge || ""),
+            latestTokenBadge,
             false,
-            String(runtimeError?.assistantMessageId || resolvedPendingAssistantMessageId),
+            latestAssistantMessageId,
           ),
         );
         updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.idle }));
@@ -620,9 +654,9 @@ export function useChatController({
           },
           i18n.chat.thinkingPlaceholder,
           preservedContent,
-          String(runtimeError?.tokenBadge || ""),
+          latestTokenBadge,
           false,
-          String(runtimeError?.assistantMessageId || resolvedPendingAssistantMessageId),
+          latestAssistantMessageId,
         ),
       );
       updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.failed }));
@@ -645,6 +679,11 @@ export function useChatController({
           });
           const stoppedEntry: PendingChatTurn = {
             ...nextPendingEntry,
+            ...(latestAssistantMessageId
+              ? { assistantMessageId: String(latestAssistantMessageId) }
+              : {}),
+            ...(latestPartialOutputText.trim() ? { streamText: latestPartialOutputText } : {}),
+            ...(latestTokenBadge ? { tokenBadge: latestTokenBadge } : {}),
             stopped: true,
             stoppedAt: Date.now(),
             suppressPendingPlaceholder: true,
@@ -657,6 +696,29 @@ export function useChatController({
             tabId: targetTabId,
             nextMessages: getMessagesForTab(targetTabId),
             pendingEntry: stoppedEntry,
+          });
+        } else if (retainPendingUntilRuntimeCatchup) {
+          pushCcDebugEvent("chat.run.finalize.retained-pending", {
+            tabId: targetTabId,
+            entryId: resolvedEntry.id,
+            assistantMessageId: latestAssistantMessageId || resolvedPendingAssistantMessageId,
+          });
+          const retainedPendingEntry: PendingChatTurn = {
+            ...nextPendingEntry,
+            ...(latestAssistantMessageId
+              ? { assistantMessageId: String(latestAssistantMessageId) }
+              : {}),
+            ...(latestTokenBadge ? { tokenBadge: latestTokenBadge } : {}),
+            suppressPendingPlaceholder: true,
+          };
+          setPendingChatTurns((current) => ({
+            ...current,
+            [resolvedEntryKey]: retainedPendingEntry,
+          }));
+          persistOptimisticChatState({
+            tabId: targetTabId,
+            nextMessages: getMessagesForTab(targetTabId),
+            pendingEntry: retainedPendingEntry,
           });
         } else {
           pushCcDebugEvent("chat.run.finalize.cleared", {

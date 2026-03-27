@@ -2,11 +2,7 @@ import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ChatMessage, ChatTab, ChatTabMeta } from "@/types/chat";
 import type { AppSession } from "@/types/runtime";
-import {
-  createAgentSessionUser,
-  createAgentTabId,
-  defaultSessionUser,
-} from "@/features/app/storage";
+import { createAgentSessionUser, createAgentTabId, defaultSessionUser } from "@/features/app/state/app-session-identity";
 import { createImBootstrapSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
 import { apiFetch } from "@/lib/api-client";
 import {

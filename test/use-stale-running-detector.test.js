@@ -2,33 +2,64 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useStaleRunningDetector } from "@/features/session/runtime/use-stale-running-detector";
 
+function createRun(overrides = {}) {
+  return {
+    status: "idle",
+    runId: null,
+    startedAt: null,
+    lastDeltaAt: null,
+    streamText: "",
+    ...overrides,
+  };
+}
+
 describe("useStaleRunningDetector", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-26T00:00:00.000Z"));
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("returns not stale when busy is false", () => {
+  it("returns not stale when run is idle", () => {
     const { result } = renderHook(() =>
-      useStaleRunningDetector({ busy: false, messages: [] }),
+      useStaleRunningDetector({ run: createRun() }),
     );
+
     expect(result.current.isStaleRunning).toBe(false);
     expect(result.current.staleSeconds).toBe(0);
   });
 
-  it("returns not stale initially when busy is true", () => {
+  it("returns not stale initially when run is busy", () => {
+    const now = Date.now();
     const { result } = renderHook(() =>
-      useStaleRunningDetector({ busy: true, messages: [] }),
+      useStaleRunningDetector({
+        run: createRun({
+          status: "streaming",
+          runId: "run-1",
+          startedAt: now,
+          lastDeltaAt: now,
+        }),
+      }),
     );
+
     expect(result.current.isStaleRunning).toBe(false);
+    expect(result.current.staleSeconds).toBe(0);
   });
 
-  it("becomes stale after threshold with no message changes", () => {
+  it("becomes stale after threshold with no run progress changes", () => {
+    const now = Date.now();
     const { result } = renderHook(() =>
-      useStaleRunningDetector({ busy: true, messages: [{ role: "user", content: "hi" }] }),
+      useStaleRunningDetector({
+        run: createRun({
+          status: "streaming",
+          runId: "run-1",
+          startedAt: now,
+          lastDeltaAt: now,
+        }),
+      }),
     );
 
     act(() => {
@@ -39,11 +70,20 @@ describe("useStaleRunningDetector", () => {
     expect(result.current.staleSeconds).toBeGreaterThanOrEqual(45);
   });
 
-  it("resets when messages change", () => {
-    const messages = [{ role: "user", content: "hi" }];
+  it("resets when lastDeltaAt advances", () => {
+    const now = Date.now();
     const { result, rerender } = renderHook(
-      ({ busy, msgs }) => useStaleRunningDetector({ busy, messages: msgs }),
-      { initialProps: { busy: true, msgs: messages } },
+      ({ run }) => useStaleRunningDetector({ run }),
+      {
+        initialProps: {
+          run: createRun({
+            status: "streaming",
+            runId: "run-1",
+            startedAt: now,
+            lastDeltaAt: now,
+          }),
+        },
+      },
     );
 
     act(() => {
@@ -51,19 +91,38 @@ describe("useStaleRunningDetector", () => {
     });
     expect(result.current.isStaleRunning).toBe(true);
 
-    const newMessages = [...messages, { role: "assistant", content: "hello" }];
-    rerender({ busy: true, msgs: newMessages });
+    const progressedAt = now + 50_000;
+    rerender({
+      run: createRun({
+        status: "streaming",
+        runId: "run-1",
+        startedAt: now,
+        lastDeltaAt: progressedAt,
+      }),
+    });
 
     act(() => {
       vi.advanceTimersByTime(5_000);
     });
+
     expect(result.current.isStaleRunning).toBe(false);
+    expect(result.current.staleSeconds).toBe(0);
   });
 
-  it("resets when busy becomes false", () => {
+  it("resets when run becomes idle", () => {
+    const now = Date.now();
     const { result, rerender } = renderHook(
-      ({ busy }) => useStaleRunningDetector({ busy, messages: [] }),
-      { initialProps: { busy: true } },
+      ({ run }) => useStaleRunningDetector({ run }),
+      {
+        initialProps: {
+          run: createRun({
+            status: "streaming",
+            runId: "run-1",
+            startedAt: now,
+            lastDeltaAt: now,
+          }),
+        },
+      },
     );
 
     act(() => {
@@ -71,7 +130,8 @@ describe("useStaleRunningDetector", () => {
     });
     expect(result.current.isStaleRunning).toBe(true);
 
-    rerender({ busy: false });
+    rerender({ run: createRun() });
+
     expect(result.current.isStaleRunning).toBe(false);
     expect(result.current.staleSeconds).toBe(0);
   });

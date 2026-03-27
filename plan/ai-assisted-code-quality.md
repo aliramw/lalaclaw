@@ -25,6 +25,7 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 ## CI/Testing Requirements
 
 - AI output runs through the same validation pipeline as handwritten code. Always run lint/format, unit/contract tests, integration/e2e cases, and any specialized smoke tests tied to the touched modules.
+- For AI-assisted ownership refactors around `app/storage`, `app/state`, `chat/state`, or `theme`, include `npm run check:architecture:contracts` in the validation log whenever that matrix is the relevant narrow guardrail.
 - For UI work, confirm the generated design still complies with `dev-spec/frontend-visual-spec.md` and note that verification in the plan (screenshots, storybook states, or visual diffs as needed).
 - When AI modifies release or packaging surfaces, include `npm run build` and `npm run pack:release` in the CI run and confirm the clean install smoke path succeeds before merging.
 
@@ -41,3 +42,25 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 ## Review Summary Section
 
 - After each AI-involved PR, append a short summary: prompt used, files touched, tests rerun, reviewer, and whether any manual validation (UI, smoke, environment) was required. Keep at least the last three summaries in this file for traceability.
+
+### 2026-03-26 — Chat/Storage Ownership Refactor Validation Close-out
+
+- Prompt/workstream: continue the `app-storage` ownership split, contract/boundary guardrails, and final validation closure for the OpenClaw-aligned chat-state refactor.
+- Files touched: controller/runtime typing surfaces such as `src/features/app/controllers/use-command-center.ts`, `src/features/app/controllers/use-command-center-reset.ts`, `src/features/app/controllers/use-command-center-helpers.ts`, `src/features/app/controllers/use-command-center-session-actions.ts`, runtime/state helpers such as `src/features/session/runtime/use-runtime-snapshot.ts`, `src/features/chat/state/chat-runtime-pending.ts`, `src/features/chat/state/chat-pending-conversation.ts`, plus validation-adjacent files such as `src/App.tsx`, `src/types/runtime.ts`, `src/types/assets.d.ts`, and `src/features/app/storage/use-app-persistence.ts`.
+- Quality gates rerun:
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm test`
+  - `npm run build`
+  - `npm run check:architecture:contracts`
+  - `npm run pack:release`
+  - `npm run test:release:smoke -- --tarball ./artifacts/lalaclaw-2026.3.24-1.tgz`
+- Manual/equivalent validation:
+  - tarball installed in a clean temporary directory
+  - packaged app started from installed files
+  - release smoke confirmed first-screen render path and browser-level console/page error counts stayed at `0`
+- Reviewer/sign-off: AI-assisted implementation validated against repository quality gates; no new runtime/build/release-smoke regressions were observed in the final validation pass.
+- Recommended human follow-up:
+  - review the new ownership boundaries for `app/state`, `chat/state`, `theme`, and `app/storage`
+  - verify the architecture-contract matrix remains the intended narrow guardrail and not a substitute for behavior regressions
+  - decide whether the final delivery should land as one close-out PR or a small stack of follow-up PRs

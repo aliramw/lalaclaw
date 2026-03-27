@@ -678,6 +678,183 @@ describe("createOpenClawClient", () => {
     expect(execFileAsync.mock.calls.flatMap((call) => call[1])).not.toContain("agent");
   });
 
+  it("falls back to polling when a delivery-routed gateway chat stream closes cleanly before final", async () => {
+    const deltas = [];
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("agent");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "钉钉" }],
+              },
+            },
+          });
+          this.opts.onClose?.(1000, "");
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ status: "completed" }) })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          messages: [
+            {
+              role: "assistant",
+              timestamp: 125,
+              content: [{ type: "text", text: "钉钉恢复输出" }],
+              usage: { output_tokens: 7 },
+            },
+          ],
+        }),
+      });
+
+    const client = createClient({
+      execFileAsync,
+      getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const result = await client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      rawSessionUser,
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    expect(deltas).toEqual(["钉钉", "恢复输出"]);
+    expect(result).toEqual({
+      outputText: "钉钉恢复输出",
+      usage: { output_tokens: 7 },
+    });
+    expect(execFileAsync).toHaveBeenCalledTimes(2);
+    expect(execFileAsync.mock.calls[0][1]).toContain("agent.wait");
+    expect(execFileAsync.mock.calls[1][1]).toContain("chat.history");
+  });
+
+  it("does not emit an unhandled rejection when a delivery-routed gateway chat stream closes before final", async () => {
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const unhandledRejectionSpy = vi.fn();
+    const handleUnhandledRejection = (reason) => {
+      unhandledRejectionSpy(reason);
+    };
+    process.once("unhandledRejection", handleUnhandledRejection);
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(_method, params) {
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "钉钉" }],
+              },
+            },
+          });
+          this.opts.onClose?.(1000, "");
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ status: "completed" }) })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          messages: [
+            {
+              role: "assistant",
+              timestamp: 125,
+              content: [{ type: "text", text: "钉钉恢复输出" }],
+              usage: { output_tokens: 7 },
+            },
+          ],
+        }),
+      });
+
+    const client = createClient({
+      execFileAsync,
+      getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    try {
+      await client.dispatchOpenClawStream(
+        [{ role: "user", content: "继续" }],
+        false,
+        rawSessionUser,
+        {
+          onDelta: () => {},
+        },
+      );
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(unhandledRejectionSpy).not.toHaveBeenCalled();
+    } finally {
+      process.removeListener("unhandledRejection", handleUnhandledRejection);
+    }
+  });
+
   it("fills in silent stream gaps by polling the session history before the final event arrives", async () => {
     vi.useFakeTimers();
     const deltas = [];

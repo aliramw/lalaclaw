@@ -76,6 +76,7 @@ export type RuntimeSnapshotRequestOverrides = {
 export type RuntimeSnapshotHookI18n = {
   common: {
     idle: string;
+    justReset: string;
     offline: string;
     running: string;
   };
@@ -95,6 +96,7 @@ export type RuntimeSnapshotHookSession = RuntimeSession & {
   model?: string;
   mode?: string;
   status?: string;
+  updatedLabel?: string;
 };
 
 export type AppSession = RuntimeSnapshotHookSession & {
@@ -128,6 +130,7 @@ export type RuntimeSnapshotHookInput = {
   i18n: RuntimeSnapshotHookI18n;
   messagesRef: { current: ChatMessage[] };
   pendingChatTurns: ConversationPendingMap;
+  pendingChatTurnsRef?: { current: ConversationPendingMap };
   runtimeSessionUser?: string;
   session: RuntimeSnapshotHookSession;
   setBusy: (value: boolean) => void;

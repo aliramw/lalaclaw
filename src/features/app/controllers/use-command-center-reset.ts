@@ -3,10 +3,9 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ChatMessage, ChatTab, ChatTabMeta, ConversationPendingMap, StoredUiState } from "@/types/chat";
 import type { AppSession } from "@/types/runtime";
 import {
-  createConversationKey,
-  createResetSessionUser,
   persistUiStateSnapshot,
-} from "@/features/app/storage";
+} from "@/features/app/storage/app-ui-state-storage";
+import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createBaseSession } from "@/features/app/state";
 import {
   createResetImSessionUser,
@@ -31,6 +30,11 @@ type QueuedMessageLike = {
   tabId?: string;
 } & Record<string, unknown>;
 
+function createResetSessionUser(agentId = "main") {
+  const normalizedAgentId = String(agentId || "").trim().replace(/[^\w:-]+/g, "-").replace(/-+/g, "-") || "main";
+  return `command-center-reset-${normalizedAgentId}-${Date.now()}`;
+}
+
 type UseCommandCenterResetOptions = {
   activeChatTabIdRef: MutableRefObject<string>;
   activeTabRef: MutableRefObject<string>;
@@ -51,7 +55,6 @@ type UseCommandCenterResetOptions = {
   inspectorPanelWidthRef: MutableRefObject<number>;
   loadRuntime: (sessionUser: string, options?: { agentId?: string }) => Promise<unknown>;
   messagesByTabIdRef: MutableRefObject<Record<string, ChatMessage[]>>;
-  messagesRef: MutableRefObject<ChatMessage[]>;
   pendingChatTurnsRef: MutableRefObject<ConversationPendingMap>;
   promptDraftsByConversationRef: MutableRefObject<Record<string, string>>;
   runtimeCacheByTabIdRef: MutableRefObject<Record<string, unknown>>;
@@ -71,7 +74,7 @@ type UseCommandCenterResetOptions = {
     conversationKey?: string,
     options?: { flushDrafts?: boolean; syncVisible?: boolean },
   ) => string;
-  setPromptHistoryNavigation: Dispatch<SetStateAction<number | null>>;
+  setPromptHistoryNavigation: Dispatch<SetStateAction<any>>;
   setQueuedMessages: Dispatch<SetStateAction<QueuedMessageLike[]>>;
   setRuntimeCacheByTabId: Dispatch<SetStateAction<Record<string, unknown>>>;
   setSession: Dispatch<SetStateAction<AppSession>>;
@@ -102,7 +105,6 @@ export function useCommandCenterReset({
   inspectorPanelWidthRef,
   loadRuntime,
   messagesByTabIdRef,
-  messagesRef,
   pendingChatTurnsRef,
   promptDraftsByConversationRef,
   runtimeCacheByTabIdRef,
@@ -147,8 +149,8 @@ export function useCommandCenterReset({
     const nextSessionUser = isImSessionUser(currentSessionUser)
       ? createResetImSessionUser(currentSessionUser)
       : createResetSessionUser(sessionStateRef.current.agentId);
-    const nextAgentId = sessionStateRef.current.agentId;
-    const nextModel = sessionStateRef.current.model;
+    const nextAgentId = String(sessionStateRef.current.agentId || session.agentId || "main").trim() || "main";
+    const nextModel = String(sessionStateRef.current.model || session.model || "").trim();
     const previousConversationKey = createConversationKey(currentSessionUser, nextAgentId);
     const activeTabId = activeChatTabIdRef.current;
     const nextActiveTabId = activeTabId && isImSessionUser(currentSessionUser)
@@ -168,17 +170,26 @@ export function useCommandCenterReset({
           sessionUser: nextSessionUser,
         }))
       : null;
+    const nextBaseTabMeta = {
+      ...(previousTabMeta || createTabMeta({
+        id: nextActiveTabId || activeTabId || createSessionScopedTabId(nextAgentId, nextSessionUser),
+        agentId: nextAgentId,
+        sessionUser: nextSessionUser,
+      })),
+      agentId: nextAgentId,
+      sessionUser: nextSessionUser,
+      model: nextModel,
+      fastMode: previousTabMeta?.fastMode ?? Boolean(sessionStateRef.current.fastMode),
+      thinkMode: previousTabMeta?.thinkMode || sessionStateRef.current.thinkMode || "off",
+      sessionFiles: previousTabMeta?.sessionFiles || [],
+      sessionFileRewrites: previousTabMeta?.sessionFileRewrites || [],
+    };
     const nextTabMetaById = activeTabId && nextActiveTabId
       ? {
           ...Object.fromEntries(
             Object.entries(tabMetaByIdRef.current).filter(([tabId]) => tabId !== activeTabId),
           ),
-          [nextActiveTabId]: {
-            ...previousTabMeta,
-            agentId: nextAgentId,
-            sessionUser: nextSessionUser,
-            model: nextModel,
-          },
+          [nextActiveTabId]: nextBaseTabMeta,
         }
       : tabMetaByIdRef.current;
     const nextMessagesByTabId = activeTabId
@@ -190,12 +201,9 @@ export function useCommandCenterReset({
         }
       : messagesByTabIdRef.current;
     const nextInitialStoredMessagesByTabId = activeTabId
-      ? {
-          ...Object.fromEntries(
-            Object.entries(initialStoredMessagesByTabIdRef.current || {}).filter(([tabId]) => tabId !== activeTabId),
-          ),
-          [(nextActiveTabId || activeTabId)]: [],
-        }
+      ? Object.fromEntries(
+          Object.entries(initialStoredMessagesByTabIdRef.current || {}).filter(([tabId]) => tabId !== activeTabId),
+        )
       : initialStoredMessagesByTabIdRef.current;
     const nextInitialStoredPending = Object.fromEntries(
       Object.entries(initialStoredPendingRef.current || {}).filter(([key]) => key !== previousConversationKey),
@@ -230,10 +238,15 @@ export function useCommandCenterReset({
         const next = {
           ...Object.fromEntries(Object.entries(current).filter(([tabId]) => tabId !== activeTabId)),
           [nextActiveTabId]: {
-            ...(current[activeTabId] || previousTabMeta || {}),
+            ...nextBaseTabMeta,
+            ...(current[activeTabId] || {}),
             agentId: nextAgentId,
             sessionUser: nextSessionUser,
             model: nextModel,
+            fastMode: current[activeTabId]?.fastMode ?? nextBaseTabMeta.fastMode,
+            thinkMode: current[activeTabId]?.thinkMode || nextBaseTabMeta.thinkMode,
+            sessionFiles: current[activeTabId]?.sessionFiles || nextBaseTabMeta.sessionFiles,
+            sessionFileRewrites: current[activeTabId]?.sessionFileRewrites || nextBaseTabMeta.sessionFileRewrites,
           },
         };
         tabMetaByIdRef.current = next;
@@ -266,6 +279,8 @@ export function useCommandCenterReset({
                 model: nextModel,
                 fastMode: Boolean(sessionStateRef.current.fastMode),
                 thinkMode: sessionStateRef.current.thinkMode || "off",
+                sessionFiles: [],
+                sessionFileRewrites: [],
               }),
         };
         sessionByTabIdRef.current = next;
@@ -359,7 +374,6 @@ export function useCommandCenterReset({
       dismissedTaskRelationshipIdsByConversation: dismissedTaskRelationshipIdsByConversationRef.current,
       fastMode: Boolean(sessionStateRef.current.fastMode),
       inspectorPanelWidth: inspectorPanelWidthRef.current,
-      messages: nextActiveTabId ? [] : messagesRef.current,
       messagesByTabId: nextMessagesByTabId,
       model: nextModel,
       pendingChatTurns: Object.fromEntries(
@@ -392,7 +406,6 @@ export function useCommandCenterReset({
     inspectorPanelWidthRef,
     loadRuntime,
     messagesByTabIdRef,
-    messagesRef,
     pendingChatTurnsRef,
     promptDraftsByConversationRef,
     runtimeCacheByTabIdRef,

@@ -1,4 +1,13 @@
-import type { ChatControllerEntry, ChatMessage, ChatRequestBody } from "@/types/chat";
+import type { ChatControllerEntry, ChatMessage, ChatRequestBody, ChatRequestMessage } from "@/types/chat";
+
+function areEquivalentRequestMessages(
+  left: Partial<ChatRequestMessage> = {},
+  right: Partial<ChatRequestMessage> = {},
+) {
+  return String(left?.role || "") === String(right?.role || "")
+    && String(left?.content || "") === String(right?.content || "")
+    && JSON.stringify(left?.attachments || []) === JSON.stringify(right?.attachments || []);
+}
 
 export function buildChatRequestBody({
   entry,
@@ -11,6 +20,22 @@ export function buildChatRequestBody({
   messages: ChatMessage[];
   userLabel?: string;
 }): ChatRequestBody {
+  const settledMessages = messages
+    .filter((message) => !message.pending && !message.streaming)
+    .map(({ role, content, attachments }) => ({
+      role,
+      content,
+      ...(attachments?.length ? { attachments } : {}),
+    }));
+  const nextUserMessage = {
+    role: "user",
+    content: entry.content || (entry.attachments?.length ? `已发送 ${entry.attachments.length} 个附件` : ""),
+    ...(entry.attachments?.length ? { attachments: entry.attachments } : {}),
+  };
+  const requestMessages = settledMessages.length && areEquivalentRequestMessages(settledMessages[settledMessages.length - 1], nextUserMessage)
+    ? settledMessages
+    : [...settledMessages, nextUserMessage];
+
   return {
     model: typeof entry.model === "string" ? entry.model : undefined,
     agentId: typeof entry.agentId === "string" ? entry.agentId : undefined,
@@ -18,13 +43,7 @@ export function buildChatRequestBody({
     assistantMessageId,
     ...(userLabel ? { userLabel } : {}),
     fastMode: Boolean(entry.fastMode),
-    messages: messages
-      .filter((message) => !message.pending)
-      .map(({ role, content, attachments }) => ({
-        role,
-        content,
-        ...(attachments?.length ? { attachments } : {}),
-      })),
+    messages: requestMessages,
     stream: true,
   };
 }

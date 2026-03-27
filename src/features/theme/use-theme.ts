@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { loadStoredTheme, themeStorageKey } from "@/features/app/storage";
+import { loadStoredTheme, themeStorageKey } from "@/features/theme/theme-storage";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";

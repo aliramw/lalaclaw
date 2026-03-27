@@ -15,7 +15,7 @@ type AttachmentLike = {
   size?: number;
 };
 
-function isImageAttachment(attachment) {
+function isImageAttachment(attachment: AttachmentLike = {}) {
   return attachment?.kind === "image" || /^image\//i.test(attachment?.mimeType || "");
 }
 
@@ -44,7 +44,7 @@ function normalizeAttachmentSignaturePart(value = "") {
 }
 
 function getAttachmentRenderSignatures(attachment: AttachmentLike = {}, index = 0) {
-  const signatures = [];
+  const signatures: string[] = [];
   const previewUrl = normalizeAttachmentSignaturePart(attachment.previewUrl);
   const dataUrl = normalizeAttachmentSignaturePart(attachment.dataUrl);
   const resolvedPath = normalizeAttachmentSignaturePart(attachment.fullPath || attachment.path);
@@ -246,7 +246,7 @@ export function ComposerAttachments({
               type="button"
               className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground text-background shadow-sm"
               aria-label={`${messages.common.removeAttachment} ${attachment.name}`}
-              onClick={() => onRemoveAttachment?.(attachment.id)}
+              onClick={() => attachment.id && onRemoveAttachment?.(attachment.id)}
             >
               <X className="h-2 w-2" />
             </button>

@@ -17,6 +17,8 @@ type CanonicalImSessionUserOptions = ImSessionIdentityOptions & {
   preserveReset?: boolean;
 };
 
+type ParsedImSessionIdentity = Omit<ImSessionIdentity, "accountId" | "isBootstrap">;
+
 function normalizeText(value: unknown = "") {
   return String(value || "").trim();
 }
@@ -97,7 +99,7 @@ function parseSerializedSessionUser(sessionUser: unknown = "") {
   }
 }
 
-function parseNativeImSessionUser(sessionUser: unknown = "") {
+function parseNativeImSessionUser(sessionUser: unknown = ""): ParsedImSessionIdentity | null {
   const normalizedSessionUser = normalizeText(sessionUser);
   const match = normalizedSessionUser.match(
     /^agent:([^:]+):(dingtalk-connector|feishu|wecom|openclaw-weixin|weixin|wechat):([^:]+):(.+)$/i,
@@ -117,7 +119,7 @@ function parseNativeImSessionUser(sessionUser: unknown = "") {
   };
 }
 
-function parseSyntheticImSessionUser(sessionUser: unknown = "") {
+function parseSyntheticImSessionUser(sessionUser: unknown = ""): ParsedImSessionIdentity | null {
   const normalizedSessionUser = normalizeText(sessionUser);
   if (!normalizedSessionUser) {
     return null;

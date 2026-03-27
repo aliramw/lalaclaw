@@ -1,20 +1,23 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ChatMessage, ChatTab, ChatTabMeta, ConversationPendingMap } from "@/types/chat";
 import type { AppSession, RuntimePeeks } from "@/types/runtime";
+import { createConversationKey } from "@/features/app/state/app-session-identity";
 import {
-  createConversationKey,
-  hasAuthoritativePendingAssistantReply,
   mergeConversationAttachments,
   mergeConversationIdentity,
-  mergePendingConversation,
-  mergeStaleLocalConversationTail,
+} from "@/features/chat/state/chat-conversation-merge";
+import { buildDurableConversationMessages } from "@/features/chat/state/chat-pending-conversation";
+import {
+  hasAuthoritativePendingAssistantReply,
   resolveRuntimePendingEntry,
-} from "@/features/app/storage";
+} from "@/features/chat/state/chat-runtime-pending";
+import { shouldReuseSettledLocalConversationTail } from "@/features/chat/state/chat-settled-conversation";
 import { apiFetch } from "@/lib/api-client";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
 import { isImSessionUser } from "@/features/session/im-session";
+import { buildSettledConversationMessages, buildSettledPendingConversationMessages } from "@/features/chat/state/chat-session-view";
 import {
   buildChatTabTitle,
   createTabMeta,
@@ -43,6 +46,7 @@ type UseCommandCenterBackgroundRuntimeSyncOptions = {
   backgroundRuntimeAbortByTabIdRef: MutableRefObject<Record<string, AbortController>>;
   chatTabs: ChatTab[];
   i18nFastModeOn: string;
+  i18nJustReset: string;
   i18nThinkingPlaceholder: string;
   intlLocale: string;
   messagesByTabIdRef: MutableRefObject<Record<string, ChatMessage[]>>;
@@ -62,6 +66,7 @@ export function useCommandCenterBackgroundRuntimeSync({
   backgroundRuntimeAbortByTabIdRef,
   chatTabs,
   i18nFastModeOn,
+  i18nJustReset,
   i18nThinkingPlaceholder,
   intlLocale,
   messagesByTabIdRef,
@@ -75,6 +80,21 @@ export function useCommandCenterBackgroundRuntimeSync({
   updateTabMeta,
   updateTabSession,
 }: UseCommandCenterBackgroundRuntimeSyncOptions) {
+  const shouldPreferAuthoritativeEmptySnapshot = useCallback(({
+    sessionUser = "",
+    updatedLabel = "",
+  }: {
+    sessionUser?: string;
+    updatedLabel?: string;
+  } = {}) => {
+    const normalizedSessionUser = String(sessionUser || "").trim();
+    if (normalizedSessionUser.startsWith("command-center-reset-")) {
+      return true;
+    }
+
+    return Boolean(i18nJustReset) && String(updatedLabel || "").trim() === String(i18nJustReset || "").trim();
+  }, [i18nJustReset]);
+
   useEffect(() => {
     const backgroundTabs = chatTabs.filter((tab) => tab.id !== activeChatTabId && isImSessionUser(tab.sessionUser));
     if (!backgroundTabs.length) {
@@ -205,19 +225,35 @@ export function useCommandCenterBackgroundRuntimeSync({
           const snapshotHasAssistantReply = pendingEntry
             ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
             : false;
-          const mergedBackgroundConversation = pendingEntry && !snapshotHasAssistantReply
-            ? mergePendingConversation(
-                mergedConversation,
+          const allowEmptySnapshotLocalTail = shouldReuseSettledLocalConversationTail({
+            snapshotMessages: mergedConversation,
+            pendingEntry,
+            status: snapshotSession.status,
+            preferAuthoritativeEmptySnapshot: shouldPreferAuthoritativeEmptySnapshot({
+              sessionUser: snapshotSession.sessionUser || nextTabSessionUser,
+              updatedLabel: String(snapshotSession.updatedLabel || ""),
+            }),
+          });
+          const durableBackgroundConversation = buildDurableConversationMessages({
+            messages: mergedConversation,
+            pendingEntry,
+            localMessages: currentMessages.filter((message) => !message?.pending),
+            snapshotHasAssistantReply,
+            allowEmptySnapshotLocalTail,
+          });
+          const settledBackgroundConversation = pendingEntry && !snapshotHasAssistantReply
+            ? buildSettledPendingConversationMessages({
+                messages: mergedConversation,
                 pendingEntry,
-                i18nThinkingPlaceholder,
-                currentMessages,
-              )
-            : mergeStaleLocalConversationTail(
-                mergedConversation,
-                currentMessages.filter((message) => !message?.pending),
+                pendingLabel: i18nThinkingPlaceholder,
+                localMessages: currentMessages,
+              })
+            : buildSettledConversationMessages(
+                durableBackgroundConversation,
+                pendingEntry,
               );
 
-          setMessagesForTab(tabId, mergedBackgroundConversation);
+          setMessagesForTab(tabId, settledBackgroundConversation);
         }
 
         const nextTabSessionUser = resolvedSessionUser || currentTabMeta.sessionUser || sessionUser;
@@ -266,9 +302,7 @@ export function useCommandCenterBackgroundRuntimeSync({
             sessionUser: nextTabSessionUser,
           }),
         );
-        const hasLocalActiveAssistantReply = currentMessages.some((message) =>
-          message?.role === "assistant" && (message?.pending || message?.streaming));
-        setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching" || hasTrackedPendingTurn || hasLocalActiveAssistantReply);
+        setBusyForTab(tabId, normalizedStatus === "running" || normalizedStatus === "dispatching" || hasTrackedPendingTurn);
       } catch (error) {
         if (controller.signal.aborted || error?.name === "AbortError") {
           return;
@@ -304,6 +338,7 @@ export function useCommandCenterBackgroundRuntimeSync({
     backgroundRuntimeAbortByTabIdRef,
     chatTabs,
     i18nFastModeOn,
+    i18nJustReset,
     i18nThinkingPlaceholder,
     intlLocale,
     messagesByTabIdRef,
@@ -312,6 +347,7 @@ export function useCommandCenterBackgroundRuntimeSync({
     setBusyForTab,
     setMessagesForTab,
     setRuntimeCacheByTabId,
+    shouldPreferAuthoritativeEmptySnapshot,
     tabMetaByIdRef,
     updateTabIdentity,
     updateTabMeta,
