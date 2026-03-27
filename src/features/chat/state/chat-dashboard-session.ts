@@ -405,8 +405,30 @@ export function buildDashboardSettledMessages({
   }
 
   const hasPendingUserMessage = nextMessages.some((message) => matchesPendingUserMessage(message, pendingEntry));
+
   if (!hasPendingUserMessage && snapshotHasAssistantReply && findPendingAssistantTranscriptIndex(nextMessages, pendingEntry) < 0) {
     return nextMessages;
+  }
+
+  if (!hasPendingUserMessage) {
+    const pendingTimestamp = Number(pendingEntry?.pendingTimestamp || pendingEntry?.startedAt || 0);
+    const pendingAssistantId = String(pendingEntry?.assistantMessageId || "").trim();
+
+    const hasNewerAssistant = nextMessages.some((message) => {
+      if (message?.role !== "assistant") return false;
+      const messageTimestamp = normalizeMessageTimestamp(message);
+      const messageId = normalizeMessageId(message);
+
+      if (pendingAssistantId && messageId === pendingAssistantId) {
+        return false;
+      }
+
+      return messageTimestamp > pendingTimestamp;
+    });
+
+    if (hasNewerAssistant) {
+      return nextMessages;
+    }
   }
 
   return buildConversationMessages(nextMessages, pendingEntry);
