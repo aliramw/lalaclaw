@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
 import { getRuntimePollInterval, mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
@@ -2146,6 +2146,96 @@ describe("useRuntimeSnapshot", () => {
         { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
       ]);
     });
+  });
+
+  it("produces one synced conversation for the same pending turn across local state and snapshot assistant reply", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingEntry = {
+      key: "command-center:main",
+      startedAt: 10,
+      pendingTimestamp: 11,
+      assistantMessageId: "assistant-1",
+      userMessage: {
+        id: "msg-user-1",
+        role: "user",
+        content: "hello",
+        timestamp: 10,
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingEntry,
+        busy: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "hello", timestamp: 10 },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center:main": pendingEntry,
+        },
+        session: createSession({
+          status: "运行中",
+        }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/runtime?sessionUser=command-center&agentId=main", { credentials: "same-origin" });
+    });
+
+    setMessagesSynced.mockClear();
+
+    act(() => {
+      result.current.applySnapshot({
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [{ id: "assistant-1", role: "assistant", content: "done", timestamp: 11 }],
+      });
+    });
+
+    expect(setMessagesSynced).toHaveBeenLastCalledWith([
+      { id: "msg-user-1", role: "user", content: "hello", timestamp: 10 },
+      { id: "assistant-1", role: "assistant", content: "done", timestamp: 11 },
+    ]);
   });
 
   it("preserves locally streamed assistant text while the runtime snapshot still lags behind", async () => {

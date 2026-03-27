@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildDashboardChatSessionState } from "@/features/chat/state/chat-dashboard-session";
+import {
+  buildDashboardChatSessionState,
+  buildDashboardSettledMessages,
+} from "@/features/chat/state/chat-dashboard-session";
 import { selectChatRunBusy } from "@/features/chat/state/chat-session-state";
 
 describe("buildDashboardChatSessionState", () => {
@@ -140,6 +143,20 @@ describe("buildDashboardChatSessionState", () => {
       transport: "ws",
     });
 
+    expect(state.settledMessages).toEqual([
+      {
+        id: "user-partial-order-1",
+        role: "user",
+        content: "刷新后继续生成",
+        timestamp: 1000,
+      },
+      {
+        id: "assistant-pending-partial-order-1",
+        role: "assistant",
+        content: "第一段",
+        timestamp: 1001,
+      },
+    ]);
     expect(state.visibleMessages).toHaveLength(2);
     expect(state.visibleMessages[0]).toMatchObject({
       role: "user",
@@ -593,5 +610,71 @@ describe("buildDashboardChatSessionState", () => {
     expect(state.run.status).toBe("idle");
     expect(state.visibleMessages.map((message) => message.role)).toEqual(["user", "assistant", "assistant"]);
     expect(state.visibleMessages.some((message) => message.content === "正在思考...")).toBe(false);
+  });
+});
+
+describe("buildDashboardSettledMessages", () => {
+  it("strips the current pending assistant match while a local live assistant is still streaming", () => {
+    const messages = buildDashboardSettledMessages({
+        messages: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+        ],
+        pendingEntry: {
+          startedAt: 1000,
+          pendingTimestamp: 1050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+        },
+        localMessages: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到更多", timestamp: 1050 },
+        ],
+        localHasLivePendingAssistant: true,
+        localHasExplicitLivePendingAssistant: true,
+      });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: "msg-user-1",
+      role: "user",
+      content: "继续",
+      timestamp: 1000,
+    });
+  });
+
+  it("keeps the local stopped assistant when a pending turn was already stopped", () => {
+    const messages = buildDashboardSettledMessages({
+        messages: [
+          { role: "user", content: "帮我总结", timestamp: 200 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "这是完整回复", timestamp: 220 },
+        ],
+        pendingEntry: {
+          startedAt: 200,
+          pendingTimestamp: 220,
+          assistantMessageId: "msg-assistant-pending-1",
+          stopped: true,
+          stoppedAt: 250,
+          suppressPendingPlaceholder: true,
+          userMessage: { role: "user", content: "帮我总结", timestamp: 200 },
+        },
+        localMessages: [
+          { role: "user", content: "帮我总结", timestamp: 200 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "已停止", timestamp: 220 },
+        ],
+      });
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: "帮我总结",
+      timestamp: 200,
+    });
+    expect(messages[1]).toMatchObject({
+      id: "msg-assistant-pending-1",
+      role: "assistant",
+      content: "已停止",
+      timestamp: 220,
+    });
   });
 });

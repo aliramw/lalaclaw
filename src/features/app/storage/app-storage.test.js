@@ -24,9 +24,9 @@ import {
   mergeConversationIdentity,
 } from "@/features/chat/state/chat-conversation-merge";
 import {
-  buildDurableConversationMessages,
   buildPendingConversationOverlayMessages,
 } from "@/features/chat/state/chat-pending-conversation";
+import { buildDashboardSettledMessages } from "@/features/chat/state/chat-dashboard-session";
 import { sanitizeMessagesForStorage } from "@/features/chat/state/chat-persisted-messages";
 import {
   hasAuthoritativePendingAssistantReply,
@@ -427,7 +427,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("can merge only the pending user into the transcript without adding a live assistant placeholder", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [{ role: "assistant", content: "先给你几条新闻", timestamp: 220 }],
         pendingEntry: {
           startedAt: 200,
@@ -443,7 +443,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("keeps an existing pending user match without appending a synthetic assistant bubble", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [{ role: "user", content: "旧消息", timestamp: 100 }],
         pendingEntry: {
           startedAt: 50,
@@ -458,7 +458,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("can strip the current pending assistant match from the transcript while keeping the pending user", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
           { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
@@ -479,7 +479,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("keeps the local stopped assistant when the pending turn has already been stopped", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { role: "user", content: "帮我总结", timestamp: 200 },
           { id: "msg-assistant-pending-1", role: "assistant", content: "这是完整回复", timestamp: 220 },
@@ -505,8 +505,7 @@ describe("buildPendingConversationOverlayMessages", () => {
   });
 
   it("does not append a local stopped assistant once the authoritative snapshot has already moved to a later user turn", () => {
-    expect(
-      buildDurableConversationMessages({
+    const messages = buildDashboardSettledMessages({
         messages: [
           { role: "user", content: "帮我总结", timestamp: 200 },
           { role: "assistant", content: "这是完整回复", timestamp: 220 },
@@ -526,17 +525,18 @@ describe("buildPendingConversationOverlayMessages", () => {
           { role: "user", content: "帮我总结", timestamp: 200 },
           { id: "msg-assistant-pending-1", role: "assistant", content: "已停止", timestamp: 220 },
         ],
-      }),
-    ).toEqual([
-      { role: "user", content: "帮我总结", timestamp: 200 },
-      { role: "user", content: "继续说", timestamp: 240 },
-      { role: "assistant", content: "后面的权威消息", timestamp: 260 },
-    ]);
+      });
+
+    expect(messages).toHaveLength(4);
+    expect(messages[0]).toMatchObject({ role: "user", content: "帮我总结", timestamp: 200 });
+    expect(messages[1]).toMatchObject({ role: "assistant", content: "这是完整回复", timestamp: 220 });
+    expect(messages[2]).toMatchObject({ role: "user", content: "继续说", timestamp: 240 });
+    expect(messages[3]).toMatchObject({ role: "assistant", content: "后面的权威消息", timestamp: 260 });
   });
 
   it("keeps the settled local assistant reply when the snapshot still lags behind", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { role: "user", content: "旧问题", timestamp: 100 },
           { role: "assistant", content: "旧回复", timestamp: 120 },
@@ -568,7 +568,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("does not append a settled local assistant once the authoritative snapshot has already moved to a later user turn", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { role: "user", content: "旧问题", timestamp: 100 },
           { role: "assistant", content: "旧回复", timestamp: 120 },
@@ -605,7 +605,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("can build a durable transcript directly from pending merge inputs", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
           { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
@@ -631,7 +631,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("can build a durable transcript directly from no-pending merge inputs", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { role: "user", content: "旧问题", timestamp: 100 },
           { role: "assistant", content: "旧回复", timestamp: 120 },
@@ -851,7 +851,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("merges a settled local tail into transcript when there is no tracked pending turn", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { role: "user", content: "旧问题", timestamp: 100 },
           { role: "assistant", content: "旧回复", timestamp: 120 },
@@ -1299,7 +1299,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("can skip empty-snapshot local tail reuse when the caller already trusts the empty transcript", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [],
         localMessages: [
           { id: "msg-user-1", role: "user", content: "hi", timestamp: 100 },
@@ -1312,7 +1312,7 @@ describe("buildPendingConversationOverlayMessages", () => {
 
   it("does not restore a missing pending user into transcript once the authoritative assistant is no longer the latest message", () => {
     expect(
-      buildDurableConversationMessages({
+      buildDashboardSettledMessages({
         messages: [
           { role: "assistant", content: "收到。", timestamp: 1_100 },
           { role: "assistant", content: "后面的新消息", timestamp: 1_300 },

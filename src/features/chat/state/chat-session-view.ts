@@ -91,7 +91,7 @@ function matchesPendingAssistantMessage(message: ChatMessage | null | undefined,
   return pendingTimestamp > 0 && normalizeMessageTimestamp(message) === pendingTimestamp;
 }
 
-export function buildSettledConversationMessages(
+function buildSettledConversationMessages(
   messages: ChatMessage[] = [],
   pendingEntry: PendingChatTurn | null = null,
   { stripPendingAssistantMatch = false, stripPendingUserMatch = true } = {},
@@ -140,7 +140,7 @@ function buildPendingConversationMessages({
   );
 }
 
-export function buildSettledPendingConversationMessages({
+function buildSettledPendingConversationMessages({
   messages = [],
   pendingEntry = null,
   pendingLabel = "",
@@ -223,7 +223,7 @@ function buildStabilizedConversationMessages({
   });
 }
 
-export function buildStabilizedHydratedConversationMessages({
+function buildStabilizedHydratedConversationMessages({
   messages = [],
   pendingEntry = null,
   snapshotHasAssistantReply = false,

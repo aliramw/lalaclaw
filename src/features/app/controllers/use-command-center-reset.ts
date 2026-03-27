@@ -220,6 +220,12 @@ export function useCommandCenterReset({
       delete next[previousConversationKey];
       return next;
     });
+    sessionStateRef.current = {
+      ...sessionStateRef.current,
+      sessionUser: nextSessionUser,
+      agentId: nextAgentId,
+      model: nextModel,
+    };
     initialStoredMessagesByTabIdRef.current = nextInitialStoredMessagesByTabId;
     initialStoredPendingRef.current = nextInitialStoredPending;
     clearSnapshotData();
@@ -323,12 +329,6 @@ export function useCommandCenterReset({
       });
     }
 
-    sessionStateRef.current = {
-      ...sessionStateRef.current,
-      sessionUser: nextSessionUser,
-      agentId: nextAgentId,
-      model: nextModel,
-    };
     if (activeTabId && nextActiveTabId === activeTabId) {
       updateTabIdentity(activeTabId, { sessionUser: nextSessionUser });
       updateTabMeta(activeTabId, {

@@ -7,7 +7,10 @@ import {
   mergeConversationAttachments,
   mergeConversationIdentity,
 } from "@/features/chat/state/chat-conversation-merge";
-import { buildDurableConversationMessages } from "@/features/chat/state/chat-pending-conversation";
+import {
+  buildDashboardChatSessionState,
+  buildDashboardSettledMessages,
+} from "@/features/chat/state/chat-dashboard-session";
 import {
   hasAuthoritativePendingAssistantReply,
   resolveRuntimePendingEntry,
@@ -17,7 +20,6 @@ import { apiFetch } from "@/lib/api-client";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
 import { isImSessionUser } from "@/features/session/im-session";
-import { buildSettledConversationMessages, buildSettledPendingConversationMessages } from "@/features/chat/state/chat-session-view";
 import {
   buildChatTabTitle,
   createTabMeta,
@@ -234,26 +236,26 @@ export function useCommandCenterBackgroundRuntimeSync({
               updatedLabel: String(snapshotSession.updatedLabel || ""),
             }),
           });
-          const durableBackgroundConversation = buildDurableConversationMessages({
+          const settledBackgroundConversation = buildDashboardSettledMessages({
             messages: mergedConversation,
             pendingEntry,
             localMessages: currentMessages.filter((message) => !message?.pending),
             snapshotHasAssistantReply,
             allowEmptySnapshotLocalTail,
           });
-          const settledBackgroundConversation = pendingEntry && !snapshotHasAssistantReply
-            ? buildSettledPendingConversationMessages({
-                messages: mergedConversation,
-                pendingEntry,
-                pendingLabel: i18nThinkingPlaceholder,
-                localMessages: currentMessages,
-              })
-            : buildSettledConversationMessages(
-                durableBackgroundConversation,
-                pendingEntry,
-              );
+          const dashboardState = buildDashboardChatSessionState({
+            agentId: nextTabAgentId,
+            conversationKey: nextConversationKey,
+            messages: settledBackgroundConversation,
+            pendingEntry,
+            rawBusy: normalizedStatus === "running" || normalizedStatus === "dispatching" || Boolean(pendingEntry && !snapshotHasAssistantReply),
+            sessionStatus: snapshotSession.status,
+            source: "runtime",
+            thinkingPlaceholder: i18nThinkingPlaceholder,
+            transport: "polling",
+          });
 
-          setMessagesForTab(tabId, settledBackgroundConversation);
+          setMessagesForTab(tabId, dashboardState.settledMessages);
         }
 
         const nextTabSessionUser = resolvedSessionUser || currentTabMeta.sessionUser || sessionUser;

@@ -37,7 +37,6 @@ import {
   type ChatRunState,
   selectChatRunBusy,
 } from "@/features/chat/state/chat-session-state";
-import { buildSettledConversationMessages } from "@/features/chat/state/chat-session-view";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
 import { mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
 import { useTheme } from "@/features/theme/use-theme";
@@ -100,48 +99,6 @@ const chatScrollPersistenceDebounceMs = 180;
 const promptHistoryLimit = 50;
 const defaultUserLabel = "";
 
-function cloneVisibleMessage(message: ChatMessage = { role: "assistant" }): ChatMessage {
-  return {
-    ...message,
-    ...(Array.isArray(message.attachments)
-      ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
-      : {}),
-  };
-}
-
-function stabilizeDashboardVisibleMessages({
-  messages = [],
-  previousMessages = [],
-  run = null,
-}: {
-  messages?: ChatMessage[];
-  previousMessages?: ChatMessage[];
-  run?: Partial<ChatRunState> | null;
-} = {}) {
-  const nextMessages = Array.isArray(messages) ? messages : [];
-  if (!selectChatRunBusy(run) || !nextMessages.length) {
-    return nextMessages;
-  }
-
-  if (nextMessages.some((message) => message?.role === "user")) {
-    return nextMessages;
-  }
-
-  const previousUserMessage = [...(previousMessages || [])].reverse().find((message) => message?.role === "user");
-  if (!previousUserMessage) {
-    return nextMessages;
-  }
-
-  const firstAssistantIndex = nextMessages.findIndex((message) => message?.role === "assistant");
-  if (firstAssistantIndex < 0) {
-    return nextMessages;
-  }
-
-  const stabilizedMessages = [...nextMessages];
-  stabilizedMessages.splice(firstAssistantIndex, 0, cloneVisibleMessage(previousUserMessage));
-  return stabilizedMessages;
-}
-
 function appendPromptHistory(historyMap: Record<string, string[]>, key: string, prompt: string) {
   const normalizedPrompt = String(prompt || "").trim();
   if (!normalizedPrompt) {
@@ -180,9 +137,6 @@ export function resolveTrackedPendingEntry({
     sessionUser,
   });
 }
-
-export { stabilizeDashboardVisibleMessages };
-
 type PersistCurrentUiOverrides = {
   activeChatTabId?: string;
   messages?: ChatMessage[];
@@ -453,7 +407,18 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
           sessionStatus: sessionByTabIdRef.current[nextTabId]?.status || "",
           sessionUser: nextMeta.sessionUser,
         });
-        return [nextTabId, buildSettledConversationMessages(items || [], pendingEntry)];
+        const dashboardState = buildDashboardChatSessionState({
+          agentId: nextMeta.agentId,
+          conversationKey,
+          messages: items || [],
+          pendingEntry,
+          rawBusy: Boolean(pendingEntry),
+          sessionStatus: sessionByTabIdRef.current[nextTabId]?.status || "",
+          source: "history",
+          thinkingPlaceholder: i18n.chat.thinkingPlaceholder,
+          transport: "idle",
+        });
+        return [nextTabId, dashboardState.settledMessages];
       }),
     );
     const activeTabId = activeChatTabIdRef.current || normalizedTabId;
@@ -479,7 +444,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       messagesByTabId: persistedMessagesByTabId,
       pendingChatTurns: persistedPendingChatTurns,
     });
-  }, [buildPersistedPendingChatTurns]);
+  }, [buildPersistedPendingChatTurns, i18n.chat.thinkingPlaceholder]);
 
   const persistCurrentUiStateSnapshot = useCallback((overrides: PersistCurrentUiOverrides = {}) => {
     const activeTabId = activeChatTabIdRef.current || overrides.activeChatTabId || "";
@@ -501,7 +466,18 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
           sessionStatus: sessionByTabIdRef.current[tabId]?.status || "",
           sessionUser: nextMeta.sessionUser,
         });
-        return [tabId, buildSettledConversationMessages(items || [], pendingEntry)];
+        const dashboardState = buildDashboardChatSessionState({
+          agentId: nextMeta.agentId,
+          conversationKey,
+          messages: items || [],
+          pendingEntry,
+          rawBusy: Boolean(pendingEntry),
+          sessionStatus: sessionByTabIdRef.current[tabId]?.status || "",
+          source: "history",
+          thinkingPlaceholder: i18n.chat.thinkingPlaceholder,
+          transport: "idle",
+        });
+        return [tabId, dashboardState.settledMessages];
       }),
     );
     const activeMeta = tabMetaByIdRef.current[activeTabId]
@@ -528,7 +504,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       pendingChatTurns: persistedPendingChatTurns,
       persistedAt: Date.now(),
     });
-  }, [buildPersistedPendingChatTurns]);
+  }, [buildPersistedPendingChatTurns, i18n.chat.thinkingPlaceholder]);
 
   const flushPersistedChatScrollTops = useCallback(() => {
     window.clearTimeout(chatScrollPersistenceTimerRef.current);

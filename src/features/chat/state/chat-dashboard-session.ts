@@ -1,6 +1,11 @@
 import type { ChatAttachment, ChatControllerEntry, ChatMessage, PendingChatTurn } from "@/types/chat";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import {
+  findSnapshotPendingAssistantIndex,
+  hasSnapshotAdvancedPastPendingTurn,
+} from "@/features/chat/state/chat-runtime-pending";
+import { buildDurableConversationWithLocalTail } from "@/features/chat/state/chat-settled-conversation";
+import {
   createEmptyChatSessionState,
   getConversationRevision,
   normalizeChatSyncTransport,
@@ -221,6 +226,190 @@ function buildConversationMessages(
   }
 
   return nextMessages;
+}
+
+function normalizeAssistantConversationContent(content = "") {
+  return String(content || "")
+    .replace(/\[\[reply_to_current\]\]/gi, "")
+    .replace(/\*\*<small>[\s\S]*?<\/small>\*\*/gi, "")
+    .replace(/<small>[\s\S]*?<\/small>/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findPendingAssistantCandidate(
+  localMessages: ChatMessage[] = [],
+  pendingEntry: PendingChatTurn | null = null,
+) {
+  if (!pendingEntry) {
+    return null;
+  }
+
+  const assistantMessageId = String(pendingEntry.assistantMessageId || "").trim();
+  const pendingTimestamp = Number(pendingEntry.pendingTimestamp || 0);
+
+  return [...localMessages].reverse().find((message) => {
+    if (message?.role !== "assistant") {
+      return false;
+    }
+
+    const messageId = normalizeMessageId(message);
+    if (assistantMessageId && messageId === assistantMessageId) {
+      return true;
+    }
+
+    const timestamp = normalizeMessageTimestamp(message);
+    return pendingTimestamp > 0 && timestamp === pendingTimestamp;
+  }) || null;
+}
+
+function findPendingAssistantTranscriptIndex(
+  conversationMessages: ChatMessage[] = [],
+  pendingEntry: PendingChatTurn | null = null,
+) {
+  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+  if (assistantMessageId) {
+    const directIndex = conversationMessages.findIndex(
+      (message) => message?.role === "assistant" && normalizeMessageId(message) === assistantMessageId,
+    );
+    if (directIndex >= 0) {
+      return directIndex;
+    }
+  }
+
+  const pendingTimestamp = Number(pendingEntry?.pendingTimestamp || pendingEntry?.startedAt || 0);
+  if (!pendingTimestamp) {
+    return -1;
+  }
+
+  return conversationMessages.findIndex(
+    (message) => message?.role === "assistant" && normalizeMessageTimestamp(message) >= pendingTimestamp,
+  );
+}
+
+function hasEquivalentAssistantMessage(
+  conversationMessages: ChatMessage[] = [],
+  candidate: ChatMessage | null = null,
+  pendingEntry: PendingChatTurn | null = null,
+) {
+  if (!candidate || candidate.role !== "assistant") {
+    return false;
+  }
+
+  const candidateId = normalizeMessageId(candidate);
+  const candidateContent = normalizeAssistantConversationContent(candidate.content);
+  const pendingUserIndex = conversationMessages.findIndex((message) => matchesPendingUserMessage(message, pendingEntry));
+  const candidateMessages =
+    pendingUserIndex >= 0
+      ? conversationMessages.slice(pendingUserIndex + 1)
+      : conversationMessages;
+
+  return candidateMessages.some((message) => {
+    if (message?.role !== "assistant") {
+      return false;
+    }
+
+    const messageId = normalizeMessageId(message);
+    if (candidateId && messageId && candidateId === messageId) {
+      return true;
+    }
+
+    return Boolean(candidateContent) && normalizeAssistantConversationContent(message.content) === candidateContent;
+  });
+}
+
+export function buildDashboardSettledMessages({
+  messages = [],
+  pendingEntry = null,
+  localMessages = [],
+  localHasLivePendingAssistant = false,
+  localHasExplicitLivePendingAssistant = false,
+  localSettledPendingAssistantCandidate = null,
+  snapshotHasAssistantReply = false,
+  allowEmptySnapshotLocalTail = true,
+}: {
+  messages?: ChatMessage[];
+  pendingEntry?: PendingChatTurn | null;
+  localMessages?: ChatMessage[];
+  localHasLivePendingAssistant?: boolean;
+  localHasExplicitLivePendingAssistant?: boolean;
+  localSettledPendingAssistantCandidate?: ChatMessage | null;
+  snapshotHasAssistantReply?: boolean;
+  allowEmptySnapshotLocalTail?: boolean;
+} = {}) {
+  const snapshotMessages = (messages || []).map((message) =>
+    cloneMessage({
+      ...message,
+      pending: undefined,
+      streaming: undefined,
+    }),
+  );
+  const settledLocalMessages = (localMessages || [])
+    .filter((message) => !message?.pending && !message?.streaming)
+    .map((message) => cloneMessage({
+      ...message,
+      pending: undefined,
+      streaming: undefined,
+    }));
+
+  if (!pendingEntry) {
+    return buildDurableConversationWithLocalTail(
+      snapshotMessages,
+      settledLocalMessages,
+      { allowEmptySnapshot: allowEmptySnapshotLocalTail },
+    );
+  }
+
+  let nextMessages = [...snapshotMessages];
+  const localAssistantCandidate = localSettledPendingAssistantCandidate || findPendingAssistantCandidate(settledLocalMessages, pendingEntry);
+
+  if (pendingEntry.stopped) {
+    if (!hasSnapshotAdvancedPastPendingTurn(nextMessages, pendingEntry) && localAssistantCandidate) {
+      const pendingAssistantIndex = findPendingAssistantTranscriptIndex(nextMessages, pendingEntry);
+      if (pendingAssistantIndex >= 0) {
+        nextMessages[pendingAssistantIndex] = cloneMessage({
+          ...localAssistantCandidate,
+          pending: undefined,
+          streaming: undefined,
+        });
+      } else if (!hasEquivalentAssistantMessage(nextMessages, localAssistantCandidate, pendingEntry)) {
+        nextMessages.push(cloneMessage({
+          ...localAssistantCandidate,
+          pending: undefined,
+          streaming: undefined,
+        }));
+      }
+    }
+
+    return buildConversationMessages(nextMessages, pendingEntry);
+  }
+
+  if (localHasLivePendingAssistant && localHasExplicitLivePendingAssistant) {
+    const pendingAssistantIndex = findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
+    if (pendingAssistantIndex >= 0) {
+      nextMessages = nextMessages.filter((_, index) => index !== pendingAssistantIndex);
+    }
+  }
+
+  if (
+    localAssistantCandidate
+    && !snapshotHasAssistantReply
+    && !(localHasLivePendingAssistant && localHasExplicitLivePendingAssistant)
+    && !hasEquivalentAssistantMessage(nextMessages, localAssistantCandidate, pendingEntry)
+  ) {
+    nextMessages.push(cloneMessage({
+      ...localAssistantCandidate,
+      pending: undefined,
+      streaming: undefined,
+    }));
+  }
+
+  const hasPendingUserMessage = nextMessages.some((message) => matchesPendingUserMessage(message, pendingEntry));
+  if (!hasPendingUserMessage && snapshotHasAssistantReply && findPendingAssistantTranscriptIndex(nextMessages, pendingEntry) < 0) {
+    return nextMessages;
+  }
+
+  return buildConversationMessages(nextMessages, pendingEntry);
 }
 
 function hasAuthoritativeAssistantReply(

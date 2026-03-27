@@ -15,7 +15,7 @@ describe("useCommandCenterBackgroundRuntimeSync", () => {
     vi.restoreAllMocks();
   });
 
-  it("stores only settled transcript for background IM tabs while keeping pending turns in overlay state", async () => {
+  it("stores the dashboard settled transcript for background IM tabs while keeping pending turns out of the settled assistant list", async () => {
     const backgroundTabId = "agent:main::wecom-marila";
     const backgroundSessionUser = "agent:main:wecom:direct:marila";
     const backgroundMessages = [
@@ -105,7 +105,9 @@ describe("useCommandCenterBackgroundRuntimeSync", () => {
         "/api/runtime?sessionUser=agent%3Amain%3Awecom%3Adirect%3Amarila&agentId=main",
         expect.any(Object),
       );
-      expect(setMessagesForTab).toHaveBeenCalledWith(backgroundTabId, []);
+      expect(setMessagesForTab).toHaveBeenCalledWith(backgroundTabId, [
+        { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+      ]);
     });
   });
 

@@ -283,10 +283,11 @@ test.describe("Command center chat stability", () => {
     const conversation = conversationLocator(page);
     const prompt = "把这次切换整理成大纲";
 
+    await page.getByRole("button", { name: /^(切换为Shift \+ Enter发送|Switch to Shift \+ Enter to send)$/ }).click();
     await composer.fill(prompt);
     await page.getByRole("button", { name: SEND_BUTTON_NAME }).click();
     await composer.fill(prompt);
-    await page.getByRole("button", { name: SEND_BUTTON_NAME }).click();
+    await composer.press("Shift+Enter");
 
     await expect.poll(() => chatPostCount).toBe(1);
     await expect(conversation.getByText(prompt, { exact: true })).toHaveCount(1);

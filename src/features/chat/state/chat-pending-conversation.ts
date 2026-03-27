@@ -385,7 +385,7 @@ function buildDurablePendingConversationMessages({
   );
 }
 
-export function buildDurableConversationMessages({
+function buildDurableConversationMessages({
   messages = [],
   pendingEntry = null,
   localMessages = [],

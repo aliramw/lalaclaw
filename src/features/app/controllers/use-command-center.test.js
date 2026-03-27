@@ -14,7 +14,6 @@ import {
   resolveRuntimeTabAgentId,
   resolveViewportAnchorCandidate,
   resolveImRuntimeSessionUser,
-  stabilizeDashboardVisibleMessages,
   shouldReuseTabState,
   shouldApplyRuntimeSnapshotToTab,
 } from "@/features/app/controllers/use-command-center";
@@ -122,43 +121,6 @@ describe("resolveTrackedPendingEntry", () => {
         timestamp: 100,
       },
     });
-  });
-});
-
-describe("stabilizeDashboardVisibleMessages", () => {
-  it("keeps the latest visible user message mounted when a busy turn briefly collapses to assistant-only", () => {
-    expect(
-      stabilizeDashboardVisibleMessages({
-        previousMessages: [
-          { id: "msg-user-1", role: "user", content: "你好", timestamp: 100 },
-          { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 101, pending: true },
-        ],
-        messages: [
-          { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 102 },
-        ],
-        run: { status: "streaming" },
-      }),
-    ).toEqual([
-      { id: "msg-user-1", role: "user", content: "你好", timestamp: 100 },
-      { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 102 },
-    ]);
-  });
-
-  it("does not reinsert a previous user message once the run is already idle", () => {
-    expect(
-      stabilizeDashboardVisibleMessages({
-        previousMessages: [
-          { id: "msg-user-1", role: "user", content: "你好", timestamp: 100 },
-          { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 101, pending: true },
-        ],
-        messages: [
-          { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 102 },
-        ],
-        run: { status: "idle" },
-      }),
-    ).toEqual([
-      { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 102 },
-    ]);
   });
 });
 

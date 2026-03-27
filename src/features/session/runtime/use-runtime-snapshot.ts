@@ -6,14 +6,16 @@ import {
   mergeConversationAttachments,
   mergeConversationIdentity,
 } from "@/features/chat/state/chat-conversation-merge";
-import { buildDashboardChatSessionState } from "@/features/chat/state/chat-dashboard-session";
-import { buildDurableConversationMessages } from "@/features/chat/state/chat-pending-conversation";
+import {
+  buildDashboardChatSessionState,
+  buildDashboardSettledMessages,
+} from "@/features/chat/state/chat-dashboard-session";
 import {
   hasAuthoritativePendingAssistantReply,
   resolveRuntimePendingEntry,
 } from "@/features/chat/state/chat-runtime-pending";
 import { shouldReuseSettledLocalConversationTail } from "@/features/chat/state/chat-settled-conversation";
-import { buildStabilizedHydratedConversationMessages } from "@/features/chat/state/chat-session-view";
+import { selectChatRunBusy } from "@/features/chat/state/chat-session-state";
 import { isImBootstrapSessionUser, isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { apiFetch } from "@/lib/api-client";
@@ -402,6 +404,7 @@ function findPendingAssistantMessage(messages: ChatMessage[] = [], pendingEntry:
 
 function buildPendingMergeDecision({
   mergedConversation = [],
+  snapshotConversation = [],
   pendingEntry = null,
   localMessages = [],
   localMessagesWithoutPending = [],
@@ -412,6 +415,7 @@ function buildPendingMergeDecision({
   status = "",
 }: {
   mergedConversation?: ChatMessage[];
+  snapshotConversation?: ChatMessage[];
   pendingEntry?: PendingChatTurn | null;
   localMessages?: ChatMessage[];
   localMessagesWithoutPending?: ChatMessage[];
@@ -422,20 +426,21 @@ function buildPendingMergeDecision({
   status?: string;
 } = {}) {
   const localSettledPendingAssistantCandidate = findLocalSettledPendingAssistantCandidate(localMessagesWithoutPending, pendingEntry);
+  const localLivePendingAssistant = hasLocalLivePendingAssistant(localMessages, pendingEntry, busy);
   const snapshotHasAssistantReply = pendingEntry
-    ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
+    ? hasAuthoritativePendingAssistantReply(snapshotConversation, pendingEntry)
     : false;
   const snapshotHasAdvancedPastPending = pendingEntry
-    ? snapshotHasAdvancedPastPendingTurn(mergedConversation, pendingEntry)
+    ? snapshotHasAdvancedPastPendingTurn(snapshotConversation, pendingEntry)
     : false;
   const localHasSettledAssistantReply = pendingEntry?.assistantMessageId
     ? (!snapshotHasAdvancedPastPending && hasAuthoritativePendingAssistantReply(localMessagesWithoutPending, pendingEntry))
     : false;
   const localHasLivePendingAssistant = recoveringPendingReply
-    ? keepRecoveredPendingAlive
-    : (hasLocalLivePendingAssistant(localMessages, pendingEntry, busy) || keepRecoveredPendingAlive);
+    ? (keepRecoveredPendingAlive || (snapshotHasAssistantReply && localLivePendingAssistant))
+    : (localLivePendingAssistant || keepRecoveredPendingAlive);
   const snapshotIncludesPendingUserMessage = pendingEntry
-    ? snapshotHasPendingUserMessage(mergedConversation, pendingEntry)
+    ? snapshotHasPendingUserMessage(snapshotConversation, pendingEntry)
     : false;
   const snapshotCanSettlePending =
     (canSettleRecoveredPending || !localHasLivePendingAssistant)
@@ -507,10 +512,11 @@ function buildRuntimeConversationMergeState({
     progressRef,
   });
   const pendingMergeDecision = buildPendingMergeDecision({
-    mergedConversation,
-    pendingEntry,
-    localMessages,
-    localMessagesWithoutPending,
+        mergedConversation,
+        snapshotConversation: conversationWithAttachments,
+        pendingEntry,
+        localMessages,
+        localMessagesWithoutPending,
     busy,
     recoveringPendingReply,
     keepRecoveredPendingAlive: recoveredPendingProgress.keepRecoveredPendingAlive,
@@ -546,6 +552,8 @@ function buildRuntimeConversationOutputs({
   localSettledPendingAssistantCandidate = null,
   hasAssistantReply = false,
   allowEmptySnapshotLocalTail = true,
+  recoveringPendingReply = false,
+  canSettleRecoveredPending = false,
 }: {
   agentId?: string;
   conversationKey?: string;
@@ -565,39 +573,70 @@ function buildRuntimeConversationOutputs({
   localSettledPendingAssistantCandidate?: ChatMessage | null;
   hasAssistantReply?: boolean;
   allowEmptySnapshotLocalTail?: boolean;
+  recoveringPendingReply?: boolean;
+  canSettleRecoveredPending?: boolean;
 } = {}) {
-  const {
-    stabilizedConversation: legacyStabilizedConversation,
-  } = buildStabilizedHydratedConversationMessages({
-    messages: mergedConversation,
-    pendingEntry,
-    snapshotHasAssistantReply,
-    localHasLivePendingAssistant,
-    clearPending,
-    localHasSettledAssistantReply,
-    snapshotIncludesPendingUserMessage,
-    localMessages,
-    localMessagesWithoutPending,
-    pendingLabel,
-    allowEmptySnapshotLocalTail,
-  });
-  const legacyDurableConversation = buildDurableConversationMessages({
+  const localLivePendingAssistantCandidate = localHasExplicitLivePendingAssistant
+    ? findPendingAssistantMessage(localMessages, pendingEntry)
+    : null;
+  const snapshotSettledPendingAssistantCandidate = snapshotHasAssistantReply
+    ? findLocalSettledPendingAssistantCandidate(mergedConversation, pendingEntry)
+    : null;
+  const snapshotAssistantCompletesLocalLiveTurn = Boolean(
+    localLivePendingAssistantCandidate
+    && snapshotSettledPendingAssistantCandidate
+    && normalizeAssistantProgressContent(snapshotSettledPendingAssistantCandidate.content).length
+      >= normalizeAssistantProgressContent(localLivePendingAssistantCandidate.content).length,
+  );
+  const dashboardSettledConversation = buildDashboardSettledMessages({
     messages: mergedConversation,
     pendingEntry,
     localMessages: localMessagesWithoutPending,
     localHasLivePendingAssistant,
-    localHasExplicitLivePendingAssistant,
+    localHasExplicitLivePendingAssistant:
+      localHasExplicitLivePendingAssistant && !snapshotAssistantCompletesLocalLiveTurn,
     localSettledPendingAssistantCandidate,
     snapshotHasAssistantReply,
     allowEmptySnapshotLocalTail,
   });
+  const normalizedStatus = normalizeStatusKey(status);
+  const controllerStillBusy = pendingEntry
+    ? Boolean(busy && !pendingEntry?.stopped)
+    : Boolean(busy && ["running", "dispatching"].includes(normalizedStatus));
+  const recoveredPendingSettled = Boolean(
+    recoveringPendingReply
+    && canSettleRecoveredPending
+    && (hasAssistantReply || localHasSettledAssistantReply),
+  );
+  const pendingSettledForDashboard = Boolean(
+    clearPending
+    || recoveredPendingSettled
+    || (pendingEntry?.stopped && !controllerStillBusy)
+    || (
+      !controllerStillBusy
+      && !recoveringPendingReply
+      && snapshotIncludesPendingUserMessage
+      && (hasAssistantReply || localHasSettledAssistantReply)
+    ),
+  );
+  const dashboardPendingEntry = pendingSettledForDashboard
+    ? null
+    : (
+      localLivePendingAssistantCandidate
+      && normalizeAssistantProgressContent(localLivePendingAssistantCandidate.content)
+        ? {
+            ...pendingEntry,
+            streamText: String(localLivePendingAssistantCandidate.content || ""),
+          }
+        : pendingEntry
+    );
 
   const dashboardState = buildDashboardChatSessionState({
     agentId,
     conversationKey,
-    messages: legacyDurableConversation,
-    pendingEntry: clearPending ? null : pendingEntry,
-    rawBusy: clearPending ? false : busy,
+    messages: dashboardSettledConversation,
+    pendingEntry: dashboardPendingEntry,
+    rawBusy: pendingSettledForDashboard ? false : controllerStillBusy,
     sessionStatus: status,
     source: "runtime",
     thinkingPlaceholder: pendingLabel,
@@ -606,11 +645,8 @@ function buildRuntimeConversationOutputs({
 
   return {
     durableConversation: dashboardState.settledMessages,
-    hasActivePendingTurn: Boolean(!clearPending && (selectChatRunBusy(dashboardState.run) || (pendingEntry && !hasAssistantReply))),
-    stabilizedConversation:
-      dashboardState.visibleMessages.length >= legacyStabilizedConversation.length
-        ? dashboardState.visibleMessages
-        : legacyStabilizedConversation,
+    hasActivePendingTurn: selectChatRunBusy(dashboardState.run),
+    stabilizedConversation: dashboardState.visibleMessages,
   };
 }
 
@@ -900,6 +936,7 @@ export function useRuntimeSnapshot({
   const recoveredPendingProgressRef = useRef<RuntimeRecoveredPendingProgressMap>({});
   const recoveredPendingSettleTimeoutRef = useRef(0);
   const sessionRef = useRef(session);
+  const lastAutoLoadKeyRef = useRef("");
 
   trackedPendingChatTurnsRef.current = externalPendingChatTurnsRef?.current || pendingChatTurns;
   sessionRef.current = session;
@@ -1168,10 +1205,22 @@ export function useRuntimeSnapshot({
         conversationKey: nextConversationKey,
         mergedConversation,
         pendingEntry,
+        localMessages,
+        localMessagesWithoutPending,
         busy,
         pendingLabel: i18n.chat.thinkingPlaceholder,
         status: snapshot.session?.status || nextSession.status,
         clearPending: effectiveClearPending,
+        snapshotHasAssistantReply,
+        snapshotIncludesPendingUserMessage,
+        localHasLivePendingAssistant,
+        localHasSettledAssistantReply,
+        localHasExplicitLivePendingAssistant,
+        localSettledPendingAssistantCandidate,
+        hasAssistantReply,
+        allowEmptySnapshotLocalTail,
+        recoveringPendingReply,
+        canSettleRecoveredPending,
       });
       pushCcDebugEvent("runtime.snapshot.merge", {
         conversationKey: nextConversationKey,
@@ -1361,10 +1410,22 @@ export function useRuntimeSnapshot({
       conversationKey,
       mergedConversation,
       pendingEntry,
+      localMessages,
+      localMessagesWithoutPending,
       busy,
       pendingLabel: i18n.chat.thinkingPlaceholder,
       status: currentSession.status,
       clearPending: shouldClearPending,
+      snapshotHasAssistantReply,
+      snapshotIncludesPendingUserMessage,
+      localHasLivePendingAssistant,
+      localHasSettledAssistantReply,
+      localHasExplicitLivePendingAssistant,
+      localSettledPendingAssistantCandidate,
+      hasAssistantReply,
+      allowEmptySnapshotLocalTail,
+      recoveringPendingReply,
+      canSettleRecoveredPending,
     });
     pushCcDebugEvent("runtime.conversation.merge", {
       conversationKey,
@@ -1584,29 +1645,37 @@ export function useRuntimeSnapshot({
 
   useEffect(() => {
     if (wsConnected) {
+      lastAutoLoadKeyRef.current = "";
       return;
     }
 
     const runtimeOverrides = {
       agentId: session.agentId,
     };
+    const bootstrapAutoLoadKey = isImBootstrapSessionUser(requestedRuntimeSessionUser)
+      ? `::${busy ? "busy" : "idle"}::${activePendingChat ? "pending" : "clear"}::${recoveringPendingReply ? "recovering" : "steady"}`
+      : "";
+    const autoLoadKey = `${requestedRuntimeSessionUser}::${runtimeOverrides.agentId || ""}${bootstrapAutoLoadKey}`;
     let retryTimerId = 0;
     let cancelled = false;
 
-    loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
-      if (cancelled) {
-        return;
-      }
+    if (lastAutoLoadKeyRef.current !== autoLoadKey) {
+      lastAutoLoadKeyRef.current = autoLoadKey;
+      loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
+        if (cancelled) {
+          return;
+        }
 
-      retryTimerId = window.setTimeout(() => {
-        loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
-          if (cancelled) {
-            return;
-          }
-          setSession((current) => ({ ...current, status: i18n.common.offline }));
-        });
-      }, INITIAL_RUNTIME_RETRY_DELAY_MS);
-    });
+        retryTimerId = window.setTimeout(() => {
+          loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
+            if (cancelled) {
+              return;
+            }
+            setSession((current) => ({ ...current, status: i18n.common.offline }));
+          });
+        }, INITIAL_RUNTIME_RETRY_DELAY_MS);
+      });
+    }
 
     const pollInterval = getRuntimePollInterval({
       recoveringPendingReply,
