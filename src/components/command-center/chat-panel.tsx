@@ -43,6 +43,7 @@ import { getRefCurrent } from "./chat-react-utils";
 import { normalizeSkillMention } from "./chat-skill-utils";
 import { EmptyConversation } from "./chat-empty-conversation";
 import { StreamingTailDots } from "./chat-streaming-indicator";
+import { MessageLabel } from "./chat-message-label";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -950,20 +951,6 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }:
         </div>
       </div>
     </aside>
-  );
-}
-
-function MessageLabel({ align = "left", value, textClassName }) {
-  return (
-    <div
-      className={cn(
-        "mb-1 max-w-full truncate px-1 text-muted-foreground/85",
-        textClassName,
-        align === "right" ? "text-right" : "text-left",
-      )}
-    >
-      {value}
-    </div>
   );
 }
 
@@ -2705,9 +2692,9 @@ export function ChatPanel({
         && messages[messages.length - 1]?.role === "assistant"
         && latestAssistantVisualState !== "pending"
         && String(latestAssistantMessage?.content || "").trim()
-        && (showBusyBadge || String(effectiveRun.streamText || "").trim()),
+        && (showBusyBadge || String(effectiveRun.streamText || "").trim() || stableShowBusyBadge),
     ),
-    [effectiveRun.streamText, latestAssistantMessage, latestAssistantMessageId, latestAssistantVisualState, messages, showBusyBadge],
+    [effectiveRun.streamText, latestAssistantMessage, latestAssistantMessageId, latestAssistantVisualState, messages, showBusyBadge, stableShowBusyBadge],
   );
   const latestAssistantRenderKey = useMemo(
     () =>
