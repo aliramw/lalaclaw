@@ -3342,7 +3342,8 @@ export function ChatPanel({
       }
       applyRestoredScroll();
     });
-    restoredScrollStabilizerRefs.current = [40, 120, 240, 480].map(scheduleRestoreStabilizer);
+    // Bottom-pinned restores sometimes need a later retry if layout metrics arrive after hydration.
+    restoredScrollStabilizerRefs.current = [40, 120, 240, 480, 960, 1600].map(scheduleRestoreStabilizer);
 
     const latestViewport = resolvedMessageViewport;
     if (latestViewport) {

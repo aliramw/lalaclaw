@@ -6091,6 +6091,64 @@ describe("ChatPanel", () => {
     expect(viewport.scrollTo.mock.calls.every(([options]) => options?.top === 880 && options?.behavior === "auto")).toBe(true);
   });
 
+  it("keeps retrying a bottom-pinned restore when layout metrics become available after the initial stabilizers", async () => {
+    const viewportRef = { current: null };
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback) => window.setTimeout(callback, 0));
+    vi.stubGlobal("cancelAnimationFrame", (timerId) => window.clearTimeout(timerId));
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "assistant", content: "第一段", timestamp: 1 },
+            { role: "user", content: "第二段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          restoredScrollKey="command-center:main"
+          restoredScrollState={{ scrollTop: 640, atBottom: true }}
+          session={createSession({ sessionUser: "command-center" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(viewport.scrollTop).toBe(0);
+
+    viewport.clientHeight = 240;
+    viewport.scrollHeight = 960;
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(viewport.scrollTop).toBe(720);
+  });
+
   it("shows the bottom button whenever the viewport is away from the bottom and clicking it returns to the bottom", async () => {
     const viewportRef = { current: null };
 

@@ -5859,11 +5859,16 @@ describe("App", () => {
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "paint" }));
     await screen.findByText("paint - 当前会话");
+    await waitFor(() => {
+      expect(screen.queryByRole("menuitem", { name: "paint" })).not.toBeInTheDocument();
+    });
 
     await user.click(screen.getByLabelText("切换 Agent"));
-    await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
+    await user.click(await screen.findByRole("menuitem", { name: "钉钉" }));
 
-    expect(await screen.findByRole("button", { name: "钉钉" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "钉钉" })).toBeInTheDocument();
+    });
     expect(screen.queryByRole("button", { name: "钉钉 paint" })).not.toBeInTheDocument();
   });
 
