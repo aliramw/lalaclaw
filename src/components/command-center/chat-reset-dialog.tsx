@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
-import { ButtonSurface as Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 
 export function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
   const titleId = useId();

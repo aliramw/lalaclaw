@@ -1212,3 +1212,7 @@ export default function MarkdownRenderer({
     </>
   );
 }
+
+export function clearMarkdownImageCache() {
+  streamingMarkdownImageNodeCache.clear();
+}

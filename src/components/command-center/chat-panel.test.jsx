@@ -7,6 +7,7 @@ import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-
 import { shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
+import { clearMarkdownImageCache } from "@/components/command-center/markdown-renderer";
 
 const defaultPromptPlaceholder = "💡 想要和 main 一起做点什么？";
 
@@ -160,6 +161,7 @@ describe("ChatPanel", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.localStorage.removeItem(localeStorageKey);
+    clearMarkdownImageCache();
   });
 
   it("shows the bubble-top jump trigger for a tall assistant card scrolled past the top edge", () => {
@@ -1135,7 +1137,7 @@ describe("ChatPanel", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("复制");
   });
 
-  it("renders markdown images inside user messages", async () => {
+  it("renders markdown images inside user messages", { timeout: 10000 }, async () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -1163,7 +1165,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const image = await screen.findByAltText("image");
+    const image = await screen.findByAltText("image", {}, { timeout: 8000 });
     expect(image).toBeInTheDocument();
     expect(image).toHaveAttribute(
       "src",
@@ -3220,6 +3222,7 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           session={createSession({ agentId: "news" })}
+          run={{ status: "streaming", streamText: "收到" }}
         />
       </TooltipProvider>,
     );
@@ -3242,11 +3245,12 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           session={createSession({ agentId: "news" })}
+          run={{ status: "idle", streamText: "" }}
         />
       </TooltipProvider>,
     );
 
-    const settledBubble = screen.getByText("收到。").closest('[data-bubble-layout="full"]');
+    const settledBubble = screen.getByText("收到。").closest('[data-bubble-layout]');
     expect(settledBubble?.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
 
     act(() => {

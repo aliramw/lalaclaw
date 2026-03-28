@@ -1,6 +1,6 @@
 import { ArrowUp, ArrowUpToLine } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useI18n } from "@/features/i18n/i18n-react";
+import { useI18n } from "@/lib/i18n";
 
 export function PreviousUserMessageButton({ onClick }) {
   const { messages } = useI18n();

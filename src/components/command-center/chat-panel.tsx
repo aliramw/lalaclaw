@@ -838,8 +838,8 @@ const MessageBubble = memo(function MessageBubble({
   const visualLineCount = estimateVisualLineCount(renderedContent);
   const compactMeta = visualLineCount <= 1;
   const outlineItems = useMemo(
-    () => (!isUser && !isPending && !assistantTurnInProgress && !suppressOutline ? extractHeadingOutline(renderedContent) : []),
-    [assistantTurnInProgress, isPending, isUser, renderedContent, suppressOutline],
+    () => (!isUser && !isPending && !bubbleStreaming && !suppressOutline ? extractHeadingOutline(renderedContent) : []),
+    [bubbleStreaming, isPending, isUser, renderedContent, suppressOutline],
   );
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
@@ -2463,9 +2463,9 @@ export function ChatPanel({
         && messages[messages.length - 1]?.role === "assistant"
         && latestAssistantVisualState !== "pending"
         && String(latestAssistantMessage?.content || "").trim()
-        && (showBusyBadge || String(effectiveRun.streamText || "").trim() || stableShowBusyBadge),
+        && (showBusyBadge || String(effectiveRun.streamText || "").trim()),
     ),
-    [effectiveRun.streamText, latestAssistantMessage, latestAssistantMessageId, latestAssistantVisualState, messages, showBusyBadge, stableShowBusyBadge],
+    [effectiveRun.streamText, latestAssistantMessage, latestAssistantMessageId, latestAssistantVisualState, messages, showBusyBadge],
   );
   const latestAssistantRenderKey = useMemo(
     () =>

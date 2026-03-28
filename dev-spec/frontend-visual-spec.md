@@ -1,6 +1,6 @@
 # Frontend Visual Spec
 
-Last updated: 2026-03-23
+Last updated: 2026-03-28
 
 ## Purpose
 
@@ -41,6 +41,7 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - The assistant bubble trailing waiting dots should stay latched through short reconciliation gaps instead of disappearing on each intermediate card refresh or token-state pulse.
 - If the page refreshes while an assistant turn is still in progress, the restored conversation must continue to show the same in-flight state immediately after hydration: header busy badge, chat-tab busy dot, and assistant trailing waiting dots all remain visible until the recovered turn actually stabilizes and finishes.
 - While the latest assistant turn is still in progress, its card must stay on a stable single layout branch and must not switch between compact/full/outline variants during intermediate reconciliation.
+- During busy-state reconciliation, the latest pending user bubble, the active assistant bubble, and the settled assistant replacement must stay on the same card branch. Do not drop and reinsert the user turn, and do not swap the active reply onto a different card identity between local and runtime merges.
 - The latest assistant message at the conversation tail must stay on the plain bubble branch while the turn is still in progress or the busy badge is still latched. Once the turn has visibly stabilized, the outline sidebar may appear again; do not permanently suppress outlines for settled latest replies.
 - Short in-progress assistant bubbles must stay on the compact width treatment instead of immediately expanding to the wide full-layout card. Only replies whose content already exceeds the compact threshold should promote into the long full-width layout while the turn is still in progress.
 - The assistant trailing waiting dots should use a subtle small-dot treatment rather than large loading chips, while remaining continuously visible for the whole in-flight turn.

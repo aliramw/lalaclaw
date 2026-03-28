@@ -1,8 +1,30 @@
 # LalaClaw 聊天状态重构计划（对照 OpenClaw Dashboard）
 
-Last updated: 2026-03-26
+Last updated: 2026-03-28
 
 ## 当前进展
+
+### 2026-03-28
+
+- `chat single-pipeline cutover` 已进入收口阶段：
+  - active chat rendering 现在只认 `chat-dashboard-session` 导出的 `visibleMessages`
+  - hydration / persistence / runtime reconciliation / background runtime sync 现在统一消费同一套 dashboard `settledMessages`
+  - `use-command-center` 里基于 previous-frame 的 `stabilizeDashboardVisibleMessages` 热路径已经移除
+- `chat-dashboard-session` 现在承担 durable transcript 的最后一层单源规则：
+  - 新增 `buildDashboardSettledMessages`
+  - pending user reinsertion、explicit live assistant strip、stopped assistant override、lagging snapshot local-tail append 都在这一层集中判定
+  - runtime 与 background sync 不再各自拼接 settled transcript 规则
+- runtime cutover 已完成到 dashboard pipeline：
+  - `use-runtime-snapshot` 不再在热路径上依赖 `buildStabilizedHydratedConversationMessages`
+  - runtime durable / visible conversation 都改为基于 dashboard settled/visible output 推导
+  - local live assistant 的 partial text 会透传到当前 pending turn 的 `streamText`，避免 snapshot lag 时回退到旧 placeholder
+- hot-path compatibility builder 的公开面已经收缩：
+  - `chat-session-view` 只保留 `buildHydratedPendingConversationMessages`
+  - `chat-pending-conversation` 只保留 `buildPendingConversationOverlayMessages`
+  - `buildSettledConversationMessages`、`buildSettledPendingConversationMessages`、`buildStabilizedHydratedConversationMessages`、`buildDurableConversationMessages` 都已退出 production hot path
+- 当前收尾重点已经从“继续拆 helper”切到“验证和人工复审”：
+  - focused runtime / controller / storage / architecture contract regressions 已重新跑绿
+  - 剩余工作以全量验证记录和人工 review 为主，不再建议继续扩散内部兼容层重构
 
 ### 2026-03-26
 

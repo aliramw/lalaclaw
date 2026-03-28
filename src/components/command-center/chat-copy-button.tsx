@@ -1,7 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useI18n } from "@/features/i18n/i18n-react";
+import { useI18n } from "@/lib/i18n";
 
 export function CopyMessageButton({ content }) {
   const { messages } = useI18n();
