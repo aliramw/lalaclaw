@@ -30,6 +30,8 @@ import dingtalkLogoMarkup from "@/assets/im-logos/im-logo-dingtalk.svg?raw";
 import feishuLogoMarkup from "@/assets/im-logos/im-logo-feishu.svg?raw";
 import wecomLogoMarkup from "@/assets/im-logos/im-logo-wecom.svg?raw";
 import weixinLogoMarkup from "@/assets/im-logos/im-logo-weixin.svg?raw";
+import { ContextUsageRing } from "./session-context-ring";
+import { clamp } from "./session-math-utils";
 
 type SessionOverviewSession = {
   agentId?: string;
@@ -216,10 +218,6 @@ const IM_PLATFORM_LOGOS = {
     markup: weixinLogoMarkup,
   },
 };
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
 
 function randomBetween(min, max) {
   return min + (Math.random() * (max - min));
@@ -1206,38 +1204,6 @@ function getContextUsageRatio(contextUsed, contextMax) {
   }
 
   return clamp(contextUsed / contextMax, 0, 1);
-}
-
-function ContextUsageRing({ color, ratio, resolvedTheme }: { color?: string; ratio?: number; resolvedTheme?: string }) {
-  const normalizedRatio = clamp(ratio, 0, 1);
-  const radius = 6;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - normalizedRatio);
-  const trackColor = resolvedTheme === "light" ? "rgba(15, 23, 42, 0.12)" : "rgba(255, 255, 255, 0.18)";
-
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-flex h-4 w-4 shrink-0 items-center justify-center"
-      data-testid="context-usage-ring"
-      style={{ color }}
-    >
-      <svg className="-rotate-90" viewBox="0 0 16 16" width="16" height="16">
-        <circle cx="8" cy="8" r={radius} fill="none" stroke={trackColor} strokeWidth="2" />
-        <circle
-          cx="8"
-          cy="8"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          strokeWidth="2"
-        />
-      </svg>
-    </span>
-  );
 }
 
 function BlockTooltipContent({ label, value }: { label?: ReactNode; value?: ReactNode }) {
