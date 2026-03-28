@@ -1,4 +1,6 @@
-export function StreamingTailDots() {
+import { memo } from "react";
+
+export const StreamingTailDots = memo(function StreamingTailDots() {
   return (
     <span
       aria-hidden="true"
@@ -10,4 +12,4 @@ export function StreamingTailDots() {
       <span className="cc-streaming-tail-dot cc-streaming-tail-dot-3" />
     </span>
   );
-}
+});

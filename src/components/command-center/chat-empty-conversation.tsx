@@ -1,7 +1,8 @@
 import { Send } from "lucide-react";
-import { useI18n } from "@/features/i18n/i18n-react";
+import { memo } from "react";
+import { useI18n } from "@/lib/i18n";
 
-export function EmptyConversation({ loading = false }: { loading?: boolean }) {
+export const EmptyConversation = memo(function EmptyConversation({ loading = false }: { loading?: boolean }) {
   const { messages } = useI18n();
 
   if (loading) {
@@ -25,4 +26,4 @@ export function EmptyConversation({ loading = false }: { loading?: boolean }) {
       </div>
     </div>
   );
-}
+});
