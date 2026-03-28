@@ -5,6 +5,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const workspaceRoot = path.resolve(__dirname, "..");
+const architectureContractModes = new Set(["lint", "test", "check", "list", "json"]);
 const contractRoots = [
   "src/features/app/storage",
   "src/features/app/state",
@@ -123,19 +124,31 @@ function runArchitectureContracts(mode = "check", options = {}) {
   return 1;
 }
 
-if (require.main === module) {
-  const mode = process.argv[2] || "check";
-  const status = runArchitectureContracts(mode);
-  if (status !== 0) {
-    console.error(`Unknown architecture contract mode: ${mode}`);
-    console.error("Usage: node ./scripts/architecture-contracts.cjs [lint|test|check|list|json]");
+function handleArchitectureContractsCli({
+  argv = process.argv,
+  runArchitectureContractsImpl = runArchitectureContracts,
+  consoleError = console.error,
+} = {}) {
+  const mode = argv[2] || "check";
+  const status = runArchitectureContractsImpl(mode);
+
+  if (status !== 0 && !architectureContractModes.has(mode)) {
+    consoleError(`Unknown architecture contract mode: ${mode}`);
+    consoleError("Usage: node ./scripts/architecture-contracts.cjs [lint|test|check|list|json]");
   }
+
+  return status;
+}
+
+if (require.main === module) {
+  const status = handleArchitectureContractsCli();
   process.exit(status);
 }
 
 module.exports = {
   collectArchitectureContractFiles,
   contractFiles,
+  handleArchitectureContractsCli,
   listArchitectureContracts,
   summarizeArchitectureContracts,
   runArchitectureContracts,

@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   collectArchitectureContractFiles,
   contractFiles,
+  handleArchitectureContractsCli,
   listArchitectureContracts,
   summarizeArchitectureContracts,
   runArchitectureContracts,
@@ -131,5 +132,34 @@ describe("architecture contracts script", () => {
 
     expect(status).toBe(1);
     expect(called).toBe(false);
+  });
+
+  it("does not print unknown-mode guidance when a valid mode command fails", () => {
+    const errors = [];
+
+    const status = handleArchitectureContractsCli({
+      argv: ["node", "architecture-contracts.cjs", "check"],
+      consoleError: (message) => errors.push(String(message)),
+      runArchitectureContractsImpl: () => 2,
+    });
+
+    expect(status).toBe(2);
+    expect(errors).toEqual([]);
+  });
+
+  it("prints unknown-mode guidance only for invalid modes", () => {
+    const errors = [];
+
+    const status = handleArchitectureContractsCli({
+      argv: ["node", "architecture-contracts.cjs", "mystery-mode"],
+      consoleError: (message) => errors.push(String(message)),
+      runArchitectureContractsImpl: () => 1,
+    });
+
+    expect(status).toBe(1);
+    expect(errors).toEqual([
+      "Unknown architecture contract mode: mystery-mode",
+      "Usage: node ./scripts/architecture-contracts.cjs [lint|test|check|list|json]",
+    ]);
   });
 });

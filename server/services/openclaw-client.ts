@@ -1001,6 +1001,10 @@ export function createOpenClawClient({
     );
   }
 
+  function isSyntheticEmptyOpenClawResponse(messageText = '') {
+    return String(messageText || '').trim() === 'OpenClaw returned an empty response.';
+  }
+
   function buildMirroredUserMessageText(sessionUser = 'command-center', messageText = '', options: OpenClawDispatchOptions = {}) {
     const trimmedMessage = String(messageText || '').trim();
     if (!trimmedMessage) {
@@ -1083,6 +1087,10 @@ export function createOpenClawClient({
     requiresDirectMultimodal = false,
   ) {
     if (!shouldMirrorAssistantReply(deliveryRoute, requiresDirectMultimodal)) {
+      return null;
+    }
+
+    if (isSyntheticEmptyOpenClawResponse(messageText)) {
       return null;
     }
 
