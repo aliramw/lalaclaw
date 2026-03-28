@@ -32,7 +32,8 @@ import {
   stripInlineMarkdown,
   type MessageOutlineItem,
 } from "@/components/command-center/chat-message-utils";
-import { getImSessionDisplayName, isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
+import { isImSessionUser } from "@/features/session/im-session";
+import { buildCurrentConversationTitle, splitImTabTitleForDisplay, stripDingTalkImagePlaceholderForDisplay, unwrapAssistantEnvelope } from "./chat-im-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -348,60 +349,6 @@ const chatFontSizeButtonClassNames = {
   large: "text-[16px]",
 };
 
-function unwrapAssistantEnvelope(content = "", role = "") {
-  const text = String(content || "");
-  if (role !== "assistant") {
-    return text;
-  }
-
-  const match = text.trim().match(/^<final>([\s\S]*?)<\/final>$/i);
-  if (!match) {
-    return text;
-  }
-
-  const unwrapped = String(match[1] || "").trim();
-  return unwrapped || text;
-}
-
-function stripDingTalkImagePlaceholderForDisplay(content = "", sessionUser = "") {
-  const text = String(content || "");
-  if (!isDingTalkSessionUser(sessionUser)) {
-    return text;
-  }
-
-  return text.replace(/^\[(?:图片|image)\]\s*\n+(?=!\[[^\]]*\]\([^)]+\))/iu, "");
-}
-
-function splitImTabTitleForDisplay(title = "", agentId = "", sessionUser = "") {
-  const normalizedTitle = String(title || "").trim();
-  const normalizedAgentId = String(agentId || "").trim();
-  const imType = resolveImSessionType(sessionUser);
-
-  if (!normalizedTitle || !normalizedAgentId || !imType) {
-    return null;
-  }
-
-  const agentSuffix = ` ${normalizedAgentId}`;
-  if (!normalizedTitle.endsWith(agentSuffix) || normalizedTitle.length <= agentSuffix.length) {
-    return null;
-  }
-
-  const platformLabel = normalizedTitle.slice(0, -agentSuffix.length).trim();
-  if (!platformLabel) {
-    return null;
-  }
-
-  return {
-    channel:
-      imType === "dingtalk"
-        ? "dingtalk-connector"
-        : imType === "weixin"
-          ? "openclaw-weixin"
-          : imType,
-    platformLabel,
-  };
-}
-
 function ImTabLogo({ active = false, channel = "" }) {
   const markup = IM_TAB_LOGOS[channel];
 
@@ -422,22 +369,6 @@ function ImTabLogo({ active = false, channel = "" }) {
       dangerouslySetInnerHTML={{ __html: markup }}
     />
   );
-}
-
-function buildCurrentConversationTitle(agentId = "", sessionUser = "", currentConversationLabel = "", locale = "zh") {
-  const normalizedAgentId = String(agentId || "").trim();
-  const normalizedCurrentConversationLabel = String(currentConversationLabel || "").trim();
-  const imLabel = getImSessionDisplayName(sessionUser, { locale, shortWecom: true });
-
-  if (imLabel && normalizedAgentId && normalizedCurrentConversationLabel) {
-    return `${imLabel} - ${normalizedAgentId} - ${normalizedCurrentConversationLabel}`;
-  }
-
-  if (normalizedAgentId && normalizedCurrentConversationLabel) {
-    return `${normalizedAgentId} - ${normalizedCurrentConversationLabel}`;
-  }
-
-  return normalizedAgentId || normalizedCurrentConversationLabel;
 }
 
 function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
