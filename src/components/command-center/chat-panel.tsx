@@ -49,6 +49,7 @@ import { BubbleTopJumpButton, PreviousUserMessageButton } from "./chat-navigatio
 import { AgentLabel } from "./chat-agent-label";
 import { ResetConversationDialog } from "./chat-reset-dialog";
 import { ImTabLogo } from "./chat-im-tab-logo";
+import { MessageMeta } from "./chat-message-meta";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -617,58 +618,6 @@ function buildSpeechTranscriptFromResults(results: Array<{ 0?: { transcript?: st
   return transcript;
 }
 
-function MessageMeta({
-  align,
-  content,
-  copyFirst = false,
-  formatTime,
-  onJumpPreviousUserMessage,
-  pending,
-  streaming,
-  sticky,
-  compact,
-  timestamp,
-  textClassName,
-}: {
-  align?: "left" | "right";
-  content?: string;
-  copyFirst?: boolean;
-  formatTime: (value: unknown) => string;
-  onJumpPreviousUserMessage?: (() => void) | null;
-  pending?: boolean;
-  streaming?: boolean;
-  sticky?: boolean;
-  compact?: boolean;
-  timestamp?: number | string;
-  textClassName?: string;
-}) {
-  void align;
-  void streaming;
-  const baseClassName = cn(
-    "flex items-center gap-1 text-muted-foreground tabular-nums",
-    textClassName,
-    sticky ? "sticky top-0" : "",
-    compact ? "self-center" : "self-start pt-2.5",
-  );
-
-  if (copyFirst) {
-    return (
-      <div className={baseClassName}>
-        {onJumpPreviousUserMessage ? <PreviousUserMessageButton onClick={onJumpPreviousUserMessage} /> : null}
-        {pending ? null : <CopyMessageButton content={content} />}
-        <time>{formatTime(timestamp)}</time>
-      </div>
-    );
-  }
-
-  return (
-    <div className={baseClassName}>
-      <time>{formatTime(timestamp)}</time>
-      {pending ? null : <CopyMessageButton content={content} />}
-      {onJumpPreviousUserMessage ? <PreviousUserMessageButton onClick={onJumpPreviousUserMessage} /> : null}
-    </div>
-  );
-}
 
 function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }: {
   headingScopeId: string;
