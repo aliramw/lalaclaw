@@ -1,9 +1,9 @@
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
 
-export function CopyMessageButton({ content }) {
+export const CopyMessageButton = memo(function CopyMessageButton({ content }) {
   const { messages } = useI18n();
   const [copied, setCopied] = useState(false);
 
@@ -30,4 +30,4 @@ export function CopyMessageButton({ content }) {
       <TooltipContent side="top">{copied ? messages.chat.copiedMessageTitle : messages.chat.copyMessageTitle}</TooltipContent>
     </Tooltip>
   );
-}
+});

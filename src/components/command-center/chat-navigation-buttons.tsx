@@ -1,8 +1,9 @@
 import { ArrowUp, ArrowUpToLine } from "lucide-react";
+import { memo } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
 
-export function PreviousUserMessageButton({ onClick }) {
+export const PreviousUserMessageButton = memo(function PreviousUserMessageButton({ onClick }) {
   const { messages } = useI18n();
 
   return (
@@ -20,9 +21,9 @@ export function PreviousUserMessageButton({ onClick }) {
       <TooltipContent side="top">{messages.chat.jumpToPreviousUserMessage}</TooltipContent>
     </Tooltip>
   );
-}
+});
 
-export function BubbleTopJumpButton({ onClick }) {
+export const BubbleTopJumpButton = memo(function BubbleTopJumpButton({ onClick }) {
   const { messages } = useI18n();
 
   return (
@@ -42,4 +43,4 @@ export function BubbleTopJumpButton({ onClick }) {
       </Tooltip>
     </div>
   );
-}
+});
