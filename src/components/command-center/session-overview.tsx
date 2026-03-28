@@ -32,6 +32,7 @@ import wecomLogoMarkup from "@/assets/im-logos/im-logo-wecom.svg?raw";
 import weixinLogoMarkup from "@/assets/im-logos/im-logo-weixin.svg?raw";
 import { ContextUsageRing } from "./session-context-ring";
 import { clamp } from "./session-math-utils";
+import { BlockTooltipContent } from "./session-tooltip-content";
 
 type SessionOverviewSession = {
   agentId?: string;
@@ -1204,17 +1205,6 @@ function getContextUsageRatio(contextUsed, contextMax) {
   }
 
   return clamp(contextUsed / contextMax, 0, 1);
-}
-
-function BlockTooltipContent({ label, value }: { label?: ReactNode; value?: ReactNode }) {
-  return (
-    <OverviewTooltipContent side="bottom" className="px-2.5 py-2">
-      <div className="space-y-0.5">
-        <div className="text-[10px] uppercase text-background/70">{label}</div>
-        <div className="max-w-[28rem] break-words">{value}</div>
-      </div>
-    </OverviewTooltipContent>
-  );
 }
 
 function SelectStatusPill({
