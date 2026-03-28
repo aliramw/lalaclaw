@@ -36,6 +36,7 @@ import { isImSessionUser } from "@/features/session/im-session";
 import { buildCurrentConversationTitle, splitImTabTitleForDisplay, stripDingTalkImagePlaceholderForDisplay, unwrapAssistantEnvelope } from "./chat-im-utils";
 import { estimateVisualLineCount, getAgentMentionMatch, shouldIgnoreMentionKeyUp } from "./chat-text-utils";
 import { buildConversationMessageFingerprint, hashConversationMessageFingerprint, normalizeConversationMessageFingerprintPart } from "./chat-message-id-utils";
+import { hasActiveModalSurface, isEditableTarget, isManualScrollKey } from "./chat-dom-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -707,28 +708,6 @@ function calculateBubbleTopFocusScrollTop(viewport, bubble) {
   return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
 }
 
-function isEditableTarget(target) {
-  if (!target || typeof target.closest !== "function") {
-    return false;
-  }
-
-  return Boolean(target.closest("textarea, input, select, [contenteditable='true'], [contenteditable='']"));
-}
-
-function isManualScrollKey(event) {
-  const key = String(event?.key || "");
-  return [
-    "ArrowUp",
-    "ArrowDown",
-    "PageUp",
-    "PageDown",
-    "Home",
-    "End",
-    " ",
-    "Spacebar",
-  ].includes(key);
-}
-
 function getSpeechRecognitionConstructor() {
   if (typeof window === "undefined") {
     return null;
@@ -739,14 +718,6 @@ function getSpeechRecognitionConstructor() {
     webkitSpeechRecognition?: any;
   };
   return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null;
-}
-
-function hasActiveModalSurface() {
-  if (typeof document === "undefined") {
-    return false;
-  }
-
-  return Boolean(document.querySelector("[aria-modal='true']"));
 }
 
 function joinPromptWithSpeechTranscript(basePrompt = "", transcript = "") {
