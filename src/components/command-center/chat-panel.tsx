@@ -50,6 +50,7 @@ import { AgentLabel } from "./chat-agent-label";
 import { ResetConversationDialog } from "./chat-reset-dialog";
 import { ImTabLogo } from "./chat-im-tab-logo";
 import { MessageMeta } from "./chat-message-meta";
+import { UserMessageBubble } from "./chat-user-bubble";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -1011,54 +1012,32 @@ const MessageBubble = memo(function MessageBubble({
 
   if (isUser) {
     return (
-      <>
-        <div
-          ref={setBubbleNode}
-          {...messageBubbleAttributes}
-          className="group/message flex w-full justify-end"
-        >
-          <div className="flex max-w-full flex-col items-end">
-            <MessageLabel align="right" value={userLabel} textClassName={fontSizeStyles.label} />
-            <div className="flex max-w-full items-center gap-2">
-              <MessageMeta
-                align="left"
-                content={message.content}
-                copyFirst
-                formatTime={formatTime}
-                onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-                pending={false}
-                streaming={false}
-                compact
-                textClassName={fontSizeStyles.meta}
-                timestamp={message.timestamp}
-              />
-              <Card ref={setBubbleSurfaceNode} data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName, focusBubbleClassName)}>
-                {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
-                <CardContent className={cn(bubbleContentClassName, message.attachments?.length && "space-y-2")}>
-                  <MessageAttachments
-                    attachments={message.attachments}
-                    onPreviewImage={handleOpenImagePreview}
-                    scrollAnchorBaseId={`${headingScopeId}-attachment`}
-                  />
-                  {message.content ? (
-                    <MarkdownContent
-                      content={renderedContent}
-                      files={files as any}
-                      fontSize={chatFontSize as any}
-                      headingScopeId={headingScopeId}
-                      resolvedTheme={resolvedTheme}
-                      streaming={false}
-                      onOpenFilePreview={handleOpenFilePreview}
-                      onOpenImagePreview={handleOpenImagePreview}
-                      className={fontSizeStyles.userMarkdown}
-                    />
-                  ) : null}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </div>
-      </>
+      <UserMessageBubble
+        bubbleBaseClassName={bubbleBaseClassName}
+        bubbleContentClassName={bubbleContentClassName}
+        chatFontSize={chatFontSize}
+        files={files}
+        focusBubbleClassName={focusBubbleClassName}
+        fontSizeStyles={fontSizeStyles}
+        formatTime={formatTime}
+        handleJumpBubbleTop={handleJumpBubbleTop}
+        handleJumpPreviousMessage={handleJumpPreviousMessage}
+        handleOpenFilePreview={handleOpenFilePreview}
+        handleOpenImagePreview={handleOpenImagePreview}
+        headingScopeId={headingScopeId}
+        message={message}
+        messageBubbleAttributes={messageBubbleAttributes}
+        previousMessageId={previousMessageId}
+        renderedContent={renderedContent}
+        resolvedTheme={resolvedTheme}
+        setBubbleNode={setBubbleNode}
+        setBubbleSurfaceNode={setBubbleSurfaceNode}
+        showBubbleTopJump={showBubbleTopJump}
+        supportsBubbleTopJump={supportsBubbleTopJump}
+        userBubbleClassName={userBubbleClassName}
+        userBubbleWidthClassName={userBubbleWidthClassName}
+        userLabel={userLabel}
+      />
     );
   }
 

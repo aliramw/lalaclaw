@@ -117,6 +117,14 @@ export const MarkdownContent = memo(function MarkdownContent({
     </Suspense>
   );
 }, (previousProps, nextProps) => {
+  // 对于非 streaming 消息，使用更严格的缓存策略
+  if (!previousProps.streaming && !nextProps.streaming) {
+    // 如果内容相同且都不是 streaming，直接返回 true 跳过重新渲染
+    if (previousProps.content === nextProps.content) {
+      return true;
+    }
+  }
+
   return previousProps.content === nextProps.content
     && previousProps.fontSize === nextProps.fontSize
     && previousProps.headingScopeId === nextProps.headingScopeId
