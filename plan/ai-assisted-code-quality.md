@@ -64,3 +64,33 @@ This plan captures how we treat AI-generated code (including prompts, model vers
   - review the new ownership boundaries for `app/state`, `chat/state`, `theme`, and `app/storage`
   - verify the architecture-contract matrix remains the intended narrow guardrail and not a substitute for behavior regressions
   - decide whether the final delivery should land as one close-out PR or a small stack of follow-up PRs
+
+### 2026-03-28 — Chat Single-Pipeline Cutover Close-out and Command Center Boundary Repair
+
+- Prompt/workstream: execute the chat single-pipeline cutover plan, close out the validation matrix, repair the extracted `command-center` component boundaries, and prepare a reviewable draft PR.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-03-28 Asia/Shanghai.
+- Files touched:
+  - runtime/controller and state surfaces such as `src/features/session/runtime/use-runtime-snapshot.ts`, `src/features/app/controllers/use-command-center.ts`, `src/features/app/controllers/use-command-center-reset.ts`, `src/features/app/controllers/use-command-center-background-runtime-sync.ts`, `src/features/chat/state/chat-dashboard-session.test.ts`, and `src/App.test.jsx`
+  - `command-center` UI boundaries such as `src/components/command-center/chat-panel.tsx`, `src/components/command-center/chat-copy-button.tsx`, `src/components/command-center/chat-im-tab-logo.tsx`, `src/components/command-center/chat-message-id-utils.ts`, `src/components/command-center/chat-message-label.tsx`, `src/components/command-center/chat-navigation-buttons.tsx`, `src/components/command-center/chat-pending-bubble.tsx`, `src/components/command-center/chat-react-utils.ts`, `src/components/command-center/chat-reset-dialog.tsx`, `src/components/command-center/chat-user-bubble.tsx`, `src/components/command-center/markdown-content.tsx`, and `src/components/command-center/session-overview.tsx`
+  - test and plan updates such as `tests/e2e/chat-session-stability.spec.js`, `plan/chat-state-refactor-against-openclaw-dashboard.md`, and this file
+- Quality gates rerun:
+  - `npm run lint`
+  - `npm run typecheck`
+  - `npm run build`
+  - `npm test`
+  - `npm run check:architecture:contracts`
+  - `npm run test:e2e -- tests/e2e/chat-session-stability.spec.js`
+- Manual/equivalent validation:
+  - runtime/controller/App regressions rerun around pending recovery, reset/bootstrap IM flows, and lagging runtime sync stabilization
+  - full `chat-session-stability` e2e suite rerun after the single-pipeline cutover close-out
+- Reviewer/sign-off:
+  - pending human review
+  - extra attention required on runtime/session synchronization because the cutover touched a high-risk module family
+- Reviewer checklist:
+  - confirm the runtime pending/settled transcript rules still match expected stop/reset/bootstrap behavior
+  - confirm the extracted `command-center` component props align with existing UI behavior and do not hide stale render paths
+  - confirm the markdown/file preview font-size regression is fixed without introducing new memoization skips
+  - confirm the plan close-out notes accurately match the executed validation commands
+- Known validation note:
+  - one full-suite run timed out once in `src/components/command-center/inspector-panel.test.jsx` (`supports token-based provider onboarding`), but the isolated rerun and a subsequent full `npm test` run both passed, so this remains recorded as suite-level flaky rather than resolved root cause
