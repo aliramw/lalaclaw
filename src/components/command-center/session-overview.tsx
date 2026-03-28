@@ -5,7 +5,7 @@ import { Keyboard, Languages, LogOut, Monitor, Moon, Plus, RotateCcw, Sun, X } f
 import { randomBetween, normalizeAngleDelta, stepAngleDegrees, randomNormal, distanceBetween } from "./session-math-utils";
 import { getWalkerForwardVector, isAquaticWalkerSpecies, chaikinSmooth, buildSamplesFromAbsolutePoints, buildBezierSamplesFromAbsolutePoints } from "./session-walker-utils";
 import { createViewportBounds, pickRandomEdgeStart, getNearestEdgeExitPoint, pickRandomInteriorPoint, pickDiagonalInteriorPoint } from "./session-viewport-utils";
-import { getRandomTargetDurationMs, isSeparatedFromPoints, createBreakoutAnchor, buildRandomWalkPath } from "./session-path-builder";
+import { getRandomTargetDurationMs, isSeparatedFromPoints, createBreakoutAnchor, buildRandomWalkPath, buildPrimaryLobsterWalkPath, buildCompanionLobsterWalkPath } from "./session-path-builder";
 import {
   DropdownIcon,
   DropdownMenu,
@@ -486,43 +486,7 @@ function SessionSearchDialog({
 
 
 
-function buildPrimaryLobsterWalkPath(
-  originRect: SessionOverviewRect,
-  startPoint: SessionOverviewPoint,
-  endPoint = startPoint,
-  avoidPoints: SessionOverviewPoint[] = [],
-  targetDurationMs: number | null = null,
-  initialMotionAngle: number | null = null,
-): SessionOverviewWalkPath {
-  return buildRandomWalkPath({
-    avoidPoints,
-    initialMotionAngle,
-    originRect,
-    resolveEndPoint: () => endPoint,
-    species: "lobster",
-    startPoint,
-    targetDurationMs,
-  });
-}
 
-function buildCompanionLobsterWalkPath(
-  originRect: SessionOverviewRect,
-  startPoint: SessionOverviewPoint,
-  avoidPoints: SessionOverviewPoint[] = [],
-  targetDurationMs: number | null = null,
-  species = "lobster",
-  initialMotionAngle: number | null = null,
-): SessionOverviewWalkPath {
-  return buildRandomWalkPath({
-    avoidPoints,
-    initialMotionAngle,
-    originRect,
-    resolveEndPoint: (point) => getNearestEdgeExitPoint(point, originRect),
-    species,
-    startPoint,
-    targetDurationMs,
-  });
-}
 
 function buildOctopusWalkPath(
   originRect: SessionOverviewRect,

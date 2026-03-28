@@ -1,6 +1,6 @@
 import { randomBetween, distanceBetween, clamp } from "./session-math-utils";
 import { getWalkerForwardVector, chaikinSmooth, buildSamplesFromAbsolutePoints, buildBezierSamplesFromAbsolutePoints } from "./session-walker-utils";
-import { createViewportBounds } from "./session-viewport-utils";
+import { createViewportBounds, getNearestEdgeExitPoint } from "./session-viewport-utils";
 
 type SessionOverviewPoint = { x: number; y: number };
 type SessionOverviewRect = { width: number; height: number };
@@ -161,4 +161,42 @@ export function buildRandomWalkPath({
     samples: fallbackSamples,
     totalLength: fallbackLength,
   };
+}
+
+export function buildPrimaryLobsterWalkPath(
+  originRect: SessionOverviewRect,
+  startPoint: SessionOverviewPoint,
+  endPoint = startPoint,
+  avoidPoints: SessionOverviewPoint[] = [],
+  targetDurationMs: number | null = null,
+  initialMotionAngle: number | null = null,
+): SessionOverviewWalkPath {
+  return buildRandomWalkPath({
+    avoidPoints,
+    initialMotionAngle,
+    originRect,
+    resolveEndPoint: () => endPoint,
+    species: "lobster",
+    startPoint,
+    targetDurationMs,
+  });
+}
+
+export function buildCompanionLobsterWalkPath(
+  originRect: SessionOverviewRect,
+  startPoint: SessionOverviewPoint,
+  avoidPoints: SessionOverviewPoint[] = [],
+  targetDurationMs: number | null = null,
+  species = "lobster",
+  initialMotionAngle: number | null = null,
+): SessionOverviewWalkPath {
+  return buildRandomWalkPath({
+    avoidPoints,
+    initialMotionAngle,
+    originRect,
+    resolveEndPoint: (point) => getNearestEdgeExitPoint(point, originRect),
+    species,
+    startPoint,
+    targetDurationMs,
+  });
 }
