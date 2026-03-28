@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Keyboard, Languages, LogOut, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
+import { randomBetween, normalizeAngleDelta, stepAngleDegrees, randomNormal, distanceBetween } from "./session-math-utils";
 import {
   DropdownIcon,
   DropdownMenu,
@@ -220,37 +221,9 @@ const IM_PLATFORM_LOGOS = {
   },
 };
 
-function randomBetween(min, max) {
-  return min + (Math.random() * (max - min));
-}
 
-function normalizeAngleDelta(delta) {
-  let normalized = delta;
-  while (normalized > 180) normalized -= 360;
-  while (normalized < -180) normalized += 360;
-  return normalized;
-}
 
-function stepAngleDegrees(current, target, maxStep = WALKER_TURN_STEP_DEGREES) {
-  if (!Number.isFinite(current)) {
-    return target;
-  }
 
-  const delta = normalizeAngleDelta(target - current);
-  if (Math.abs(delta) <= maxStep) {
-    return target;
-  }
-
-  return current + (Math.sign(delta) * maxStep);
-}
-
-function randomNormal(mean, standardDeviation) {
-  const u1 = Math.max(Math.random(), Number.EPSILON);
-  const u2 = Math.random();
-  const magnitude = Math.sqrt(-2 * Math.log(u1));
-  const z0 = magnitude * Math.cos(2 * Math.PI * u2);
-  return mean + (z0 * standardDeviation);
-}
 
 function sampleCompanionFontSize() {
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -270,9 +243,6 @@ function sampleCompanionFontSize() {
   );
 }
 
-function distanceBetween(a, b) {
-  return Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
-}
 
 function getWalkerForwardVector(species = "", motionAngle: number | null = 0) {
   const normalizedMotionAngle = Number.isFinite(motionAngle) ? Number(motionAngle) : 0;
