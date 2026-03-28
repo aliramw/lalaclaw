@@ -386,11 +386,10 @@ function isSourceCheckout(projectRoot = PROJECT_ROOT) {
     return true;
   }
 
-  const sourceMarkers = [
-    path.join(projectRoot, 'src', 'main.tsx'),
-    path.join(projectRoot, 'vite.config.mjs'),
-  ];
-  return sourceMarkers.every((filePath) => fs.existsSync(filePath));
+  const srcDir = path.join(projectRoot, 'src');
+  const viteConfig = path.join(projectRoot, 'vite.config.mjs');
+
+  return fs.existsSync(srcDir) && fs.existsSync(viteConfig);
 }
 
 function detectLocalOpenClaw() {
