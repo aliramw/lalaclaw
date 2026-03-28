@@ -1,8 +1,8 @@
-import { useEffect, useId, useRef } from "react";
+import { memo, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 
-export function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
+export const ResetConversationDialog = memo(function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
   const titleId = useId();
   const descriptionId = useId();
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -72,4 +72,4 @@ export function ResetConversationDialog({ messages, onCancel, onConfirm, open })
     </div>,
     document.body,
   );
-}
+});

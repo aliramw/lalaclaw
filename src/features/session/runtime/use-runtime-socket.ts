@@ -54,7 +54,11 @@ export function useRuntimeSocket({ sessionUser = "", agentId = "", enabled = tru
   const pingTimerRef = useRef<number | null>(null);
   const onMessageRef = useRef<RuntimeSocketHandler>(null);
   const enabledRef = useRef(enabled);
+  const sessionUserRef = useRef(sessionUser);
+  const agentIdRef = useRef(agentId);
   enabledRef.current = enabled;
+  sessionUserRef.current = sessionUser;
+  agentIdRef.current = agentId;
 
   const setOnMessage = useCallback((handler: RuntimeSocketHandler) => {
     onMessageRef.current = handler;
@@ -67,7 +71,7 @@ export function useRuntimeSocket({ sessionUser = "", agentId = "", enabled = tru
     }
 
     setStatus(reconnectAttemptRef.current > 0 ? RUNTIME_SOCKET_STATES.RECONNECTING : RUNTIME_SOCKET_STATES.CONNECTING);
-    const url = buildWsUrl(sessionUser, agentId);
+    const url = buildWsUrl(sessionUserRef.current, agentIdRef.current);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
@@ -135,7 +139,7 @@ export function useRuntimeSocket({ sessionUser = "", agentId = "", enabled = tru
         setStatus(RUNTIME_SOCKET_STATES.RECONNECTING);
       }
     };
-  }, [sessionUser, agentId]);
+  }, []);
 
   const disconnect = useCallback(() => {
     if (connectTimerRef.current != null) {
