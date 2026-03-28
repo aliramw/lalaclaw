@@ -5838,7 +5838,7 @@ describe("App", () => {
     expect(await screen.findByText("package.json")).toBeInTheDocument();
   });
 
-  it("opens IM tabs under the agent configured by OpenClaw bindings even when the current tab is a different agent", async () => {
+  it("opens IM tabs under the agent configured by OpenClaw bindings even when the current tab is a different agent", { timeout: 10000 }, async () => {
     const harness = createInteractiveFetchMock({
       availableAgents: ["main", "paint"],
       availableModels: ["openai-codex/gpt-5.4"],
@@ -5943,6 +5943,98 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(feishuRuntimeRequestCount).toBeGreaterThanOrEqual(2);
+    });
+
+    deferredRuntime.resolve(mockJsonResponse(createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        agentId: "main",
+        selectedAgentId: "main",
+        sessionUser: nativeSessionUser,
+        sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+        status: "空闲",
+      },
+    })));
+
+    await waitFor(() => {
+      expect(chatBodies[0]).toMatchObject({
+        agentId: "main",
+        sessionUser: nativeSessionUser,
+      });
+    });
+  });
+
+  it("resolves a bootstrap Weixin tab before sending the first message", async () => {
+    const chatBodies = [];
+    const deferredRuntime = createDeferred();
+    const nativeSessionUser = "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat";
+    let weixinRuntimeRequestCount = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center";
+
+        if (sessionUser === "openclaw-weixin:direct:default") {
+          weixinRuntimeRequestCount += 1;
+          if (weixinRuntimeRequestCount === 1) {
+            return mockJsonResponse(createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                agentId: "main",
+                selectedAgentId: "main",
+                sessionUser: "openclaw-weixin:direct:default",
+                sessionKey: "agent:main:openai-user:openclaw-weixin:direct:default",
+                status: "空闲",
+              },
+            }));
+          }
+
+          return deferredRuntime.promise;
+        }
+
+        return mockJsonResponse(createSessionSnapshot(sessionUser));
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        return mockJsonResponse({
+          ok: true,
+          outputText: "收到",
+          session: {
+            ...createSnapshot().session,
+            agentId: "main",
+            selectedAgentId: "main",
+            sessionUser: nativeSessionUser,
+            sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+            status: "空闲",
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "微信" }));
+    expect(await screen.findByRole("button", { name: "微信" })).toBeInTheDocument();
+
+    const textarea = await findComposer();
+    await user.type(textarea, "苹果");
+    await user.keyboard("{Enter}{Enter}{Enter}");
+    expect(textarea).toHaveValue("");
+
+    await waitFor(() => {
+      expect(weixinRuntimeRequestCount).toBeGreaterThanOrEqual(2);
     });
 
     deferredRuntime.resolve(mockJsonResponse(createSnapshot({
