@@ -34,7 +34,6 @@ import {
   resolveRuntimePendingEntry,
 } from "@/features/chat/state/chat-runtime-pending";
 import {
-  type ChatRunState,
   selectChatRunBusy,
 } from "@/features/chat/state/chat-session-state";
 import { useRuntimeSnapshot } from "@/features/session/runtime";

@@ -25,6 +25,20 @@ Last updated: 2026-03-28
 - 当前收尾重点已经从“继续拆 helper”切到“验证和人工复审”：
   - focused runtime / controller / storage / architecture contract regressions 已重新跑绿
   - 剩余工作以全量验证记录和人工 review 为主，不再建议继续扩散内部兼容层重构
+- `command-center` 拆分后的类型边界也已补齐到可收尾状态：
+  - `chat-copy-button`、`chat-im-tab-logo`、`chat-message-label`、`chat-navigation-buttons`、`chat-reset-dialog`、`chat-user-bubble`、`chat-pending-bubble` 的 props 边界已显式声明
+  - `chat-panel` 本地重复类型与 `chat-react-utils` 的 `NodeRefTarget` 已对齐
+  - `markdown-content` 的 memo 短路已收回，font-size 切换与 preview font-size 持久化回归恢复通过
+- 这一轮最终验证已经补齐：
+  - `npm run lint` 通过
+  - `npm run typecheck` 通过
+  - `npm run build` 通过
+  - `npm test` 通过
+  - `npm run check:architecture:contracts` 通过
+  - `npm run test:e2e -- tests/e2e/chat-session-stability.spec.js` 通过
+- 额外记录：
+  - `npm run lint` 仍会打印一条 `markdown-renderer.tsx` 的 `react-refresh/only-export-components` warning，但命令成功退出，没有新增 lint error
+  - 全量 `npm test` 首次重跑时曾在 `inspector-panel.test.jsx` 的 `supports token-based provider onboarding` 上出现一次 timeout；单独复跑通过，随后第二次全量 `npm test` 也通过，当前先按 suite-level flaky 记录，不单独扩散修复面
 
 ### 2026-03-26
 

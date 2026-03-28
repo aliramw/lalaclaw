@@ -5,7 +5,6 @@ import {
   findSnapshotPendingAssistantIndex,
   hasSnapshotAdvancedPastPendingTurn,
 } from "@/features/chat/state/chat-runtime-pending";
-import { buildDurableConversationWithLocalTail } from "@/features/chat/state/chat-settled-conversation";
 
 function hasSnapshotAssistantReply(snapshotMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null): boolean {
   if (pendingEntry?.stopped) {
@@ -295,134 +294,6 @@ export function buildPendingConversationOverlayMessages(
   );
 }
 
-function mergePendingConversationIntoTranscript(
-  snapshotMessages: ChatMessage[] = [],
-  pendingEntry: PendingChatTurn | null = null,
-  { stripPendingAssistantMatch = false } = {},
-) {
-  return buildPendingTranscriptMessages(
-    snapshotMessages,
-    pendingEntry,
-    { stripPendingAssistantMatch },
-  );
-}
-
-function mergeStoppedPendingConversationIntoTranscript(
-  snapshotMessages: ChatMessage[] = [],
-  pendingEntry: PendingChatTurn | null = null,
-  localMessages: ChatMessage[] = [],
-) {
-  return mergePendingAssistantCandidateIntoTranscript(
-    snapshotMessages,
-    pendingEntry,
-    localMessages,
-    {
-      shouldAppend: () => Boolean(pendingEntry?.stopped),
-    },
-  );
-}
-
-function mergePendingConversationSettledReplyIntoTranscript(
-  snapshotMessages: ChatMessage[] = [],
-  pendingEntry: PendingChatTurn | null = null,
-  localMessages: ChatMessage[] = [],
-) {
-  return mergePendingAssistantCandidateIntoTranscript(
-    snapshotMessages,
-    pendingEntry,
-    localMessages,
-  );
-}
-
-function buildDurablePendingConversationMessages({
-  messages = [],
-  pendingEntry = null,
-  localMessages = [],
-  localHasLivePendingAssistant = false,
-  localHasExplicitLivePendingAssistant = false,
-  localSettledPendingAssistantCandidate = null,
-  snapshotHasAssistantReply = false,
-}: {
-  messages?: ChatMessage[];
-  pendingEntry?: PendingChatTurn | null;
-  localMessages?: ChatMessage[];
-  localHasLivePendingAssistant?: boolean;
-  localHasExplicitLivePendingAssistant?: boolean;
-  localSettledPendingAssistantCandidate?: ChatMessage | null;
-  snapshotHasAssistantReply?: boolean;
-} = {}) {
-  if (!pendingEntry) {
-    return [...messages];
-  }
-
-  if (pendingEntry?.stopped) {
-    return mergeStoppedPendingConversationIntoTranscript(
-      messages,
-      pendingEntry,
-      localMessages,
-    );
-  }
-
-  if (localHasLivePendingAssistant && localHasExplicitLivePendingAssistant) {
-    return mergePendingConversationIntoTranscript(
-      messages,
-      pendingEntry,
-      { stripPendingAssistantMatch: true },
-    );
-  }
-
-  if (localSettledPendingAssistantCandidate && !snapshotHasAssistantReply) {
-    return mergePendingConversationSettledReplyIntoTranscript(
-      messages,
-      pendingEntry,
-      localMessages,
-    );
-  }
-
-  return mergePendingConversationIntoTranscript(
-    messages,
-    pendingEntry,
-  );
-}
-
-function buildDurableConversationMessages({
-  messages = [],
-  pendingEntry = null,
-  localMessages = [],
-  localHasLivePendingAssistant = false,
-  localHasExplicitLivePendingAssistant = false,
-  localSettledPendingAssistantCandidate = null,
-  snapshotHasAssistantReply = false,
-  allowEmptySnapshotLocalTail = true,
-}: {
-  messages?: ChatMessage[];
-  pendingEntry?: PendingChatTurn | null;
-  localMessages?: ChatMessage[];
-  localHasLivePendingAssistant?: boolean;
-  localHasExplicitLivePendingAssistant?: boolean;
-  localSettledPendingAssistantCandidate?: ChatMessage | null;
-  snapshotHasAssistantReply?: boolean;
-  allowEmptySnapshotLocalTail?: boolean;
-} = {}) {
-  if (!pendingEntry) {
-    return buildDurableConversationWithLocalTail(
-      messages,
-      localMessages,
-      { allowEmptySnapshot: allowEmptySnapshotLocalTail },
-    );
-  }
-
-  return buildDurablePendingConversationMessages({
-    messages,
-    pendingEntry,
-    localMessages,
-    localHasLivePendingAssistant,
-    localHasExplicitLivePendingAssistant,
-    localSettledPendingAssistantCandidate,
-    snapshotHasAssistantReply,
-  });
-}
-
 type PendingUserMergeState = {
   messages: ChatMessage[];
   hasPendingUserMessage: boolean;
@@ -447,10 +318,6 @@ type PendingTranscriptBuildOptions = {
   stripPendingAssistantMatch?: boolean;
 };
 
-type PendingAssistantCandidateAppendOptions = {
-  shouldAppend?: () => boolean;
-};
-
 type PendingUserMergeBuildOptions = {
   snapshotHasAssistantReply?: boolean;
 };
@@ -464,24 +331,6 @@ type PendingConversationSnapshotState = {
   snapshotMessages: ChatMessage[];
   snapshotHasAssistantReply: boolean;
 };
-
-function mergePendingAssistantCandidateIntoTranscript(
-  snapshotMessages: ChatMessage[] = [],
-  pendingEntry: PendingChatTurn | null = null,
-  localMessages: ChatMessage[] = [],
-  { shouldAppend = () => true }: PendingAssistantCandidateAppendOptions = {},
-) {
-  const transcriptMessages = buildPendingTranscriptMessages(snapshotMessages, pendingEntry);
-  if (!pendingEntry || !shouldAppend()) {
-    return transcriptMessages;
-  }
-
-  return appendPendingAssistantCandidateIntoTranscript(
-    transcriptMessages,
-    pendingEntry,
-    resolvePendingAssistantCandidate(localMessages, pendingEntry),
-  );
-}
 
 function resolvePendingAssistantCandidate(
   localMessages: ChatMessage[] = [],
@@ -517,31 +366,6 @@ function stripPendingAssistantMatchFromSnapshotMessages(
   return snapshotMessages.filter((_, index) =>
     index !== findSnapshotPendingAssistantIndex(snapshotMessages, pendingEntry),
   );
-}
-
-function buildPendingTranscriptMessages(
-  snapshotMessages: ChatMessage[] = [],
-  pendingEntry: PendingChatTurn | null = null,
-  { stripPendingAssistantMatch = false }: PendingTranscriptBuildOptions = {},
-) {
-  const pendingMergeState = buildPendingConversationMergeState(
-    snapshotMessages,
-    pendingEntry,
-    { stripPendingAssistantMatch },
-  );
-  return collapseDuplicateConversationTurns(
-    selectPendingTranscriptBaseMessages(pendingMergeState),
-  );
-}
-
-function selectPendingTranscriptBaseMessages(
-  pendingMergeState: PendingConversationMergeState,
-) {
-  if (!pendingMergeState.hasPendingEntry) {
-    return pendingMergeState.snapshotMessages;
-  }
-
-  return pendingMergeState.pendingUserMerge.messages;
 }
 
 function buildPendingConversationMergeState(
@@ -701,29 +525,6 @@ function createPendingUserMergeState(
     hasPendingUserMessage,
     insertedPendingUser,
   };
-}
-
-function appendPendingAssistantCandidateIntoTranscript(
-  transcriptMessages: ChatMessage[] = [],
-  pendingEntry: PendingChatTurn | null = null,
-  assistantCandidate: ChatMessage | null = null,
-) {
-  if (!shouldAppendPendingAssistantCandidateIntoTranscript(transcriptMessages, pendingEntry)) {
-    return transcriptMessages;
-  }
-
-  return appendDistinctPendingAssistantCandidate(
-    transcriptMessages,
-    pendingEntry,
-    assistantCandidate,
-  );
-}
-
-function shouldAppendPendingAssistantCandidateIntoTranscript(
-  transcriptMessages: ChatMessage[] = [],
-  pendingEntry: PendingChatTurn | null = null,
-) {
-  return !hasSnapshotAdvancedPastPendingTurn(transcriptMessages, pendingEntry);
 }
 
 function appendDistinctPendingAssistantCandidate(

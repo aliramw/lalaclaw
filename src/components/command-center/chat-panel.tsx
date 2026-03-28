@@ -1,11 +1,7 @@
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
-import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ChevronLeft, ChevronRight, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import dingtalkLogoMarkup from "@/assets/im-logos/im-logo-dingtalk.svg?raw";
-import feishuLogoMarkup from "@/assets/im-logos/im-logo-feishu.svg?raw";
-import wecomLogoMarkup from "@/assets/im-logos/im-logo-wecom.svg?raw";
-import weixinLogoMarkup from "@/assets/im-logos/im-logo-weixin.svg?raw";
 import { Badge } from "@/components/ui/badge";
 import {
   ButtonSurface as Button,
@@ -17,19 +13,13 @@ import {
   TooltipSurface as Tooltip,
   TooltipTriggerSurface as TooltipTrigger,
 } from "@/components/command-center/chat-panel-surfaces";
-import {
-  ComposerAttachments,
-  MessageAttachments,
-} from "@/components/command-center/chat-panel-attachments";
+import { ComposerAttachments } from "@/components/command-center/chat-panel-attachments";
 import { messageHasVisualMedia } from "@/components/command-center/chat-panel-attachment-utils";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton, shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import {
   extractHeadingOutline,
-  measureMessageDensity,
   shouldUseCompactAssistantBubble,
-  slugifyHeading,
-  stripInlineMarkdown,
   type MessageOutlineItem,
 } from "@/components/command-center/chat-message-utils";
 import { isImSessionUser } from "@/features/session/im-session";
@@ -44,9 +34,7 @@ import type { NodeRefTarget } from "./chat-react-utils";
 import { normalizeSkillMention } from "./chat-skill-utils";
 import { EmptyConversation } from "./chat-empty-conversation";
 import { StreamingTailDots } from "./chat-streaming-indicator";
-import { MessageLabel } from "./chat-message-label";
-import { CopyMessageButton } from "./chat-copy-button";
-import { BubbleTopJumpButton, PreviousUserMessageButton } from "./chat-navigation-buttons";
+import { BubbleTopJumpButton } from "./chat-navigation-buttons";
 import { AgentLabel } from "./chat-agent-label";
 import { ResetConversationDialog } from "./chat-reset-dialog";
 import { ImTabLogo } from "./chat-im-tab-logo";
@@ -282,7 +270,6 @@ const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx
 const streamingTailIndicatorClearDelayMs = 420;
 const speechRecognitionStatusResetDelayMs = 2200;
 const voiceInputShortcutLabel = "Cmd + Shift + .";
-const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
   small: {
     userText: "text-[12px] font-normal leading-5",

@@ -1,5 +1,5 @@
 import { randomBetween, distanceBetween, clamp } from "./session-math-utils";
-import { getWalkerForwardVector, chaikinSmooth, buildSamplesFromAbsolutePoints, buildBezierSamplesFromAbsolutePoints } from "./session-walker-utils";
+import { getWalkerForwardVector, chaikinSmooth, buildSamplesFromAbsolutePoints } from "./session-walker-utils";
 import { createViewportBounds, getNearestEdgeExitPoint } from "./session-viewport-utils";
 
 type SessionOverviewPoint = { x: number; y: number };

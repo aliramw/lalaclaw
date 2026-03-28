@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Keyboard, Languages, LogOut, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
-import { randomBetween, normalizeAngleDelta, stepAngleDegrees, randomNormal, distanceBetween } from "./session-math-utils";
-import { getWalkerForwardVector, isAquaticWalkerSpecies, chaikinSmooth, buildSamplesFromAbsolutePoints, buildBezierSamplesFromAbsolutePoints } from "./session-walker-utils";
-import { createViewportBounds, pickRandomEdgeStart, getNearestEdgeExitPoint, pickRandomInteriorPoint, pickDiagonalInteriorPoint } from "./session-viewport-utils";
-import { getRandomTargetDurationMs, isSeparatedFromPoints, createBreakoutAnchor, buildRandomWalkPath, buildPrimaryLobsterWalkPath, buildCompanionLobsterWalkPath } from "./session-path-builder";
+import { randomBetween, stepAngleDegrees, randomNormal } from "./session-math-utils";
+import { isAquaticWalkerSpecies, buildSamplesFromAbsolutePoints, buildBezierSamplesFromAbsolutePoints } from "./session-walker-utils";
+import { createViewportBounds, pickRandomEdgeStart, pickRandomInteriorPoint, pickDiagonalInteriorPoint } from "./session-viewport-utils";
+import { getRandomTargetDurationMs, isSeparatedFromPoints, buildPrimaryLobsterWalkPath, buildCompanionLobsterWalkPath } from "./session-path-builder";
 import {
   DropdownIcon,
   DropdownMenu,
@@ -185,10 +185,7 @@ const OverviewDropdownMenuCheckboxItem = DropdownMenuCheckboxItem as any;
 const OverviewDropdownMenuItem = DropdownMenuItem as any;
 
 const thinkModeOptions = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
-const LOBSTER_WALK_MARGIN = 32;
 const LOBSTER_SPEED_PX_PER_SECOND = 150;
-const LOBSTER_MIN_DURATION_MS = 5000;
-const LOBSTER_MAX_DURATION_MS = 15000;
 const CRAB_SPAWN_PROBABILITY = lobsterWalkTuning.crabSpawnProbability;
 const OCTOPUS_SPAWN_PROBABILITY = lobsterWalkTuning.octopusSpawnProbability;
 const PUFFER_SPAWN_PROBABILITY = lobsterWalkTuning.pufferSpawnProbability;
@@ -203,8 +200,6 @@ const LOBSTER_COMPANION_MAX_FONT_SIZE_PX = 180;
 const LOBSTER_COMPANION_MEAN_FONT_SIZE_PX = 72;
 const LOBSTER_COMPANION_STD_DEV_FONT_SIZE_PX = 28;
 const LOBSTER_MAX_FONT_SIZE_PX = lobsterWalkTuning.primaryFontSizePx;
-const LOBSTER_MIN_RANDOM_POINT_COUNT = 5;
-const LOBSTER_MAX_RANDOM_POINT_COUNT = 10;
 const WALKER_TURN_STEP_DEGREES = 6;
 const OCTOPUS_BREATH_SCALE = 0.1;
 const OCTOPUS_WIDTH_SQUASH_SCALE = 0.1;

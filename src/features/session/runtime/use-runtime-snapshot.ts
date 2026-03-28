@@ -403,7 +403,6 @@ function findPendingAssistantMessage(messages: ChatMessage[] = [], pendingEntry:
 }
 
 function buildPendingMergeDecision({
-  mergedConversation = [],
   snapshotConversation = [],
   pendingEntry = null,
   localMessages = [],
@@ -414,7 +413,6 @@ function buildPendingMergeDecision({
   canSettleRecoveredPending = false,
   status = "",
 }: {
-  mergedConversation?: ChatMessage[];
   snapshotConversation?: ChatMessage[];
   pendingEntry?: PendingChatTurn | null;
   localMessages?: ChatMessage[];
@@ -512,11 +510,10 @@ function buildRuntimeConversationMergeState({
     progressRef,
   });
   const pendingMergeDecision = buildPendingMergeDecision({
-        mergedConversation,
-        snapshotConversation: conversationWithAttachments,
-        pendingEntry,
-        localMessages,
-        localMessagesWithoutPending,
+    snapshotConversation: conversationWithAttachments,
+    pendingEntry,
+    localMessages,
+    localMessagesWithoutPending,
     busy,
     recoveringPendingReply,
     keepRecoveredPendingAlive: recoveredPendingProgress.keepRecoveredPendingAlive,
