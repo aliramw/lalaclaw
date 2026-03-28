@@ -48,6 +48,7 @@ import { CopyMessageButton } from "./chat-copy-button";
 import { BubbleTopJumpButton, PreviousUserMessageButton } from "./chat-navigation-buttons";
 import { AgentLabel } from "./chat-agent-label";
 import { ResetConversationDialog } from "./chat-reset-dialog";
+import { ImTabLogo } from "./chat-im-tab-logo";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -291,13 +292,6 @@ const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx
 const streamingTailIndicatorClearDelayMs = 420;
 const speechRecognitionStatusResetDelayMs = 2200;
 const voiceInputShortcutLabel = "Cmd + Shift + .";
-const IM_TAB_LOGOS = {
-  "dingtalk-connector": dingtalkLogoMarkup,
-  feishu: feishuLogoMarkup,
-  wecom: wecomLogoMarkup,
-  "openclaw-weixin": weixinLogoMarkup,
-};
-
 const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
   small: {
@@ -362,28 +356,6 @@ const chatFontSizeButtonClassNames = {
   medium: "text-[14px]",
   large: "text-[16px]",
 };
-
-function ImTabLogo({ active = false, channel = "" }) {
-  const markup = IM_TAB_LOGOS[channel];
-
-  if (!markup) {
-    return null;
-  }
-
-  return (
-    <span
-      aria-hidden="true"
-      data-im-logo={channel}
-      className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden rounded-[5px] [&_svg]:h-full [&_svg]:w-full",
-        active
-          ? "h-[18px] w-[18px] border border-white/55 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.18),0_0_0_1px_rgba(255,255,255,0.14)]"
-          : "h-4 w-4 bg-muted/65",
-      )}
-      dangerouslySetInnerHTML={{ __html: markup }}
-    />
-  );
-}
 
 function getTextareaCaretAnchor(textarea, caretIndex = 0) {
   if (!textarea || typeof window === "undefined" || typeof document === "undefined") {
