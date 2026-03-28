@@ -37,6 +37,7 @@ import { buildCurrentConversationTitle, splitImTabTitleForDisplay, stripDingTalk
 import { estimateVisualLineCount, getAgentMentionMatch, shouldIgnoreMentionKeyUp } from "./chat-text-utils";
 import { buildConversationMessageFingerprint, hashConversationMessageFingerprint, normalizeConversationMessageFingerprintPart } from "./chat-message-id-utils";
 import { hasActiveModalSurface, isEditableTarget, isManualScrollKey } from "./chat-dom-utils";
+import { calculateBubbleTopFocusScrollTop, calculatePinnedLatestBubbleScrollTop } from "./chat-scroll-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -680,32 +681,6 @@ function getConversationMessageId(
   }
 
   return `${message?.timestamp || "message"}-${index}`;
-}
-
-function calculatePinnedLatestBubbleScrollTop(viewport, bubble, ratio = 0.2) {
-  if (!viewport || !bubble) {
-    return 0;
-  }
-
-  const viewportRect = viewport.getBoundingClientRect();
-  const bubbleRect = bubble.getBoundingClientRect();
-  const bubbleTop = viewport.scrollTop + (bubbleRect.top - viewportRect.top);
-  const targetTop = bubbleTop - viewport.clientHeight * ratio;
-
-  return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
-}
-
-function calculateBubbleTopFocusScrollTop(viewport, bubble) {
-  if (!viewport || !bubble) {
-    return 0;
-  }
-
-  const viewportRect = viewport.getBoundingClientRect();
-  const bubbleRect = bubble.getBoundingClientRect();
-  const bubbleTop = viewport.scrollTop + (bubbleRect.top - viewportRect.top);
-  const targetTop = bubbleTop - viewport.clientHeight * 0.3;
-
-  return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
 }
 
 function getSpeechRecognitionConstructor() {
