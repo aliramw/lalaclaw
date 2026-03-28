@@ -34,6 +34,7 @@ import {
 } from "@/components/command-center/chat-message-utils";
 import { isImSessionUser } from "@/features/session/im-session";
 import { buildCurrentConversationTitle, splitImTabTitleForDisplay, stripDingTalkImagePlaceholderForDisplay, unwrapAssistantEnvelope } from "./chat-im-utils";
+import { estimateVisualLineCount, getAgentMentionMatch, shouldIgnoreMentionKeyUp } from "./chat-text-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -443,13 +444,6 @@ function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
   );
 }
 
-function estimateVisualLineCount(content = "") {
-  const lines = String(content || "")
-    .split("\n")
-    .filter((line) => line.trim().length > 0);
-  return Math.max(lines.length, 1);
-}
-
 function EmptyConversation({ loading = false }: { loading?: boolean }) {
   const { messages } = useI18n();
 
@@ -474,27 +468,6 @@ function EmptyConversation({ loading = false }: { loading?: boolean }) {
       </div>
     </div>
   );
-}
-
-function getAgentMentionMatch(value = "", caret = 0) {
-  const safeValue = String(value || "");
-  const safeCaret = Number.isFinite(caret) ? Math.max(0, Math.min(caret, safeValue.length)) : safeValue.length;
-  const beforeCaret = safeValue.slice(0, safeCaret);
-  const match = /(^|\s)@([^\s@]*)$/.exec(beforeCaret);
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    start: beforeCaret.length - String(match[2] || "").length - 1,
-    end: safeCaret,
-    query: match[2] || "",
-  };
-}
-
-function shouldIgnoreMentionKeyUp(key = "") {
-  return key === "ArrowDown" || key === "ArrowUp" || key === "Enter" || key === "Tab" || key === "Escape";
 }
 
 function getTextareaCaretAnchor(textarea, caretIndex = 0) {
