@@ -1,4 +1,5 @@
 import { Paperclip, X } from "lucide-react";
+import { memo } from "react";
 
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -142,7 +143,7 @@ function dedupeRenderableAttachments(attachments: AttachmentLike[] = []) {
   return dedupedAttachments;
 }
 
-export function MessageAttachments({
+export const MessageAttachments = memo(function MessageAttachments({
   attachments,
   mode = "message",
   onPreviewImage,
@@ -202,9 +203,9 @@ export function MessageAttachments({
       ) : null}
     </div>
   );
-}
+});
 
-export function ComposerAttachments({
+export const ComposerAttachments = memo(function ComposerAttachments({
   attachments,
   onPreviewImage,
   onRemoveAttachment,
@@ -255,4 +256,4 @@ export function ComposerAttachments({
       </div>
     </div>
   );
-}
+});
