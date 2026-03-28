@@ -39,6 +39,7 @@ import { buildConversationMessageFingerprint, hashConversationMessageFingerprint
 import { hasActiveModalSurface, isEditableTarget, isManualScrollKey } from "./chat-dom-utils";
 import { calculateBubbleTopFocusScrollTop, calculatePinnedLatestBubbleScrollTop } from "./chat-scroll-utils";
 import { getSpeechRecognitionConstructor, joinPromptWithSpeechTranscript } from "./chat-speech-utils";
+import { getRefCurrent } from "./chat-react-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -749,17 +750,6 @@ function buildSpeechTranscriptFromResults(results: Array<{ 0?: { transcript?: st
   }
 
   return transcript;
-}
-
-function getRefCurrent<T>(
-  ref:
-    | NodeRefTarget<T>
-    | undefined,
-): T | null {
-  if (!ref || typeof ref === "function") {
-    return null;
-  }
-  return ref.current;
 }
 
 function CopyMessageButton({ content }) {
