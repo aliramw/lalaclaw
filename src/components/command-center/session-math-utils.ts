@@ -33,3 +33,7 @@ export function randomNormal(mean, standardDeviation) {
 export function distanceBetween(a, b) {
   return Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
 }
+
+export function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
