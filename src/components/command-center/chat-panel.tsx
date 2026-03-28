@@ -51,6 +51,7 @@ import { ResetConversationDialog } from "./chat-reset-dialog";
 import { ImTabLogo } from "./chat-im-tab-logo";
 import { MessageMeta } from "./chat-message-meta";
 import { UserMessageBubble } from "./chat-user-bubble";
+import { PendingAssistantBubble } from "./chat-pending-bubble";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -1043,47 +1044,29 @@ const MessageBubble = memo(function MessageBubble({
 
   if (isPending) {
     return (
-      <div
-        ref={setBubbleNode}
-        {...messageBubbleAttributes}
-        className="group/message flex w-fit max-w-full"
-      >
-        <div className="flex max-w-full flex-col items-start">
-          <AgentLabel value={agentLabel} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
-          <div className="inline-flex max-w-full items-center gap-2">
-            <Card
-              ref={setBubbleSurfaceNode}
-              data-bubble-layout="compact"
-              className={cn(
-                bubbleBaseClassName,
-                "cc-thinking-bubble inline-block w-fit max-w-[min(60vw,14rem)] shrink-0 motion-reduce:animate-none",
-                "cc-assistant-bubble",
-                assistantBubbleClassName,
-                focusBubbleClassName,
-              )}
-            >
-              {bubbleTopJumpButton}
-              <CardContent className={bubbleContentClassName}>
-                <MarkdownContent
-                  content={renderedContent}
-                  files={files as any}
-                  fontSize={chatFontSize as any}
-                  headingScopeId={headingScopeId}
-                  resolvedTheme={resolvedTheme}
-                  streaming={bubbleStreaming}
-                  onOpenFilePreview={handleOpenFilePreview}
-                  onOpenImagePreview={handleOpenImagePreview}
-                  className={fontSizeStyles.pendingMarkdown}
-                />
-              </CardContent>
-            </Card>
-            <MessageMeta align="right" content={renderedContent} formatTime={formatTime} pending compact textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
-          </div>
-          {staleWarning ? (
-            <p className="mt-1 text-xs text-muted-foreground/80">{staleWarning}</p>
-          ) : null}
-        </div>
-      </div>
+      <PendingAssistantBubble
+        agentLabel={agentLabel}
+        assistantBubbleClassName={assistantBubbleClassName}
+        bubbleBaseClassName={bubbleBaseClassName}
+        bubbleContentClassName={bubbleContentClassName}
+        bubbleStreaming={bubbleStreaming}
+        bubbleTopJumpButton={bubbleTopJumpButton}
+        chatFontSize={chatFontSize}
+        files={files}
+        focusBubbleClassName={focusBubbleClassName}
+        fontSizeStyles={fontSizeStyles}
+        formatTime={formatTime}
+        handleOpenFilePreview={handleOpenFilePreview}
+        handleOpenImagePreview={handleOpenImagePreview}
+        headingScopeId={headingScopeId}
+        message={message}
+        messageBubbleAttributes={messageBubbleAttributes}
+        renderedContent={renderedContent}
+        resolvedTheme={resolvedTheme}
+        setBubbleNode={setBubbleNode}
+        setBubbleSurfaceNode={setBubbleSurfaceNode}
+        staleWarning={staleWarning}
+      />
     );
   }
 
