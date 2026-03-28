@@ -38,6 +38,7 @@ import { estimateVisualLineCount, getAgentMentionMatch, shouldIgnoreMentionKeyUp
 import { buildConversationMessageFingerprint, hashConversationMessageFingerprint, normalizeConversationMessageFingerprintPart } from "./chat-message-id-utils";
 import { hasActiveModalSurface, isEditableTarget, isManualScrollKey } from "./chat-dom-utils";
 import { calculateBubbleTopFocusScrollTop, calculatePinnedLatestBubbleScrollTop } from "./chat-scroll-utils";
+import { getSpeechRecognitionConstructor, joinPromptWithSpeechTranscript } from "./chat-speech-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -681,34 +682,6 @@ function getConversationMessageId(
   }
 
   return `${message?.timestamp || "message"}-${index}`;
-}
-
-function getSpeechRecognitionConstructor() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const speechWindow = window as Window & {
-    SpeechRecognition?: any;
-    webkitSpeechRecognition?: any;
-  };
-  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null;
-}
-
-function joinPromptWithSpeechTranscript(basePrompt = "", transcript = "") {
-  const normalizedBase = String(basePrompt || "");
-  const normalizedTranscript = String(transcript || "").trim();
-  if (!normalizedTranscript) {
-    return normalizedBase;
-  }
-
-  if (!normalizedBase.trim()) {
-    return normalizedTranscript;
-  }
-
-  return /\s$/.test(normalizedBase)
-    ? `${normalizedBase}${normalizedTranscript}`
-    : `${normalizedBase} ${normalizedTranscript}`;
 }
 
 function buildSpeechTranscriptFromResults(results: Array<{ 0?: { transcript?: string } }> = []) {
