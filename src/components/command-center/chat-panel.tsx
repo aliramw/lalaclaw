@@ -42,6 +42,7 @@ import { getSpeechRecognitionConstructor, joinPromptWithSpeechTranscript } from 
 import { getRefCurrent } from "./chat-react-utils";
 import { normalizeSkillMention } from "./chat-skill-utils";
 import { EmptyConversation } from "./chat-empty-conversation";
+import { StreamingTailDots } from "./chat-streaming-indicator";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -832,20 +833,6 @@ function MessageMeta({
       {pending ? null : <CopyMessageButton content={content} />}
       {onJumpPreviousUserMessage ? <PreviousUserMessageButton onClick={onJumpPreviousUserMessage} /> : null}
     </div>
-  );
-}
-
-function StreamingTailDots() {
-  return (
-    <span
-      aria-hidden="true"
-      data-streaming-tail-dots="true"
-      className="cc-streaming-tail-dots ml-1.5 inline-flex items-center gap-1 align-middle text-foreground/70"
-    >
-      <span className="cc-streaming-tail-dot" />
-      <span className="cc-streaming-tail-dot cc-streaming-tail-dot-2" />
-      <span className="cc-streaming-tail-dot cc-streaming-tail-dot-3" />
-    </span>
   );
 }
 
