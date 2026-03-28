@@ -1,8 +1,28 @@
 import { memo, useEffect, useId, useRef } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 
-export const ResetConversationDialog = memo(function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
+type ResetConversationDialogMessages = {
+  title?: ReactNode;
+  description?: ReactNode;
+  cancel?: ReactNode;
+  confirm?: ReactNode;
+};
+
+type ResetConversationDialogProps = {
+  messages: ResetConversationDialogMessages;
+  onCancel?: (() => void) | null;
+  onConfirm?: (() => void) | null;
+  open?: boolean;
+};
+
+export const ResetConversationDialog = memo(function ResetConversationDialog({
+  messages,
+  onCancel,
+  onConfirm,
+  open = false,
+}: ResetConversationDialogProps) {
   const titleId = useId();
   const descriptionId = useId();
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -16,7 +36,7 @@ export const ResetConversationDialog = memo(function ResetConversationDialog({ m
     document.body.style.overflow = "hidden";
     cancelButtonRef.current?.focus();
 
-    const handleKeyDown = (event) => {
+    const handleKeyDown = (event: KeyboardEvent | ReactKeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         onCancel?.();
@@ -56,14 +76,14 @@ export const ResetConversationDialog = memo(function ResetConversationDialog({ m
             ref={cancelButtonRef}
             type="button"
             variant="outline"
-            onClick={onCancel}
+            onClick={onCancel || undefined}
           >
             {messages.cancel}
           </Button>
           <Button
             type="button"
             variant="default"
-            onClick={onConfirm}
+            onClick={onConfirm || undefined}
           >
             {messages.confirm}
           </Button>

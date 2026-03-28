@@ -12,7 +12,12 @@ const IM_TAB_LOGOS = {
   "openclaw-weixin": weixinLogoMarkup,
 };
 
-export const ImTabLogo = memo(function ImTabLogo({ active = false, channel = "" }) {
+type ImTabLogoProps = {
+  active?: boolean;
+  channel?: string;
+};
+
+export const ImTabLogo = memo(function ImTabLogo({ active = false, channel = "" }: ImTabLogoProps) {
   const markup = IM_TAB_LOGOS[channel];
 
   if (!markup) {

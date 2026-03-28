@@ -1,7 +1,14 @@
 import { memo } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export const MessageLabel = memo(function MessageLabel({ align = "left", value, textClassName }) {
+type MessageLabelProps = {
+  align?: "left" | "right";
+  value?: ReactNode;
+  textClassName?: string;
+};
+
+export const MessageLabel = memo(function MessageLabel({ align = "left", value, textClassName }: MessageLabelProps) {
   return (
     <div
       className={cn(

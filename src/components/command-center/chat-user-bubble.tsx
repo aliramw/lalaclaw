@@ -1,4 +1,5 @@
 import { memo } from "react";
+import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageLabel } from "./chat-message-label";
@@ -6,6 +7,41 @@ import { MessageMeta } from "./chat-message-meta";
 import { BubbleTopJumpButton } from "./chat-navigation-buttons";
 import { MessageAttachments } from "./chat-panel-attachments";
 import { MarkdownContent } from "./markdown-content";
+
+type UserMessageBubbleProps = {
+  bubbleBaseClassName?: string;
+  bubbleContentClassName?: string;
+  chatFontSize?: string;
+  files?: Array<Record<string, unknown>>;
+  focusBubbleClassName?: string;
+  fontSizeStyles: {
+    label?: string;
+    meta?: string;
+    userMarkdown?: string;
+  };
+  formatTime: (value: unknown) => string;
+  handleJumpBubbleTop?: (() => void) | null;
+  handleJumpPreviousMessage?: (() => void) | null;
+  handleOpenFilePreview?: ComponentProps<typeof MarkdownContent>["onOpenFilePreview"];
+  handleOpenImagePreview?: ComponentProps<typeof MarkdownContent>["onOpenImagePreview"];
+  headingScopeId: string;
+  message: {
+    attachments?: ComponentProps<typeof MessageAttachments>["attachments"];
+    content?: string;
+    timestamp?: number | string;
+  };
+  messageBubbleAttributes?: Record<string, string | undefined>;
+  previousMessageId?: string;
+  renderedContent?: string;
+  resolvedTheme?: string;
+  setBubbleNode?: ((node: HTMLDivElement | null) => void) | null;
+  setBubbleSurfaceNode?: ((node: HTMLDivElement | null) => void) | null;
+  showBubbleTopJump?: boolean;
+  supportsBubbleTopJump?: boolean;
+  userBubbleClassName?: string;
+  userBubbleWidthClassName?: string;
+  userLabel?: string;
+};
 
 export const UserMessageBubble = memo(function UserMessageBubble({
   bubbleBaseClassName,
@@ -32,7 +68,7 @@ export const UserMessageBubble = memo(function UserMessageBubble({
   userBubbleClassName,
   userBubbleWidthClassName,
   userLabel,
-}) {
+}: UserMessageBubbleProps) {
   return (
     <div
       ref={setBubbleNode}

@@ -639,7 +639,7 @@ function getWalkerTransform(point, walker) {
     const dx = Math.abs(point.dx) > 0.01 ? point.dx : Math.cos(((walker.motionAngle || 0) * Math.PI) / 180);
     const dy = Math.abs(point.dy) > 0.01 ? point.dy : Math.sin(((walker.motionAngle || 0) * Math.PI) / 180);
     const targetAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-    const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle);
+    const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle, WALKER_TURN_STEP_DEGREES);
     walker.motionAngle = motionAngle;
     return {
       emojiTransform: "scaleX(1.08) scaleY(0.92)",
@@ -655,7 +655,7 @@ function getWalkerTransform(point, walker) {
       -PUFFER_MAX_PITCH_DEGREES,
       PUFFER_MAX_PITCH_DEGREES,
     );
-    const motionAngle = stepAngleDegrees(walker.motionAngle, targetPitch);
+    const motionAngle = stepAngleDegrees(walker.motionAngle, targetPitch, WALKER_TURN_STEP_DEGREES);
     walker.motionAngle = motionAngle;
     return {
       emojiTransform: walker.mirrored ? "scaleX(-1)" : "",
@@ -666,7 +666,7 @@ function getWalkerTransform(point, walker) {
   const dx = Math.abs(point.dx) > 0.01 ? point.dx : Math.cos((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
   const dy = Math.abs(point.dy) > 0.01 ? point.dy : Math.sin((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
   const targetAngle = Math.atan2(dy || -1, dx || 0) * (180 / Math.PI) + 90;
-  const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle);
+  const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle, WALKER_TURN_STEP_DEGREES);
   walker.motionAngle = motionAngle;
   return {
     emojiTransform: "",

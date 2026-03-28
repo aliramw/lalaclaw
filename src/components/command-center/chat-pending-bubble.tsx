@@ -1,9 +1,41 @@
 import { memo } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { AgentLabel } from "./chat-agent-label";
 import { MessageMeta } from "./chat-message-meta";
 import { MarkdownContent } from "./markdown-content";
+
+type PendingAssistantBubbleProps = {
+  agentLabel?: string;
+  assistantBubbleClassName?: string;
+  bubbleBaseClassName?: string;
+  bubbleContentClassName?: string;
+  bubbleStreaming?: boolean;
+  bubbleTopJumpButton?: ReactNode;
+  chatFontSize?: string;
+  files?: Array<Record<string, unknown>>;
+  focusBubbleClassName?: string;
+  fontSizeStyles: {
+    label?: string;
+    meta?: string;
+    pendingMarkdown?: string;
+    tokenBadge?: string;
+  };
+  formatTime: (value: unknown) => string;
+  handleOpenFilePreview?: ComponentProps<typeof MarkdownContent>["onOpenFilePreview"];
+  handleOpenImagePreview?: ComponentProps<typeof MarkdownContent>["onOpenImagePreview"];
+  headingScopeId: string;
+  message: {
+    timestamp?: number | string;
+  };
+  messageBubbleAttributes?: Record<string, string | undefined>;
+  renderedContent?: string;
+  resolvedTheme?: string;
+  setBubbleNode?: ((node: HTMLDivElement | null) => void) | null;
+  setBubbleSurfaceNode?: ((node: HTMLDivElement | null) => void) | null;
+  staleWarning?: string | null;
+};
 
 export const PendingAssistantBubble = memo(function PendingAssistantBubble({
   agentLabel,
@@ -27,7 +59,7 @@ export const PendingAssistantBubble = memo(function PendingAssistantBubble({
   setBubbleNode,
   setBubbleSurfaceNode,
   staleWarning,
-}) {
+}: PendingAssistantBubbleProps) {
   return (
     <div
       ref={setBubbleNode}

@@ -3,7 +3,11 @@ import { memo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
 
-export const CopyMessageButton = memo(function CopyMessageButton({ content }) {
+type CopyMessageButtonProps = {
+  content?: string | null;
+};
+
+export const CopyMessageButton = memo(function CopyMessageButton({ content }: CopyMessageButtonProps) {
   const { messages } = useI18n();
   const [copied, setCopied] = useState(false);
 

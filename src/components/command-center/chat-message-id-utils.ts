@@ -3,7 +3,7 @@
 type MessageLike = {
   id?: string;
   role?: string;
-  timestamp?: number;
+  timestamp?: number | string;
   content?: string;
   attachments?: Array<{ id?: string; storageKey?: string; name?: string; path?: string; previewUrl?: string }>;
 };

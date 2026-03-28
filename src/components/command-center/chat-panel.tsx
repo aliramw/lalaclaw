@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import dingtalkLogoMarkup from "@/assets/im-logos/im-logo-dingtalk.svg?raw";
 import feishuLogoMarkup from "@/assets/im-logos/im-logo-feishu.svg?raw";
@@ -40,6 +40,7 @@ import { hasActiveModalSurface, isEditableTarget, isManualScrollKey } from "./ch
 import { calculateBubbleTopFocusScrollTop, calculatePinnedLatestBubbleScrollTop } from "./chat-scroll-utils";
 import { getSpeechRecognitionConstructor, joinPromptWithSpeechTranscript } from "./chat-speech-utils";
 import { getRefCurrent } from "./chat-react-utils";
+import type { NodeRefTarget } from "./chat-react-utils";
 import { normalizeSkillMention } from "./chat-skill-utils";
 import { EmptyConversation } from "./chat-empty-conversation";
 import { StreamingTailDots } from "./chat-streaming-indicator";
@@ -85,14 +86,6 @@ type MessageLike = {
   timestamp?: number | string;
   tokenBadge?: string;
 };
-
-type MutableNodeRef<T> = { current: T | null };
-
-type NodeRefTarget<T> =
-  | RefObject<T | null>
-  | MutableNodeRef<T>
-  | ((node: T | null) => void)
-  | null;
 
 type MessageBubbleProps = {
   agentLabel?: string;
@@ -178,12 +171,6 @@ type FocusMessageRequest = {
   source?: string;
   timestamp?: number;
 } | null;
-
-type MessageOutlineItem = {
-  id: string;
-  level: number;
-  text: string;
-};
 
 function useLatchedBoolean(value: boolean, releaseDelayMs = busyIndicatorVisualHoldMs) {
   const [latchedValue, setLatchedValue] = useState(Boolean(value));

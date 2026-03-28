@@ -1,6 +1,11 @@
 // React utilities
+import type { RefObject } from "react";
 
-type NodeRefTarget<T> = { current: T | null } | ((instance: T | null) => void);
+export type NodeRefTarget<T> =
+  | RefObject<T | null>
+  | { current: T | null }
+  | ((instance: T | null) => void)
+  | null;
 
 export function getRefCurrent<T>(
   ref:
