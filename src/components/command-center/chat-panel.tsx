@@ -40,6 +40,7 @@ import { hasActiveModalSurface, isEditableTarget, isManualScrollKey } from "./ch
 import { calculateBubbleTopFocusScrollTop, calculatePinnedLatestBubbleScrollTop } from "./chat-scroll-utils";
 import { getSpeechRecognitionConstructor, joinPromptWithSpeechTranscript } from "./chat-speech-utils";
 import { getRefCurrent } from "./chat-react-utils";
+import { normalizeSkillMention } from "./chat-skill-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -524,23 +525,6 @@ function getTextareaCaretAnchor(textarea, caretIndex = 0) {
     left: textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft,
     top: textareaRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop,
     lineHeight: Number.parseFloat(style.lineHeight) || 20,
-  };
-}
-
-function normalizeSkillMention(skill) {
-  if (typeof skill === "string") {
-    const name = skill.trim();
-    return name ? { name, ownerAgentId: "" } : null;
-  }
-
-  const name = String(skill?.name || "").trim();
-  if (!name) {
-    return null;
-  }
-
-  return {
-    name,
-    ownerAgentId: String(skill?.ownerAgentId || "").trim(),
   };
 }
 
