@@ -35,6 +35,7 @@ import {
 import { isImSessionUser } from "@/features/session/im-session";
 import { buildCurrentConversationTitle, splitImTabTitleForDisplay, stripDingTalkImagePlaceholderForDisplay, unwrapAssistantEnvelope } from "./chat-im-utils";
 import { estimateVisualLineCount, getAgentMentionMatch, shouldIgnoreMentionKeyUp } from "./chat-text-utils";
+import { buildConversationMessageFingerprint, hashConversationMessageFingerprint, normalizeConversationMessageFingerprintPart } from "./chat-message-id-utils";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
@@ -625,35 +626,6 @@ function resolveAssistantVisualState({
   }
 
   return "settled" as const;
-}
-
-function normalizeConversationMessageFingerprintPart(value = "") {
-  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
-}
-
-function hashConversationMessageFingerprint(value = "") {
-  let hash = 5381;
-  const text = String(value || "");
-  for (let index = 0; index < text.length; index += 1) {
-    hash = ((hash << 5) + hash) + text.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
-}
-
-function buildConversationMessageFingerprint(message: MessageLike = {}) {
-  const role = String(message?.role || "message").trim() || "message";
-  const timestamp = Number(message?.timestamp || 0);
-  const content = normalizeConversationMessageFingerprintPart(message?.content || "");
-  const attachmentFingerprint = Array.isArray(message?.attachments)
-    ? message.attachments
-      .map((attachment) => (
-        String(attachment?.id || attachment?.storageKey || attachment?.name || attachment?.path || attachment?.previewUrl || "").trim()
-      ))
-      .filter(Boolean)
-      .join("|")
-    : "";
-  return [role, timestamp || "na", content || "empty", attachmentFingerprint || "no-attachments"].join("::");
 }
 
 function buildConversationMessageRenderKey(
