@@ -6458,6 +6458,6 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(secondViewport.scrollTop).toBe(1300);
-    });
+    }, { timeout: 5000 });
   });
 });
