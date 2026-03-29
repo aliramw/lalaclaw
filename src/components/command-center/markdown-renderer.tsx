@@ -862,7 +862,7 @@ function CodeRenderer({
 
 function TableRenderer({ children, scrollAnchorId = "" }: { children?: ReactNode; scrollAnchorId?: string }) {
   return (
-    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 min-w-0 max-w-full overflow-x-auto rounded-[5px] border border-border bg-background">
+    <div data-scroll-anchor-id={scrollAnchorId || undefined} className="my-2 min-w-0 max-w-full overflow-x-auto bg-background">
       <table className="my-0 w-full min-w-0 border-collapse">{children}</table>
     </div>
   );
@@ -1211,4 +1211,8 @@ export default function MarkdownRenderer({
       ) : null}
     </>
   );
+}
+
+export function clearMarkdownImageCache() {
+  streamingMarkdownImageNodeCache.clear();
 }

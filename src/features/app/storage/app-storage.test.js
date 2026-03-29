@@ -1,39 +1,76 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  loadStoredState,
+  persistUiStateSnapshot,
+} from "@/features/app/storage/app-ui-state-storage";
+import {
   chatScrollStorageKey,
-  collapseDuplicateConversationTurns,
-  createConversationKey,
-  createResetSessionUser,
-  derivePendingEntryFromLocalMessages,
-  hasAuthoritativePendingAssistantReply,
+  loadStoredChatScrollTops,
+  persistChatScrollTops,
+} from "@/features/app/state/app-chat-scroll-storage";
+import {
   loadPendingChatTurns,
+  pendingChatStorageKey,
+  pruneCompletedPendingChatTurns,
+} from "@/features/app/state/app-pending-storage";
+import {
   loadStoredPromptDrafts,
   loadStoredPromptHistory,
-  loadStoredChatScrollTops,
-  loadStoredState,
-  mergeConversationAttachments,
-  mergeConversationIdentity,
-  mergePendingConversation,
-  mergeStaleLocalConversationTail,
-  pendingChatStorageKey,
-  persistUiStateSnapshot,
-  pruneCompletedPendingChatTurns,
-  persistChatScrollTops,
   promptDraftStorageKey,
   promptHistoryStorageKey,
+} from "@/features/app/state/app-prompt-storage";
+import {
+  mergeConversationAttachments,
+  mergeConversationIdentity,
+} from "@/features/chat/state/chat-conversation-merge";
+import {
+  buildPendingConversationOverlayMessages,
+} from "@/features/chat/state/chat-pending-conversation";
+import { buildDashboardSettledMessages } from "@/features/chat/state/chat-dashboard-session";
+import { sanitizeMessagesForStorage } from "@/features/chat/state/chat-persisted-messages";
+import {
+  hasAuthoritativePendingAssistantReply,
   resolveRuntimePendingEntry,
-  sanitizeMessagesForStorage,
-  storageKey,
-} from "@/features/app/storage";
+} from "@/features/chat/state/chat-runtime-pending";
+import {
+  buildHydratedConversationWithLocalTail,
+  buildStabilizedHydratedConversationWithLocalState,
+} from "@/features/chat/state/chat-settled-conversation";
+import { createConversationKey } from "@/features/app/state/app-session-identity";
+import { collapseDuplicateConversationTurns } from "@/features/chat/state/chat-conversation-dedupe";
+import { shouldReuseSettledLocalConversationTail } from "@/features/chat/state/chat-settled-conversation";
 
-describe("mergePendingConversation", () => {
+const storageKey = "command-center-ui-state-v3";
+
+describe("buildPendingConversationOverlayMessages", () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
 
   it("keeps locally streamed assistant text instead of restoring the pending placeholder", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
+        [{ role: "user", content: "给我 Things", timestamp: 100 }],
+        {
+          startedAt: 100,
+          pendingTimestamp: 120,
+          userMessage: { role: "user", content: "给我 Things", timestamp: 100 },
+        },
+        "正在思考…",
+        [
+          { role: "user", content: "给我 Things", timestamp: 100 },
+          { role: "assistant", content: "Things\n\n- 第一条", timestamp: 120 },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "给我 Things", timestamp: 100 },
+      { role: "assistant", content: "Things\n\n- 第一条", timestamp: 120 },
+    ]);
+  });
+
+  it("can build pending overlay messages through the explicit build helper", () => {
+    expect(
+      buildPendingConversationOverlayMessages(
         [{ role: "user", content: "给我 Things", timestamp: 100 }],
         {
           startedAt: 100,
@@ -54,7 +91,7 @@ describe("mergePendingConversation", () => {
 
   it("keeps the current turn pending when the snapshot only contains an older identical user message and older assistants", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "最后一句", timestamp: 100 },
           { role: "assistant", content: "第一段回复", timestamp: 90 },
@@ -77,7 +114,7 @@ describe("mergePendingConversation", () => {
 
   it("does not treat an older identical prompt as the current pending user message", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "访问网站，图片不还是667KB", timestamp: 100 },
           { role: "assistant", content: "旧回复", timestamp: 120 },
@@ -105,7 +142,7 @@ describe("mergePendingConversation", () => {
 
   it("keeps the newer local streaming assistant when the runtime snapshot only has an older partial reply", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "帮我分析", timestamp: 200 },
           { role: "assistant", content: "先看", timestamp: 220 },
@@ -129,7 +166,7 @@ describe("mergePendingConversation", () => {
 
   it("keeps the runtime snapshot assistant when it is already newer than the local streamed text", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "帮我分析", timestamp: 200 },
           { role: "assistant", content: "先看看这个问题的根因，并给出修复建议", timestamp: 220 },
@@ -151,9 +188,37 @@ describe("mergePendingConversation", () => {
     ]);
   });
 
+  it("does not let a local streaming assistant overwrite authoritative history after a later user turn has already appeared", () => {
+    expect(
+      buildPendingConversationOverlayMessages(
+        [
+          { role: "user", content: "帮我分析", timestamp: 200 },
+          { role: "assistant", content: "先看", timestamp: 220 },
+          { role: "user", content: "继续说", timestamp: 240 },
+          { role: "assistant", content: "后面的权威消息", timestamp: 260 },
+        ],
+        {
+          startedAt: 200,
+          pendingTimestamp: 220,
+          userMessage: { role: "user", content: "帮我分析", timestamp: 200 },
+        },
+        "正在思考…",
+        [
+          { role: "user", content: "帮我分析", timestamp: 200 },
+          { role: "assistant", content: "先看看这个问题的根因", timestamp: 220, tokenBadge: "↑12", streaming: true },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "帮我分析", timestamp: 200 },
+      { role: "assistant", content: "先看", timestamp: 220 },
+      { role: "user", content: "继续说", timestamp: 240 },
+      { role: "assistant", content: "后面的权威消息", timestamp: 260 },
+    ]);
+  });
+
   it("does not duplicate the final assistant when startedAt is slightly later than the current user timestamp", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "hi", timestamp: 100 },
           { role: "assistant", content: "hi.", timestamp: 110, tokenBadge: "↑1 ↓1" },
@@ -177,7 +242,7 @@ describe("mergePendingConversation", () => {
 
   it("does not append an equivalent local assistant when the snapshot already contains the same reply", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "你好", timestamp: 200 },
           { role: "assistant", content: "hi.", timestamp: 205, tokenBadge: "↑5.3k ↓45 R19.6k" },
@@ -201,7 +266,7 @@ describe("mergePendingConversation", () => {
 
   it("keeps the just-sent user and pending placeholder when the runtime snapshot only has older assistant history", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "旧问题", timestamp: 100 },
           { role: "assistant", content: "旧回复", timestamp: 120 },
@@ -229,12 +294,16 @@ describe("mergePendingConversation", () => {
 
   it("can derive a pending entry from the local optimistic turn when runtime sync arrives before pending state catches up", () => {
     expect(
-      derivePendingEntryFromLocalMessages([
-        { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
-        { id: "msg-assistant-1", role: "assistant", content: "旧回复", timestamp: 120 },
-        { id: "msg-user-2", role: "user", content: "新问题", timestamp: 200 },
-        { id: "msg-assistant-pending-2", role: "assistant", content: "正在思考…", timestamp: 220, pending: true },
-      ]),
+      resolveRuntimePendingEntry({
+        conversationKey: "command-center:main",
+        localMessages: [
+          { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "旧回复", timestamp: 120 },
+          { id: "msg-user-2", role: "user", content: "新问题", timestamp: 200 },
+          { id: "msg-assistant-pending-2", role: "assistant", content: "正在思考…", timestamp: 220, pending: true },
+        ],
+        pendingChatTurns: {},
+      }),
     ).toEqual({
       startedAt: 200,
       pendingTimestamp: 220,
@@ -292,9 +361,39 @@ describe("mergePendingConversation", () => {
     ).toBeNull();
   });
 
+  it("does not keep a tracked pending turn once the conversation has already advanced to a later user turn", () => {
+    expect(
+      resolveRuntimePendingEntry({
+        agentId: "main",
+        conversationKey: "command-center:main",
+        conversationMessages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "总结好了", timestamp: 120 },
+          { role: "user", content: "继续说", timestamp: 140 },
+          { role: "assistant", content: "后续回复", timestamp: 160 },
+        ],
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 100,
+            pendingTimestamp: 120,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: {
+              role: "user",
+              content: "旧问题",
+              timestamp: 100,
+            },
+          },
+        },
+        sessionStatus: "空闲",
+        sessionUser: "command-center",
+      }),
+    ).toBeNull();
+  });
+
   it("inserts the pending user message before a snapshot assistant when the snapshot has not included the user yet", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [{ role: "assistant", content: "先给你几条新闻", timestamp: 220 }],
         {
           startedAt: 200,
@@ -312,7 +411,7 @@ describe("mergePendingConversation", () => {
 
   it("does not add a thinking placeholder for slash-command pending turns", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [],
         {
           startedAt: 200,
@@ -326,9 +425,235 @@ describe("mergePendingConversation", () => {
     ).toEqual([{ role: "user", content: "/new", timestamp: 200 }]);
   });
 
+  it("can merge only the pending user into the transcript without adding a live assistant placeholder", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [{ role: "assistant", content: "先给你几条新闻", timestamp: 220 }],
+        pendingEntry: {
+          startedAt: 200,
+          pendingTimestamp: 220,
+          userMessage: { role: "user", content: "给我看点新闻", timestamp: 200 },
+        },
+      }),
+    ).toEqual([
+      { role: "user", content: "给我看点新闻", timestamp: 200 },
+      { role: "assistant", content: "先给你几条新闻", timestamp: 220 },
+    ]);
+  });
+
+  it("keeps an existing pending user match without appending a synthetic assistant bubble", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [{ role: "user", content: "旧消息", timestamp: 100 }],
+        pendingEntry: {
+          startedAt: 50,
+          pendingTimestamp: 60,
+          userMessage: { role: "user", content: "旧消息", timestamp: 55 },
+        },
+      }),
+    ).toEqual([
+      { role: "user", content: "旧消息", timestamp: 100 },
+    ]);
+  });
+
+  it("can strip the current pending assistant match from the transcript while keeping the pending user", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+        ],
+        pendingEntry: {
+          startedAt: 1000,
+          pendingTimestamp: 1050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+        },
+        localHasLivePendingAssistant: true,
+        localHasExplicitLivePendingAssistant: true,
+      }),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+    ]);
+  });
+
+  it("keeps the local stopped assistant when the pending turn has already been stopped", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { role: "user", content: "帮我总结", timestamp: 200 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "这是完整回复", timestamp: 220 },
+        ],
+        pendingEntry: {
+          startedAt: 200,
+          pendingTimestamp: 220,
+          assistantMessageId: "msg-assistant-pending-1",
+          stopped: true,
+          stoppedAt: 250,
+          suppressPendingPlaceholder: true,
+          userMessage: { role: "user", content: "帮我总结", timestamp: 200 },
+        },
+        localMessages: [
+          { role: "user", content: "帮我总结", timestamp: 200 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "已停止", timestamp: 220 },
+        ],
+      }),
+    ).toEqual([
+      { role: "user", content: "帮我总结", timestamp: 200 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "已停止", timestamp: 220 },
+    ]);
+  });
+
+  it("does not append a local stopped assistant once the authoritative snapshot has already moved to a later user turn", () => {
+    const messages = buildDashboardSettledMessages({
+        messages: [
+          { role: "user", content: "帮我总结", timestamp: 200 },
+          { role: "assistant", content: "这是完整回复", timestamp: 220 },
+          { role: "user", content: "继续说", timestamp: 240 },
+          { role: "assistant", content: "后面的权威消息", timestamp: 260 },
+        ],
+        pendingEntry: {
+          startedAt: 200,
+          pendingTimestamp: 220,
+          assistantMessageId: "msg-assistant-pending-1",
+          stopped: true,
+          stoppedAt: 250,
+          suppressPendingPlaceholder: true,
+          userMessage: { role: "user", content: "帮我总结", timestamp: 200 },
+        },
+        localMessages: [
+          { role: "user", content: "帮我总结", timestamp: 200 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "已停止", timestamp: 220 },
+        ],
+      });
+
+    expect(messages).toHaveLength(4);
+    expect(messages[0]).toMatchObject({ role: "user", content: "帮我总结", timestamp: 200 });
+    expect(messages[1]).toMatchObject({ role: "assistant", content: "这是完整回复", timestamp: 220 });
+    expect(messages[2]).toMatchObject({ role: "user", content: "继续说", timestamp: 240 });
+    expect(messages[3]).toMatchObject({ role: "assistant", content: "后面的权威消息", timestamp: 260 });
+  });
+
+  it("keeps the settled local assistant reply when the snapshot still lags behind", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+        ],
+        pendingEntry: {
+          key: "command-center:main",
+          startedAt: 200,
+          pendingTimestamp: 220,
+          assistantMessageId: "msg-assistant-final-1",
+          userMessage: { role: "user", content: "新问题", timestamp: 200 },
+        },
+        localMessages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { id: "msg-assistant-final-1", role: "assistant", content: "第一条已完成", timestamp: 220 },
+        ],
+        localSettledPendingAssistantCandidate: { id: "msg-assistant-final-1", role: "assistant", content: "第一条已完成", timestamp: 220 },
+        snapshotHasAssistantReply: false,
+      }),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+      { role: "user", content: "新问题", timestamp: 200 },
+      { id: "msg-assistant-final-1", role: "assistant", content: "第一条已完成", timestamp: 220 },
+    ]);
+  });
+
+  it("does not append a settled local assistant once the authoritative snapshot has already moved to a later user turn", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "第一条已完成", timestamp: 220 },
+          { role: "user", content: "继续说", timestamp: 240 },
+          { role: "assistant", content: "后面的权威消息", timestamp: 260 },
+        ],
+        pendingEntry: {
+          key: "command-center:main",
+          startedAt: 200,
+          pendingTimestamp: 220,
+          assistantMessageId: "msg-assistant-final-1",
+          userMessage: { role: "user", content: "新问题", timestamp: 200 },
+        },
+        localMessages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { id: "msg-assistant-final-1", role: "assistant", content: "第一条已完成", timestamp: 220 },
+        ],
+        localSettledPendingAssistantCandidate: { id: "msg-assistant-final-1", role: "assistant", content: "第一条已完成", timestamp: 220 },
+        snapshotHasAssistantReply: false,
+      }),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+      { role: "user", content: "新问题", timestamp: 200 },
+      { role: "assistant", content: "第一条已完成", timestamp: 220 },
+      { role: "user", content: "继续说", timestamp: 240 },
+      { role: "assistant", content: "后面的权威消息", timestamp: 260 },
+    ]);
+  });
+
+  it("can build a durable transcript directly from pending merge inputs", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050 },
+        ],
+        pendingEntry: {
+          startedAt: 1000,
+          pendingTimestamp: 1050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+        },
+        localMessages: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 1050, streaming: true },
+        ],
+        localHasLivePendingAssistant: true,
+        localHasExplicitLivePendingAssistant: true,
+        snapshotHasAssistantReply: false,
+      }),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+    ]); 
+  });
+
+  it("can build a durable transcript directly from no-pending merge inputs", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+        ],
+        localMessages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "新回复", timestamp: 220 },
+        ],
+      }),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+      { role: "user", content: "新问题", timestamp: 200 },
+      { role: "assistant", content: "新回复", timestamp: 220 },
+    ]);
+  });
+
   it("keeps the local tail when the runtime snapshot is only an older prefix of the conversation", () => {
     expect(
-      mergeStaleLocalConversationTail(
+      buildHydratedConversationWithLocalTail(
         [
           { role: "user", content: "旧问题", timestamp: 100 },
           { role: "assistant", content: "旧回复", timestamp: 120 },
@@ -348,9 +673,49 @@ describe("mergePendingConversation", () => {
     ]);
   });
 
+  it("does not append a local tail when the first appended message predates the snapshot tail", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+        ],
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 110 },
+          { role: "assistant", content: "顺序已经不对了", timestamp: 130 },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+    ]);
+  });
+
+  it("does not append a local tail when the appended tail timestamps go backwards", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+        ],
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "顺序乱了", timestamp: 180 },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+    ]);
+  });
+
   it("keeps locally rendered messages when the runtime snapshot is temporarily empty", () => {
     expect(
-      mergeStaleLocalConversationTail(
+      buildHydratedConversationWithLocalTail(
         [],
         [
           { id: "msg-user-1", role: "user", content: "hi", timestamp: 100 },
@@ -365,7 +730,7 @@ describe("mergePendingConversation", () => {
 
   it("does not append local messages when the runtime snapshot has already diverged from the local prefix", () => {
     expect(
-      mergeStaleLocalConversationTail(
+      buildHydratedConversationWithLocalTail(
         [
           { role: "user", content: "旧问题", timestamp: 100 },
           { role: "assistant", content: "服务端新回复", timestamp: 120 },
@@ -384,7 +749,7 @@ describe("mergePendingConversation", () => {
 
   it("does not append an overlapping duplicate assistant from the stale local tail", () => {
     expect(
-      mergeStaleLocalConversationTail(
+      buildHydratedConversationWithLocalTail(
         [
           { id: "msg-user-1", role: "user", content: "现在给我一个惊喜？", timestamp: 100 },
           { id: "msg-assistant-1", role: "assistant", content: "行，给你个不费脑但挺值的惊喜：", timestamp: 120, tokenBadge: "↑38.5k ↓621 R2.6k" },
@@ -401,9 +766,71 @@ describe("mergePendingConversation", () => {
     ]);
   });
 
+  it("does not append an overlapping duplicate user from the stale local tail", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 100 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 100 },
+          { id: "msg-user-1-dup", role: "user", content: "继续", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 120 },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "继续", timestamp: 100 },
+      { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 120 },
+    ]);
+  });
+
+  it("does not treat a much later repeated visible turn as overlap when ids differ", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "user", content: "继续", timestamp: 100 },
+          { role: "assistant", content: "收到。", timestamp: 120 },
+        ],
+        [
+          { role: "user", content: "继续", timestamp: 100 },
+          { role: "assistant", content: "收到。", timestamp: 120 },
+          { role: "user", content: "继续", timestamp: 900_000 },
+          { role: "assistant", content: "收到。", timestamp: 900_020 },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "继续", timestamp: 100 },
+      { role: "assistant", content: "收到。", timestamp: 120 },
+      { role: "user", content: "继续", timestamp: 900_000 },
+      { role: "assistant", content: "收到。", timestamp: 900_020 },
+    ]);
+  });
+
+  it("does not treat a later repeated user turn as overlap once it falls outside the short turn window", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "user", content: "继续", timestamp: 100 },
+          { role: "assistant", content: "收到。", timestamp: 120 },
+        ],
+        [
+          { role: "user", content: "继续", timestamp: 100 },
+          { role: "assistant", content: "收到。", timestamp: 120 },
+          { role: "user", content: "继续", timestamp: 300_000 },
+          { role: "assistant", content: "收到。", timestamp: 300_020 },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "继续", timestamp: 100 },
+      { role: "assistant", content: "收到。", timestamp: 120 },
+      { role: "user", content: "继续", timestamp: 300_000 },
+      { role: "assistant", content: "收到。", timestamp: 300_020 },
+    ]);
+  });
+
   it("does not append a local assistant tail that only differs by transport wrappers", () => {
     expect(
-      mergeStaleLocalConversationTail(
+      buildHydratedConversationWithLocalTail(
         [
           { role: "assistant", content: "结论：大概 3.68 万行。", timestamp: 120, tokenBadge: "↑281 ↓252 R19.7k" },
         ],
@@ -422,9 +849,97 @@ describe("mergePendingConversation", () => {
     ]);
   });
 
+  it("merges a settled local tail into transcript when there is no tracked pending turn", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+        ],
+        localMessages: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+        ],
+      }),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+      { role: "user", content: "新问题", timestamp: 200 },
+      { role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+    ]);
+  });
+
+  it("can build hydrated view messages directly from local-tail merge inputs", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+        ],
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+      { role: "user", content: "新问题", timestamp: 200 },
+      { role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+    ]);
+  });
+
+  it("merges a settled local tail into view when a lagging snapshot is missing the latest turn", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+        ],
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+      { role: "user", content: "新问题", timestamp: 200 },
+      { role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+    ]);
+  });
+
+  it("stabilizes a hydrated conversation with local ids after restoring the settled local tail", () => {
+    expect(
+      buildStabilizedHydratedConversationWithLocalState(
+        [
+          { role: "user", content: "旧问题", timestamp: 1000 },
+          { role: "assistant", content: "旧回复", timestamp: 1100 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "旧回复", timestamp: 120 },
+          { id: "msg-user-2", role: "user", content: "新问题", timestamp: 200 },
+          { id: "msg-assistant-2", role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+      { id: "msg-assistant-1", role: "assistant", content: "旧回复", timestamp: 120 },
+      { id: "msg-user-2", role: "user", content: "新问题", timestamp: 200 },
+      { id: "msg-assistant-2", role: "assistant", content: "已经出来的部分回复", timestamp: 220 },
+    ]);
+  });
+
   it("does not re-append a stale local streaming assistant after the runtime snapshot has already settled", () => {
     expect(
-      mergeStaleLocalConversationTail(
+      buildHydratedConversationWithLocalTail(
         [
           { id: "msg-user-1", role: "user", content: "给我结论", timestamp: 100 },
           { id: "msg-assistant-1", role: "assistant", content: "最终结论", timestamp: 120, tokenBadge: "↑12" },
@@ -534,6 +1049,35 @@ describe("mergePendingConversation", () => {
     });
   });
 
+  it("prunes restored pending turns once stored messages have already advanced to a later user turn", () => {
+    expect(
+      pruneCompletedPendingChatTurns(
+        {
+          "command-center-paint-1:paint": {
+            startedAt: 200,
+            pendingTimestamp: 220,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { role: "user", content: "hi", timestamp: 200 },
+          },
+        },
+        {
+          "agent:paint": [
+            { role: "user", content: "hi", timestamp: 200 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "先看一眼", timestamp: 220 },
+            { role: "user", content: "继续", timestamp: 240 },
+            { role: "assistant", content: "后续回复", timestamp: 260 },
+          ],
+        },
+        {
+          "agent:paint": {
+            agentId: "paint",
+            sessionUser: "command-center-paint-1",
+          },
+        },
+      ),
+    ).toEqual({});
+  });
+
 
   it("treats a snapshot assistant without the local assistant id as authoritative once the final reply is present", () => {
     expect(
@@ -586,9 +1130,45 @@ describe("mergePendingConversation", () => {
     ).toBe(false);
   });
 
+  it("does not treat multiple assistant candidates in the same pending window as the authoritative final reply", () => {
+    expect(
+      hasAuthoritativePendingAssistantReply(
+        [
+          { role: "user", content: "hi", timestamp: 100 },
+          { role: "assistant", content: "第一段", timestamp: 110 },
+          { role: "assistant", content: "第二段", timestamp: 115 },
+        ],
+        {
+          startedAt: 100,
+          pendingTimestamp: 110,
+          userMessage: { role: "user", content: "hi", timestamp: 100 },
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat an earlier assistant as the current authoritative final reply once the snapshot has advanced to a later user turn", () => {
+    expect(
+      hasAuthoritativePendingAssistantReply(
+        [
+          { role: "user", content: "hi", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 110 },
+          { role: "user", content: "继续", timestamp: 140 },
+          { role: "assistant", content: "后续回复", timestamp: 160 },
+        ],
+        {
+          startedAt: 100,
+          pendingTimestamp: 110,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: { role: "user", content: "hi", timestamp: 100 },
+        },
+      ),
+    ).toBe(false);
+  });
+
   it("keeps settled duplicate turns when there is no pending replay context", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "user", content: "详细说说", timestamp: 1_000 },
           { role: "assistant", content: "第二版完整回答", timestamp: 120_000 },
@@ -609,7 +1189,7 @@ describe("mergePendingConversation", () => {
 
   it("preserves the local pending user when the runtime snapshot briefly contains only the final assistant reply", () => {
     expect(
-      mergePendingConversation(
+      buildPendingConversationOverlayMessages(
         [
           { role: "assistant", content: "收到。", timestamp: 1_100 },
         ],
@@ -636,9 +1216,39 @@ describe("mergePendingConversation", () => {
     ]);
   });
 
+  it("does not restore the pending user once the authoritative snapshot has already advanced past that assistant reply", () => {
+    expect(
+      buildPendingConversationOverlayMessages(
+        [
+          { role: "assistant", content: "收到。", timestamp: 1_100 },
+          { role: "assistant", content: "后面的新消息", timestamp: 1_300 },
+        ],
+        {
+          startedAt: 1_000,
+          pendingTimestamp: 1_050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "1",
+            timestamp: 1_000,
+          },
+        },
+        "正在思考…",
+        [
+          { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 1_050, pending: true },
+        ],
+      ),
+    ).toEqual([
+      { role: "assistant", content: "收到。", timestamp: 1_100 },
+      { role: "assistant", content: "后面的新消息", timestamp: 1_300 },
+    ]);
+  });
+
   it("restores the trailing local user turn when a lagging snapshot only contains the matching assistant reply", () => {
     expect(
-      mergeStaleLocalConversationTail(
+      buildHydratedConversationWithLocalTail(
         [
           { role: "assistant", content: "收到。", timestamp: 1_100 },
         ],
@@ -651,6 +1261,89 @@ describe("mergePendingConversation", () => {
       { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
       { role: "assistant", content: "收到。", timestamp: 1_100 },
     ]);
+  });
+
+  it("does not restore the trailing local user when the matching assistant reply is from a much later turn", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "assistant", content: "收到。", timestamp: 20_000 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
+          { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 1_050 },
+        ],
+      ),
+    ).toEqual([
+      { role: "assistant", content: "收到。", timestamp: 20_000 },
+    ]);
+  });
+
+  it("does not restore the trailing local user when the matching assistant is no longer the latest snapshot message", () => {
+    expect(
+      buildHydratedConversationWithLocalTail(
+        [
+          { role: "assistant", content: "收到。", timestamp: 1_100 },
+          { role: "assistant", content: "后面的新消息", timestamp: 1_300 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "1", timestamp: 1_000 },
+          { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 1_050 },
+        ],
+      ),
+    ).toEqual([
+      { role: "assistant", content: "收到。", timestamp: 1_100 },
+      { role: "assistant", content: "后面的新消息", timestamp: 1_300 },
+    ]);
+  });
+
+  it("can skip empty-snapshot local tail reuse when the caller already trusts the empty transcript", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [],
+        localMessages: [
+          { id: "msg-user-1", role: "user", content: "hi", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "收到", timestamp: 120 },
+        ],
+        allowEmptySnapshotLocalTail: false,
+      }),
+    ).toEqual([]);
+  });
+
+  it("does not restore a missing pending user into transcript once the authoritative assistant is no longer the latest message", () => {
+    expect(
+      buildDashboardSettledMessages({
+        messages: [
+          { role: "assistant", content: "收到。", timestamp: 1_100 },
+          { role: "assistant", content: "后面的新消息", timestamp: 1_300 },
+        ],
+        pendingEntry: {
+          startedAt: 1_000,
+          pendingTimestamp: 1_050,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "1",
+            timestamp: 1_000,
+          },
+        },
+      }),
+    ).toEqual([
+      { role: "assistant", content: "收到。", timestamp: 1_100 },
+      { role: "assistant", content: "后面的新消息", timestamp: 1_300 },
+    ]);
+  });
+
+  it("treats empty idle snapshots without pending turns as authoritative", () => {
+    expect(
+      shouldReuseSettledLocalConversationTail({
+        snapshotMessages: [],
+        pendingEntry: null,
+        status: "待命",
+        preferAuthoritativeEmptySnapshot: true,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -990,11 +1683,88 @@ describe("mergeConversationAttachments", () => {
       },
     ]);
   });
-});
 
-describe("createResetSessionUser", () => {
-  it("uses a distinct prefix so reset sessions are not mistaken for bootstrap agent sessions", () => {
-    expect(createResetSessionUser("paint")).toMatch(/^command-center-reset-paint-\d+$/);
+  it("does not merge attachments across different user turns that only share the same content", () => {
+    expect(
+      mergeConversationAttachments(
+        [
+          {
+            role: "user",
+            content: "把这张图改成黑色背景",
+            timestamp: 2_000,
+            attachments: [
+              {
+                id: "img-original",
+                kind: "image",
+                name: "original.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,original",
+              },
+            ],
+          },
+          {
+            role: "user",
+            content: "把这张图改成黑色背景",
+            timestamp: 2_100,
+            attachments: [
+              {
+                id: "img-second-turn",
+                kind: "image",
+                name: "second.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,second",
+              },
+            ],
+          },
+        ],
+        [
+          {
+            role: "user",
+            content: "把这张图改成黑色背景",
+            timestamp: 2_000,
+            attachments: [
+              {
+                id: "img-original",
+                kind: "image",
+                name: "original.png",
+                mimeType: "image/png",
+                previewUrl: "data:image/png;base64,preview-original",
+              },
+            ],
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: "把这张图改成黑色背景",
+        timestamp: 2_000,
+        attachments: [
+          {
+            id: "img-original",
+            kind: "image",
+            name: "original.png",
+            mimeType: "image/png",
+            dataUrl: "data:image/png;base64,original",
+            previewUrl: "data:image/png;base64,preview-original",
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: "把这张图改成黑色背景",
+        timestamp: 2_100,
+        attachments: [
+          {
+            id: "img-second-turn",
+            kind: "image",
+            name: "second.png",
+            mimeType: "image/png",
+            dataUrl: "data:image/png;base64,second",
+          },
+        ],
+      },
+    ]);
   });
 });
 
@@ -1082,6 +1852,46 @@ describe("mergeConversationIdentity", () => {
     ).toEqual([
       { id: "msg-user-1", role: "user", content: "继续", timestamp: 1_000 },
       { id: "msg-assistant-pending-1", role: "assistant", content: "收", timestamp: 1_100 },
+    ]);
+  });
+
+  it("prefers the closest local duplicate turn when the same visible messages appear multiple times", () => {
+    expect(
+      mergeConversationIdentity(
+        [
+          { role: "user", content: "继续", timestamp: 5_000 },
+          { role: "assistant", content: "收到。", timestamp: 5_100 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1_000 },
+          { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 1_100 },
+          { id: "msg-user-2", role: "user", content: "继续", timestamp: 4_000 },
+          { id: "msg-assistant-2", role: "assistant", content: "收到。", timestamp: 4_100 },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-2", role: "user", content: "继续", timestamp: 4_000 },
+      { id: "msg-assistant-2", role: "assistant", content: "收到。", timestamp: 4_100 },
+    ]);
+  });
+
+  it("keeps local identity matches monotonic so duplicate turns do not cross-wire user and assistant across turns", () => {
+    expect(
+      mergeConversationIdentity(
+        [
+          { role: "user", content: "继续", timestamp: 5_000 },
+          { role: "assistant", content: "收到。", timestamp: 4_700 },
+        ],
+        [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1_000 },
+          { id: "msg-assistant-1", role: "assistant", content: "收到。", timestamp: 4_600 },
+          { id: "msg-user-2", role: "user", content: "继续", timestamp: 4_800 },
+          { id: "msg-assistant-2", role: "assistant", content: "收到。", timestamp: 9_000 },
+        ],
+      ),
+    ).toEqual([
+      { id: "msg-user-2", role: "user", content: "继续", timestamp: 4_800 },
+      { id: "msg-assistant-2", role: "assistant", content: "收到。", timestamp: 9_000 },
     ]);
   });
 });
@@ -1390,6 +2200,50 @@ describe("loadStoredState", () => {
     ]);
   });
 
+  it("does not backfill the active tab from legacy top-level messages when structured tab messages already exist", () => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        activeChatTabId: "agent:expert",
+        activeTab: "timeline",
+        agentId: "expert",
+        chatTabs: [
+          { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+          { id: "agent:expert", agentId: "expert", sessionUser: "command-center-expert-1" },
+        ],
+        messages: [
+          { role: "assistant", content: "旧的 active 顶层消息", timestamp: 99 },
+        ],
+        messagesByTabId: {
+          "agent:main": [{ role: "assistant", content: "main 的旧对话", timestamp: 1 }],
+        },
+        sessionUser: "command-center-expert-1",
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+          "agent:expert": {
+            agentId: "expert",
+            fastMode: false,
+            model: "openai-codex/gpt-5.4",
+            sessionUser: "command-center-expert-1",
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    const stored = loadStoredState();
+
+    expect(stored.messagesByTabId["agent:main"]).toEqual([{ role: "assistant", content: "main 的旧对话", timestamp: 1 }]);
+    expect(stored.messagesByTabId["agent:expert"]).toBeUndefined();
+    expect(stored.messages).toEqual([]);
+  });
+
   it("sanitizes wrapped gateway restart messages when restoring stored user history", () => {
     window.localStorage.setItem(
       storageKey,
@@ -1507,6 +2361,125 @@ describe("loadStoredState", () => {
         },
       },
     });
+  });
+
+  it("does not persist a stale pending turn once the stored messages have already advanced to a later user turn", () => {
+    persistUiStateSnapshot({
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      agentId: "main",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-5.4",
+          sessionUser: "command-center",
+          thinkMode: "off",
+        },
+      },
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101 },
+          { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+          { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
+        ],
+      },
+      messages: [
+        { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101 },
+        { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+        { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
+      ],
+      pendingChatTurns: {
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "旧问题",
+            timestamp: 100,
+          },
+        },
+      },
+    });
+
+    expect(window.localStorage.getItem(pendingChatStorageKey)).toBeNull();
+    expect(loadPendingChatTurns()).toEqual({});
+  });
+
+  it("persists the top-level active messages from structured tab transcripts when both are present", () => {
+    persistUiStateSnapshot({
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      agentId: "main",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-5.4",
+          sessionUser: "command-center",
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "legacy-top-level", role: "assistant", content: "旧的顶层消息", timestamp: 90 },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "structured-active", role: "assistant", content: "结构化 active transcript", timestamp: 100 },
+        ],
+      },
+      pendingChatTurns: {},
+    });
+
+    const storedPayload = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+
+    expect(storedPayload.messages).toEqual([
+      { id: "structured-active", role: "assistant", content: "结构化 active transcript", timestamp: 100 },
+    ]);
+    expect(storedPayload.messagesByTabId["agent:main"]).toEqual([
+      { id: "structured-active", role: "assistant", content: "结构化 active transcript", timestamp: 100 },
+    ]);
+  });
+
+  it("stores settled transcript messages without transient streaming flags", () => {
+    persistUiStateSnapshot({
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      agentId: "main",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-5.4",
+          sessionUser: "command-center",
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-assistant-streaming", role: "assistant", content: "第一段", timestamp: 100, streaming: true },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-assistant-streaming", role: "assistant", content: "第一段", timestamp: 100, streaming: true },
+        ],
+      },
+      pendingChatTurns: {},
+    });
+
+    expect(loadStoredState()?.messagesByTabId?.["agent:main"]).toEqual([
+      { id: "msg-assistant-streaming", role: "assistant", content: "第一段", timestamp: 100 },
+    ]);
   });
 
   it("persists workspace file open preferences in the ui snapshot", () => {

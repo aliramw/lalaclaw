@@ -40,6 +40,8 @@ type PreviewErrorPayload = {
   installCommand?: string;
 };
 
+const emptyPreviewItem: PreviewItem = {};
+
 function buildLocalFilePreviewUrl(filePath = "") {
   const normalizedPath = String(filePath || "").trim();
   return normalizedPath ? `/api/file-preview/content?path=${encodeURIComponent(normalizedPath)}` : "";

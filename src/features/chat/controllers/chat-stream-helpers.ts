@@ -1,10 +1,4 @@
-import { replaceAssistantPreservingTurn } from "@/features/chat/controllers/chat-turn-helpers";
 import type { ChatControllerEntry, ChatMessage, ChatStreamPayload } from "@/types/chat";
-
-type SetMessagesForTab = (
-  tabId: string,
-  value: ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[]),
-) => void;
 
 type StreamEvent = {
   type?: string;
@@ -74,13 +68,18 @@ export function conversationIncludesUserTurn(conversation: ChatMessage[] = [], e
 export async function consumeChatStream(
   response: Response,
   {
-    entry,
-    pendingTimestamp,
-    setMessagesForTab,
+    entry: _entry,
+    onProgress = () => {},
+    pendingTimestamp: _pendingTimestamp,
   }: {
     entry: ChatControllerEntry;
+    onProgress?: (value: {
+      assistantMessageId?: string;
+      lastDeltaAt: number;
+      streamText: string;
+      tokenBadge?: string;
+    }) => void;
     pendingTimestamp: number;
-    setMessagesForTab: SetMessagesForTab;
   },
 ): Promise<ChatStreamPayload> {
   const reader = response.body?.getReader?.();
@@ -103,17 +102,12 @@ export async function consumeChatStream(
     if (!hasVisibleAssistantContent(streamedText)) {
       return;
     }
-    setMessagesForTab(String(entry.tabId || ""), (current) =>
-      replaceAssistantPreservingTurn(
-        current,
-        { ...entry, pendingTimestamp },
-        "",
-        streamedText,
-        tokenBadge,
-        true,
-        assistantMessageId,
-      ),
-    );
+    onProgress({
+      assistantMessageId,
+      lastDeltaAt: Date.now(),
+      streamText: streamedText,
+      tokenBadge,
+    });
   };
 
   const processLine = (line: string) => {

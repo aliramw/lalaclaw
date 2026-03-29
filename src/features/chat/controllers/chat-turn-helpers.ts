@@ -1,5 +1,56 @@
 import type { ChatControllerEntry, ChatMessage } from "@/types/chat";
 
+const OPTIMISTIC_USER_MATCH_WINDOW_MS = 5000;
+
+function buildAttachmentFingerprint(attachments: unknown = []) {
+  if (!Array.isArray(attachments)) {
+    return "";
+  }
+
+  return attachments
+    .map((attachment) => [
+      String(attachment?.id || "").trim(),
+      String(attachment?.path || attachment?.fullPath || "").trim(),
+      String(attachment?.name || "").trim(),
+      String(attachment?.mimeType || "").trim(),
+      String(attachment?.kind || "").trim(),
+    ].join("::"))
+    .filter(Boolean)
+    .join("|");
+}
+
+function hasEquivalentUserMessage(messages: ChatMessage[] = [], userMessage: ChatMessage | null | undefined) {
+  if (!userMessage || userMessage.role !== "user") {
+    return false;
+  }
+
+  const expectedContent = String(userMessage.content || "");
+  const expectedTimestamp = Number(userMessage.timestamp || 0);
+  const expectedAttachmentFingerprint = buildAttachmentFingerprint(userMessage.attachments);
+
+  return messages.some((message) => {
+    if (message?.role !== "user") {
+      return false;
+    }
+
+    if (String(message.content || "") !== expectedContent) {
+      return false;
+    }
+
+    const messageAttachmentFingerprint = buildAttachmentFingerprint(message.attachments);
+    if (expectedAttachmentFingerprint && messageAttachmentFingerprint !== expectedAttachmentFingerprint) {
+      return false;
+    }
+
+    const messageTimestamp = Number(message.timestamp || 0);
+    if (!expectedTimestamp || !messageTimestamp) {
+      return true;
+    }
+
+    return Math.abs(messageTimestamp - expectedTimestamp) <= OPTIMISTIC_USER_MATCH_WINDOW_MS;
+  });
+}
+
 export function createEntryFingerprint(entry: ChatControllerEntry = {}) {
   const attachmentSignature = (entry.attachments || [])
     .map((attachment) => [
@@ -79,7 +130,7 @@ export function ensureOptimisticTurnMessages(
   const userMessage = createUserMessage(entry);
   const pendingMessage = createPendingAssistantMessage(entry, thinkingPlaceholder);
 
-  if (includeUserMessage && !hasMessageId(next, userMessage.id)) {
+  if (includeUserMessage && !hasMessageId(next, userMessage.id) && !hasEquivalentUserMessage(next, userMessage)) {
     next.push(userMessage);
   }
 
@@ -154,7 +205,9 @@ export function replacePendingAssistantMessage(
     .reverse()
     .find(({ item }) => item?.role === "assistant")?.index ?? -1;
   if (trailingAssistantIndex >= 0 && trailingAssistantIndex === next.length - 1) {
-    const { pending: _previousPending, streaming: _previousStreaming, ...previousAssistantMessage } = next[trailingAssistantIndex] || {};
+    const previousAssistantMessage = { ...(next[trailingAssistantIndex] || {}) };
+    delete previousAssistantMessage.pending;
+    delete previousAssistantMessage.streaming;
     next[trailingAssistantIndex] = {
       ...previousAssistantMessage,
       ...assistantMessage,
@@ -177,7 +230,7 @@ export function replaceAssistantPreservingTurn(
 ) {
   const userMessage = createUserMessage(entry);
   const currentMessages = Array.isArray(current) ? [...current] : [];
-  const hasUserMessage = hasMessageId(currentMessages, userMessage.id);
+  const hasUserMessage = hasMessageId(currentMessages, userMessage.id) || hasEquivalentUserMessage(currentMessages, userMessage);
   let withUserTurn = currentMessages;
 
   if (!hasUserMessage) {

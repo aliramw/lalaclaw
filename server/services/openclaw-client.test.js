@@ -9,6 +9,90 @@ const unavailableGatewaySdk = async () => {
 };
 
 describe('createOpenClawClient', () => {
+  it('does not mirror synthetic empty-response fallbacks back to DingTalk', async () => {
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const originalFetch = global.fetch;
+    const fetchCalls = [];
+    global.fetch = async (url, options = {}) => {
+      fetchCalls.push({
+        body: options.body ? JSON.parse(options.body) : null,
+        url: String(url),
+      });
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { messageId: 'msg-dingtalk-assistant-empty' } }),
+      };
+    };
+
+    try {
+      const client = createOpenClawClient({
+        config: {
+          apiKey: '',
+          apiPath: '/v1/responses',
+          apiStyle: 'responses',
+          baseUrl: 'http://127.0.0.1:3000',
+          mode: 'openclaw',
+        },
+        execFileAsync: async (_bin, args) => {
+          const method = args[5];
+
+          if (method === 'agent') {
+            return {
+              stdout: JSON.stringify({
+                acceptedAt: 1773722999708,
+                runId: 'run-dingtalk-empty-1',
+              }),
+            };
+          }
+
+          if (method === 'agent.wait') {
+            return {
+              stdout: JSON.stringify({
+                status: 'completed',
+              }),
+            };
+          }
+
+          if (method === 'chat.history') {
+            return {
+              stdout: JSON.stringify({
+                messages: [],
+              }),
+            };
+          }
+
+          throw new Error(`Unexpected gateway method: ${method}`);
+        },
+        PROJECT_ROOT: process.cwd(),
+        OPENCLAW_BIN: 'openclaw',
+        clip: (text, maxLength = 180) => String(text || '').slice(0, maxLength),
+        normalizeSessionUser: (value) => String(value || '').trim(),
+        normalizeChatMessage: (message) => String(message?.content || message || '').trim(),
+        getMessageAttachments: () => [],
+        describeAttachmentForModel: () => '',
+        buildOpenClawMessageContent: () => [],
+        getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+        resolveSessionAgentId: () => 'main',
+        resolveSessionModel: () => 'openai-codex/gpt-5.4',
+        readTextIfExists: () => '',
+        tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
+      });
+
+      const reply = await client.dispatchOpenClaw(
+        [{ role: 'user', content: '测试钉钉空回复' }],
+        false,
+        rawSessionUser,
+      );
+
+      expect(reply.outputText).toBe('OpenClaw returned an empty response.');
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    expect(fetchCalls).toEqual([]);
+  });
+
   it('prefers stable plugin-sdk gateway runtime before legacy hashed reply bundles', () => {
     const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openclaw-sdk-stable-'));
     fs.mkdirSync(path.join(packageRoot, 'dist', 'plugin-sdk'), { recursive: true });
@@ -188,6 +272,113 @@ describe('createOpenClawClient', () => {
         target: 'user:398058',
         accountId: '__default__',
         message: '马锐拉：你你你',
+      },
+      sessionKey: `agent:main:openai-user:${rawSessionUser}`,
+      tool: 'message',
+    });
+  });
+
+  it('mirrors final assistant replies back to DingTalk for delivery-routed text sessions', async () => {
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const gatewayCalls = [];
+    const originalFetch = global.fetch;
+    const fetchCalls = [];
+    global.fetch = async (url, options = {}) => {
+      fetchCalls.push({
+        body: options.body ? JSON.parse(options.body) : null,
+        url: String(url),
+      });
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { messageId: 'msg-dingtalk-assistant-1' } }),
+      };
+    };
+
+    try {
+      const client = createOpenClawClient({
+        config: {
+          apiKey: '',
+          apiPath: '/v1/responses',
+          apiStyle: 'responses',
+          baseUrl: 'http://127.0.0.1:3000',
+          mode: 'openclaw',
+        },
+        execFileAsync: async (_bin, args) => {
+          const method = args[5];
+          const params = JSON.parse(args[10]);
+          gatewayCalls.push({ method, params });
+
+          if (method === 'agent') {
+            return {
+              stdout: JSON.stringify({
+                acceptedAt: 1773722999708,
+                runId: 'run-dingtalk-1',
+              }),
+            };
+          }
+
+          if (method === 'agent.wait') {
+            return {
+              stdout: JSON.stringify({
+                status: 'completed',
+              }),
+            };
+          }
+
+          if (method === 'chat.history') {
+            return {
+              stdout: JSON.stringify({
+                messages: [
+                  {
+                    role: 'assistant',
+                    content: '钉钉收到。',
+                    timestamp: 1773723000000,
+                  },
+                ],
+              }),
+            };
+          }
+
+          throw new Error(`Unexpected gateway method: ${method}`);
+        },
+        PROJECT_ROOT: process.cwd(),
+        OPENCLAW_BIN: 'openclaw',
+        clip: (text, maxLength = 180) => String(text || '').slice(0, maxLength),
+        normalizeSessionUser: (value) => String(value || '').trim(),
+        normalizeChatMessage: (message) => String(message?.content || message || '').trim(),
+        getMessageAttachments: () => [],
+        describeAttachmentForModel: () => '',
+        buildOpenClawMessageContent: () => [],
+        getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+        resolveSessionAgentId: () => 'main',
+        resolveSessionModel: () => 'openai-codex/gpt-5.4',
+        readTextIfExists: () => '',
+        tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
+      });
+
+      const reply = await client.dispatchOpenClawStream(
+        [{ role: 'user', content: '测试钉钉' }],
+        true,
+        rawSessionUser,
+        { onDelta: () => {} },
+      );
+
+      expect(reply.outputText).toBe('钉钉收到。');
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    expect(gatewayCalls.map((entry) => entry.method)).toEqual(['agent', 'agent.wait', 'chat.history']);
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].url).toBe('http://127.0.0.1:3000/tools/invoke');
+    expect(fetchCalls[0].body).toEqual({
+      action: 'send',
+      args: {
+        channel: 'dingtalk-connector',
+        target: 'user:398058',
+        accountId: '__default__',
+        message: '钉钉收到。',
       },
       sessionKey: `agent:main:openai-user:${rawSessionUser}`,
       tool: 'message',

@@ -295,7 +295,7 @@ function choosePreferredReplayTurn(previous: DashboardEntry, next: DashboardEntr
     return nextText.length >= previousText.length ? next : previous;
   }
 
-  return next;
+  return previous;
 }
 
 function choosePreferredAssistantReplay(previous: DashboardEntry, next: DashboardEntry): DashboardEntry {

@@ -217,6 +217,9 @@ npm run lalaclaw:start
 - `npm test` runs the Vitest suite once
 - `npm run test:coverage` runs the Vitest suite with coverage
 - `npm run lint` runs ESLint across the workspace
+- `npm run list:architecture:contracts` prints the currently auto-discovered architecture contract test files
+- `npm run list:architecture:contracts:json` prints the same contract file list as machine-readable JSON, including a total count and per-feature summary
+- `npm run check:architecture:contracts` runs the focused architecture contract matrix for `app/storage`, `app/state`, `chat/state`, and `theme`
 
 For the full command list and contributor workflow, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
@@ -238,6 +241,7 @@ Before opening a PR:
   - Typical behavior changes should run affected tests or `npm test`
   - Release-facing, build-related, or high-risk changes should run `npm run lint`, `npm test`, and `npm run build`
   - Use `npm run test:coverage` for broader regression confidence on cross-cutting changes
+  - Refactors that mainly move ownership or tighten module boundaries can also run `npm run check:architecture:contracts` as a focused guardrail alongside targeted behavior tests
 
 The full contribution checklist lives in [CONTRIBUTING.md](./CONTRIBUTING.md).
 

@@ -1,8 +1,8 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppPersistence } from "@/features/app/storage";
-import { promptDraftStorageKey } from "@/features/app/storage/app-storage";
-import * as appStorage from "@/features/app/storage/app-storage";
+import * as chatPersistedMessages from "@/features/chat/state/chat-persisted-messages";
+import { promptDraftStorageKey } from "@/features/app/state/app-prompt-storage";
 
 const attachmentStorageMocks = vi.hoisted(() => ({
   hydrateAttachmentStateByKeyFromStorage: vi.fn(),
@@ -78,12 +78,14 @@ describe("useAppPersistence", () => {
       messagesByKey: {
         "agent:main": [
           { role: "user", content: "你好", timestamp: 1 },
-          { role: "assistant", content: "收到", timestamp: 2, tokenBadge: "↑1" },
         ],
       },
       pendingChatTurns: {
         "command-center:main": {
           key: "command-center:main",
+          startedAt: 1,
+          pendingTimestamp: 2,
+          userMessage: { role: "user", content: "你好", timestamp: 1 },
         },
       },
     });
@@ -115,6 +117,9 @@ describe("useAppPersistence", () => {
         pendingChatTurns: {
           "command-center:main": {
             key: "command-center:main",
+            startedAt: 1,
+            pendingTimestamp: 2,
+            userMessage: { role: "user", content: "你好", timestamp: 1 },
           },
         },
         promptDraftsByConversation: {
@@ -147,6 +152,9 @@ describe("useAppPersistence", () => {
         {
           "command-center:main": {
             key: "command-center:main",
+            startedAt: 1,
+            pendingTimestamp: 2,
+            userMessage: { role: "user", content: "你好", timestamp: 1 },
           },
         },
       );
@@ -181,9 +189,118 @@ describe("useAppPersistence", () => {
         "command-center:main": {
           agentId: "main",
           key: "command-center:main",
+          pendingTimestamp: 2,
           sessionUser: "command-center",
+          startedAt: 1,
+          userMessage: { role: "user", content: "你好", timestamp: 1 },
         },
       },
+    });
+  });
+
+  it("persists top-level active messages from structured tab storage instead of a stale messages prop", async () => {
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [
+          { id: "structured-active", role: "assistant", content: "结构化 active transcript", timestamp: 2 },
+        ],
+      },
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+
+    renderHook(() =>
+      useAppPersistence(createProps({
+        messages: [
+          { id: "stale-top-level", role: "assistant", content: "旧的顶层消息", timestamp: 1 },
+        ],
+        messagesByTabId: {
+          "agent:main": [
+            { id: "structured-active", role: "assistant", content: "结构化 active transcript", timestamp: 2 },
+          ],
+        },
+      })),
+    );
+
+    await waitFor(() => {
+      const storedPayload = JSON.parse(window.localStorage.getItem("command-center-ui-state-v2") || "{}");
+      expect(storedPayload.messages).toEqual([
+        { id: "structured-active", role: "assistant", content: "结构化 active transcript", timestamp: 2 },
+      ]);
+      expect(storedPayload.messagesByTabId["agent:main"]).toEqual([
+        { id: "structured-active", role: "assistant", content: "结构化 active transcript", timestamp: 2 },
+      ]);
+    });
+  });
+
+  it("prunes stale pending turns before writing the pending storage snapshot", async () => {
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "已经完成", timestamp: 101 },
+          { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+          { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
+        ],
+      },
+      pendingChatTurns: {
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          assistantMessageId: "msg-assistant-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "旧问题",
+            timestamp: 100,
+          },
+        },
+      },
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+
+    renderHook(() =>
+      useAppPersistence(createProps({
+        messages: [
+          { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-1", role: "assistant", content: "已经完成", timestamp: 101 },
+          { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+          { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
+        ],
+        messagesByTabId: {
+          "agent:main": [
+            { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+            { id: "msg-assistant-1", role: "assistant", content: "已经完成", timestamp: 101 },
+            { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+            { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 100,
+            pendingTimestamp: 101,
+            assistantMessageId: "msg-assistant-1",
+            userMessage: {
+              id: "msg-user-1",
+              role: "user",
+              content: "旧问题",
+              timestamp: 100,
+            },
+          },
+        },
+      })),
+    );
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem("command-center-pending-chat-v1")).toBeNull();
     });
   });
 
@@ -195,6 +312,8 @@ describe("useAppPersistence", () => {
         key: "command-center:main",
       },
     };
+    const initialStoredMessagesByTabIdRef = { current: initialMessagesByTabId };
+    const initialStoredPendingRef = { current: initialPending };
     const hydratedState = {
       messagesByKey: {
         "agent:main": [{ role: "user", content: "恢复", timestamp: 1, attachments: [{ id: "a1" }] }],
@@ -226,8 +345,8 @@ describe("useAppPersistence", () => {
         chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
         dismissedTaskRelationshipIdsByConversation: {},
         fastMode: false,
-        initialStoredMessagesByTabIdRef: { current: initialMessagesByTabId },
-        initialStoredPendingRef: { current: initialPending },
+        initialStoredMessagesByTabIdRef,
+        initialStoredPendingRef,
         inspectorPanelWidth: 380,
         messages: initialMessages,
         messagesByTabId: initialMessagesByTabId,
@@ -258,11 +377,169 @@ describe("useAppPersistence", () => {
       expect(setMessagesSynced).toHaveBeenCalledWith(hydratedState.messagesByKey["agent:main"]);
     });
 
+    expect(initialStoredMessagesByTabIdRef.current).toEqual({});
+    expect(initialStoredPendingRef.current).toEqual({});
+
     const messagesByTabUpdater = setMessagesByTabId.mock.calls[0][0];
     expect(messagesByTabUpdater(initialMessagesByTabId)).toEqual(hydratedState.messagesByKey);
 
     const pendingUpdater = setPendingChatTurns.mock.calls[0][0];
     expect(pendingUpdater(initialPending)).toEqual(hydratedState.pendingChatTurns);
+  });
+
+  it("hydrates attachment payloads from the latest settled tab transcript instead of a stale visible ref", async () => {
+    const settledMessages = [
+      {
+        id: "msg-assistant-settled",
+        role: "assistant",
+        content: "稳定输出",
+        timestamp: 2,
+      },
+    ];
+    const staleVisibleMessages = [
+      {
+        id: "msg-assistant-visible",
+        role: "assistant",
+        content: "旧的可见态",
+        timestamp: 99,
+        streaming: true,
+      },
+    ];
+
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": settledMessages,
+      },
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [
+          {
+            ...settledMessages[0],
+            attachments: [{ id: "attachment-1" }],
+          },
+        ],
+      },
+      pendingChatTurns: {},
+    });
+
+    const setMessagesSynced = vi.fn();
+    const initialStoredMessagesByTabIdRef = {
+      current: {
+        "agent:main": settledMessages,
+      },
+    };
+
+    renderHook(() =>
+      useAppPersistence(createProps({
+        initialStoredMessagesByTabIdRef,
+        messages: staleVisibleMessages,
+        messagesByTabId: {
+          "agent:main": settledMessages,
+        },
+        messagesRef: { current: staleVisibleMessages },
+        setMessagesSynced,
+      })),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalledWith([
+        {
+          id: "msg-assistant-settled",
+          role: "assistant",
+          content: "稳定输出",
+          timestamp: 2,
+          attachments: [{ id: "attachment-1" }],
+        },
+      ]);
+    });
+  });
+
+  it("clears initial stored hydration refs even when attachment hydration fails", async () => {
+    const initialMessagesByTabId = { "agent:main": [{ role: "user", content: "恢复失败", timestamp: 1 }] };
+    const initialPending = {
+      "command-center:main": {
+        key: "command-center:main",
+      },
+    };
+    const initialStoredMessagesByTabIdRef = { current: initialMessagesByTabId };
+    const initialStoredPendingRef = { current: initialPending };
+    const setMessagesByTabId = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockRejectedValue(new Error("hydrate failed"));
+
+    renderHook(() =>
+      useAppPersistence({
+        ...createProps({
+          initialStoredMessagesByTabIdRef,
+          initialStoredPendingRef,
+          messages: initialMessagesByTabId["agent:main"],
+          messagesByTabId: initialMessagesByTabId,
+          messagesRef: { current: initialMessagesByTabId["agent:main"] },
+          pendingChatTurns: initialPending,
+          setMessagesByTabId,
+          setMessagesSynced,
+          setPendingChatTurns,
+        }),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage).toHaveBeenCalledWith(initialMessagesByTabId, initialPending);
+    });
+
+    await waitFor(() => {
+      expect(initialStoredMessagesByTabIdRef.current).toEqual({});
+      expect(initialStoredPendingRef.current).toEqual({});
+    });
+
+    expect(setMessagesByTabId).not.toHaveBeenCalled();
+    expect(setMessagesSynced).not.toHaveBeenCalled();
+    expect(setPendingChatTurns).not.toHaveBeenCalled();
+  });
+
+  it("retires empty bootstrap attachment caches without starting hydration", async () => {
+    const initialStoredMessagesByTabIdRef = { current: { "agent:main": [] } };
+    const initialStoredPendingRef = { current: {} };
+    const setMessagesByTabId = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [{ role: "user", content: "你好", timestamp: 1, pending: false }],
+      },
+      pendingChatTurns: {},
+    });
+
+    renderHook(() =>
+      useAppPersistence({
+        ...createProps({
+          initialStoredMessagesByTabIdRef,
+          initialStoredPendingRef,
+          setMessagesByTabId,
+          setMessagesSynced,
+          setPendingChatTurns,
+        }),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage).not.toHaveBeenCalled();
+      expect(initialStoredMessagesByTabIdRef.current).toEqual({});
+      expect(initialStoredPendingRef.current).toEqual({});
+    });
+
+    expect(setMessagesByTabId).not.toHaveBeenCalled();
+    expect(setMessagesSynced).not.toHaveBeenCalled();
+    expect(setPendingChatTurns).not.toHaveBeenCalled();
   });
 
   it("persists inline image attachments immediately instead of waiting for the debounce window", async () => {
@@ -508,9 +785,242 @@ describe("useAppPersistence", () => {
     });
   });
 
+  it("does not re-add reset messages or stale pending turns when attachment hydration resolves late", async () => {
+    let resolveHydration;
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockReturnValue(
+      new Promise((resolve) => {
+        resolveHydration = resolve;
+      }),
+    );
+
+    const initialMessages = [
+      {
+        role: "user",
+        content: "晚到的附件恢复",
+        timestamp: 1,
+        attachments: [
+          {
+            id: "image-1",
+            kind: "image",
+            name: "avatar.png",
+            storageKey: "image-1",
+          },
+        ],
+      },
+    ];
+    const initialMessagesByTabId = { "agent:main": initialMessages };
+    const initialPending = {
+      "command-center:main": {
+        key: "command-center:main",
+        userMessage: initialMessages[0],
+      },
+    };
+    const messagesRef = { current: initialMessages };
+    const setMessagesByTabId = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+
+    renderHook(() =>
+      useAppPersistence({
+        activeChatTabId: "agent:main",
+        activeTab: "timeline",
+        chatFontSize: "small",
+        composerSendMode: "enter-send",
+        chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+        dismissedTaskRelationshipIdsByConversation: {},
+        fastMode: false,
+        initialStoredMessagesByTabIdRef: { current: initialMessagesByTabId },
+        initialStoredPendingRef: { current: initialPending },
+        inspectorPanelWidth: 380,
+        messages: initialMessages,
+        messagesByTabId: initialMessagesByTabId,
+        messagesRef,
+        model: "",
+        pendingChatTurns: initialPending,
+        promptDraftsByConversation: {},
+        promptHistoryByConversation: {},
+        session: createSession(),
+        setMessagesByTabId,
+        setMessagesSynced,
+        setPendingChatTurns,
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            fastMode: false,
+            model: "",
+            sessionUser: "command-center",
+            thinkMode: "off",
+          },
+        },
+      }),
+    );
+
+    messagesRef.current = [];
+
+    resolveHydration({
+      messagesByKey: {
+        "agent:main": [
+          {
+            role: "user",
+            content: "晚到的附件恢复",
+            timestamp: 1,
+            attachments: [
+              {
+                id: "image-1",
+                kind: "image",
+                name: "avatar.png",
+                storageKey: "image-1",
+                dataUrl: "data:image/png;base64,AAAA",
+              },
+            ],
+          },
+        ],
+      },
+      pendingChatTurns: {
+        "command-center:main": {
+          key: "command-center:main",
+          userMessage: {
+            role: "user",
+            content: "晚到的附件恢复",
+            timestamp: 1,
+            attachments: [
+              {
+                id: "image-1",
+                kind: "image",
+                name: "avatar.png",
+                storageKey: "image-1",
+                dataUrl: "data:image/png;base64,AAAA",
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(setMessagesByTabId).toHaveBeenCalled();
+      expect(setPendingChatTurns).toHaveBeenCalled();
+    });
+
+    const messagesByTabUpdater = setMessagesByTabId.mock.calls[0][0];
+    expect(messagesByTabUpdater({})).toEqual({});
+
+    const pendingUpdater = setPendingChatTurns.mock.calls[0][0];
+    expect(pendingUpdater({})).toEqual({});
+
+    expect(setMessagesSynced).not.toHaveBeenCalled();
+  });
+
+  it("hydrates initial attachment storage only once and applies active messages for the latest active tab", async () => {
+    let resolveHydration;
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockReturnValue(
+      new Promise((resolve) => {
+        resolveHydration = resolve;
+      }),
+    );
+
+    const initialMessagesByTabId = {
+      "agent:main": [{ role: "user", content: "主会话", timestamp: 1 }],
+      "agent:paint": [{ role: "user", content: "副会话", timestamp: 2 }],
+    };
+    const messagesRef = { current: initialMessagesByTabId["agent:main"] };
+    const setMessagesByTabId = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+
+    const { rerender } = renderHook((props) => useAppPersistence(props), {
+      initialProps: createProps({
+        activeChatTabId: "agent:main",
+        chatTabs: [
+          { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+          { id: "agent:paint", agentId: "paint", sessionUser: "command-center-paint-1" },
+        ],
+        initialStoredMessagesByTabIdRef: { current: initialMessagesByTabId },
+        initialStoredPendingRef: { current: {} },
+        messages: initialMessagesByTabId["agent:main"],
+        messagesByTabId: initialMessagesByTabId,
+        messagesRef,
+        setMessagesByTabId,
+        setMessagesSynced,
+        setPendingChatTurns,
+        tabMetaById: {
+          "agent:main": {
+            agentId: "main",
+            sessionUser: "command-center",
+            model: "",
+            fastMode: false,
+            thinkMode: "off",
+          },
+          "agent:paint": {
+            agentId: "paint",
+            sessionUser: "command-center-paint-1",
+            model: "",
+            fastMode: false,
+            thinkMode: "off",
+          },
+        },
+      }),
+    });
+
+    messagesRef.current = initialMessagesByTabId["agent:paint"];
+
+    rerender(createProps({
+      activeChatTabId: "agent:paint",
+      chatTabs: [
+        { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+        { id: "agent:paint", agentId: "paint", sessionUser: "command-center-paint-1" },
+      ],
+      initialStoredMessagesByTabIdRef: { current: initialMessagesByTabId },
+      initialStoredPendingRef: { current: {} },
+      messages: initialMessagesByTabId["agent:paint"],
+      messagesByTabId: initialMessagesByTabId,
+      messagesRef,
+      setMessagesByTabId,
+      setMessagesSynced,
+      setPendingChatTurns,
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "",
+          fastMode: false,
+          thinkMode: "off",
+        },
+        "agent:paint": {
+          agentId: "paint",
+          sessionUser: "command-center-paint-1",
+          model: "",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+    }));
+
+    resolveHydration({
+      messagesByKey: {
+        "agent:main": [{ role: "user", content: "主会话", timestamp: 1, attachments: [{ id: "main-a1" }] }],
+        "agent:paint": [{ role: "user", content: "副会话", timestamp: 2, attachments: [{ id: "paint-a1" }] }],
+      },
+      pendingChatTurns: {},
+    });
+
+    await waitFor(() => {
+      expect(attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage).toHaveBeenCalledTimes(1);
+      expect(setMessagesSynced).toHaveBeenCalledWith([{ role: "user", content: "副会话", timestamp: 2, attachments: [{ id: "paint-a1" }] }]);
+    });
+  });
+
   it("debounces persistence while chat messages update rapidly", async () => {
     vi.useFakeTimers();
-    const sanitizeSpy = vi.spyOn(appStorage, "sanitizeMessagesForStorage");
+    const sanitizeSpy = vi.spyOn(chatPersistedMessages, "sanitizeMessagesForStorage");
     attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
       messagesByKey: {
         "agent:main": [{ role: "assistant", content: "最终输出", timestamp: 3 }],

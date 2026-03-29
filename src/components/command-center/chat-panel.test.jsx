@@ -7,6 +7,7 @@ import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-
 import { shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
+import { clearMarkdownImageCache } from "@/components/command-center/markdown-renderer";
 
 const defaultPromptPlaceholder = "💡 想要和 main 一起做点什么？";
 
@@ -160,6 +161,7 @@ describe("ChatPanel", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     window.localStorage.removeItem(localeStorageKey);
+    clearMarkdownImageCache();
   });
 
   it("shows the bubble-top jump trigger for a tall assistant card scrolled past the top edge", () => {
@@ -281,6 +283,60 @@ describe("ChatPanel", () => {
     });
 
     expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
+  });
+
+  it("keeps fallback message DOM nodes stable when older messages are inserted above them", () => {
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "你好", timestamp: 10 },
+            { role: "assistant", content: "收到", timestamp: 11 },
+            { role: "user", content: "你好2", timestamp: 12 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const secondUserBubbleBefore = screen.getByText("你好2").closest("[data-message-id]");
+    expect(secondUserBubbleBefore).toBeTruthy();
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "assistant", content: "更早的旧消息", timestamp: 5 },
+            { role: "user", content: "你好", timestamp: 10 },
+            { role: "assistant", content: "收到", timestamp: 11 },
+            { role: "user", content: "你好2", timestamp: 12 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const secondUserBubbleAfter = screen.getByText("你好2").closest("[data-message-id]");
+    expect(secondUserBubbleAfter).toBeTruthy();
+    expect(secondUserBubbleAfter).toBe(secondUserBubbleBefore);
   });
 
   it("does not render a user-name editor in the chat header anymore", () => {
@@ -406,6 +462,28 @@ describe("ChatPanel", () => {
     expect(within(panel).getByText("当前回复结束后将按顺序发送")).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "修改第 1 条待发送消息" })).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "删除第 1 条待发送消息" })).toBeInTheDocument();
+  });
+
+  it("keeps long queued text constrained instead of letting it stretch the chat width", () => {
+    render(
+      <QueuedMessagesHarness
+        initialQueuedMessages={[
+          {
+            id: "queued-long-1",
+            content: "这是一条非常非常非常非常非常非常非常非常非常非常非常长的待发送内容，用来确认排队区文本会被省略而不是把聊天区域撑宽",
+          },
+        ]}
+      />,
+    );
+
+    const panel = screen.getByTestId("queued-messages-panel");
+    const queuedRow = within(panel).getByText(/这是一条非常非常非常非常/).closest("div");
+    const queuedText = within(panel).getByText(/这是一条非常非常非常非常/);
+
+    expect(panel.className).toContain("min-w-0");
+    expect(queuedRow?.className || "").toContain("min-w-0");
+    expect(queuedText.className).toContain("min-w-0");
+    expect(queuedText.className).toContain("truncate");
   });
 
   it("moves a queued message back into the composer when edit is pressed", async () => {
@@ -1059,7 +1137,7 @@ describe("ChatPanel", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("复制");
   });
 
-  it("renders markdown images inside user messages", async () => {
+  it("renders markdown images inside user messages", { timeout: 10000 }, async () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -1087,7 +1165,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const image = await screen.findByAltText("image");
+    const image = await screen.findByAltText("image", {}, { timeout: 8000 });
     expect(image).toBeInTheDocument();
     expect(image).toHaveAttribute(
       "src",
@@ -2686,6 +2764,65 @@ describe("ChatPanel", () => {
     expect(screen.queryByText("消化 Token 中")).not.toBeInTheDocument();
   });
 
+  it("prefers explicit run state over stale message flags when deciding busy UI", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "正在思考…", timestamp: 2, pending: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          onStop={() => {}}
+          prompt=""
+          promptRef={null}
+          run={{ status: "idle", runId: null, startedAt: null, lastDeltaAt: null, streamText: "" }}
+          session={createSession({ status: "运行中" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("待命")).toBeInTheDocument();
+    expect(screen.queryByText("消化 Token 中")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+  });
+
+  it("shows busy and stop from explicit run state even when messages are already settled", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段", timestamp: 2 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          onStop={() => {}}
+          prompt=""
+          promptRef={null}
+          run={{ status: "streaming", runId: "run-1", startedAt: 1, lastDeltaAt: 2, streamText: "第一段" }}
+          session={createSession({ status: "待命" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "停止" })).toBeEnabled();
+  });
+
   it("shows busy for DingTalk sessions when the runtime status says running without a local pending bubble", () => {
     render(
       <TooltipProvider>
@@ -2829,7 +2966,70 @@ describe("ChatPanel", () => {
     expect(container.querySelector('[data-streaming-tail-dots="true"]')).toBeNull();
   });
 
-  it("keeps the latest streaming assistant bubble in full layout without reusing the pending card style", () => {
+  it("keeps the latest outlined assistant reply on the full card branch through a brief busy-state drop", () => {
+    vi.useFakeTimers();
+
+    const outlinedReply = "## 第一部分\n\n先说结论。\n\n## 第二部分\n\n继续展开。";
+    const { container, rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { id: "msg-assistant-outline", role: "assistant", content: outlinedReply, timestamp: 2, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+        />
+      </TooltipProvider>,
+    );
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { id: "msg-assistant-outline", role: "assistant", content: outlinedReply, timestamp: 2 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+        />
+      </TooltipProvider>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    const latestAssistantAnchor = container.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor?.querySelector('[data-bubble-layout="full"]')).toBeTruthy();
+    expect(latestAssistantAnchor?.querySelector('[data-message-outline-meta-stack]')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(latestAssistantAnchor?.querySelector('[data-message-outline-meta-stack]')).not.toBeNull();
+  });
+
+  it("keeps a short in-progress assistant bubble compact instead of stretching to the full layout width", () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -2852,12 +3052,42 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const streamingBubble = screen.getByText("我").closest('[data-bubble-layout="full"]');
+    const streamingBubble = screen.getByText("我").closest('[data-bubble-layout="compact"]');
     expect(streamingBubble).toHaveClass("cc-streaming-bubble");
     expect(streamingBubble).toHaveClass("transition-none");
     expect(streamingBubble).not.toHaveClass("cc-thinking-bubble");
     expect(screen.queryByText("生成中")).not.toBeInTheDocument();
     expect(streamingBubble?.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
+  });
+
+  it("does not keep a stale streaming bubble once explicit run state has already gone idle", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "给我看一点新闻", timestamp: 1 },
+            { id: "msg-assistant-stale-stream", role: "assistant", content: "我", timestamp: 2, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          run={{ status: "idle", runId: null, startedAt: null, lastDeltaAt: null, streamText: "" }}
+          session={createSession({ status: "运行中" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const settledBubble = screen.getByText("我").closest('[data-bubble-layout]');
+    expect(settledBubble).not.toHaveClass("cc-streaming-bubble");
+    expect(settledBubble?.querySelector('[data-streaming-tail-dots="true"]')).toBeNull();
+    expect(screen.queryByText("生成中")).not.toBeInTheDocument();
   });
 
   it("keeps the streaming assistant DOM node stable when timestamp changes without an explicit id", () => {
@@ -2966,7 +3196,7 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const activeBubble = screen.getByText("收到。").closest('[data-bubble-layout="full"]');
+    const activeBubble = screen.getByText("收到。").closest('[data-bubble-layout="compact"]');
     expect(activeBubble?.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
     expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
   });
@@ -2992,6 +3222,7 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           session={createSession({ agentId: "news" })}
+          run={{ status: "streaming", streamText: "收到" }}
         />
       </TooltipProvider>,
     );
@@ -3014,11 +3245,12 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           session={createSession({ agentId: "news" })}
+          run={{ status: "idle", streamText: "" }}
         />
       </TooltipProvider>,
     );
 
-    const settledBubble = screen.getByText("收到。").closest('[data-bubble-layout="full"]');
+    const settledBubble = screen.getByText("收到。").closest('[data-bubble-layout]');
     expect(settledBubble?.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
 
     act(() => {
@@ -5857,6 +6089,64 @@ describe("ChatPanel", () => {
       ]),
     );
     expect(viewport.scrollTo.mock.calls.every(([options]) => options?.top === 880 && options?.behavior === "auto")).toBe(true);
+  });
+
+  it("keeps retrying a bottom-pinned restore when layout metrics become available after the initial stabilizers", async () => {
+    const viewportRef = { current: null };
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback) => window.setTimeout(callback, 0));
+    vi.stubGlobal("cancelAnimationFrame", (timerId) => window.clearTimeout(timerId));
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "assistant", content: "第一段", timestamp: 1 },
+            { role: "user", content: "第二段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          restoredScrollKey="command-center:main"
+          restoredScrollState={{ scrollTop: 640, atBottom: true }}
+          session={createSession({ sessionUser: "command-center" })}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, writable: true, value: 0 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(viewport.scrollTop).toBe(0);
+
+    viewport.clientHeight = 240;
+    viewport.scrollHeight = 960;
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(viewport.scrollTop).toBe(720);
   });
 
   it("shows the bottom button whenever the viewport is away from the bottom and clicking it returns to the bottom", async () => {

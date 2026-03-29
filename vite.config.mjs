@@ -58,11 +58,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api/runtime/ws": {
-        target: "http://127.0.0.1:3000",
+        target: "http://127.0.0.1:5000",
         ws: true,
       },
       "/api": {
-        target: "http://127.0.0.1:3000",
+        target: "http://127.0.0.1:5000",
       },
     },
   },

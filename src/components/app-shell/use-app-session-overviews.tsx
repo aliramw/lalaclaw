@@ -76,11 +76,14 @@ export function useAppSessionOverviews({
   const openAgentIds = useMemo(
     () => chatTabs
       .filter((tab) => !isImSessionUser(tab.sessionUser))
-      .map((tab) => tab.agentId),
+      .map((tab) => tab.agentId)
+      .filter((agentId): agentId is string => Boolean(agentId)),
     [chatTabs],
   );
   const openSessionUsers = useMemo(
-    () => chatTabs.map((tab) => tab.sessionUser),
+    () => chatTabs
+      .map((tab) => tab.sessionUser)
+      .filter((sessionUser): sessionUser is string => Boolean(sessionUser)),
     [chatTabs],
   );
 
@@ -152,32 +155,40 @@ export function useAppSessionOverviews({
     <SessionOverview
       {...richOverviewProps}
       layout="tab-brand"
+      formatCompactK={formatCompactK}
+      session={session}
     />
-  ), [richOverviewProps]);
+  ), [formatCompactK, richOverviewProps, session]);
 
   const agentTabOverview = useMemo(() => (
     <SessionOverview
       {...richOverviewProps}
       layout="agent-tab"
+      formatCompactK={formatCompactK}
+      session={session}
       onOpenImSession={onOpenImSession}
       openAgentIds={openAgentIds}
       openSessionUsers={openSessionUsers}
     />
-  ), [onOpenImSession, openAgentIds, openSessionUsers, richOverviewProps]);
+  ), [formatCompactK, onOpenImSession, openAgentIds, openSessionUsers, richOverviewProps, session]);
 
   const controlsOverview = useMemo(() => (
     <SessionOverview
       {...richOverviewProps}
       layout="controls"
+      formatCompactK={formatCompactK}
+      session={session}
     />
-  ), [richOverviewProps]);
+  ), [formatCompactK, richOverviewProps, session]);
 
   const statusOverview = useMemo(() => (
     <SessionOverview
       {...sharedOverviewProps}
       layout="status"
+      formatCompactK={formatCompactK}
+      session={session}
     />
-  ), [sharedOverviewProps]);
+  ), [formatCompactK, session, sharedOverviewProps]);
 
   return {
     agentTabOverview,

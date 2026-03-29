@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { createConversationKey } from "@/features/app/state/app-session-identity";
+import { extractUserPromptHistory } from "@/features/app/state/app-prompt-storage";
 import {
-  createConversationKey,
-  extractUserPromptHistory,
-  hasAuthoritativePendingAssistantReply,
   mergeConversationAttachments,
   mergeConversationIdentity,
-  mergePendingConversation,
-  mergeStaleLocalConversationTail,
+} from "@/features/chat/state/chat-conversation-merge";
+import {
+  buildDashboardChatSessionState,
+  buildDashboardSettledMessages,
+} from "@/features/chat/state/chat-dashboard-session";
+import {
+  hasAuthoritativePendingAssistantReply,
   resolveRuntimePendingEntry,
-} from "@/features/app/storage";
+} from "@/features/chat/state/chat-runtime-pending";
+import { shouldReuseSettledLocalConversationTail } from "@/features/chat/state/chat-settled-conversation";
+import { selectChatRunBusy } from "@/features/chat/state/chat-session-state";
 import { isImBootstrapSessionUser, isImSessionUser } from "@/features/session/im-session";
 import { normalizeStatusKey } from "@/features/session/status-display";
 import { apiFetch } from "@/lib/api-client";
@@ -221,21 +227,61 @@ function snapshotHasPendingUserMessage(snapshotMessages: ChatMessage[] = [], pen
   });
 }
 
+function findSnapshotPendingUserIndex(snapshotMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null) {
+  if (!pendingEntry?.userMessage?.content) {
+    return -1;
+  }
+
+  const targetContent = String(pendingEntry.userMessage.content);
+  const expectedTimestamp = Number(pendingEntry.userMessage.timestamp || 0);
+  const startedAt = Number(pendingEntry.startedAt || 0);
+  const matchThreshold = expectedTimestamp || startedAt || 0;
+
+  for (let index = snapshotMessages.length - 1; index >= 0; index -= 1) {
+    const message = snapshotMessages[index];
+    if (message?.role !== "user" || String(message.content || "") !== targetContent) {
+      continue;
+    }
+
+    const timestamp = Number(message.timestamp || 0);
+    if (!matchThreshold || !timestamp || timestamp >= matchThreshold) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function snapshotHasAdvancedPastPendingTurn(snapshotMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null) {
+  const pendingUserIndex = findSnapshotPendingUserIndex(snapshotMessages, pendingEntry);
+  if (pendingUserIndex < 0) {
+    return false;
+  }
+
+  return snapshotMessages.some((message, index) => index > pendingUserIndex && message?.role === "user");
+}
+
 function shouldClearRecoveredPendingTurn({
   pendingEntry,
   recoveringPendingReply = false,
   snapshotHasPendingUserMessage = false,
   snapshotHasAssistantReply = false,
+  snapshotHasAdvancedPastPending = false,
   status = "",
 }: {
   pendingEntry?: PendingChatTurn | null;
   recoveringPendingReply?: boolean;
   snapshotHasPendingUserMessage?: boolean;
   snapshotHasAssistantReply?: boolean;
+  snapshotHasAdvancedPastPending?: boolean;
   status?: string;
 } = {}) {
   if (!recoveringPendingReply || !pendingEntry || pendingEntry?.stopped || snapshotHasAssistantReply) {
     return false;
+  }
+
+  if (snapshotHasAdvancedPastPending) {
+    return true;
   }
 
   const normalizedStatus = normalizeStatusKey(status);
@@ -277,6 +323,54 @@ function hasLocalLivePendingAssistant(localMessages: ChatMessage[] = [], pending
   });
 }
 
+function hasExplicitLocalLivePendingAssistant(localMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null) {
+  if (!pendingEntry) {
+    return false;
+  }
+
+  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+  const pendingTimestamp = Number(pendingEntry?.pendingTimestamp || 0);
+
+  return (localMessages || []).some((message) => {
+    if (message?.role !== "assistant" || !(message?.pending || message?.streaming)) {
+      return false;
+    }
+
+    if (assistantMessageId && String(message?.id || "").trim() === assistantMessageId) {
+      return true;
+    }
+
+    const timestamp = Number(message?.timestamp || 0);
+    return pendingTimestamp > 0 && timestamp === pendingTimestamp;
+  });
+}
+
+function findLocalSettledPendingAssistantCandidate(localMessages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null) {
+  if (!pendingEntry || pendingEntry?.stopped) {
+    return null;
+  }
+
+  const pendingTimestamp = Number(pendingEntry?.pendingTimestamp || 0);
+  const startedAt = Number(pendingEntry?.startedAt || 0);
+
+  return [...localMessages].reverse().find((message) => {
+    if (message?.role !== "assistant" || message?.pending) {
+      return false;
+    }
+
+    const timestamp = Number(message?.timestamp || 0);
+    if (!timestamp) {
+      return false;
+    }
+
+    if (timestamp !== pendingTimestamp && timestamp < startedAt) {
+      return false;
+    }
+
+    return Boolean(String(message?.content || "").trim());
+  }) || null;
+}
+
 function normalizeAssistantProgressContent(content = "") {
   return String(content || "")
     .replace(/\[\[reply_to_current\]\]/gi, "")
@@ -306,6 +400,329 @@ function findPendingAssistantMessage(messages: ChatMessage[] = [], pendingEntry:
     const timestamp = Number(message?.timestamp || 0);
     return pendingTimestamp > 0 && timestamp === pendingTimestamp;
   }) || null;
+}
+
+function buildPendingMergeDecision({
+  snapshotConversation = [],
+  pendingEntry = null,
+  localMessages = [],
+  localMessagesWithoutPending = [],
+  busy = false,
+  recoveringPendingReply = false,
+  keepRecoveredPendingAlive = false,
+  canSettleRecoveredPending = false,
+  status = "",
+}: {
+  snapshotConversation?: ChatMessage[];
+  pendingEntry?: PendingChatTurn | null;
+  localMessages?: ChatMessage[];
+  localMessagesWithoutPending?: ChatMessage[];
+  busy?: boolean;
+  recoveringPendingReply?: boolean;
+  keepRecoveredPendingAlive?: boolean;
+  canSettleRecoveredPending?: boolean;
+  status?: string;
+} = {}) {
+  const localSettledPendingAssistantCandidate = findLocalSettledPendingAssistantCandidate(localMessagesWithoutPending, pendingEntry);
+  const localLivePendingAssistant = hasLocalLivePendingAssistant(localMessages, pendingEntry, busy);
+  const snapshotHasAssistantReply = pendingEntry
+    ? hasAuthoritativePendingAssistantReply(snapshotConversation, pendingEntry)
+    : false;
+  const snapshotHasAdvancedPastPending = pendingEntry
+    ? snapshotHasAdvancedPastPendingTurn(snapshotConversation, pendingEntry)
+    : false;
+  const localHasSettledAssistantReply = pendingEntry?.assistantMessageId
+    ? (!snapshotHasAdvancedPastPending && hasAuthoritativePendingAssistantReply(localMessagesWithoutPending, pendingEntry))
+    : false;
+  const localHasLivePendingAssistant = recoveringPendingReply
+    ? (keepRecoveredPendingAlive || (snapshotHasAssistantReply && localLivePendingAssistant))
+    : (localLivePendingAssistant || keepRecoveredPendingAlive);
+  const snapshotIncludesPendingUserMessage = pendingEntry
+    ? snapshotHasPendingUserMessage(snapshotConversation, pendingEntry)
+    : false;
+  const snapshotCanSettlePending =
+    (canSettleRecoveredPending || !localHasLivePendingAssistant)
+    && snapshotHasAssistantReply
+    && snapshotIncludesPendingUserMessage;
+  const localCanSettlePending =
+    localHasSettledAssistantReply
+    && snapshotIncludesPendingUserMessage;
+  const hasAssistantReply =
+    !localHasLivePendingAssistant
+    && (snapshotCanSettlePending || localCanSettlePending);
+  const shouldClearPending = localHasLivePendingAssistant
+    ? false
+    : shouldClearRecoveredPendingTurn({
+        pendingEntry,
+        recoveringPendingReply,
+        snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
+        snapshotHasAssistantReply: hasAssistantReply,
+        snapshotHasAdvancedPastPending,
+        status,
+      });
+
+  return {
+    hasAssistantReply,
+    localHasLivePendingAssistant,
+    localHasSettledAssistantReply,
+    localSettledPendingAssistantCandidate,
+    shouldClearPending,
+    snapshotCanSettlePending,
+    snapshotHasAdvancedPastPending,
+    snapshotHasAssistantReply,
+    snapshotIncludesPendingUserMessage,
+  };
+}
+
+function buildRuntimeConversationMergeState({
+  baseMergedConversation = [],
+  conversationWithAttachments = [],
+  pendingEntry = null,
+  localMessages = [],
+  status = "",
+  busy = false,
+  recoveringPendingReply = false,
+  progressRef,
+}: {
+  baseMergedConversation?: ChatMessage[];
+  conversationWithAttachments?: ChatMessage[];
+  pendingEntry?: PendingChatTurn | null;
+  localMessages?: ChatMessage[];
+  status?: string;
+  busy?: boolean;
+  recoveringPendingReply?: boolean;
+  progressRef?: MutableRefObject<RuntimeRecoveredPendingProgressMap>;
+} = {}) {
+  const mergedConversation = pendingEntry
+    ? mergeConversationIdentity(
+        conversationWithAttachments,
+        localMessages,
+        pendingEntry,
+      )
+    : baseMergedConversation;
+  const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
+  const recoveredPendingProgress = resolveRecoveredPendingProgress({
+    recoveringPendingReply,
+    pendingEntry,
+    localMessages,
+    snapshotMessages: mergedConversation,
+    status,
+    progressRef,
+  });
+  const pendingMergeDecision = buildPendingMergeDecision({
+    snapshotConversation: conversationWithAttachments,
+    pendingEntry,
+    localMessages,
+    localMessagesWithoutPending,
+    busy,
+    recoveringPendingReply,
+    keepRecoveredPendingAlive: recoveredPendingProgress.keepRecoveredPendingAlive,
+    canSettleRecoveredPending: recoveredPendingProgress.canSettleRecoveredPending,
+    status,
+  });
+
+  return {
+    localHasExplicitLivePendingAssistant: hasExplicitLocalLivePendingAssistant(localMessages, pendingEntry),
+    localMessagesWithoutPending,
+    mergedConversation,
+    pendingMergeDecision,
+    recoveredPendingProgress,
+  };
+}
+
+function buildRuntimeConversationOutputs({
+  agentId = "main",
+  conversationKey = "",
+  mergedConversation = [],
+  pendingEntry = null,
+  localMessages = [],
+  localMessagesWithoutPending = [],
+  busy = false,
+  pendingLabel = "",
+  status = "",
+  clearPending = false,
+  snapshotHasAssistantReply = false,
+  snapshotIncludesPendingUserMessage = false,
+  localHasLivePendingAssistant = false,
+  localHasSettledAssistantReply = false,
+  localHasExplicitLivePendingAssistant = false,
+  localSettledPendingAssistantCandidate = null,
+  hasAssistantReply = false,
+  allowEmptySnapshotLocalTail = true,
+  recoveringPendingReply = false,
+  canSettleRecoveredPending = false,
+}: {
+  agentId?: string;
+  conversationKey?: string;
+  mergedConversation?: ChatMessage[];
+  pendingEntry?: PendingChatTurn | null;
+  localMessages?: ChatMessage[];
+  localMessagesWithoutPending?: ChatMessage[];
+  busy?: boolean;
+  pendingLabel?: string;
+  status?: string;
+  clearPending?: boolean;
+  snapshotHasAssistantReply?: boolean;
+  snapshotIncludesPendingUserMessage?: boolean;
+  localHasLivePendingAssistant?: boolean;
+  localHasSettledAssistantReply?: boolean;
+  localHasExplicitLivePendingAssistant?: boolean;
+  localSettledPendingAssistantCandidate?: ChatMessage | null;
+  hasAssistantReply?: boolean;
+  allowEmptySnapshotLocalTail?: boolean;
+  recoveringPendingReply?: boolean;
+  canSettleRecoveredPending?: boolean;
+} = {}) {
+  const localLivePendingAssistantCandidate = localHasExplicitLivePendingAssistant
+    ? findPendingAssistantMessage(localMessages, pendingEntry)
+    : null;
+  const snapshotSettledPendingAssistantCandidate = snapshotHasAssistantReply
+    ? findLocalSettledPendingAssistantCandidate(mergedConversation, pendingEntry)
+    : null;
+  const snapshotAssistantCompletesLocalLiveTurn = Boolean(
+    localLivePendingAssistantCandidate
+    && snapshotSettledPendingAssistantCandidate
+    && normalizeAssistantProgressContent(snapshotSettledPendingAssistantCandidate.content).length
+      >= normalizeAssistantProgressContent(localLivePendingAssistantCandidate.content).length,
+  );
+  const dashboardSettledConversation = buildDashboardSettledMessages({
+    messages: mergedConversation,
+    pendingEntry,
+    localMessages: localMessagesWithoutPending,
+    localHasLivePendingAssistant,
+    localHasExplicitLivePendingAssistant:
+      localHasExplicitLivePendingAssistant && !snapshotAssistantCompletesLocalLiveTurn,
+    localSettledPendingAssistantCandidate,
+    snapshotHasAssistantReply,
+    allowEmptySnapshotLocalTail,
+  });
+  const normalizedStatus = normalizeStatusKey(status);
+  const controllerStillBusy = pendingEntry
+    ? Boolean(busy && !pendingEntry?.stopped)
+    : Boolean(busy && ["running", "dispatching"].includes(normalizedStatus));
+  const recoveredPendingSettled = Boolean(
+    recoveringPendingReply
+    && canSettleRecoveredPending
+    && (hasAssistantReply || localHasSettledAssistantReply),
+  );
+  const pendingSettledForDashboard = Boolean(
+    clearPending
+    || recoveredPendingSettled
+    || (pendingEntry?.stopped && !controllerStillBusy)
+    || (
+      !controllerStillBusy
+      && !recoveringPendingReply
+      && snapshotIncludesPendingUserMessage
+      && (hasAssistantReply || localHasSettledAssistantReply)
+    ),
+  );
+  const dashboardPendingEntry = pendingSettledForDashboard
+    ? null
+    : (
+      localLivePendingAssistantCandidate
+      && normalizeAssistantProgressContent(localLivePendingAssistantCandidate.content)
+        ? {
+            ...pendingEntry,
+            streamText: String(localLivePendingAssistantCandidate.content || ""),
+          }
+        : pendingEntry
+    );
+
+  const dashboardState = buildDashboardChatSessionState({
+    agentId,
+    conversationKey,
+    messages: dashboardSettledConversation,
+    pendingEntry: dashboardPendingEntry,
+    rawBusy: pendingSettledForDashboard ? false : controllerStillBusy,
+    sessionStatus: status,
+    source: "runtime",
+    thinkingPlaceholder: pendingLabel,
+    transport: "ws",
+  });
+
+  return {
+    durableConversation: dashboardState.settledMessages,
+    hasActivePendingTurn: selectChatRunBusy(dashboardState.run),
+    stabilizedConversation: dashboardState.visibleMessages,
+  };
+}
+
+function shouldScheduleRecoveredPendingSettle({
+  recoveringPendingReply = false,
+  pendingEntry = null,
+  canSettleRecoveredPending = false,
+  snapshotHasAssistantReply = false,
+  snapshotIncludesPendingUserMessage = false,
+  contentChanged = false,
+  status = "",
+}: {
+  recoveringPendingReply?: boolean;
+  pendingEntry?: PendingChatTurn | null;
+  canSettleRecoveredPending?: boolean;
+  snapshotHasAssistantReply?: boolean;
+  snapshotIncludesPendingUserMessage?: boolean;
+  contentChanged?: boolean;
+  status?: string;
+} = {}) {
+  if (!recoveringPendingReply || !pendingEntry) {
+    return false;
+  }
+
+  const normalizedStatus = normalizeStatusKey(status);
+  return (
+    !canSettleRecoveredPending
+    && snapshotHasAssistantReply
+    && snapshotIncludesPendingUserMessage
+    && ["idle", "completed"].includes(normalizedStatus)
+    && !contentChanged
+  );
+}
+
+function shouldPreferAuthoritativeEmptySnapshot({
+  sessionUser = "",
+  updatedLabel = "",
+  justResetLabel = "",
+}: {
+  sessionUser?: string;
+  updatedLabel?: string;
+  justResetLabel?: string;
+} = {}) {
+  const normalizedSessionUser = String(sessionUser || "").trim();
+  if (normalizedSessionUser.startsWith("command-center-reset-")) {
+    return true;
+  }
+
+  return Boolean(justResetLabel) && String(updatedLabel || "").trim() === String(justResetLabel || "").trim();
+}
+
+function clearPendingTurnByKey(current: Record<string, PendingChatTurn>, conversationKey = "") {
+  if (!current[conversationKey]) {
+    return current;
+  }
+
+  const next = { ...current };
+  delete next[conversationKey];
+  return next;
+}
+
+function findAdvancedTrackedPendingConversationKey(
+  pendingChatTurns: Record<string, PendingChatTurn> = {},
+  conversationKeys: string[] = [],
+  conversationMessages: ChatMessage[] = [],
+) {
+  for (const conversationKey of conversationKeys) {
+    const normalizedKey = String(conversationKey || "").trim();
+    if (!normalizedKey) {
+      continue;
+    }
+
+    const pendingEntry = pendingChatTurns?.[normalizedKey];
+    if (pendingEntry && snapshotHasAdvancedPastPendingTurn(conversationMessages, pendingEntry)) {
+      return normalizedKey;
+    }
+  }
+
+  return "";
 }
 
 function resolveRecoveredPendingProgress({
@@ -348,7 +765,23 @@ function resolveRecoveredPendingProgress({
   }
 
   const progressKey = String(pendingEntry?.key || pendingEntry?.assistantMessageId || pendingEntry?.pendingTimestamp || "").trim();
-  const snapshotAssistant = findPendingAssistantMessage(snapshotMessages, pendingEntry);
+  const snapshotAdvancedPastPending = snapshotHasAdvancedPastPendingTurn(snapshotMessages, pendingEntry);
+  if (snapshotAdvancedPastPending) {
+    if (progressKey && progressRef.current[progressKey]) {
+      const nextProgress = { ...progressRef.current };
+      delete nextProgress[progressKey];
+      progressRef.current = nextProgress;
+    }
+    return {
+      keepRecoveredPendingAlive: false,
+      canSettleRecoveredPending: false,
+      contentChanged: false,
+    };
+  }
+
+  const snapshotAssistant = snapshotHasAdvancedPastPendingTurn(snapshotMessages, pendingEntry)
+    ? null
+    : findPendingAssistantMessage(snapshotMessages, pendingEntry);
   const initialContent = localAssistantContent;
   const nextContent = normalizeAssistantProgressContent(snapshotAssistant?.content);
   const previous = progressRef.current[progressKey] || {
@@ -458,13 +891,6 @@ function shouldApplyRuntimeSnapshot({
   return true;
 }
 
-function stabilizeHydratedConversation(hydratedConversation: ChatMessage[] = [], localMessages: ChatMessage[] = []) {
-  return mergeConversationIdentity(
-    mergeStaleLocalConversationTail(hydratedConversation, localMessages),
-    localMessages,
-  );
-}
-
 export function useRuntimeSnapshot({
   activePendingChat,
   busy,
@@ -472,6 +898,7 @@ export function useRuntimeSnapshot({
   i18n,
   messagesRef,
   pendingChatTurns,
+  pendingChatTurnsRef: externalPendingChatTurnsRef,
   runtimeSessionUser = "",
   session,
   setBusy,
@@ -501,12 +928,14 @@ export function useRuntimeSnapshot({
   );
   const runtimeRequestRef = useRef(0);
   const inflightRuntimeRequestRef = useRef<InflightRuntimeRequest>(null);
-  const pendingChatTurnsRef = useRef(pendingChatTurns);
+  const localPendingChatTurnsRef = useRef(pendingChatTurns);
+  const trackedPendingChatTurnsRef = externalPendingChatTurnsRef || localPendingChatTurnsRef;
   const recoveredPendingProgressRef = useRef<RuntimeRecoveredPendingProgressMap>({});
   const recoveredPendingSettleTimeoutRef = useRef(0);
   const sessionRef = useRef(session);
+  const lastAutoLoadKeyRef = useRef("");
 
-  pendingChatTurnsRef.current = pendingChatTurns;
+  trackedPendingChatTurnsRef.current = externalPendingChatTurnsRef?.current || pendingChatTurns;
   sessionRef.current = session;
 
   const updatePendingChatTurns = useCallback((value) => {
@@ -516,13 +945,13 @@ export function useRuntimeSnapshot({
 
     setPendingChatTurns((current) => {
       const next = typeof value === "function" ? value(current) : value;
-      pendingChatTurnsRef.current = next;
+      trackedPendingChatTurnsRef.current = next;
       pushCcDebugEvent("runtime.pending.update", {
         keys: Object.keys(next || {}),
       });
       return next;
     });
-  }, [setPendingChatTurns]);
+  }, [setPendingChatTurns, trackedPendingChatTurnsRef]);
 
   useEffect(() => {
     const trackedKeys = new Set(Object.keys(pendingChatTurns || {}));
@@ -536,6 +965,24 @@ export function useRuntimeSnapshot({
     recoveredPendingSettleTimeoutRef.current = 0;
   }, []);
 
+  const syncPromptHistoryForConversation = useCallback((conversationKey = "", promptHistory: string[] = []) => {
+    if (!conversationKey || !promptHistory.length) {
+      return;
+    }
+
+    setPromptHistoryByConversation((current) => {
+      const previous = current[conversationKey] || [];
+      if (JSON.stringify(previous) === JSON.stringify(promptHistory)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [conversationKey]: promptHistory,
+      };
+    });
+  }, [setPromptHistoryByConversation]);
+
   const scheduleRecoveredPendingSettle = useCallback((conversationKey, nextSessionStatus) => {
     const normalizedConversationKey = String(conversationKey || "").trim();
     if (!normalizedConversationKey) {
@@ -544,7 +991,7 @@ export function useRuntimeSnapshot({
 
     clearRecoveredPendingSettleTimeout();
     recoveredPendingSettleTimeoutRef.current = window.setTimeout(() => {
-      const currentPendingEntry = pendingChatTurnsRef.current[normalizedConversationKey];
+      const currentPendingEntry = trackedPendingChatTurnsRef.current[normalizedConversationKey];
       if (!currentPendingEntry || currentPendingEntry?.stopped) {
         recoveredPendingSettleTimeoutRef.current = 0;
         return;
@@ -572,7 +1019,58 @@ export function useRuntimeSnapshot({
       }));
       recoveredPendingSettleTimeoutRef.current = 0;
     }, RECOVERED_PENDING_SETTLE_DELAY_MS);
-  }, [clearRecoveredPendingSettleTimeout, i18n.common.idle, messagesRef, setBusy, setSession, updatePendingChatTurns]);
+  }, [clearRecoveredPendingSettleTimeout, i18n.common.idle, messagesRef, setBusy, setSession, trackedPendingChatTurnsRef, updatePendingChatTurns]);
+
+  const commitRuntimeConversationEffects = useCallback(({
+    conversationKey = "",
+    pendingEntry = null,
+    durableConversation = [],
+    hasActivePendingTurn = false,
+    recoveringPendingReply: nextRecoveringPendingReply = false,
+    canSettleRecoveredPending = false,
+    snapshotHasAssistantReply = false,
+    snapshotIncludesPendingUserMessage = false,
+    contentChanged = false,
+    status = "",
+  }: {
+    conversationKey?: string;
+    pendingEntry?: PendingChatTurn | null;
+    durableConversation?: ChatMessage[];
+    hasActivePendingTurn?: boolean;
+    recoveringPendingReply?: boolean;
+    canSettleRecoveredPending?: boolean;
+    snapshotHasAssistantReply?: boolean;
+    snapshotIncludesPendingUserMessage?: boolean;
+    contentChanged?: boolean;
+    status?: string;
+  } = {}) => {
+    setMessagesSynced(durableConversation);
+    setBusy(hasActivePendingTurn);
+
+    if (shouldScheduleRecoveredPendingSettle({
+      recoveringPendingReply: nextRecoveringPendingReply,
+      pendingEntry,
+      canSettleRecoveredPending,
+      snapshotHasAssistantReply,
+      snapshotIncludesPendingUserMessage,
+      contentChanged,
+      status,
+    })) {
+      scheduleRecoveredPendingSettle(conversationKey, status);
+    } else {
+      clearRecoveredPendingSettleTimeout();
+    }
+
+    if (pendingEntry && !hasActivePendingTurn) {
+      updatePendingChatTurns((current) => clearPendingTurnByKey(current, conversationKey));
+    }
+  }, [
+    clearRecoveredPendingSettleTimeout,
+    scheduleRecoveredPendingSettle,
+    setBusy,
+    setMessagesSynced,
+    updatePendingChatTurns,
+  ]);
 
   useEffect(() => () => {
     clearRecoveredPendingSettleTimeout();
@@ -605,7 +1103,7 @@ export function useRuntimeSnapshot({
     setRuntimeOverviewReady(true);
 
     const currentSession = sessionRef.current;
-    const currentPendingChatTurns = pendingChatTurnsRef.current;
+    const currentPendingChatTurns = trackedPendingChatTurnsRef.current;
     const currentConversationKey = createConversationKey(currentSession.sessionUser, currentSession.agentId);
     const nextSession = {
       ...currentSession,
@@ -631,6 +1129,11 @@ export function useRuntimeSnapshot({
       sessionStatus: snapshot.session?.status || nextSession.status,
       sessionUser: snapshot.session?.sessionUser || nextSession.sessionUser,
     });
+    const advancedTrackedPendingKey = findAdvancedTrackedPendingConversationKey(
+      currentPendingChatTurns,
+      [nextConversationKey, currentConversationKey],
+      baseMergedConversation,
+    );
     const snapshotPromptHistory = extractUserPromptHistory(snapshot.conversation);
     const shouldDeferConversationSync = Boolean(pendingEntry) && options.syncConversation === false;
     pushCcDebugEvent("runtime.snapshot.apply", {
@@ -649,82 +1152,73 @@ export function useRuntimeSnapshot({
     setFastMode(nextFastMode);
 
     if (options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
-      const mergedConversation = pendingEntry
-        ? mergeConversationIdentity(
-            snapshotConversationWithAttachments,
-            localMessages,
-            pendingEntry,
-          )
-        : baseMergedConversation;
-      const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
-      const snapshotHasAssistantReply = pendingEntry
-        ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
-        : false;
-      const localHasSettledAssistantReply = pendingEntry?.assistantMessageId
-        ? hasAuthoritativePendingAssistantReply(localMessagesWithoutPending, pendingEntry)
-        : false;
       const {
-        keepRecoveredPendingAlive,
-        canSettleRecoveredPending,
-        contentChanged,
-      } = resolveRecoveredPendingProgress({
-        recoveringPendingReply,
+        localHasExplicitLivePendingAssistant,
+        localMessagesWithoutPending,
+        mergedConversation,
+        pendingMergeDecision: {
+          hasAssistantReply,
+          localHasLivePendingAssistant,
+          localHasSettledAssistantReply,
+          localSettledPendingAssistantCandidate,
+          shouldClearPending,
+          snapshotCanSettlePending,
+          snapshotHasAssistantReply,
+          snapshotIncludesPendingUserMessage,
+        },
+        recoveredPendingProgress: {
+          canSettleRecoveredPending,
+          contentChanged,
+        },
+      } = buildRuntimeConversationMergeState({
+        baseMergedConversation,
+        conversationWithAttachments: snapshotConversationWithAttachments,
         pendingEntry,
         localMessages,
-        snapshotMessages: mergedConversation,
         status: snapshot.session?.status || nextSession.status,
+        busy,
+        recoveringPendingReply,
         progressRef: recoveredPendingProgressRef,
       });
-      const localHasLivePendingAssistant = recoveringPendingReply
-        ? keepRecoveredPendingAlive
-        : (hasLocalLivePendingAssistant(localMessages, pendingEntry, busy) || keepRecoveredPendingAlive);
-      const snapshotIncludesPendingUserMessage = pendingEntry
-        ? snapshotHasPendingUserMessage(mergedConversation, pendingEntry)
-        : false;
-      const snapshotCanSettlePending = (canSettleRecoveredPending || !localHasLivePendingAssistant) && snapshotHasAssistantReply && snapshotIncludesPendingUserMessage;
-      const hasAssistantReply = !localHasLivePendingAssistant && (snapshotCanSettlePending || localHasSettledAssistantReply);
-      const shouldClearPending = localHasLivePendingAssistant
-        ? false
-        : shouldClearRecoveredPendingTurn({
-        pendingEntry,
-        recoveringPendingReply,
-        snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
-        snapshotHasAssistantReply: hasAssistantReply,
-        status: snapshot.session?.status || nextSession.status,
+      const preferAuthoritativeEmptySnapshot = shouldPreferAuthoritativeEmptySnapshot({
+        sessionUser: snapshot.session?.sessionUser || nextSession.sessionUser || currentSession.sessionUser,
+        updatedLabel: currentSession.updatedLabel || nextSession.updatedLabel,
+        justResetLabel: i18n.common.justReset,
       });
-      const effectiveLocalMessages = pendingEntry && (!snapshotHasAssistantReply || localHasLivePendingAssistant)
-        ? (localHasSettledAssistantReply ? localMessagesWithoutPending : localMessages)
-        : [];
-      const mergedConversationWithLocalTail = pendingEntry && (localHasLivePendingAssistant || !shouldClearPending)
-        ? mergedConversation
-        : mergeStaleLocalConversationTail(
-            mergedConversation,
-            shouldClearPending ? localMessagesWithoutPending : localMessages,
-          );
+      const allowEmptySnapshotLocalTail = shouldReuseSettledLocalConversationTail({
+        snapshotMessages: mergedConversation,
+        pendingEntry,
+        status: snapshot.session?.status || nextSession.status,
+        preferAuthoritativeEmptySnapshot,
+      });
       const stopOverrideActive = Date.now() < stopOverrideUntilRef.current;
       const effectiveClearPending = shouldClearPending || stopOverrideActive;
-      const hydratedConversation = effectiveClearPending
-        ? (
-            pendingEntry && (
-              (localHasSettledAssistantReply && !snapshotHasAssistantReply)
-              || (snapshotHasAssistantReply && !snapshotIncludesPendingUserMessage)
-            )
-              ? mergePendingConversation(
-                  mergedConversationWithLocalTail,
-                  pendingEntry,
-                  i18n.chat.thinkingPlaceholder,
-                  localMessagesWithoutPending,
-                )
-              : mergedConversationWithLocalTail
-          )
-        : mergePendingConversation(
-            mergedConversationWithLocalTail,
-            pendingEntry,
-            i18n.chat.thinkingPlaceholder,
-            effectiveLocalMessages,
-          );
-      const stabilizedConversation = stabilizeHydratedConversation(hydratedConversation, localMessages);
-      const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !hasAssistantReply && !effectiveClearPending;
+      const {
+        durableConversation,
+        hasActivePendingTurn,
+        stabilizedConversation,
+      } = buildRuntimeConversationOutputs({
+        agentId: snapshot.session?.agentId || nextSession.agentId,
+        conversationKey: nextConversationKey,
+        mergedConversation,
+        pendingEntry,
+        localMessages,
+        localMessagesWithoutPending,
+        busy,
+        pendingLabel: i18n.chat.thinkingPlaceholder,
+        status: snapshot.session?.status || nextSession.status,
+        clearPending: effectiveClearPending,
+        snapshotHasAssistantReply,
+        snapshotIncludesPendingUserMessage,
+        localHasLivePendingAssistant,
+        localHasSettledAssistantReply,
+        localHasExplicitLivePendingAssistant,
+        localSettledPendingAssistantCandidate,
+        hasAssistantReply,
+        allowEmptySnapshotLocalTail,
+        recoveringPendingReply,
+        canSettleRecoveredPending,
+      });
       pushCcDebugEvent("runtime.snapshot.merge", {
         conversationKey: nextConversationKey,
         snapshotHasAssistantReply,
@@ -746,35 +1240,20 @@ export function useRuntimeSnapshot({
       if (!areSessionSnapshotsEqual(currentSession, nextSessionState)) {
         setSession(nextSessionState);
       }
-      setMessagesSynced(stabilizedConversation || []);
-      setBusy(hasActivePendingTurn);
-
-      if (recoveringPendingReply && pendingEntry) {
-        const normalizedStatus = normalizeStatusKey(snapshot.session?.status || nextSession.status);
-        if (
-          !canSettleRecoveredPending
-          && snapshotHasAssistantReply
-          && snapshotIncludesPendingUserMessage
-          && ["idle", "completed"].includes(normalizedStatus)
-          && !contentChanged
-        ) {
-          scheduleRecoveredPendingSettle(nextConversationKey, nextSession.status);
-        } else {
-          clearRecoveredPendingSettleTimeout();
-        }
-      } else {
-        clearRecoveredPendingSettleTimeout();
-      }
-
-      if (pendingEntry && !hasActivePendingTurn) {
-        updatePendingChatTurns((current) => {
-          if (!current[nextConversationKey]) {
-            return current;
-          }
-          const next = { ...current };
-          delete next[nextConversationKey];
-          return next;
-        });
+      commitRuntimeConversationEffects({
+        conversationKey: nextConversationKey,
+        pendingEntry,
+        durableConversation,
+        hasActivePendingTurn,
+        recoveringPendingReply,
+        canSettleRecoveredPending,
+        snapshotHasAssistantReply,
+        snapshotIncludesPendingUserMessage,
+        contentChanged,
+        status: snapshot.session?.status || nextSession.status,
+      });
+      if (!pendingEntry && advancedTrackedPendingKey) {
+        updatePendingChatTurns((current) => clearPendingTurnByKey(current, advancedTrackedPendingKey));
       }
     } else {
       const stopOverrideActive2 = Date.now() < stopOverrideUntilRef.current;
@@ -804,22 +1283,15 @@ export function useRuntimeSnapshot({
     setIfChanged(setPeeks, snapshot.peeks || EMPTY_RUNTIME_PEEKS);
     setModel(snapshot.session?.selectedModel || snapshot.model || nextSession.model || "");
 
-    if (!shouldDeferConversationSync && snapshotPromptHistory.length) {
-      setPromptHistoryByConversation((current) => {
-        const previous = current[nextConversationKey] || [];
-        if (JSON.stringify(previous) === JSON.stringify(snapshotPromptHistory)) {
-          return current;
-        }
-        return {
-          ...current,
-          [nextConversationKey]: snapshotPromptHistory,
-        };
-      });
+    if (!shouldDeferConversationSync) {
+      syncPromptHistoryForConversation(nextConversationKey, snapshotPromptHistory);
     }
   }, [
     busy,
+    commitRuntimeConversationEffects,
     i18n.chat.thinkingPlaceholder,
     i18n.common.idle,
+    i18n.common.justReset,
     i18n.common.running,
     i18n.sessionOverview.fastMode.on,
     messagesRef,
@@ -831,16 +1303,14 @@ export function useRuntimeSnapshot({
     setBusy,
     setFastMode,
     setFilesFromSnapshot,
-    setMessagesSynced,
     setModel,
     setPeeks,
-    setPromptHistoryByConversation,
     setSession,
     setSnapshots,
     setTaskTimeline,
+    syncPromptHistoryForConversation,
+    trackedPendingChatTurnsRef,
     updatePendingChatTurns,
-    scheduleRecoveredPendingSettle,
-    clearRecoveredPendingSettleTimeout,
   ]);
 
   const requestedRuntimeSessionUser = String(runtimeSessionUser || session.sessionUser || "").trim() || session.sessionUser;
@@ -861,7 +1331,7 @@ export function useRuntimeSnapshot({
 
   const applyIncrementalConversation = useCallback((nextConversation: ChatMessage[]) => {
     const currentSession = sessionRef.current;
-    const currentPendingChatTurns = pendingChatTurnsRef.current;
+    const currentPendingChatTurns = trackedPendingChatTurnsRef.current;
     const conversationKey = createConversationKey(currentSession.sessionUser, currentSession.agentId);
     const localMessages = messagesRef.current || [];
     const nextConversationWithAttachments = mergeConversationAttachments(nextConversation, localMessages);
@@ -878,86 +1348,82 @@ export function useRuntimeSnapshot({
       sessionStatus: currentSession.status,
       sessionUser: currentSession.sessionUser,
     });
+    const advancedTrackedPendingKey = findAdvancedTrackedPendingConversationKey(
+      currentPendingChatTurns,
+      [conversationKey],
+      baseMergedConversation,
+    );
     pushCcDebugEvent("runtime.conversation.sync", {
       conversationLength: nextConversation.length,
       pendingKey: pendingEntry?.key || conversationKey,
       pendingAssistantId: pendingEntry?.assistantMessageId || "",
     });
 
-    const mergedConversation = pendingEntry
-      ? mergeConversationIdentity(
-          nextConversationWithAttachments,
-          localMessages,
-          pendingEntry,
-        )
-      : baseMergedConversation;
-    const localMessagesWithoutPending = localMessages.filter((message) => !message?.pending);
-    const snapshotHasAssistantReply = pendingEntry
-      ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
-      : false;
-    const localHasSettledAssistantReply = pendingEntry?.assistantMessageId
-      ? hasAuthoritativePendingAssistantReply(localMessagesWithoutPending, pendingEntry)
-      : false;
     const {
-      keepRecoveredPendingAlive,
-      canSettleRecoveredPending,
-      contentChanged,
-    } = resolveRecoveredPendingProgress({
-      recoveringPendingReply,
+      localHasExplicitLivePendingAssistant,
+      localMessagesWithoutPending,
+      mergedConversation,
+      pendingMergeDecision: {
+        hasAssistantReply,
+        localHasLivePendingAssistant,
+        localHasSettledAssistantReply,
+        localSettledPendingAssistantCandidate,
+        shouldClearPending,
+        snapshotCanSettlePending,
+        snapshotHasAssistantReply,
+        snapshotIncludesPendingUserMessage,
+      },
+      recoveredPendingProgress: {
+        canSettleRecoveredPending,
+        contentChanged,
+      },
+      } = buildRuntimeConversationMergeState({
+      baseMergedConversation,
+      conversationWithAttachments: nextConversationWithAttachments,
       pendingEntry,
       localMessages,
-      snapshotMessages: mergedConversation,
       status: currentSession.status,
+      busy,
+      recoveringPendingReply,
       progressRef: recoveredPendingProgressRef,
     });
-    const localHasLivePendingAssistant = recoveringPendingReply
-      ? keepRecoveredPendingAlive
-      : (hasLocalLivePendingAssistant(localMessages, pendingEntry, busy) || keepRecoveredPendingAlive);
-    const snapshotIncludesPendingUserMessage = pendingEntry
-      ? snapshotHasPendingUserMessage(mergedConversation, pendingEntry)
-      : false;
-    const snapshotCanSettlePending = (canSettleRecoveredPending || !localHasLivePendingAssistant) && snapshotHasAssistantReply && snapshotIncludesPendingUserMessage;
-    const hasAssistantReply = !localHasLivePendingAssistant && (snapshotCanSettlePending || localHasSettledAssistantReply);
-    const shouldClearPending = localHasLivePendingAssistant
-      ? false
-      : shouldClearRecoveredPendingTurn({
-      pendingEntry,
-      recoveringPendingReply,
-      snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
-      snapshotHasAssistantReply: hasAssistantReply,
-      status: currentSession.status,
+    const preferAuthoritativeEmptySnapshot = shouldPreferAuthoritativeEmptySnapshot({
+      sessionUser: currentSession.sessionUser,
+      updatedLabel: currentSession.updatedLabel,
+      justResetLabel: i18n.common.justReset,
     });
-    const effectiveLocalMessages = pendingEntry && (!snapshotHasAssistantReply || localHasLivePendingAssistant)
-      ? (localHasSettledAssistantReply ? localMessagesWithoutPending : localMessages)
-      : [];
-    const mergedConversationWithLocalTail = pendingEntry && (localHasLivePendingAssistant || !shouldClearPending)
-      ? mergedConversation
-      : mergeStaleLocalConversationTail(
-          mergedConversation,
-          shouldClearPending ? localMessagesWithoutPending : localMessages,
-        );
-    const hydratedConversation = shouldClearPending
-      ? (
-          pendingEntry && (
-            (localHasSettledAssistantReply && !snapshotHasAssistantReply)
-            || (snapshotHasAssistantReply && !snapshotIncludesPendingUserMessage)
-          )
-            ? mergePendingConversation(
-                mergedConversationWithLocalTail,
-                pendingEntry,
-                i18n.chat.thinkingPlaceholder,
-                localMessagesWithoutPending,
-              )
-            : mergedConversationWithLocalTail
-        )
-      : mergePendingConversation(
-          mergedConversationWithLocalTail,
-          pendingEntry,
-          i18n.chat.thinkingPlaceholder,
-          effectiveLocalMessages,
-        );
-    const stabilizedConversation = stabilizeHydratedConversation(hydratedConversation, localMessages);
-    const hasActivePendingTurn = Boolean(pendingEntry) && !pendingEntry?.stopped && !hasAssistantReply && !shouldClearPending;
+    const allowEmptySnapshotLocalTail = shouldReuseSettledLocalConversationTail({
+      snapshotMessages: mergedConversation,
+      pendingEntry,
+      status: currentSession.status,
+      preferAuthoritativeEmptySnapshot,
+    });
+    const {
+      durableConversation,
+      hasActivePendingTurn,
+      stabilizedConversation,
+    } = buildRuntimeConversationOutputs({
+      agentId: currentSession.agentId,
+      conversationKey,
+      mergedConversation,
+      pendingEntry,
+      localMessages,
+      localMessagesWithoutPending,
+      busy,
+      pendingLabel: i18n.chat.thinkingPlaceholder,
+      status: currentSession.status,
+      clearPending: shouldClearPending,
+      snapshotHasAssistantReply,
+      snapshotIncludesPendingUserMessage,
+      localHasLivePendingAssistant,
+      localHasSettledAssistantReply,
+      localHasExplicitLivePendingAssistant,
+      localSettledPendingAssistantCandidate,
+      hasAssistantReply,
+      allowEmptySnapshotLocalTail,
+      recoveringPendingReply,
+      canSettleRecoveredPending,
+    });
     pushCcDebugEvent("runtime.conversation.merge", {
       conversationKey,
       snapshotHasAssistantReply,
@@ -975,45 +1441,25 @@ export function useRuntimeSnapshot({
       snapshotSummary: summarizeCcMessages(nextConversation),
       hydratedSummary: summarizeCcMessages(stabilizedConversation),
     });
-
-    setMessagesSynced(stabilizedConversation || []);
-    setBusy(hasActivePendingTurn);
-
-    if (recoveringPendingReply && pendingEntry) {
-      const normalizedStatus = normalizeStatusKey(currentSession.status);
-      if (
-        !canSettleRecoveredPending
-        && snapshotHasAssistantReply
-        && snapshotIncludesPendingUserMessage
-        && ["idle", "completed"].includes(normalizedStatus)
-        && !contentChanged
-      ) {
-        scheduleRecoveredPendingSettle(conversationKey, currentSession.status);
-      } else {
-        clearRecoveredPendingSettleTimeout();
-      }
-    } else {
-      clearRecoveredPendingSettleTimeout();
-    }
-
-    if (pendingEntry && !hasActivePendingTurn) {
-      updatePendingChatTurns((current) => {
-        if (!current[conversationKey]) return current;
-        const next = { ...current };
-        delete next[conversationKey];
-        return next;
-      });
+    commitRuntimeConversationEffects({
+      conversationKey,
+      pendingEntry,
+      durableConversation,
+      hasActivePendingTurn,
+      recoveringPendingReply,
+      canSettleRecoveredPending,
+      snapshotHasAssistantReply,
+      snapshotIncludesPendingUserMessage,
+      contentChanged,
+      status: currentSession.status,
+    });
+    if (!pendingEntry && advancedTrackedPendingKey) {
+      updatePendingChatTurns((current) => clearPendingTurnByKey(current, advancedTrackedPendingKey));
     }
 
     const snapshotPromptHistory = extractUserPromptHistory(nextConversation);
-    if (snapshotPromptHistory.length) {
-      setPromptHistoryByConversation((current) => {
-        const previous = current[conversationKey] || [];
-        if (JSON.stringify(previous) === JSON.stringify(snapshotPromptHistory)) return current;
-        return { ...current, [conversationKey]: snapshotPromptHistory };
-      });
-    }
-  }, [busy, i18n.chat.thinkingPlaceholder, messagesRef, recoveringPendingReply, setBusy, setMessagesSynced, setPromptHistoryByConversation, updatePendingChatTurns, scheduleRecoveredPendingSettle, clearRecoveredPendingSettleTimeout]);
+    syncPromptHistoryForConversation(conversationKey, snapshotPromptHistory);
+  }, [busy, commitRuntimeConversationEffects, i18n.chat.thinkingPlaceholder, i18n.common.justReset, messagesRef, recoveringPendingReply, syncPromptHistoryForConversation, trackedPendingChatTurnsRef, updatePendingChatTurns]);
 
   const handleWsMessage = useCallback((payload: RuntimeSocketPayload) => {
     if (!payload || !payload.type) return;
@@ -1033,15 +1479,14 @@ export function useRuntimeSnapshot({
         agentId: currentSession.agentId,
         conversationKey,
         localMessages,
-        pendingChatTurns: pendingChatTurnsRef.current,
+        pendingChatTurns: trackedPendingChatTurnsRef.current,
         sessionStatus: nextSession.status,
         sessionUser: currentSession.sessionUser,
       });
       const localRecoveredAssistant = recoveringPendingReply
         ? findPendingAssistantMessage(localMessages, localPendingEntry)
         : null;
-      const hasLocalActiveAssistantReply = localMessages.some((message) => message?.role === "assistant" && (message?.pending || message?.streaming));
-      const shouldHoldBusyForLocalTurn = Boolean(localPendingEntry) || hasLocalActiveAssistantReply;
+      const shouldHoldBusyForLocalTurn = Boolean(localPendingEntry);
       if (wsStopOverrideActive) {
         nextSession.status = i18n.common.idle;
       }
@@ -1128,7 +1573,7 @@ export function useRuntimeSnapshot({
       applyIncrementalConversation(payload.conversation);
       return;
     }
-  }, [applyIncrementalConversation, applySnapshot, clearRecoveredPendingSettleTimeout, i18n.common.idle, i18n.sessionOverview.fastMode.on, messagesRef, recoveringPendingReply, scheduleRecoveredPendingSettle, setAvailableAgents, setAvailableModels, setBusy, setFastMode, setFilesFromSnapshot, setModel, setSession]);
+  }, [applyIncrementalConversation, applySnapshot, clearRecoveredPendingSettleTimeout, i18n.common.idle, i18n.sessionOverview.fastMode.on, messagesRef, recoveringPendingReply, scheduleRecoveredPendingSettle, setAvailableAgents, setAvailableModels, setBusy, setFastMode, setFilesFromSnapshot, setModel, setSession, trackedPendingChatTurnsRef]);
 
   useEffect(() => {
     setOnMessage(handleWsMessage);
@@ -1197,29 +1642,37 @@ export function useRuntimeSnapshot({
 
   useEffect(() => {
     if (wsConnected) {
+      lastAutoLoadKeyRef.current = "";
       return;
     }
 
     const runtimeOverrides = {
       agentId: session.agentId,
     };
+    const bootstrapAutoLoadKey = isImBootstrapSessionUser(requestedRuntimeSessionUser)
+      ? `::${busy ? "busy" : "idle"}::${activePendingChat ? "pending" : "clear"}::${recoveringPendingReply ? "recovering" : "steady"}`
+      : "";
+    const autoLoadKey = `${requestedRuntimeSessionUser}::${runtimeOverrides.agentId || ""}${bootstrapAutoLoadKey}`;
     let retryTimerId = 0;
     let cancelled = false;
 
-    loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
-      if (cancelled) {
-        return;
-      }
+    if (lastAutoLoadKeyRef.current !== autoLoadKey) {
+      lastAutoLoadKeyRef.current = autoLoadKey;
+      loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
+        if (cancelled) {
+          return;
+        }
 
-      retryTimerId = window.setTimeout(() => {
-        loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
-          if (cancelled) {
-            return;
-          }
-          setSession((current) => ({ ...current, status: i18n.common.offline }));
-        });
-      }, INITIAL_RUNTIME_RETRY_DELAY_MS);
-    });
+        retryTimerId = window.setTimeout(() => {
+          loadRuntime(requestedRuntimeSessionUser, runtimeOverrides).catch(() => {
+            if (cancelled) {
+              return;
+            }
+            setSession((current) => ({ ...current, status: i18n.common.offline }));
+          });
+        }, INITIAL_RUNTIME_RETRY_DELAY_MS);
+      });
+    }
 
     const pollInterval = getRuntimePollInterval({
       recoveringPendingReply,

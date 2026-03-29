@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ChatMessage, ChatTab, ChatTabMeta } from "@/types/chat";
 import type { AppSession } from "@/types/runtime";
-import { defaultSessionUser } from "@/features/app/storage";
+import { defaultSessionUser } from "@/features/app/state/app-session-identity";
 import {
   createSessionForTab,
   createTabMeta,
@@ -59,26 +59,34 @@ export function useCommandCenterTabState({
   setTabMetaById,
 }: UseCommandCenterTabStateOptions) {
   const setMessagesForTab = useCallback((tabId, value) => {
-    setMessagesByTabId((current) => {
-      const previous = current[tabId] || [];
-      const next = typeof value === "function" ? value(previous) : value;
+    const previous = messagesByTabIdRef.current[tabId] || [];
+    const next = typeof value === "function" ? value(previous) : value;
 
-      if (current[tabId] === next || shouldReuseTabState(previous, next)) {
+    if (messagesByTabIdRef.current[tabId] === next || shouldReuseTabState(previous, next)) {
+      return;
+    }
+
+    const updated = {
+      ...messagesByTabIdRef.current,
+      [tabId]: next,
+    };
+    messagesByTabIdRef.current = updated;
+
+    if (activeChatTabIdRef.current === tabId) {
+      messagesRef.current = next;
+      setMessages(next);
+    }
+
+    setMessagesByTabId((current) => {
+      const currentPrevious = current[tabId] || [];
+      if (current[tabId] === next || shouldReuseTabState(currentPrevious, next)) {
         return current;
       }
 
-      const updated = {
+      return {
         ...current,
         [tabId]: next,
       };
-      messagesByTabIdRef.current = updated;
-
-      if (activeChatTabIdRef.current === tabId) {
-        messagesRef.current = next;
-        setMessages(next);
-      }
-
-      return updated;
     });
   }, [activeChatTabIdRef, messagesByTabIdRef, messagesRef, setMessages, setMessagesByTabId]);
 

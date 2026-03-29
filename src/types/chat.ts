@@ -87,8 +87,11 @@ export type PendingChatTurn = {
   key?: string;
   tabId?: string;
   startedAt?: number;
+  lastDeltaAt?: number;
   pendingTimestamp?: number;
   assistantMessageId?: string;
+  streamText?: string;
+  tokenBadge?: string;
   stopped?: boolean;
   stoppedAt?: number;
   suppressPendingPlaceholder?: boolean;

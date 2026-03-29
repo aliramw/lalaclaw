@@ -1,4 +1,5 @@
 import { Paperclip, X } from "lucide-react";
+import { memo } from "react";
 
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -15,7 +16,7 @@ type AttachmentLike = {
   size?: number;
 };
 
-function isImageAttachment(attachment) {
+function isImageAttachment(attachment: AttachmentLike = {}) {
   return attachment?.kind === "image" || /^image\//i.test(attachment?.mimeType || "");
 }
 
@@ -44,7 +45,7 @@ function normalizeAttachmentSignaturePart(value = "") {
 }
 
 function getAttachmentRenderSignatures(attachment: AttachmentLike = {}, index = 0) {
-  const signatures = [];
+  const signatures: string[] = [];
   const previewUrl = normalizeAttachmentSignaturePart(attachment.previewUrl);
   const dataUrl = normalizeAttachmentSignaturePart(attachment.dataUrl);
   const resolvedPath = normalizeAttachmentSignaturePart(attachment.fullPath || attachment.path);
@@ -142,7 +143,7 @@ function dedupeRenderableAttachments(attachments: AttachmentLike[] = []) {
   return dedupedAttachments;
 }
 
-export function MessageAttachments({
+export const MessageAttachments = memo(function MessageAttachments({
   attachments,
   mode = "message",
   onPreviewImage,
@@ -202,9 +203,9 @@ export function MessageAttachments({
       ) : null}
     </div>
   );
-}
+});
 
-export function ComposerAttachments({
+export const ComposerAttachments = memo(function ComposerAttachments({
   attachments,
   onPreviewImage,
   onRemoveAttachment,
@@ -246,7 +247,7 @@ export function ComposerAttachments({
               type="button"
               className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground text-background shadow-sm"
               aria-label={`${messages.common.removeAttachment} ${attachment.name}`}
-              onClick={() => onRemoveAttachment?.(attachment.id)}
+              onClick={() => attachment.id && onRemoveAttachment?.(attachment.id)}
             >
               <X className="h-2 w-2" />
             </button>
@@ -255,4 +256,4 @@ export function ComposerAttachments({
       </div>
     </div>
   );
-}
+});

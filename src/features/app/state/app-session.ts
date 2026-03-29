@@ -1,4 +1,4 @@
-import { defaultSessionUser } from "@/features/app/storage";
+import { defaultSessionUser } from "@/features/app/state/app-session-identity";
 import type { AppSession } from "@/types/runtime";
 
 type SessionMessages = {

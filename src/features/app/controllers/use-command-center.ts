@@ -5,34 +5,37 @@ import type {
   ChatTab,
   ChatTabMeta,
   ConversationPendingMap,
+  PendingChatTurn,
   StoredUiState,
 } from "@/types/chat";
 import type { AppSession, RuntimePeeks, RuntimeSnapshot } from "@/types/runtime";
 import {
-  appendPromptHistory,
-  createAgentTabId,
-  createConversationKey,
+  loadStoredState,
+  persistUiStateSnapshot,
+} from "@/features/app/storage/app-ui-state-storage";
+import { loadStoredChatScrollTops, persistChatScrollTops } from "@/features/app/state/app-chat-scroll-storage";
+import { loadPendingChatTurns } from "@/features/app/state/app-pending-storage";
+import { loadStoredPromptDrafts, loadStoredPromptHistory } from "@/features/app/state/app-prompt-storage";
+import {
   defaultChatFontSize,
   defaultComposerSendMode,
   defaultInspectorPanelWidth,
-  defaultSessionUser,
-  defaultUserLabel,
   defaultTab,
-  hasAuthoritativePendingAssistantReply,
-  loadStoredChatScrollTops,
-  loadPendingChatTurns,
-  loadStoredPromptDrafts,
-  loadStoredPromptHistory,
-  loadStoredState,
-  persistUiStateSnapshot,
-  persistChatScrollTops,
   sanitizeInspectorPanelWidth,
   sanitizeUserLabel,
-} from "@/features/app/storage";
+} from "@/features/app/state/app-preferences";
+import { createAgentTabId, createConversationKey, defaultSessionUser } from "@/features/app/state/app-session-identity";
 import { useAppHotkeys } from "@/features/app/controllers/use-app-hotkeys";
-import { useAppPersistence } from "@/features/app/storage";
+import { useAppPersistence } from "@/features/app/storage/use-app-persistence";
 import { formatCompactK, formatTime } from "@/features/chat/utils";
 import { useChatController, usePromptHistory } from "@/features/chat/controllers";
+import { buildDashboardChatSessionState } from "@/features/chat/state/chat-dashboard-session";
+import {
+  resolveRuntimePendingEntry,
+} from "@/features/chat/state/chat-runtime-pending";
+import {
+  selectChatRunBusy,
+} from "@/features/chat/state/chat-session-state";
 import { useRuntimeSnapshot } from "@/features/session/runtime";
 import { mergeRuntimeFiles } from "@/features/session/runtime/use-runtime-snapshot";
 import { useTheme } from "@/features/theme/use-theme";
@@ -69,7 +72,6 @@ import {
   deriveUnreadTabState,
   getLatestUserMessageKey,
   getSettledMessageKeys,
-  isChatTabBusy,
   resolveAgentIdFromTabId,
   resolveImRuntimeSessionUser,
 } from "@/features/app/controllers/use-command-center-helpers";
@@ -93,7 +95,47 @@ export {
 } from "@/features/app/controllers/use-command-center-helpers";
 
 const chatScrollPersistenceDebounceMs = 180;
+const promptHistoryLimit = 50;
+const defaultUserLabel = "";
 
+function appendPromptHistory(historyMap: Record<string, string[]>, key: string, prompt: string) {
+  const normalizedPrompt = String(prompt || "").trim();
+  if (!normalizedPrompt) {
+    return historyMap;
+  }
+
+  const currentHistory = Array.isArray(historyMap[key]) ? historyMap[key] : [];
+  return {
+    ...historyMap,
+    [key]: [...currentHistory, normalizedPrompt].slice(-promptHistoryLimit),
+  };
+}
+
+export function resolveTrackedPendingEntry({
+  agentId = "main",
+  conversationKey = "",
+  messages = [],
+  rawPendingEntry = null,
+  sessionStatus = "",
+  sessionUser = "",
+}: {
+  agentId?: string;
+  conversationKey?: string;
+  messages?: ChatMessage[];
+  rawPendingEntry?: PendingChatTurn | null;
+  sessionStatus?: string;
+  sessionUser?: string;
+} = {}): PendingChatTurn | null {
+  return resolveRuntimePendingEntry({
+    agentId,
+    conversationKey,
+    conversationMessages: messages,
+    localMessages: messages,
+    pendingChatTurns: rawPendingEntry ? { [conversationKey]: rawPendingEntry } : {},
+    sessionStatus,
+    sessionUser,
+  });
+}
 type PersistCurrentUiOverrides = {
   activeChatTabId?: string;
   messages?: ChatMessage[];
@@ -278,17 +320,45 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   const chatScrollTopByConversationRef = useRef<Record<string, ChatScrollState>>(storedChatScrollTops);
   const chatScrollPersistenceTimerRef = useRef(0);
   const [restoredChatScrollRevision, setRestoredChatScrollRevision] = useState(0);
+  const restoredChatScrollSeedByConversationRef = useRef<Record<string, boolean>>({});
   const localizedFormatTime = useMemo(() => (timestamp) => formatTime(timestamp, intlLocale), [intlLocale]);
-  const setPendingChatTurns = useCallback((value) => {
-    setPendingChatTurnsState((current) => {
-      const next = typeof value === "function" ? value(current) : value;
-      pendingChatTurnsRef.current = next;
-      pushCcDebugEvent("command-center.pending", {
-        keys: Object.keys(next || {}),
-      });
-      return current === next ? current : next;
+  const setPendingChatTurns = useCallback((value: ConversationPendingMap | ((current: ConversationPendingMap) => ConversationPendingMap)) => {
+    const current = pendingChatTurnsRef.current;
+    const next = typeof value === "function" ? value(current) : value;
+    pendingChatTurnsRef.current = next;
+    pushCcDebugEvent("command-center.pending", {
+      keys: Object.keys(next || {}),
     });
+    setPendingChatTurnsState((latest) => (latest === next ? latest : next));
   }, []);
+
+  const buildPersistedPendingChatTurns = useCallback((
+    pendingTurns: ConversationPendingMap = {},
+    messagesByTabId: Record<string, ChatMessage[]> = {},
+  ): ConversationPendingMap => Object.fromEntries(
+    Object.entries(pendingTurns || {}).filter(([conversationKey, entry]) => {
+      const matchingTabId = Object.entries(tabMetaByIdRef.current || {}).find(([, meta]) =>
+        createConversationKey(meta?.sessionUser || defaultSessionUser, meta?.agentId || "main") === conversationKey,
+      )?.[0];
+      if (!matchingTabId) {
+        return false;
+      }
+
+      const nextMeta = tabMetaByIdRef.current[matchingTabId]
+        || createTabMeta(chatTabsRef.current.find((tab) => tab.id === matchingTabId));
+      const nextMessagesForTab = messagesByTabId[matchingTabId] || [];
+
+      return Boolean(resolveRuntimePendingEntry({
+        agentId: nextMeta.agentId,
+        conversationKey,
+        conversationMessages: nextMessagesForTab,
+        localMessages: [],
+        pendingChatTurns: entry ? { [conversationKey]: entry } : {},
+        sessionStatus: sessionByTabIdRef.current[matchingTabId]?.status || "",
+        sessionUser: nextMeta.sessionUser,
+      }));
+    }),
+  ), []);
 
   const persistOptimisticChatState = useCallback(({
     clearPendingKey = "",
@@ -321,8 +391,36 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         [pendingEntry.key]: pendingEntry,
       };
     }
+    const persistedPendingChatTurns = buildPersistedPendingChatTurns(nextPendingChatTurns, nextMessagesByTabId);
+    const persistedMessagesByTabId = Object.fromEntries(
+      Object.entries(nextMessagesByTabId).map(([nextTabId, items]) => {
+        const nextMeta = tabMetaByIdRef.current[nextTabId]
+          || createTabMeta(chatTabsRef.current.find((tab) => tab.id === nextTabId));
+        const conversationKey = createConversationKey(nextMeta.sessionUser, nextMeta.agentId);
+        const pendingEntry = resolveRuntimePendingEntry({
+          agentId: nextMeta.agentId,
+          conversationKey,
+          conversationMessages: items || [],
+          localMessages: [],
+          pendingChatTurns: persistedPendingChatTurns[conversationKey] ? { [conversationKey]: persistedPendingChatTurns[conversationKey] } : {},
+          sessionStatus: sessionByTabIdRef.current[nextTabId]?.status || "",
+          sessionUser: nextMeta.sessionUser,
+        });
+        const dashboardState = buildDashboardChatSessionState({
+          agentId: nextMeta.agentId,
+          conversationKey,
+          messages: items || [],
+          pendingEntry,
+          rawBusy: Boolean(pendingEntry),
+          sessionStatus: sessionByTabIdRef.current[nextTabId]?.status || "",
+          source: "history",
+          thinkingPlaceholder: i18n.chat.thinkingPlaceholder,
+          transport: "idle",
+        });
+        return [nextTabId, dashboardState.settledMessages];
+      }),
+    );
     const activeTabId = activeChatTabIdRef.current || normalizedTabId;
-    const activeMessages = nextMessagesByTabId[activeTabId] || [];
     const activeMeta = tabMetaByIdRef.current[activeTabId] || currentTabMeta;
 
     persistUiStateSnapshot({
@@ -342,15 +440,45 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       tabMetaById: tabMetaByIdRef.current,
       promptDraftsByConversation: promptDraftsByConversationRef.current,
       workspaceFilesOpenByConversation: workspaceFilesOpenByConversationRef.current,
-      messages: activeMessages,
-      messagesByTabId: nextMessagesByTabId,
-      pendingChatTurns: nextPendingChatTurns,
+      messagesByTabId: persistedMessagesByTabId,
+      pendingChatTurns: persistedPendingChatTurns,
     });
-  }, []);
+  }, [buildPersistedPendingChatTurns, i18n.chat.thinkingPlaceholder]);
 
   const persistCurrentUiStateSnapshot = useCallback((overrides: PersistCurrentUiOverrides = {}) => {
     const activeTabId = activeChatTabIdRef.current || overrides.activeChatTabId || "";
-    const activeMessages = overrides.messages || messagesByTabIdRef.current[activeTabId] || [];
+    const persistedPendingChatTurns = buildPersistedPendingChatTurns(
+      pendingChatTurnsRef.current,
+      messagesByTabIdRef.current || {},
+    );
+    const persistedMessagesByTabId = Object.fromEntries(
+      Object.entries(messagesByTabIdRef.current || {}).map(([tabId, items]) => {
+        const nextMeta = tabMetaByIdRef.current[tabId]
+          || createTabMeta(chatTabsRef.current.find((tab) => tab.id === tabId));
+        const conversationKey = createConversationKey(nextMeta.sessionUser, nextMeta.agentId);
+        const pendingEntry = resolveRuntimePendingEntry({
+          agentId: nextMeta.agentId,
+          conversationKey,
+          conversationMessages: items || [],
+          localMessages: [],
+          pendingChatTurns: persistedPendingChatTurns[conversationKey] ? { [conversationKey]: persistedPendingChatTurns[conversationKey] } : {},
+          sessionStatus: sessionByTabIdRef.current[tabId]?.status || "",
+          sessionUser: nextMeta.sessionUser,
+        });
+        const dashboardState = buildDashboardChatSessionState({
+          agentId: nextMeta.agentId,
+          conversationKey,
+          messages: items || [],
+          pendingEntry,
+          rawBusy: Boolean(pendingEntry),
+          sessionStatus: sessionByTabIdRef.current[tabId]?.status || "",
+          source: "history",
+          thinkingPlaceholder: i18n.chat.thinkingPlaceholder,
+          transport: "idle",
+        });
+        return [tabId, dashboardState.settledMessages];
+      }),
+    );
     const activeMeta = tabMetaByIdRef.current[activeTabId]
       || createTabMeta(chatTabsRef.current.find((tab) => tab.id === activeTabId));
 
@@ -371,12 +499,11 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       tabMetaById: tabMetaByIdRef.current,
       promptDraftsByConversation: promptDraftsByConversationRef.current,
       workspaceFilesOpenByConversation: overrides.workspaceFilesOpenByConversation || workspaceFilesOpenByConversationRef.current,
-      messages: activeMessages,
-      messagesByTabId: messagesByTabIdRef.current,
-      pendingChatTurns: pendingChatTurnsRef.current,
+      messagesByTabId: persistedMessagesByTabId,
+      pendingChatTurns: persistedPendingChatTurns,
       persistedAt: Date.now(),
     });
-  }, []);
+  }, [buildPersistedPendingChatTurns, i18n.chat.thinkingPlaceholder]);
 
   const flushPersistedChatScrollTops = useCallback(() => {
     window.clearTimeout(chatScrollPersistenceTimerRef.current);
@@ -419,10 +546,6 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   activeIdentityRef.current = { agentId: activeAgentId, sessionUser: activeSessionUser };
   const getActiveIdentity = useCallback(() => activeIdentityRef.current, []);
   const activeConversationKey = createConversationKey(activeSessionUser, activeAgentId);
-  const activePendingChat = pendingChatTurns[activeConversationKey] || null;
-  const activePendingWasRestored = Boolean(
-    activePendingChat && restoredPendingConversationKeysRef.current.has(activeConversationKey),
-  );
   const activeChatFontSize = chatFontSize;
   const dismissedTaskRelationshipIds = useMemo(
     () => dismissedTaskRelationshipIdsByConversation[activeConversationKey] || [],
@@ -436,9 +559,42 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     () => !runtimeCacheByTabId[activeChatTabId]?.overviewReady,
     [activeChatTabId, runtimeCacheByTabId],
   );
-  const setActiveTarget = useCallback((value) => {
+  const setActiveTarget = useCallback((value: { sessionUser: string; agentId: string }) => {
     activeTargetRef.current = value;
   }, []);
+  const resolveTrackedPendingEntryForTab = useCallback(({
+    agentId = "main",
+    conversationKey = "",
+    messages: tabMessages = [],
+    rawPendingEntry = null,
+    sessionStatus = "",
+    sessionUser = "",
+  }: {
+    agentId?: string;
+    conversationKey?: string;
+    messages?: ChatMessage[];
+    rawPendingEntry?: PendingChatTurn | null;
+    sessionStatus?: string;
+    sessionUser?: string;
+  } = {}): PendingChatTurn | null => resolveTrackedPendingEntry({
+    agentId,
+    conversationKey,
+    messages: tabMessages,
+    rawPendingEntry,
+    sessionStatus,
+    sessionUser,
+  }), []);
+  const activePendingChat = resolveTrackedPendingEntryForTab({
+    agentId: activeAgentId,
+    conversationKey: activeConversationKey,
+    messages,
+    rawPendingEntry: pendingChatTurns[activeConversationKey] || null,
+    sessionStatus: session.status,
+    sessionUser: activeSessionUser,
+  });
+  const activePendingWasRestored = Boolean(
+    activePendingChat && restoredPendingConversationKeysRef.current.has(activeConversationKey),
+  );
 
   const invalidateRuntimeRequestForTab = useCallback((tabId) => {
     const normalizedTabId = String(tabId || "").trim();
@@ -544,6 +700,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     i18n,
     messagesRef,
     pendingChatTurns,
+    pendingChatTurnsRef,
     recoveringPendingReply: activePendingWasRestored,
     runtimeSessionUser: activeRuntimeSessionUser,
     session,
@@ -592,6 +749,94 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     updateTabMeta,
     updateTabSession,
   });
+
+  const chatSessionStateByTabId = useMemo(() => Object.fromEntries(
+    chatTabs.map((tab) => {
+      const tabMeta = tabMetaById[tab.id] || createTabMeta(tab);
+      const conversationKey = createConversationKey(tabMeta.sessionUser, tabMeta.agentId);
+      const tabMessages = messagesByTabId[tab.id] || [];
+      const isActiveTab = tab.id === activeChatTabId;
+      const tabSession = isActiveTab
+        ? session
+        : (sessionByTabId[tab.id] || createSessionForTab(i18n, tab, tabMeta));
+      const tabPendingEntry = resolveTrackedPendingEntryForTab({
+        agentId: tabMeta.agentId,
+        conversationKey,
+        messages: tabMessages,
+        rawPendingEntry: pendingChatTurns[conversationKey] || null,
+        sessionStatus: tabSession?.status,
+        sessionUser: tabMeta.sessionUser,
+      });
+      const nextState = buildDashboardChatSessionState({
+        agentId: tabMeta.agentId,
+        attachments: isActiveTab ? composerAttachments : [],
+        conversationKey,
+        draft: isActiveTab ? prompt : (promptDraftsByConversation[conversationKey] || ""),
+        messages: tabMessages,
+        pendingEntry: tabPendingEntry,
+        queue: isActiveTab ? activeQueuedMessages : [],
+        rawBusy: Boolean(busyByTabId[tab.id]),
+        recovering: restoredPendingConversationKeysRef.current.has(conversationKey),
+        sessionStatus: tabSession?.status,
+        source: isActiveTab && runtimeTransport !== "idle" ? "runtime" : "history",
+        thinkingPlaceholder: i18n.chat.thinkingPlaceholder,
+        transport: isActiveTab ? runtimeTransport : "idle",
+      });
+      return [tab.id, nextState];
+    }),
+  ), [
+    activeChatTabId,
+    activeQueuedMessages,
+    busyByTabId,
+    chatTabs,
+    composerAttachments,
+    i18n,
+    messagesByTabId,
+    pendingChatTurns,
+    prompt,
+    promptDraftsByConversation,
+    resolveTrackedPendingEntryForTab,
+    runtimeTransport,
+    session,
+    sessionByTabId,
+    tabMetaById,
+  ]);
+  const persistedMessagesByTabId = useMemo(
+    () => Object.fromEntries(
+      Object.entries(chatSessionStateByTabId).map(([tabId, state]) => [
+        tabId,
+        state.settledMessages || state.conversation.messages,
+      ]),
+    ),
+    [chatSessionStateByTabId],
+  );
+  const activeChatSessionState = chatSessionStateByTabId[activeChatTabId] || buildDashboardChatSessionState();
+
+  useEffect(() => {
+    if (!activeConversationKey || !activeChatSessionState.visibleMessages?.length) {
+      return undefined;
+    }
+
+    if (!chatScrollTopByConversationRef.current[activeConversationKey]) {
+      return undefined;
+    }
+
+    if (restoredChatScrollSeedByConversationRef.current[activeConversationKey]) {
+      return undefined;
+    }
+
+    restoredChatScrollSeedByConversationRef.current = {
+      ...restoredChatScrollSeedByConversationRef.current,
+      [activeConversationKey]: true,
+    };
+    const timerId = window.setTimeout(() => {
+      setRestoredChatScrollRevision((current) => current + 1);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [activeChatSessionState.visibleMessages?.length, activeConversationKey]);
 
   useEffect(() => {
     if (!busy || session.status === i18n.common.running) {
@@ -837,23 +1082,10 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       return;
     }
 
-    if (!activePendingWasRestored && activePendingChat && hasAuthoritativePendingAssistantReply(messages, activePendingChat)) {
-      setPendingChatTurns((current) => {
-        if (!current[activeConversationKey]) {
-          return current;
-        }
-        const next = { ...current };
-        delete next[activeConversationKey];
-        return next;
-      });
-      setBusyForTab(activeChatTab.id, false);
-      return;
-    }
-
-    if (!activePendingChat && !messages.some((message) => message?.pending || message?.streaming) && busyByTabIdRef.current[activeChatTab.id]) {
+    if (!activePendingChat && !selectChatRunBusy(activeChatSessionState.run) && busyByTabIdRef.current[activeChatTab.id]) {
       setBusyForTab(activeChatTab.id, false);
     }
-  }, [activeChatTab, activeConversationKey, activePendingChat, activePendingWasRestored, messages, setBusyForTab, setPendingChatTurns]);
+  }, [activeAgentId, activeChatSessionState.run, activeChatTab, activeConversationKey, activePendingChat, activeSessionUser, messages, session.status, setBusyForTab, setPendingChatTurns]);
 
   useEffect(() => {
     if (!activeChatTab) {
@@ -968,6 +1200,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     backgroundRuntimeAbortByTabIdRef,
     chatTabs,
     i18nFastModeOn: i18n.sessionOverview.fastMode.on,
+    i18nJustReset: i18n.common.justReset,
     i18nThinkingPlaceholder: i18n.chat.thinkingPlaceholder,
     intlLocale,
     messagesByTabIdRef,
@@ -1013,7 +1246,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       targetTabId,
       targetThinkMode,
     } = resolveCommandCenterSendTarget({
-      activeChatTab,
+      activeChatTab: activeChatTab || undefined,
       activeChatTabId,
       activeChatTabIdRef,
       chatTabsRef,
@@ -1062,7 +1295,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       targetTabId,
       targetThinkMode,
     } = resolveCommandCenterSendTarget({
-      activeChatTab,
+      activeChatTab: activeChatTab || undefined,
       activeChatTabId,
       activeChatTabIdRef,
       chatTabsRef,
@@ -1160,8 +1393,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     initialStoredMessagesByTabIdRef,
     initialStoredPendingRef,
     inspectorPanelWidth,
-    messages,
-    messagesByTabId,
+    messagesByTabId: persistedMessagesByTabId,
     messagesRef,
     model,
     pendingChatTurns,
@@ -1392,7 +1624,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     handleSyncCurrentSessionModel,
     handleThinkModeChange,
   } = useCommandCenterSessionActions({
-    activeChatTab,
+    activeChatTab: activeChatTab || undefined,
     i18n,
     loadRuntime,
     model,
@@ -1445,7 +1677,6 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     inspectorPanelWidthRef,
     loadRuntime,
     messagesByTabIdRef,
-    messagesRef,
     pendingChatTurnsRef,
     promptDraftsByConversationRef,
     runtimeCacheByTabIdRef,
@@ -1513,33 +1744,18 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         sessionUser: tab.sessionUser,
         title: buildChatTabTitle(resolveAgentIdFromTabId(tab.id), tab.sessionUser, { locale: intlLocale }),
         active: tab.id === activeChatTabId,
-        busy: isChatTabBusy({
-          tabId: tab.id,
-          sessionUser: tab.sessionUser,
-          activeChatTabId,
-          sessionStatus: session.status,
-          busyByTabId,
-          messagesByTabId,
-          pendingChatTurns,
-        }),
+        busy: selectChatRunBusy(chatSessionStateByTabId[tab.id]?.run),
         unreadCount: Number(unreadCountByTabId[tab.id] || 0),
       })),
-    [activeChatTabId, busyByTabId, chatTabs, intlLocale, messagesByTabId, pendingChatTurns, session.status, unreadCountByTabId],
+    [activeChatTabId, chatSessionStateByTabId, chatTabs, intlLocale, unreadCountByTabId],
   );
   const activeUiBusy = useMemo(
-    () => isChatTabBusy({
-      tabId: activeChatTabId,
-      sessionUser: activeChatTab?.sessionUser,
-      activeChatTabId,
-      sessionStatus: session.status,
-      busyByTabId,
-      messagesByTabId,
-      pendingChatTurns,
-    }),
-    [activeChatTab?.sessionUser, activeChatTabId, busyByTabId, messagesByTabId, pendingChatTurns, session.status],
+    () => selectChatRunBusy(activeChatSessionState.run),
+    [activeChatSessionState.run],
   );
   return {
     activeChatTabId,
+    activeChatRun: activeChatSessionState.run,
     activeQueuedMessages,
     activeTab,
     agents,
@@ -1588,7 +1804,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     handleWorkspaceFilesOpenChange,
     localizedFormatTime,
     messageViewportRef,
-    messages,
+    messages: activeChatSessionState.visibleMessages || [],
     model,
     modelSwitchNotice,
     inspectorPanelWidth,

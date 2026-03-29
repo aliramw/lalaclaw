@@ -10,12 +10,14 @@ import {
   hasActiveAssistantReply,
   isChatTabBusy,
   planSearchedSessionTabTarget,
+  resolveTrackedPendingEntry,
   resolveRuntimeTabAgentId,
   resolveViewportAnchorCandidate,
   resolveImRuntimeSessionUser,
   shouldReuseTabState,
   shouldApplyRuntimeSnapshotToTab,
 } from "@/features/app/controllers/use-command-center";
+import { buildInitialMessagesByTabId } from "@/features/app/controllers/use-command-center-helpers";
 
 describe("shouldApplyRuntimeSnapshotToTab", () => {
   it("accepts a runtime snapshot that still matches the tab identity", () => {
@@ -76,6 +78,49 @@ describe("shouldApplyRuntimeSnapshotToTab", () => {
         resolvedSessionUser: '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}',
       }),
     ).toBe(false);
+  });
+});
+
+describe("buildInitialMessagesByTabId", () => {
+  it("ignores legacy top-level messages once structured tab messages are absent from the normalized stored state", () => {
+    expect(
+      buildInitialMessagesByTabId(
+        {
+          messages: [{ role: "assistant", content: "legacy", timestamp: 1 }],
+        },
+        "agent:main",
+      ),
+    ).toEqual({
+      "agent:main": [],
+    });
+  });
+});
+
+describe("resolveTrackedPendingEntry", () => {
+  it("derives the active pending turn from local optimistic messages when storage has not caught up yet", () => {
+    expect(
+      resolveTrackedPendingEntry({
+        agentId: "main",
+        conversationKey: "command-center:main",
+        messages: [
+          { id: "msg-user-1", role: "user", content: "把这张图改成黑色背景", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 101, pending: true },
+        ],
+        sessionStatus: "待命",
+        sessionUser: "command-center",
+      }),
+    ).toEqual({
+      startedAt: 100,
+      pendingTimestamp: 101,
+      assistantMessageId: "msg-assistant-pending-1",
+      suppressPendingPlaceholder: false,
+      userMessage: {
+        id: "msg-user-1",
+        role: "user",
+        content: "把这张图改成黑色背景",
+        timestamp: 100,
+      },
+    });
   });
 });
 
@@ -606,6 +651,55 @@ describe("isChatTabBusy", () => {
         },
       }),
     ).toBe(true);
+  });
+
+  it("does not keep a tab busy when its tracked pending turn has already been overtaken by a later user turn", () => {
+    expect(
+      isChatTabBusy({
+        tabId: "agent:main",
+        sessionUser: "command-center-main",
+        activeChatTabId: "agent:main",
+        sessionStatus: "待命",
+        busyByTabId: {},
+        messagesByTabId: {
+          "agent:main": [
+            { id: "msg-user-1", role: "user", content: "测试", timestamp: 1 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "已完成", timestamp: 2 },
+            { id: "msg-user-2", role: "user", content: "下一轮", timestamp: 3 },
+            { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 4 },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center-main:main": {
+            key: "command-center-main:main",
+            tabId: "agent:main",
+            startedAt: 1,
+            pendingTimestamp: 2,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "测试", timestamp: 1 },
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores stale pending flags once no tracked run or runtime busy signal remains", () => {
+    expect(
+      isChatTabBusy({
+        tabId: "agent:main",
+        sessionUser: "command-center-main",
+        activeChatTabId: "agent:main",
+        sessionStatus: "待命",
+        busyByTabId: {},
+        messagesByTabId: {
+          "agent:main": [
+            { role: "user", content: "测试", timestamp: 1 },
+            { role: "assistant", content: "已经完成", timestamp: 2, pending: true },
+          ],
+        },
+        pendingChatTurns: {},
+      }),
+    ).toBe(false);
   });
 });
 
