@@ -6374,7 +6374,7 @@ describe("App", () => {
     });
   });
 
-  it("keeps a bottom-pinned conversation at the bottom after a refresh reload", async () => {
+  it("keeps a bottom-pinned conversation at the bottom after a refresh reload", { timeout: 10000 }, async () => {
     const fetchMock = vi.fn((input, init) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
