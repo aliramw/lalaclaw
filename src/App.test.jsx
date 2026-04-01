@@ -635,6 +635,28 @@ describe("App", () => {
     expect(await screen.findByText("轮询 / 连接中")).toBeInTheDocument();
   });
 
+  it("renders the refreshed shell chrome and workspace stages", async () => {
+    stubFetchWithAccessState(async (input) => {
+      if (String(input).startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+      return mockJsonResponse({ ok: true });
+    });
+
+    const { container } = render(
+      <I18nProvider>
+        <App />
+      </I18nProvider>,
+    );
+
+    await findComposer();
+
+    expect(container.querySelector(".cc-shell-chrome")).toBeInTheDocument();
+    expect(container.querySelector(".cc-workspace-stage")).toBeInTheDocument();
+    expect(container.querySelector(".cc-inspector-stage")).toBeInTheDocument();
+    expect(container.querySelector(".cc-settings-trigger")).toBeInTheDocument();
+  });
+
   it("toggles the dev workspace badge between expanded and one-line collapsed states", async () => {
     globalThis.__LALACLAW_DEV_INFO__ = {
       branch: "feat/init-autostart",

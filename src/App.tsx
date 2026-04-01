@@ -807,12 +807,12 @@ function AppContent() {
         className="h-dvh overflow-hidden bg-background text-foreground"
         aria-busy={switchingAgentOverlay || switchingModelOverlay ? "true" : "false"}
       >
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-1 overflow-hidden px-3 py-2">
-          <div className="flex shrink-0 items-center justify-between gap-3">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-3 overflow-hidden px-4 py-3">
+          <div className="cc-shell-chrome flex shrink-0 items-center justify-between gap-3 rounded-[28px] border border-border/70 bg-[var(--surface-elevated)] px-3 py-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
             <div className="min-w-0 flex-1">
               <ChatTabsStrip
                 activeChatTabId={activeChatTabId}
-                className="min-w-0 pt-0 pb-0 pr-0"
+                className="min-w-0"
                 items={chatTabs}
                 leadingControl={tabBrandOverview}
                 onActivate={handleActivateChatTab}
@@ -823,7 +823,9 @@ function AppContent() {
               />
             </div>
 
-            {controlsOverview}
+            <div className="shrink-0">
+              {controlsOverview}
+            </div>
           </div>
 
           <AppSplitLayout
