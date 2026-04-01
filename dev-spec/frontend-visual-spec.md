@@ -1,6 +1,6 @@
 # Frontend Visual Spec
 
-Last updated: 2026-03-28
+Last updated: 2026-04-01
 
 ## Purpose
 
@@ -12,6 +12,19 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Use consistent spacing and container rhythm before adding more visual treatment.
 - Avoid duplicate labels or sections that describe the same concept at different levels with the same name.
 - Summary areas and detail areas should feel related, but not visually repetitive.
+
+## Global Shell And Themes
+
+- The global shell should preserve a tool-first command-center feel while presenting a more polished product surface. Do not drift into marketing-page composition or decorative hero patterns.
+- The default light theme should use a warm, paper-like `Signal Desk` direction: soft cream backgrounds, warmer neutral surfaces, and amber-brown primary actions.
+- The dark theme should use a cooler `Precision Ops` direction: deep navy backgrounds, blue-steel surfaces, and cyan-blue primary emphasis with sharper contrast.
+- Light and dark mode must behave as one paired visual system. Keep layout, hierarchy, and semantic token meanings aligned across themes instead of treating dark mode as a separate visual product.
+- Overall density for the main shell should stay balanced: denser than a showcase UI, looser and more legible than a raw internal tool. Preserve inspector scanability while giving shell-level grouping more breathing room.
+- The chat workspace is the primary stage of the app and should read as the most important surface in the layout. The inspector is secondary and should remain quieter even when information-dense.
+- The top app chrome should form one stable shell band that clearly separates current context on the left from utility actions on the right. It should not read like a floating generic card detached from the rest of the workspace.
+- Primary filled actions across the shell should share the same visual language as the composer send action. Do not introduce unrelated filled-button treatments for top-level update, confirm, or send-style actions.
+- Shared shell surfaces should be expressed through semantic tokens such as background, surface, elevated surface, panel, primary, accent, and strong border instead of one-off per-component color mixes.
+- Empty states and loading states in the main shell must inherit the active theme language and feel intentional, not like neutral placeholders.
 
 ## Spacing And Rhythm
 

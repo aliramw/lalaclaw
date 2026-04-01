@@ -94,3 +94,22 @@ This plan captures how we treat AI-generated code (including prompts, model vers
   - confirm the plan close-out notes accurately match the executed validation commands
 - Known validation note:
   - one full-suite run timed out once in `src/components/command-center/inspector-panel.test.jsx` (`supports token-based provider onboarding`), but the isolated rerun and a subsequent full `npm test` run both passed, so this remains recorded as suite-level flaky rather than resolved root cause
+
+### 2026-04-01 — Global Visual Refresh Design Baseline
+
+- Prompt/workstream: use superpowers and `ui-ux-pro-max` to improve the overall project visual quality, choosing a warm `Signal Desk` light theme, a cooler `Precision Ops` dark theme, and a shell-first balanced-density redesign.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-01 Asia/Shanghai.
+- Files touched:
+  - `plan/2026-04-01-project-visual-refresh-design.md`
+  - `dev-spec/frontend-visual-spec.md`
+  - `plan/ai-assisted-code-quality.md`
+- Quality gates rerun:
+  - not run; this workstream only records design/spec updates and visual-baseline decisions
+- Manual/equivalent validation:
+  - reviewed existing shell and theme surfaces in `src/index.css`, `src/App.tsx`, `src/components/app-shell/app-split-layout.tsx`, `src/components/command-center/chat-panel.tsx`, `src/components/command-center/inspector-panel.tsx`, and shared UI primitives before locking the design direction
+  - verified that the new visual rules were mirrored into `dev-spec/frontend-visual-spec.md`
+- Reviewer/sign-off:
+  - pending human review before implementation begins
+- Follow-up expectation:
+  - implementation PRs derived from this design should log their concrete prompts, touched files, and validation runs separately once code changes begin
