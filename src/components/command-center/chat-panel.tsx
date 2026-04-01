@@ -4202,6 +4202,10 @@ export function ChatPanel({
 
     return renderItems.map((item) => {
       if (item.kind === "turn-activity") {
+        if (!item.anchorMessageId || item.anchorMessage?.pending) {
+          return null;
+        }
+
         return (
           <ChatTurnActivity
             key={`turn-activity-${item.turnKey}`}

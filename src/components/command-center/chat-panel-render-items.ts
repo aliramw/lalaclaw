@@ -47,6 +47,9 @@ type MessageRenderItem = {
 };
 
 type TurnActivityRenderItem = {
+  anchorMessage?: ChatPanelRenderMessage;
+  anchorMessageId?: string;
+  anchorMessageIndex: number;
   kind: "turn-activity";
   turnKey: string;
   tools: ChatPanelRenderTool[];
@@ -87,14 +90,14 @@ function findMatchingUserTurnIndex(userTurns: UserTurn[], timestamp: number) {
   return -1;
 }
 
-function findTurnActivityInsertionIndex(messages: ChatPanelRenderMessage[], userTurns: UserTurn[], turnIndex: number) {
+function findTurnActivityAnchorIndex(messages: ChatPanelRenderMessage[], userTurns: UserTurn[], turnIndex: number) {
   const turn = userTurns[turnIndex];
   const nextTurn = userTurns[turnIndex + 1];
   const turnEndIndex = nextTurn ? nextTurn.startIndex : messages.length;
 
   for (let messageIndex = turn.startIndex + 1; messageIndex < turnEndIndex; messageIndex += 1) {
     const message = messages[messageIndex];
-    if (message?.role === "assistant" && !message.pending) {
+    if (message?.role === "assistant") {
       return messageIndex;
     }
   }
@@ -182,13 +185,17 @@ export function deriveChatPanelRenderItems({
       continue;
     }
 
-    const insertionIndex = findTurnActivityInsertionIndex(messages, userTurns, turnIndex);
-    if (insertionIndex === null) {
+    const anchorMessageIndex = findTurnActivityAnchorIndex(messages, userTurns, turnIndex);
+    if (anchorMessageIndex === null) {
       continue;
     }
 
     const turn = userTurns[turnIndex];
-    activityItemsByMessageIndex.set(insertionIndex, {
+    const anchorItem = renderItems[anchorMessageIndex];
+    activityItemsByMessageIndex.set(anchorMessageIndex, {
+      anchorMessage: anchorItem?.kind === "message" ? anchorItem.message : undefined,
+      anchorMessageId: anchorItem?.kind === "message" ? anchorItem.messageId : undefined,
+      anchorMessageIndex,
       kind: "turn-activity",
       turnKey: turn.messageKey,
       tools,

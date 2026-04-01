@@ -3,12 +3,26 @@ import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel, ChatTabsStrip } from "@/components/command-center/chat-panel";
+import { deriveChatPanelRenderItems } from "@/components/command-center/chat-panel-render-items";
 import { shouldShowBubbleTopJumpButton } from "@/components/command-center/chat-panel-utils";
 import { shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, localeStorageKey } from "@/lib/i18n";
 
 const defaultPromptPlaceholder = "💡 想要和 main 一起做点什么？";
+
+function getRenderMessageKey(message = {}, index = 0) {
+  const explicitId = String(message?.id || "").trim();
+  if (explicitId) {
+    return explicitId;
+  }
+
+  if (message?.role === "assistant" && (message?.pending || message?.streaming)) {
+    return `assistant-live-${index}`;
+  }
+
+  return `${message?.timestamp || "message"}-${index}`;
+}
 
 function createSession(overrides = {}) {
   return {
@@ -2643,6 +2657,32 @@ describe("ChatPanel", () => {
     expect(toolActivity.compareDocumentPosition(assistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("derives streaming turn activity anchor data separately from assistant display policy", () => {
+    const renderItems = deriveChatPanelRenderItems({
+      getMessageKey: getRenderMessageKey,
+      messages: [
+        { id: "msg-user-streaming-anchor", role: "user", content: "继续改", timestamp: 1000 },
+        { role: "assistant", content: "正在修改第一处", timestamp: 2000, streaming: true },
+      ],
+      taskTimeline: [
+        {
+          id: "run-streaming-anchor",
+          timestamp: 1500,
+          tools: [
+            { id: "tool-edit-file", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+          ],
+        },
+      ],
+    });
+
+    expect(renderItems[1]).toEqual(expect.objectContaining({
+      kind: "turn-activity",
+      turnKey: "msg-user-streaming-anchor",
+      anchorMessageId: "assistant-live-1",
+      anchorMessageIndex: 1,
+    }));
+  });
+
   it("keeps tool activity as a separate block while the assistant reply keeps streaming", () => {
     const { rerender } = render(
       <TooltipProvider>
@@ -3038,7 +3078,7 @@ describe("ChatPanel", () => {
     expect(streamingBubble?.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
   });
 
-  it("keeps the streaming assistant DOM node stable when timestamp changes without an explicit id", () => {
+  it("keeps the streaming assistant DOM node stable when tool activity is present and timestamp changes without an explicit id", () => {
     const { rerender, container } = render(
       <TooltipProvider>
         <ChatPanel
@@ -3057,12 +3097,22 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           session={createSession({ agentId: "news" })}
+          taskTimeline={[
+            {
+              id: "run-streaming-dom-stable",
+              timestamp: 1.5,
+              tools: [
+                { id: "tool-edit-file-dom-stable", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1.6 },
+              ],
+            },
+          ]}
         />
       </TooltipProvider>,
     );
 
     const initialBubble = container.querySelector('[data-message-anchor="latest-assistant"]');
     expect(initialBubble).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "edit_file 收起详情" })).toHaveLength(1);
 
     rerender(
       <TooltipProvider>
@@ -3082,6 +3132,16 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           session={createSession({ agentId: "news" })}
+          taskTimeline={[
+            {
+              id: "run-streaming-dom-stable",
+              timestamp: 1.5,
+              tools: [
+                { id: "tool-edit-file-dom-stable", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1.6 },
+                { id: "tool-gateway-dom-stable", name: "gateway", status: "完成", input: "{}", output: "ok", timestamp: 1.7 },
+              ],
+            },
+          ]}
         />
       </TooltipProvider>,
     );
@@ -3090,6 +3150,93 @@ describe("ChatPanel", () => {
     expect(updatedBubble).toBe(initialBubble);
     expect(updatedBubble?.textContent || "").toContain("第一段");
     expect(updatedBubble?.textContent || "").toContain("第二段");
+    expect(updatedBubble?.textContent || "").not.toContain("edit_file");
+    expect(updatedBubble?.textContent || "").not.toContain("gateway");
+    expect(screen.getAllByRole("button", { name: "edit_file 收起详情" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "gateway 收起详情" })).toHaveLength(1);
+  });
+
+  it("keeps the latest assistant anchor attached to the assistant bubble when tool activity is inserted with a viewport ref", () => {
+    const viewportRef = { current: null };
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段", timestamp: 2, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+          taskTimeline={[
+            {
+              id: "run-streaming-anchor-viewport",
+              timestamp: 1.5,
+              tools: [
+                { id: "tool-edit-file-anchor-viewport", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1.6 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(viewportRef.current).toBeTruthy();
+
+    const initialAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(initialAnchor).toBeTruthy();
+    expect(initialAnchor?.querySelector('[data-bubble-layout="full"]')).toBeTruthy();
+    expect(within(initialAnchor).queryByRole("button", { name: "edit_file 收起详情" })).not.toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:01"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段\n第二段", timestamp: 3, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+          taskTimeline={[
+            {
+              id: "run-streaming-anchor-viewport",
+              timestamp: 1.5,
+              tools: [
+                { id: "tool-edit-file-anchor-viewport", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1.6 },
+                { id: "tool-gateway-anchor-viewport", name: "gateway", status: "完成", input: "{}", output: "ok", timestamp: 1.7 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const updatedAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(updatedAnchor).toBe(initialAnchor);
+    expect(updatedAnchor?.querySelector('[data-bubble-layout="full"]')).toBeTruthy();
+    expect(updatedAnchor?.textContent || "").toContain("第一段");
+    expect(updatedAnchor?.textContent || "").toContain("第二段");
+    expect(updatedAnchor?.textContent || "").not.toContain("edit_file");
+    expect(updatedAnchor?.textContent || "").not.toContain("gateway");
+    expect(screen.getByRole("button", { name: "edit_file 收起详情" }).closest('[data-message-anchor="latest-assistant"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "gateway 收起详情" }).closest('[data-message-anchor="latest-assistant"]')).toBeNull();
   });
 
   it("does not keep the breathing class once the assistant message is no longer streaming", () => {
