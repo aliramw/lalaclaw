@@ -44,25 +44,11 @@ type ToolCallCardProps = {
 };
 
 type ToolCallTimelineProps = {
-  labels?: ToolCallTimelineLabels;
-  copyLabels?: ToolCopyLabels;
+  labels: ToolCallTimelineLabels;
+  copyLabels: ToolCopyLabels;
   messages: any;
   resolvedTheme?: "light" | "dark";
   tools?: Record<string, any>[];
-};
-
-const defaultToolTimelineLabels: ToolCallTimelineLabels = {
-  collapse: "收起详情",
-  expand: "查看详情",
-  input: "输入",
-  output: "输出",
-  none: "无",
-  noOutput: "无输出",
-};
-
-const defaultToolCopyLabels: ToolCopyLabels = {
-  copy: "复制代码",
-  copied: "已复制",
 };
 
 function looksLikeJson(value = "") {
@@ -188,8 +174,8 @@ export function ToolCallCard({ isFirst = false, isLast = false, labels, copyLabe
 }
 
 export function ToolCallTimeline({
-  copyLabels = defaultToolCopyLabels,
-  labels = defaultToolTimelineLabels,
+  copyLabels,
+  labels,
   messages,
   resolvedTheme = "light",
   tools,

@@ -453,6 +453,77 @@ describe("App", () => {
     });
   }, 10_000);
 
+  it("restores historical tool activity in chat after refresh hydration", async () => {
+    const persistedMessages = [
+      { id: "msg-user-1", role: "user", content: "帮我改一下文件", timestamp: 1000 },
+      { id: "msg-assistant-1", role: "assistant", content: "已经改好了。", timestamp: 2000 },
+    ];
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: persistedMessages,
+      messagesByTabId: {
+        "agent:main": persistedMessages,
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            conversation: [
+              { role: "user", content: "帮我改一下文件", timestamp: 1000 },
+              { role: "assistant", content: "已经改好了。", timestamp: 2000 },
+            ],
+            taskTimeline: [
+              {
+                id: "run-turn-1",
+                timestamp: 1500,
+                tools: [
+                  { id: "tool-edit-file", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+                ],
+              },
+            ],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const toolActivity = await screen.findByRole("button", { name: "edit_file 收起详情" });
+    const assistantReply = await screen.findByText("已经改好了。");
+    expect(toolActivity.compareDocumentPosition(assistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("shows the runtime transport status in the session overview", async () => {
     const fetchMock = vi.fn((input) => {
       const url = String(input);
