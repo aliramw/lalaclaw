@@ -93,12 +93,13 @@ function findTurnActivityInsertionIndex(messages: ChatPanelRenderMessage[], user
   const turnEndIndex = nextTurn ? nextTurn.startIndex : messages.length;
 
   for (let messageIndex = turn.startIndex + 1; messageIndex < turnEndIndex; messageIndex += 1) {
-    if (messages[messageIndex]?.role === "assistant") {
+    const message = messages[messageIndex];
+    if (message?.role === "assistant" && !message.pending && !message.streaming) {
       return messageIndex;
     }
   }
 
-  return turnEndIndex;
+  return null;
 }
 
 export function deriveChatPanelRenderItems({
@@ -182,6 +183,10 @@ export function deriveChatPanelRenderItems({
     }
 
     const insertionIndex = findTurnActivityInsertionIndex(messages, userTurns, turnIndex);
+    if (insertionIndex === null) {
+      continue;
+    }
+
     const turn = userTurns[turnIndex];
     activityItemsByMessageIndex.set(insertionIndex, {
       kind: "turn-activity",
@@ -198,11 +203,6 @@ export function deriveChatPanelRenderItems({
       combinedItems.push(activityItem);
     }
     combinedItems.push(renderItems[messageIndex]);
-  }
-
-  const trailingActivity = activityItemsByMessageIndex.get(renderItems.length);
-  if (trailingActivity) {
-    combinedItems.push(trailingActivity);
   }
 
   return combinedItems;

@@ -2643,6 +2643,63 @@ describe("ChatPanel", () => {
     expect(toolActivity.compareDocumentPosition(assistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("only renders tool activity for turns with a settled assistant reply", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { id: "msg-user-streaming", role: "user", content: "先改这个", timestamp: 1000 },
+            { id: "msg-assistant-streaming", role: "assistant", content: "还在处理", timestamp: 2000, streaming: true },
+            { id: "msg-user-no-reply", role: "user", content: "再查一下", timestamp: 3000 },
+            { id: "msg-user-settled", role: "user", content: "最后写回去", timestamp: 5000 },
+            { id: "msg-assistant-settled", role: "assistant", content: "已经写回。", timestamp: 6000 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          taskTimeline={[
+            {
+              id: "run-streaming-turn",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-streaming-turn", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+              ],
+            },
+            {
+              id: "run-no-reply-turn",
+              timestamp: 3500,
+              tools: [
+                { id: "tool-no-reply-turn", name: "read_file", status: "完成", input: "{}", output: "ok", timestamp: 3510 },
+              ],
+            },
+            {
+              id: "run-settled-turn",
+              timestamp: 5500,
+              tools: [
+                { id: "tool-settled-turn", name: "write_file", status: "完成", input: "{}", output: "ok", timestamp: 5510 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "edit_file 收起详情" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "read_file 收起详情" })).not.toBeInTheDocument();
+
+    const settledToolActivity = screen.getByRole("button", { name: "write_file 收起详情" });
+    const settledAssistantReply = screen.getByText("已经写回。");
+    expect(settledToolActivity.compareDocumentPosition(settledAssistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("unwraps assistant final envelope tags before rendering the message", () => {
     render(
       <TooltipProvider>
