@@ -4,6 +4,18 @@ import { cleanWrappedUserMessage } from "@/features/app/state/app-prompt-storage
 const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
+const WRAPPED_USER_SENTINELS = [
+  /^Note:\s*The previous agent run was aborted by the user\b/i,
+  /^Conversation info \(untrusted metadata\):/i,
+  /^Sender \(untrusted metadata\):/i,
+  /^Thread starter \(untrusted, for context\):/i,
+  /^Replied message \(untrusted, for context\):/i,
+  /^Forwarded message context \(untrusted metadata\):/i,
+  /^Chat history since last reply \(untrusted, for context\):/i,
+  /^\s*\[message_id:\s*[^\]]+\]\s*$/i,
+  /^\[Queued messages while agent was busy\]\s*$/i,
+  /^System:/i,
+];
 
 function normalizeConversationContent(content = "", role = "") {
   const normalizedRole = String(role || "").trim().toLowerCase();
@@ -21,6 +33,16 @@ function normalizeConversationContent(content = "", role = "") {
   return text
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function looksLikeWrappedUserMessage(content = "") {
+  return String(content || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .some((line) => {
+      const trimmed = String(line || "").trim();
+      return trimmed && WRAPPED_USER_SENTINELS.some((pattern) => pattern.test(trimmed));
+    });
 }
 
 function extractSyntheticAttachmentPrompt(content = "") {
@@ -144,6 +166,61 @@ function choosePreferredSyntheticAttachmentTurn(previous: ChatMessage, next: Cha
   return next;
 }
 
+function shouldCollapseWrappedUserDuplicate(
+  previous: ChatMessage | null | undefined,
+  next: ChatMessage | null | undefined,
+) {
+  if (previous?.role !== "user" || next?.role !== "user") {
+    return false;
+  }
+
+  const previousTimestamp = Number(previous.timestamp || 0);
+  const nextTimestamp = Number(next.timestamp || 0);
+  if (
+    previousTimestamp > 0
+    && nextTimestamp > 0
+    && Math.abs(nextTimestamp - previousTimestamp) > DUPLICATE_CONVERSATION_TURN_WINDOW_MS
+  ) {
+    return false;
+  }
+
+  const previousComparableText = getConversationComparableText(previous);
+  const nextComparableText = getConversationComparableText(next);
+  if (!previousComparableText || previousComparableText !== nextComparableText) {
+    return false;
+  }
+
+  const previousRawContent = String(previous.content || "").trim();
+  const nextRawContent = String(next.content || "").trim();
+  if (!previousRawContent || !nextRawContent || previousRawContent === nextRawContent) {
+    return false;
+  }
+
+  return looksLikeWrappedUserMessage(previousRawContent) || looksLikeWrappedUserMessage(nextRawContent);
+}
+
+function choosePreferredWrappedUserTurn(previous: ChatMessage, next: ChatMessage) {
+  const previousHasAttachments = Boolean(previous.attachments?.length);
+  const nextHasAttachments = Boolean(next.attachments?.length);
+  if (previousHasAttachments !== nextHasAttachments) {
+    return nextHasAttachments ? next : previous;
+  }
+
+  const previousWrapped = looksLikeWrappedUserMessage(previous.content);
+  const nextWrapped = looksLikeWrappedUserMessage(next.content);
+  if (previousWrapped !== nextWrapped) {
+    return nextWrapped ? previous : next;
+  }
+
+  const previousText = String(previous.content || "").trim();
+  const nextText = String(next.content || "").trim();
+  if (previousText !== nextText) {
+    return nextText.length <= previousText.length ? next : previous;
+  }
+
+  return next;
+}
+
 function getConversationAttachmentPayloadScore(attachments: unknown = "") {
   if (!Array.isArray(attachments)) {
     return 0;
@@ -252,6 +329,19 @@ export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) 
         const preferred = collapsed[collapsed.length - 1];
         lastUserFingerprint =
           getConversationComparableText(preferred)
+          || getConversationAttachmentNames(preferred).join("|");
+        lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
+        lastUserIndex = collapsed.length - 1;
+        pendingReplayAssistantFingerprint = "";
+        continue;
+      }
+
+      if (!assistantSeenForCurrentTurn && shouldCollapseWrappedUserDuplicate(previousEntry, entry)) {
+        collapsed[collapsed.length - 1] = choosePreferredWrappedUserTurn(previousEntry as ChatMessage, entry);
+        const preferred = collapsed[collapsed.length - 1];
+        lastUserFingerprint =
+          getConversationComparableText(preferred)
+          || getConversationAttachmentFingerprint(preferred.attachments)
           || getConversationAttachmentNames(preferred).join("|");
         lastUserTimestamp = Number(preferred?.timestamp || entry.timestamp || 0);
         lastUserIndex = collapsed.length - 1;

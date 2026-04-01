@@ -23,6 +23,7 @@ const INTERNAL_SESSION_STARTUP_SENTINELS = [
   /Run your Session Startup sequence - read the required files before responding to the user\./i,
   /Do not mention internal steps, files, tools, or reasoning\./i,
 ];
+const ABORTED_RUN_NOTE_LINE = /^Note:\s*The previous agent run was aborted by the user\b/i;
 
 export function sanitizePromptHistoryMap(value: unknown): Record<string, string[]> {
   if (!value || typeof value !== "object") {
@@ -136,6 +137,11 @@ export function cleanWrappedUserMessage(text = "") {
   }
 
   while (stripLeadingSystemWrapperBlock()) {
+    stripLeadingBlankLines();
+  }
+
+  while (lines.length && ABORTED_RUN_NOTE_LINE.test(String(lines[0] || "").trim())) {
+    lines.shift();
     stripLeadingBlankLines();
   }
 
