@@ -654,7 +654,14 @@ describe("App", () => {
     expect(container.querySelector(".cc-shell-chrome")).toBeInTheDocument();
     expect(container.querySelector(".cc-workspace-stage")).toBeInTheDocument();
     expect(container.querySelector(".cc-inspector-stage")).toBeInTheDocument();
-    expect(container.querySelector(".cc-settings-trigger")).toBeInTheDocument();
+    const settingsTrigger = container.querySelector(".cc-settings-trigger");
+    expect(settingsTrigger).toBeInTheDocument();
+    expect(settingsTrigger).toHaveClass(
+      "focus-visible:ring-ring",
+      "focus-visible:ring-offset-2",
+      "focus-visible:ring-offset-background",
+    );
+    expect(settingsTrigger).not.toHaveClass("focus-visible:ring-ring/50");
   });
 
   it("toggles the dev workspace badge between expanded and one-line collapsed states", async () => {
