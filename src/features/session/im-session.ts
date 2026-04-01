@@ -4,6 +4,8 @@ import {
   getImSessionType as getSharedImSessionType,
   isImBootstrapSessionUser as isSharedImBootstrapSessionUser,
   isImSessionUser as isSharedImSessionUser,
+  parseImSessionIdentity,
+  stripImResetSuffix,
 } from "@/lib/im-session-key";
 
 type ImDisplayNameOptions = {
@@ -102,10 +104,24 @@ export function createImRuntimeAnchorSessionUser(sessionUser: unknown = "") {
 }
 
 export function createResetImSessionUser(sessionUser: unknown = "", resetAt = Date.now()) {
-  void resetAt;
   const normalizedSessionUser = String(sessionUser || "").trim();
   if (!normalizedSessionUser) {
     return "";
+  }
+
+  if (resolveImSessionType(normalizedSessionUser) === "dingtalk") {
+    const parsedIdentity = parseImSessionIdentity(normalizedSessionUser, { agentId: "main" });
+    const normalizedPeerId = stripImResetSuffix(parsedIdentity?.peerId || "");
+    const normalizedResetAt = Number.isFinite(Number(resetAt)) && Number(resetAt) > 0
+      ? Math.trunc(Number(resetAt))
+      : Date.now();
+
+    if (parsedIdentity?.channel && normalizedPeerId && !parsedIdentity.isBootstrap) {
+      return buildCanonicalImSessionUser(
+        `agent:${parsedIdentity.agentId || "main"}:${parsedIdentity.channel}:${parsedIdentity.chatType || "direct"}:${normalizedPeerId}:reset:${normalizedResetAt}`,
+        { agentId: parsedIdentity.agentId || "main", preserveReset: true },
+      ) || normalizedSessionUser;
+    }
   }
 
   return buildCanonicalImSessionUser(normalizedSessionUser, { agentId: "main" }) || normalizedSessionUser;

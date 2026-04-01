@@ -395,6 +395,55 @@ describe("buildDashboardChatSessionState", () => {
     expect(state.visibleMessages[1]?.content).toBe("已完成。");
   });
 
+  it("keeps the thinking overlay visible while a retained pending turn has no assistant projection yet", () => {
+    const state = buildDashboardChatSessionState({
+      conversationKey: "main::command-center",
+      messages: [
+        {
+          id: "runtime-user-retained-1",
+          role: "user",
+          content: "继续帮我处理",
+          timestamp: 4100,
+        },
+      ],
+      pendingEntry: {
+        key: "pending-retained-1",
+        startedAt: 4100,
+        pendingTimestamp: 4101,
+        assistantMessageId: "assistant-pending-retained-1",
+        suppressPendingPlaceholder: true,
+        userMessage: {
+          id: "runtime-user-retained-1",
+          role: "user",
+          content: "继续帮我处理",
+          timestamp: 4100,
+        },
+      },
+      rawBusy: false,
+      sessionStatus: "idle",
+      thinkingPlaceholder: "正在思考...",
+      transport: "ws",
+    });
+
+    expect(selectChatRunBusy(state.run)).toBe(true);
+    expect(state.run.status).toBe("starting");
+    expect(state.visibleMessages).toEqual([
+      {
+        id: "runtime-user-retained-1",
+        role: "user",
+        content: "继续帮我处理",
+        timestamp: 4100,
+      },
+      {
+        id: "assistant-pending-retained-1",
+        role: "assistant",
+        content: "正在思考...",
+        timestamp: 4101,
+        pending: true,
+      },
+    ]);
+  });
+
   it("does not keep the run busy once a locally settled assistant reply is visible and raw busy has cleared", () => {
     const state = buildDashboardChatSessionState({
       conversationKey: "main::command-center",
@@ -569,6 +618,48 @@ describe("buildDashboardChatSessionState", () => {
     expect(
       state.visibleMessages.filter((message) => message.role === "assistant" && message.id === "msg-assistant-repeat-1"),
     ).toHaveLength(1);
+  });
+
+  it("collapses replayed assistant cards without explicit ids when a later snapshot extends the same reply", () => {
+    const state = buildDashboardChatSessionState({
+      conversationKey: "main::command-center",
+      messages: [
+        {
+          role: "user",
+          content: "继续修这个问题",
+          timestamp: 100,
+        },
+        {
+          role: "assistant",
+          content: "已改完。",
+          timestamp: 120,
+        },
+        {
+          role: "assistant",
+          content: "已改完。\n\nDone:\n- 修正渲染 key\n- 保持卡片稳定",
+          timestamp: 147,
+        },
+      ],
+      pendingEntry: {
+        key: "pending-replayed-assistant-1",
+        startedAt: 100,
+        pendingTimestamp: 119,
+        assistantMessageId: "assistant-pending-replayed-assistant-1",
+        userMessage: {
+          role: "user",
+          content: "继续修这个问题",
+          timestamp: 100,
+        },
+        streamText: "已改完。\n\nDone:\n- 修正渲染 key\n- 保持卡片稳定",
+      },
+      rawBusy: true,
+      sessionStatus: "running",
+      thinkingPlaceholder: "正在思考...",
+      transport: "ws",
+    });
+
+    expect(state.visibleMessages.filter((message) => message.role === "assistant")).toHaveLength(1);
+    expect(state.visibleMessages[1]?.content).toBe("已改完。\n\nDone:\n- 修正渲染 key\n- 保持卡片稳定");
   });
 
   it("drops the pending overlay once multiple assistant replies already follow the restored user turn", () => {

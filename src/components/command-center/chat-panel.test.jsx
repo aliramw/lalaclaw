@@ -2545,6 +2545,49 @@ describe("ChatPanel", () => {
     expect(aside.style.maxHeight).toBe("388px");
   });
 
+  it("renders system notes as their own neutral cards instead of merging them into user bubbles", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              role: "system",
+              content: "Note: The previous agent run was aborted by the user. Resume carefully or ask for clarification.",
+              timestamp: 1,
+            },
+            {
+              role: "user",
+              content: "好了吗",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const systemMessage = screen.getByText(/previous agent run was aborted by the user/i);
+    const systemBubble = systemMessage.closest('[data-message-role="system"]');
+    expect(systemBubble).toBeTruthy();
+    expect(systemBubble?.querySelector('[data-bubble-layout="system"]')).toBeTruthy();
+
+    const userMessage = screen.getByText("好了吗");
+    const userBubble = userMessage.closest('[data-message-role="user"]');
+    expect(userBubble).toBeTruthy();
+    expect(userBubble?.querySelector('[data-bubble-layout="user"]')).toBeTruthy();
+    expect(userBubble).not.toContainElement(systemMessage);
+  });
+
   it("does not render the outline card while the latest assistant message is still streaming", () => {
     const { container } = render(
       <TooltipProvider>
@@ -3124,7 +3167,7 @@ describe("ChatPanel", () => {
 
     const initialBubble = container.querySelector('[data-message-anchor="latest-assistant"]');
     expect(initialBubble).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "edit_file 收起详情" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "edit_file 查看详情" })).toHaveLength(1);
 
     rerender(
       <TooltipProvider>
@@ -3162,7 +3205,55 @@ describe("ChatPanel", () => {
     expect(updatedBubble).toBe(initialBubble);
     expect(updatedBubble?.textContent || "").toContain("第一段");
     expect(updatedBubble?.textContent || "").toContain("第二段");
-    expect(screen.getAllByRole("button", { name: /收起详情$/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /查看详情$/ })).toHaveLength(2);
+  });
+
+  it("renders each chat tool call as its own collapsed card in chronological order between the user turn and assistant reply", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1000 },
+            { role: "assistant", content: "已经处理好了", timestamp: 5000 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+          taskTimeline={[
+            {
+              id: "run-render-order",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-edit-file", name: "edit_file", status: "完成", input: '{"file":"alpha.txt"}', output: "edit done", timestamp: 3000 },
+                { id: "tool-gateway", name: "gateway", status: "完成", input: '{"action":"sync"}', output: "gateway done", timestamp: 2000 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const userBubble = screen.getByText("继续").closest("[data-message-id]");
+    const assistantBubble = screen.getByText("已经处理好了").closest("[data-message-id]");
+    const gatewayButton = screen.getByRole("button", { name: "gateway 查看详情" });
+    const editFileButton = screen.getByRole("button", { name: "edit_file 查看详情" });
+
+    expect(userBubble).toBeTruthy();
+    expect(assistantBubble).toBeTruthy();
+    expect(userBubble.compareDocumentPosition(gatewayButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(gatewayButton.compareDocumentPosition(editFileButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(editFileButton.compareDocumentPosition(assistantBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(gatewayButton.closest('[data-chat-tool-card="true"]')).not.toBe(editFileButton.closest('[data-chat-tool-card="true"]'));
+    expect(screen.queryByText('{"action":"sync"}')).not.toBeInTheDocument();
+    expect(screen.queryByText("edit done")).not.toBeInTheDocument();
   });
 
   it("keeps the streaming assistant DOM node stable when timestamp changes without an explicit id", () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, ChevronDown, Copy } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 
@@ -34,6 +34,7 @@ type ToolIoCodeBlockProps = {
 };
 
 type ToolCallCardProps = {
+  defaultOpen?: boolean;
   isFirst?: boolean;
   isLast?: boolean;
   labels: ToolCallTimelineLabels;
@@ -46,10 +47,50 @@ type ToolCallCardProps = {
 type ToolCallTimelineProps = {
   labels: ToolCallTimelineLabels;
   copyLabels: ToolCopyLabels;
+  defaultOpen?: boolean;
   messages: any;
   resolvedTheme?: "light" | "dark";
   tools?: Record<string, any>[];
 };
+
+function normalizeToolIoValue(value: unknown = "") {
+  return String(value ?? "").trim();
+}
+
+function resolveToolOutputValue(tool: Record<string, any> = {}) {
+  const output = tool.output;
+  if (output != null && String(output).length) {
+    return output;
+  }
+  return tool.detail;
+}
+
+function getToolStatusBadgeProps(normalizedStatus = "", resolvedTheme: "light" | "dark" = "light") {
+  if (normalizedStatus === "completed" || normalizedStatus === "established") {
+    return { variant: "success", className: "" };
+  }
+
+  if (normalizedStatus === "running" || normalizedStatus === "dispatching") {
+    return {
+      variant: "default",
+      className: resolvedTheme === "dark"
+        ? "border-transparent bg-rose-500/15 text-rose-200"
+        : "border-transparent bg-rose-50 text-rose-700",
+    };
+  }
+
+  if (normalizedStatus === "failed") {
+    return {
+      variant: "default",
+      className: "border-transparent bg-destructive/10 text-destructive",
+    };
+  }
+
+  return {
+    variant: "default",
+    className: "border-transparent bg-muted text-muted-foreground",
+  };
+}
 
 function looksLikeJson(value = "") {
   const trimmed = String(value || "").trim();
@@ -124,10 +165,21 @@ export function ToolIoCodeBlock({ emptyText, label, copyLabels, resolvedTheme = 
   );
 }
 
-export function ToolCallCard({ isFirst = false, isLast = false, labels, copyLabels, messages, resolvedTheme = "light", tool }: ToolCallCardProps) {
-  const [open, setOpen] = useState(true);
+export function ToolCallCard({ defaultOpen = true, isFirst = false, isLast = false, labels, copyLabels, messages, resolvedTheme = "light", tool }: ToolCallCardProps) {
+  const [open, setOpen] = useState(defaultOpen);
   const normalizedStatus = normalizeStatusKey(tool.status);
   const localizedStatus = getLocalizedStatusLabel(tool.status, messages);
+  const badgeProps = getToolStatusBadgeProps(normalizedStatus, resolvedTheme);
+  const inputValue = tool.input;
+  const outputValue = resolveToolOutputValue(tool);
+  const shouldMergeIoBlocks =
+    Boolean(normalizeToolIoValue(inputValue))
+    && normalizeToolIoValue(inputValue) === normalizeToolIoValue(outputValue);
+  const executionLabel = String(messages?.inspector?.timeline?.runTitle || "").trim() || labels.input;
+
+  useEffect(() => {
+    setOpen(defaultOpen);
+  }, [defaultOpen]);
 
   return (
     <div className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2">
@@ -151,21 +203,34 @@ export function ToolCallCard({ isFirst = false, isLast = false, labels, copyLabe
           type="button"
           onClick={() => setOpen((current) => !current)}
           aria-label={`${tool.name} ${open ? labels.collapse : labels.expand}`}
+          aria-expanded={open}
           className="flex w-full items-center justify-between gap-3 rounded-md px-1 py-0.5 text-left transition hover:bg-muted/20"
         >
           <div className="flex min-w-0 items-center gap-1.5">
             <div className="truncate text-sm font-medium">{tool.name}</div>
             <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open ? "rotate-0" : "-rotate-90")} />
           </div>
-          <Badge variant={normalizedStatus === "failed" ? "default" : "success"} className="shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5">
+          <Badge variant={badgeProps.variant} className={cn("shrink-0 whitespace-nowrap px-2 py-0.5 text-[11px] leading-5", badgeProps.className)}>
             {localizedStatus}
           </Badge>
         </button>
 
         {open ? (
           <div className="space-y-2 text-xs leading-6">
-            <ToolIoCodeBlock copyLabels={copyLabels} label={labels.input} value={tool.input} emptyText={labels.none} resolvedTheme={resolvedTheme} />
-            <ToolIoCodeBlock copyLabels={copyLabels} label={labels.output} value={tool.output || tool.detail} emptyText={labels.noOutput} resolvedTheme={resolvedTheme} />
+            {shouldMergeIoBlocks ? (
+              <ToolIoCodeBlock
+                copyLabels={copyLabels}
+                label={executionLabel}
+                value={outputValue}
+                emptyText={labels.none}
+                resolvedTheme={resolvedTheme}
+              />
+            ) : (
+              <>
+                <ToolIoCodeBlock copyLabels={copyLabels} label={labels.input} value={inputValue} emptyText={labels.none} resolvedTheme={resolvedTheme} />
+                <ToolIoCodeBlock copyLabels={copyLabels} label={labels.output} value={outputValue} emptyText={labels.noOutput} resolvedTheme={resolvedTheme} />
+              </>
+            )}
           </div>
         ) : null}
       </div>
@@ -175,6 +240,7 @@ export function ToolCallCard({ isFirst = false, isLast = false, labels, copyLabe
 
 export function ToolCallTimeline({
   copyLabels,
+  defaultOpen = true,
   labels,
   messages,
   resolvedTheme = "light",
@@ -209,6 +275,7 @@ export function ToolCallTimeline({
       {orderedTools.map((tool, toolIndex) => (
         <ToolCallCard
           key={tool.id || `${tool.name}-${tool.timestamp}`}
+          defaultOpen={defaultOpen}
           isFirst={toolIndex === 0}
           isLast={toolIndex === orderedTools.length - 1}
           labels={labels}

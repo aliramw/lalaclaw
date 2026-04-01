@@ -401,6 +401,7 @@ const en = {
     copyMessageTitle: "Copy",
     copiedMessageTitle: "Copied",
     userFallbackName: "You",
+    systemMessageLabel: "System note",
     mentionAgents: "Agents",
     mentionSkills: "Skills",
     mentionAgentType: "Agent",

@@ -795,13 +795,16 @@ const MessageBubble = memo(function MessageBubble({
   chatFontSize,
   userLabel,
 }: MessageBubbleProps) {
+  const { messages: i18n } = useI18n();
   const [showBubbleTopJump, setShowBubbleTopJump] = useState(false);
   const bubbleRef = useRef<HTMLElement | null>(null);
   const bubbleSurfaceRef = useRef<HTMLElement | null>(null);
   const bubbleTopSentinelRef = useRef<HTMLDivElement | null>(null);
   const isUser = message.role === "user";
-  const isPending = assistantVisualState === "pending";
-  const bubbleStreaming = assistantVisualState === "streaming";
+  const isSystem = message.role === "system";
+  const isAssistant = message.role === "assistant";
+  const isPending = isAssistant && assistantVisualState === "pending";
+  const bubbleStreaming = isAssistant && assistantVisualState === "streaming";
   const renderedContent = useMemo(
     () => stripDingTalkImagePlaceholderForDisplay(
       unwrapAssistantEnvelope(message.content, message.role),
@@ -809,17 +812,17 @@ const MessageBubble = memo(function MessageBubble({
     ),
     [message.content, message.role, sessionUser],
   );
-  const supportsBubbleTopJump = !messageHasVisualMedia(message);
-  const assistantTurnInProgress = !isUser && !isPending && (bubbleStreaming || showStreamingTail);
+  const supportsBubbleTopJump = isAssistant && !messageHasVisualMedia(message);
+  const assistantTurnInProgress = isAssistant && !isPending && (bubbleStreaming || showStreamingTail);
   const useCompactAssistantBubble = useMemo(
-    () => !isUser && !isPending && shouldUseCompactAssistantBubble(renderedContent),
-    [isPending, isUser, renderedContent],
+    () => isAssistant && !isPending && shouldUseCompactAssistantBubble(renderedContent),
+    [isAssistant, isPending, renderedContent],
   );
   const visualLineCount = estimateVisualLineCount(renderedContent);
   const compactMeta = visualLineCount <= 1;
   const outlineItems = useMemo(
-    () => (!isUser && !isPending && !bubbleStreaming && !suppressOutline ? extractHeadingOutline(renderedContent) : []),
-    [bubbleStreaming, isPending, isUser, renderedContent, suppressOutline],
+    () => (isAssistant && !isPending && !bubbleStreaming && !suppressOutline ? extractHeadingOutline(renderedContent) : []),
+    [bubbleStreaming, isAssistant, isPending, renderedContent, suppressOutline],
   );
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
@@ -897,7 +900,7 @@ const MessageBubble = memo(function MessageBubble({
     : null;
 
   useEffect(() => {
-    const eligibleForBubbleTopJump = supportsBubbleTopJump && !isUser && !isPending && !useCompactAssistantBubble;
+    const eligibleForBubbleTopJump = supportsBubbleTopJump && isAssistant && !isPending && !useCompactAssistantBubble;
     if (!eligibleForBubbleTopJump) {
       setShowBubbleTopJump(false);
       return undefined;
@@ -987,7 +990,7 @@ const MessageBubble = memo(function MessageBubble({
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect?.();
     };
-  }, [assistantVisualState, isPending, isUser, messageViewportRef, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
+  }, [assistantVisualState, isAssistant, isPending, messageViewportRef, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
 
   if (isUser) {
     return (
@@ -1017,6 +1020,51 @@ const MessageBubble = memo(function MessageBubble({
         userBubbleWidthClassName={userBubbleWidthClassName}
         userLabel={userLabel}
       />
+    );
+  }
+
+  if (isSystem) {
+    return (
+      <div
+        ref={setBubbleNode}
+        {...messageBubbleAttributes}
+        className="group/message flex w-full justify-center"
+      >
+        <Card
+          ref={setBubbleSurfaceNode}
+          data-bubble-layout="system"
+          className={cn(
+            bubbleBaseClassName,
+            "w-[640px] max-w-[min(92vw,44rem)] border-slate-200/80 bg-slate-50/92 text-slate-700 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/60 dark:text-slate-200",
+            focusBubbleClassName,
+          )}
+        >
+          <CardContent className={bubbleContentClassName}>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <span className={cn("font-medium text-slate-500 dark:text-slate-400", fontSizeStyles.label)}>
+                {i18n.chat.systemMessageLabel}
+              </span>
+              <time className={cn("shrink-0 text-slate-500 dark:text-slate-400", fontSizeStyles.meta)}>
+                {formatTime(message.timestamp)}
+              </time>
+            </div>
+            <MarkdownContent
+              content={renderedContent}
+              files={files as any}
+              fontSize={chatFontSize as any}
+              headingScopeId={headingScopeId}
+              resolvedTheme={resolvedTheme}
+              streaming={false}
+              onOpenFilePreview={handleOpenFilePreview}
+              onOpenImagePreview={handleOpenImagePreview}
+              className={cn(
+                fontSizeStyles.markdown,
+                "text-slate-700 dark:text-slate-200 [&_a]:text-inherit [&_a]:underline [&_blockquote]:border-l-slate-300 dark:[&_blockquote]:border-l-slate-600 [&_blockquote]:text-slate-600 dark:[&_blockquote]:text-slate-300 [&_hr]:border-slate-200 dark:[&_hr]:border-slate-700 [&_thead]:bg-slate-100/80 dark:[&_thead]:bg-slate-800/80 [&_th]:border-slate-200 dark:[&_th]:border-slate-700 [&_td]:border-slate-200 dark:[&_td]:border-slate-700",
+              )}
+            />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -3740,15 +3788,11 @@ export function ChatPanel({
 
     return renderItems.map((item) => {
       if (item.kind === "turn-activity") {
-        if (!item.anchorMessageId) {
-          return null;
-        }
-
         return (
           <ChatTurnActivity
-            key={`turn-activity-${item.turnKey}`}
+            key={item.key}
             resolvedTheme={resolvedTheme}
-            tools={item.tools}
+            tool={item.tool}
           />
         );
       }

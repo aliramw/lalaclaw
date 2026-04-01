@@ -5,26 +5,27 @@ import { useI18n } from "@/lib/i18n";
 
 type ChatTurnActivityProps = {
   resolvedTheme?: string;
-  tools?: ChatPanelRenderTool[];
+  tool?: ChatPanelRenderTool | null;
 };
 
 export function ChatTurnActivity({
   resolvedTheme = "light",
-  tools = [],
+  tool = null,
 }: ChatTurnActivityProps) {
   const { messages } = useI18n();
 
-  if (!tools.length) {
+  if (!tool) {
     return null;
   }
 
   return (
-    <div className="group/message flex w-fit max-w-full">
+    <div className="group/message flex w-fit max-w-full" data-chat-tool-card="true" data-tool-name={tool.name || ""}>
       <div className="flex max-w-full flex-col items-start">
         <Card className="w-[700px] max-w-[calc(100vw-12rem)] border-border/70 bg-muted/15">
           <CardContent className="px-3 py-3">
             <ToolCallTimeline
               copyLabels={{ copy: messages.markdown.copyCode, copied: messages.markdown.copiedCode }}
+              defaultOpen={false}
               labels={{
                 collapse: messages.inspector.timeline.collapse,
                 expand: messages.inspector.timeline.expand,
@@ -35,7 +36,7 @@ export function ChatTurnActivity({
               }}
               messages={messages}
               resolvedTheme={resolvedTheme}
-              tools={tools}
+              tools={[tool]}
             />
           </CardContent>
         </Card>

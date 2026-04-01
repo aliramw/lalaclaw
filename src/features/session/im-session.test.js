@@ -41,13 +41,13 @@ describe("isImBootstrapSessionUser", () => {
 });
 
 describe("createResetImSessionUser", () => {
-  it("keeps DingTalk sessions on the same canonical DingTalk session key", () => {
+  it("creates a dedicated reset DingTalk session key instead of reusing the current native session", () => {
     const nextSessionUser = createResetImSessionUser(
       '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}',
       1773319871765,
     );
 
-    expect(nextSessionUser).toBe("agent:main:dingtalk-connector:direct:398058");
+    expect(nextSessionUser).toBe("agent:main:dingtalk-connector:direct:398058:reset:1773319871765");
     expect(isImSessionUser(nextSessionUser)).toBe(true);
   });
 

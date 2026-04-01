@@ -9,6 +9,7 @@ import { createConversationKey } from "@/features/app/state/app-session-identity
 import { createBaseSession } from "@/features/app/state";
 import {
   createResetImSessionUser,
+  isDingTalkSessionUser,
   isImSessionUser,
 } from "@/features/session/im-session";
 import {
@@ -136,7 +137,7 @@ export function useCommandCenterReset({
   const handleReset = useCallback(async () => {
     const currentSessionUser = String(sessionStateRef.current.sessionUser || "").trim();
     const currentMode = String(sessionStateRef.current.mode || session.mode || "").trim();
-    if (isImSessionUser(currentSessionUser) && currentMode === "openclaw") {
+    if (isImSessionUser(currentSessionUser) && currentMode === "openclaw" && !isDingTalkSessionUser(currentSessionUser)) {
       setPromptHistoryNavigation(null);
       setComposerAttachments([]);
       await dispatchSessionCommand("/reset", {

@@ -613,7 +613,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const toolActivity = await screen.findByRole("button", { name: "edit_file 收起详情" });
+    const toolActivity = await screen.findByRole("button", { name: "edit_file 查看详情" });
     const assistantReply = await screen.findByText("已经改好了。");
     expect(toolActivity.compareDocumentPosition(assistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -4632,6 +4632,60 @@ describe("App", () => {
     expect(await screen.findByText("正在思考…")).toBeInTheDocument();
   });
 
+  it("keeps the thinking card visible while a retained pending turn waits for runtime assistant catch-up", async () => {
+    const promptText = "继续帮我处理";
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 4100,
+          pendingTimestamp: 4101,
+          assistantMessageId: "assistant-pending-retained-1",
+          suppressPendingPlaceholder: true,
+          userMessage: {
+            id: "runtime-user-retained-1",
+            role: "user",
+            content: promptText,
+            timestamp: 4100,
+          },
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              conversation: [
+                {
+                  id: "runtime-user-retained-1",
+                  role: "user",
+                  content: promptText,
+                  timestamp: 4100,
+                },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      const bodyText = getNormalizedBodyText();
+      const occurrences = bodyText.split(promptText).length - 1;
+      expect(occurrences).toBe(1);
+    });
+    expect(await screen.findByText("正在思考…")).toBeInTheDocument();
+  });
+
   it("does not reinsert the latest user message between assistant replies after refresh", async () => {
     const promptText = "最后一句";
     window.localStorage.setItem(
@@ -5419,8 +5473,9 @@ describe("App", () => {
     expect(textarea).toHaveValue("");
   });
 
-  it("resets IM sessions by sending /reset to the canonical native session key", async () => {
+  it("starts a fresh DingTalk session without sending /reset to the current native session", async () => {
     const dingtalkSessionUser = "agent:main:dingtalk-connector:direct:398058";
+    const runtimeSessionUsers = [];
     window.localStorage.setItem(
       storageKey,
       JSON.stringify({
@@ -5451,6 +5506,9 @@ describe("App", () => {
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
+        const sessionUser = new URL(url, "http://localhost").searchParams.get("sessionUser") || "";
+        runtimeSessionUsers.push(sessionUser);
+        const isResetSession = sessionUser !== dingtalkSessionUser;
         return mockJsonResponse(createSnapshot({
           mode: "openclaw",
           session: {
@@ -5458,10 +5516,10 @@ describe("App", () => {
             mode: "openclaw",
             agentId: "main",
             selectedAgentId: "main",
-            sessionUser: dingtalkSessionUser,
-            sessionKey: dingtalkSessionUser,
+            sessionUser: sessionUser || dingtalkSessionUser,
+            sessionKey: sessionUser || dingtalkSessionUser,
           },
-          conversation: [{ role: "assistant", content: "钉钉旧消息", timestamp: 1 }],
+          conversation: isResetSession ? [] : [{ role: "assistant", content: "钉钉旧消息", timestamp: 1 }],
         }));
       }
 
@@ -5469,7 +5527,6 @@ describe("App", () => {
         chatBodies.push(JSON.parse(init.body));
         return mockJsonResponse(createSnapshot({
           mode: "openclaw",
-          outputText: "新会话已开始。",
           metadata: { status: "已完成 / 标准" },
           session: {
             ...createSnapshot().session,
@@ -5479,7 +5536,7 @@ describe("App", () => {
             sessionUser: dingtalkSessionUser,
             sessionKey: dingtalkSessionUser,
           },
-          conversation: [{ role: "assistant", content: "新会话已开始。", timestamp: 2 }],
+          conversation: [{ role: "assistant", content: "不该发 /reset", timestamp: 2 }],
         }));
       }
 
@@ -5496,16 +5553,15 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "确定" }));
 
     await waitFor(() => {
-      expect(chatBodies).toHaveLength(1);
+      expect(runtimeSessionUsers.length).toBeGreaterThanOrEqual(2);
     });
 
-    expect(chatBodies[0].sessionUser).toBe(dingtalkSessionUser);
-    expect(chatBodies[0].messages.at(-1)?.content).toBe("/reset");
+    expect(chatBodies).toHaveLength(0);
+    expect(runtimeSessionUsers[1]).toMatch(/^agent:main:dingtalk-connector:direct:398058:reset:\d+$/);
 
     await waitFor(() => {
-      expect(hasMessageText("新会话已开始。", "assistant")).toBe(true);
+      expect(hasMessageText("钉钉旧消息", "assistant")).toBe(false);
     });
-    expect(hasMessageText("钉钉旧消息", "assistant")).toBe(false);
   });
 
   it("shows -- summary placeholders while a reset session is still loading its runtime overview", async () => {

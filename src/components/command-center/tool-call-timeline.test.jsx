@@ -9,8 +9,12 @@ function Harness() {
   const messages = {
     common: i18nMessages.common,
     inspector: {
+      timeline: {
+        runTitle: "执行",
+      },
       relationships: {
         statuses: {
+          running: "执行中",
           completed: "完成",
         },
       },
@@ -78,5 +82,81 @@ describe("ToolCallTimeline", () => {
 
     expect(screen.getByRole("button", { name: "edit_file 展开卡片" })).toBeInTheDocument();
     expect(within(gatewayCard).getByText("入参")).toBeInTheDocument();
+  });
+
+  it("renders running tool badges in red to distinguish them from completed tools", () => {
+    renderWithProviders(
+      <ToolCallTimeline
+        copyLabels={{ copy: "复制片段", copied: "已复制片段" }}
+        labels={{
+          collapse: "折叠卡片",
+          expand: "展开卡片",
+          input: "入参",
+          output: "出参",
+          none: "未提供",
+          noOutput: "无输出可见",
+        }}
+        messages={{
+          common: {},
+          inspector: {
+            timeline: { runTitle: "执行" },
+            relationships: {
+              statuses: {
+                running: "执行中",
+                completed: "已完成",
+              },
+            },
+          },
+        }}
+        tools={[
+          { id: "tool-running", name: "process", status: "执行中", input: '{"action":"poll"}', output: '{"ok":true}' },
+          { id: "tool-done", name: "exec", status: "已完成", input: "{}", output: "ok" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("执行中")).toHaveClass("bg-rose-50", "text-rose-700");
+    expect(screen.getByText("已完成")).toHaveClass("bg-[var(--badge-success-bg)]", "text-[var(--badge-success-fg)]");
+  });
+
+  it("merges identical input and output payloads into a single execution block", () => {
+    renderWithProviders(
+      <ToolCallTimeline
+        copyLabels={{ copy: "复制片段", copied: "已复制片段" }}
+        labels={{
+          collapse: "折叠卡片",
+          expand: "展开卡片",
+          input: "输入",
+          output: "输出",
+          none: "未提供",
+          noOutput: "无输出可见",
+        }}
+        messages={{
+          common: {},
+          inspector: {
+            timeline: { runTitle: "执行" },
+            relationships: {
+              statuses: {
+                running: "执行中",
+              },
+            },
+          },
+        }}
+        tools={[
+          {
+            id: "tool-process",
+            name: "process",
+            status: "执行中",
+            input: '{\n  "action": "poll",\n  "sessionId": "tender-otter",\n  "timeout": 1000\n}',
+            output: '{\n  "action": "poll",\n  "sessionId": "tender-otter",\n  "timeout": 1000\n}',
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("执行")).toBeInTheDocument();
+    expect(screen.queryByText("输入")).not.toBeInTheDocument();
+    expect(screen.queryByText("输出")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "复制片段" })).toHaveLength(1);
   });
 });

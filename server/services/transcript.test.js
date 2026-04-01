@@ -752,6 +752,55 @@ describe("collectConversationMessages", () => {
     }
   });
 
+  it("projects aborted-run wrappers into a system note plus the real Weixin follow-up prompt", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
+    try {
+      const projector = createTestProjector(rootDir);
+
+      const conversation = projector.collectConversationMessages([
+        {
+          type: "message",
+          timestamp: "2026-04-01T06:58:43.924Z",
+          message: {
+            role: "user",
+            timestamp: 1775026723922,
+            content: [{
+              type: "text",
+              text: [
+                "Note: The previous agent run was aborted by the user. Resume carefully or ask for clarification.",
+                "",
+                "Conversation info (untrusted metadata):",
+                "```json",
+                "{",
+                '  "message_id": "openclaw-weixin:1775026722628-fa64a87f",',
+                '  "timestamp": "Wed 2026-04-01 14:58 GMT+8"',
+                "}",
+                "```",
+                "",
+                "好了吗",
+              ].join("\n"),
+            }],
+          },
+        },
+      ]);
+
+      expect(conversation).toEqual([
+        {
+          role: "system",
+          content: "Note: The previous agent run was aborted by the user. Resume carefully or ask for clarification.",
+          timestamp: 1775026723922,
+        },
+        {
+          role: "user",
+          content: "好了吗",
+          timestamp: 1775026723922,
+        },
+      ]);
+    } finally {
+      fs.rmSync(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it("converts inbound Weixin image wrappers into structured attachments and drops generated helper text", () => {
     const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-conversation-"));
     try {

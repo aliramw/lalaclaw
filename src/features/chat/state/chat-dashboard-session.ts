@@ -1,5 +1,6 @@
 import type { ChatAttachment, ChatControllerEntry, ChatMessage, PendingChatTurn } from "@/types/chat";
 import { normalizeStatusKey } from "@/features/session/status-display";
+import { collapseDuplicateConversationTurns } from "@/features/chat/state/chat-conversation-dedupe";
 import {
   findSnapshotPendingAssistantIndex,
   hasSnapshotAdvancedPastPendingTurn,
@@ -712,10 +713,6 @@ function buildAssistantOverlayMessage({
     };
   }
 
-  if (pendingEntry.suppressPendingPlaceholder) {
-    return null;
-  }
-
   return {
     id: String(pendingEntry.assistantMessageId || `msg-assistant-pending-${pendingEntry.pendingTimestamp || Date.now()}`),
     role: "assistant" as const,
@@ -755,7 +752,9 @@ export function buildDashboardChatSessionState({
   transport?: unknown;
 } = {}): DashboardChatSessionState {
   const initialState = createEmptyChatSessionState();
-  const conversationMessages = buildConversationMessages(messages, pendingEntry);
+  const conversationMessages = collapseDuplicateConversationTurns(
+    buildConversationMessages(messages, pendingEntry),
+  );
   const run = deriveDashboardRunState({
     conversationKey: conversationKey || `${agentId}::conversation`,
     conversationMessages,

@@ -1,4 +1,8 @@
-import { buildCanonicalImSessionUser } from "@/lib/im-session-key";
+import {
+  buildCanonicalImSessionUser,
+  parseImSessionIdentity,
+  stripImResetSuffix,
+} from "@/lib/im-session-key";
 
 export const defaultSessionUser = "command-center";
 
@@ -27,7 +31,14 @@ function shouldPreserveLegacySessionUser(value = "") {
 export function sanitizeSessionUser(value = defaultSessionUser, agentId = "main") {
   const rawValue = String(value || defaultSessionUser).trim();
   const normalizedAgentId = normalizeAgentId(agentId);
-  const canonicalImSessionUser = buildCanonicalImSessionUser(rawValue, { agentId: normalizedAgentId });
+  const parsedImIdentity = parseImSessionIdentity(rawValue, { agentId: normalizedAgentId });
+  const preserveImResetSuffix =
+    Boolean(parsedImIdentity?.peerId)
+    && stripImResetSuffix(parsedImIdentity.peerId) !== String(parsedImIdentity.peerId || "").trim();
+  const canonicalImSessionUser = buildCanonicalImSessionUser(rawValue, {
+    agentId: normalizedAgentId,
+    preserveReset: preserveImResetSuffix,
+  });
   if (canonicalImSessionUser) {
     return canonicalImSessionUser;
   }

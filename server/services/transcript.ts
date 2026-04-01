@@ -32,7 +32,7 @@ type TranscriptDetectedFile = {
 type TranscriptConversationMessage = {
   attachments?: TranscriptConversationMessageAttachment[];
   content: string;
-  role: 'assistant' | 'user';
+  role: 'assistant' | 'system' | 'user';
   timestamp: number;
   tokenBadge?: string;
 };
@@ -46,6 +46,11 @@ type TranscriptConversationMessageAttachment = {
 type TranscriptNormalizedUserMessage = {
   attachments: TranscriptConversationMessageAttachment[];
   content: string;
+  systemMessages?: TranscriptUserPreludeMessage[];
+};
+type TranscriptUserPreludeMessage = {
+  content: string;
+  role: 'system';
 };
 type TranscriptGeneratedAttachmentDescriptor = {
   kind: string;
@@ -186,6 +191,7 @@ export function createTranscriptProjector({
     /Run your Session Startup sequence - read the required files before responding to the user\./i,
     /Do not mention internal steps, files, tools, or reasoning\./i,
   ];
+  const ABORTED_RUN_NOTE_LINE = /^Note:\s*The previous agent run was aborted by the user\b/i;
   const QUEUED_BUSY_TITLE_LINE = /^\[Queued messages while agent was busy\]\s*$/i;
   const QUEUED_BUSY_ITEM_LINE = /^Queued #\d+\s*$/i;
 
@@ -491,6 +497,7 @@ export function createTranscriptProjector({
         ...transcriptPayloadAttachments,
         ...projectedContentAttachments,
       ]),
+      systemMessages: normalizedUserMessage.systemMessages || [],
     };
   }
 
@@ -513,12 +520,17 @@ export function createTranscriptProjector({
   function normalizeQueuedBusyUserMessage(text: unknown): TranscriptNormalizedUserMessage {
     const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
     if (!normalized || !QUEUED_BUSY_TITLE_LINE.test(normalized.split('\n')[0] || '')) {
-      return { content: '', attachments: [] as TranscriptConversationMessageAttachment[] };
+      return {
+        content: '',
+        attachments: [] as TranscriptConversationMessageAttachment[],
+        systemMessages: [] as TranscriptUserPreludeMessage[],
+      };
     }
 
     const lines = normalized.split('\n');
     const cleanedItems: string[] = [];
     const attachments: TranscriptConversationMessageAttachment[] = [];
+    const systemMessages: TranscriptUserPreludeMessage[] = [];
     let index = 1;
 
     while (index < lines.length) {
@@ -555,11 +567,15 @@ export function createTranscriptProjector({
       if (normalizedItem.attachments.length) {
         attachments.push(...normalizedItem.attachments);
       }
+      if (normalizedItem.systemMessages?.length) {
+        systemMessages.push(...normalizedItem.systemMessages);
+      }
     }
 
     return {
       content: cleanedItems.join('\n\n').trim(),
       attachments,
+      systemMessages,
     };
   }
 
@@ -587,11 +603,13 @@ export function createTranscriptProjector({
             ...(attachment ? [attachment] : []),
             ...(cleanedCaption.attachments || []),
           ],
+          systemMessages: cleanedCaption.systemMessages || [],
         };
       }
     }
 
     let lines = rawText.split('\n');
+    const systemMessages: TranscriptUserPreludeMessage[] = [];
     const stripLeadingBlankLines = () => {
       while (lines.length && !String(lines[0] || '').trim()) {
         lines.shift();
@@ -701,6 +719,15 @@ export function createTranscriptProjector({
       stripLeadingBlankLines();
     }
 
+    while (lines.length && ABORTED_RUN_NOTE_LINE.test(String(lines[0] || '').trim())) {
+      systemMessages.push({
+        role: 'system',
+        content: String(lines[0] || '').trim(),
+      });
+      lines.shift();
+      stripLeadingBlankLines();
+    }
+
     while (stripLeadingMetadataBlock()) {
       // Strip stacked metadata blocks at the head of inbound IM messages.
     }
@@ -723,29 +750,42 @@ export function createTranscriptProjector({
     cleaned = cleaned.replace(/^(?:ou_[a-z0-9_-]+|on_[a-z0-9_-]+|oc_[a-z0-9_-]+)\s*:\s*/i, '');
 
     if (INTERNAL_MEMORY_FLUSH_SENTINELS.every((pattern) => pattern.test(cleaned))) {
-      return { content: '', attachments: [] as TranscriptConversationMessageAttachment[] };
+      return {
+        content: '',
+        attachments: [] as TranscriptConversationMessageAttachment[],
+        systemMessages,
+      };
     }
 
     if (INTERNAL_SESSION_STARTUP_SENTINELS.every((pattern) => pattern.test(cleaned))) {
-      return { content: '', attachments: [] as TranscriptConversationMessageAttachment[] };
+      return {
+        content: '',
+        attachments: [] as TranscriptConversationMessageAttachment[],
+        systemMessages,
+      };
     }
 
     if (
       /^OpenClaw runtime context \(internal\):/i.test(cleaned) &&
       /runtime-generated,\s*not user-authored/i.test(cleaned)
     ) {
-      return { content: '', attachments: [] as TranscriptConversationMessageAttachment[] };
+      return {
+        content: '',
+        attachments: [] as TranscriptConversationMessageAttachment[],
+        systemMessages,
+      };
     }
 
     return {
       content: cleaned.replace(/\n{3,}/g, '\n\n').trim(),
       attachments: [] as TranscriptConversationMessageAttachment[],
+      systemMessages,
     };
   }
 
   function normalizeUserMessage(text: unknown) {
     const normalizedQueued = normalizeQueuedBusyUserMessage(text);
-    if (normalizedQueued.content || normalizedQueued.attachments.length) {
+    if (normalizedQueued.content || normalizedQueued.attachments.length || normalizedQueued.systemMessages?.length) {
       return normalizedQueued;
     }
 
@@ -1285,7 +1325,13 @@ export function createTranscriptProjector({
         const normalizedUserMessage = projectTranscriptUserMessage(payload);
         const content = normalizedUserMessage.content;
         const attachments = Array.isArray(normalizedUserMessage.attachments) ? normalizedUserMessage.attachments : [];
-        if (!content && !attachments.length) {
+        const systemMessages = Array.isArray(normalizedUserMessage.systemMessages)
+          ? normalizedUserMessage.systemMessages.filter(
+            (message): message is TranscriptUserPreludeMessage =>
+              Boolean(message && String(message.content || '').trim()),
+          )
+          : [];
+        if (!content && !attachments.length && !systemMessages.length) {
           return;
         }
 
@@ -1296,6 +1342,13 @@ export function createTranscriptProjector({
             (index) => index !== conversation.length,
           );
           const normalizedMirroredUserContent = stripMirroredImOperatorPrefix(content) || content;
+          systemMessages.forEach((message) => {
+            conversation.push({
+              role: 'system',
+              content: String(message.content || '').trim(),
+              timestamp,
+            });
+          });
           conversation.push({
             role: 'user',
             content: normalizedMirroredUserContent,
@@ -1328,14 +1381,24 @@ export function createTranscriptProjector({
           removeAssistantMessagesAfterLastUser();
         }
 
-        conversation.push({
-          role: 'user',
-          content,
-          timestamp,
-          ...(attachments.length ? { attachments } : {}),
+        systemMessages.forEach((message) => {
+          conversation.push({
+            role: 'system',
+            content: String(message.content || '').trim(),
+            timestamp,
+          });
         });
-        lastVisibleUserFingerprint = fingerprint;
-        lastVisibleUserTimestamp = timestamp;
+
+        if (content || attachments.length) {
+          conversation.push({
+            role: 'user',
+            content,
+            timestamp,
+            ...(attachments.length ? { attachments } : {}),
+          });
+          lastVisibleUserFingerprint = fingerprint;
+          lastVisibleUserTimestamp = timestamp;
+        }
         assistantConversationIndicesAfterLastUser = [];
         sawTransientAssistantFailureAfterLastUser = false;
         return;

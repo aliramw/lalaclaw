@@ -401,6 +401,7 @@ const zh = {
     copyMessageTitle: "复制",
     copiedMessageTitle: "已复制",
     userFallbackName: "你",
+    systemMessageLabel: "系统消息",
     mentionAgents: "Agents",
     mentionSkills: "Skills",
     mentionAgentType: "Agent",

@@ -35,6 +35,7 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
         /Run your Session Startup sequence - read the required files before responding to the user\./i,
         /Do not mention internal steps, files, tools, or reasoning\./i,
     ];
+    const ABORTED_RUN_NOTE_LINE = /^Note:\s*The previous agent run was aborted by the user\b/i;
     const QUEUED_BUSY_TITLE_LINE = /^\[Queued messages while agent was busy\]\s*$/i;
     const QUEUED_BUSY_ITEM_LINE = /^Queued #\d+\s*$/i;
     function getSessionsIndexPath(agentId) {
@@ -286,6 +287,7 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
                 ...transcriptPayloadAttachments,
                 ...projectedContentAttachments,
             ]),
+            systemMessages: normalizedUserMessage.systemMessages || [],
         };
     }
     function stripLeadingGeneratedExecBlock(text = '') {
@@ -303,11 +305,16 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
     function normalizeQueuedBusyUserMessage(text) {
         const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
         if (!normalized || !QUEUED_BUSY_TITLE_LINE.test(normalized.split('\n')[0] || '')) {
-            return { content: '', attachments: [] };
+            return {
+                content: '',
+                attachments: [],
+                systemMessages: [],
+            };
         }
         const lines = normalized.split('\n');
         const cleanedItems = [];
         const attachments = [];
+        const systemMessages = [];
         let index = 1;
         while (index < lines.length) {
             const trimmed = String(lines[index] || '').trim();
@@ -337,10 +344,14 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
             if (normalizedItem.attachments.length) {
                 attachments.push(...normalizedItem.attachments);
             }
+            if (normalizedItem.systemMessages?.length) {
+                systemMessages.push(...normalizedItem.systemMessages);
+            }
         }
         return {
             content: cleanedItems.join('\n\n').trim(),
             attachments,
+            systemMessages,
         };
     }
     function normalizeSingleUserMessage(text, options = {}) {
@@ -360,10 +371,12 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
                         ...(attachment ? [attachment] : []),
                         ...(cleanedCaption.attachments || []),
                     ],
+                    systemMessages: cleanedCaption.systemMessages || [],
                 };
             }
         }
         let lines = rawText.split('\n');
+        const systemMessages = [];
         const stripLeadingBlankLines = () => {
             while (lines.length && !String(lines[0] || '').trim()) {
                 lines.shift();
@@ -455,6 +468,14 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
         while (stripLeadingSystemWrapperBlock()) {
             stripLeadingBlankLines();
         }
+        while (lines.length && ABORTED_RUN_NOTE_LINE.test(String(lines[0] || '').trim())) {
+            systemMessages.push({
+                role: 'system',
+                content: String(lines[0] || '').trim(),
+            });
+            lines.shift();
+            stripLeadingBlankLines();
+        }
         while (stripLeadingMetadataBlock()) {
             // Strip stacked metadata blocks at the head of inbound IM messages.
         }
@@ -469,23 +490,36 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
         cleaned = cleaned.replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*/i, '');
         cleaned = cleaned.replace(/^(?:ou_[a-z0-9_-]+|on_[a-z0-9_-]+|oc_[a-z0-9_-]+)\s*:\s*/i, '');
         if (INTERNAL_MEMORY_FLUSH_SENTINELS.every((pattern) => pattern.test(cleaned))) {
-            return { content: '', attachments: [] };
+            return {
+                content: '',
+                attachments: [],
+                systemMessages,
+            };
         }
         if (INTERNAL_SESSION_STARTUP_SENTINELS.every((pattern) => pattern.test(cleaned))) {
-            return { content: '', attachments: [] };
+            return {
+                content: '',
+                attachments: [],
+                systemMessages,
+            };
         }
         if (/^OpenClaw runtime context \(internal\):/i.test(cleaned) &&
             /runtime-generated,\s*not user-authored/i.test(cleaned)) {
-            return { content: '', attachments: [] };
+            return {
+                content: '',
+                attachments: [],
+                systemMessages,
+            };
         }
         return {
             content: cleaned.replace(/\n{3,}/g, '\n\n').trim(),
             attachments: [],
+            systemMessages,
         };
     }
     function normalizeUserMessage(text) {
         const normalizedQueued = normalizeQueuedBusyUserMessage(text);
-        if (normalizedQueued.content || normalizedQueued.attachments.length) {
+        if (normalizedQueued.content || normalizedQueued.attachments.length || normalizedQueued.systemMessages?.length) {
             return normalizedQueued;
         }
         return normalizeSingleUserMessage(text);
@@ -920,7 +954,10 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
                 const normalizedUserMessage = projectTranscriptUserMessage(payload);
                 const content = normalizedUserMessage.content;
                 const attachments = Array.isArray(normalizedUserMessage.attachments) ? normalizedUserMessage.attachments : [];
-                if (!content && !attachments.length) {
+                const systemMessages = Array.isArray(normalizedUserMessage.systemMessages)
+                    ? normalizedUserMessage.systemMessages.filter((message) => Boolean(message && String(message.content || '').trim()))
+                    : [];
+                if (!content && !attachments.length && !systemMessages.length) {
                     return;
                 }
                 const latestConversationEntry = conversation[conversation.length - 1];
@@ -928,6 +965,13 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
                     conversation.pop();
                     assistantConversationIndicesAfterLastUser = assistantConversationIndicesAfterLastUser.filter((index) => index !== conversation.length);
                     const normalizedMirroredUserContent = stripMirroredImOperatorPrefix(content) || content;
+                    systemMessages.forEach((message) => {
+                        conversation.push({
+                            role: 'system',
+                            content: String(message.content || '').trim(),
+                            timestamp,
+                        });
+                    });
                     conversation.push({
                         role: 'user',
                         content: normalizedMirroredUserContent,
@@ -955,14 +999,23 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
                 if (sawTransientAssistantFailureAfterLastUser) {
                     removeAssistantMessagesAfterLastUser();
                 }
-                conversation.push({
-                    role: 'user',
-                    content,
-                    timestamp,
-                    ...(attachments.length ? { attachments } : {}),
+                systemMessages.forEach((message) => {
+                    conversation.push({
+                        role: 'system',
+                        content: String(message.content || '').trim(),
+                        timestamp,
+                    });
                 });
-                lastVisibleUserFingerprint = fingerprint;
-                lastVisibleUserTimestamp = timestamp;
+                if (content || attachments.length) {
+                    conversation.push({
+                        role: 'user',
+                        content,
+                        timestamp,
+                        ...(attachments.length ? { attachments } : {}),
+                    });
+                    lastVisibleUserFingerprint = fingerprint;
+                    lastVisibleUserTimestamp = timestamp;
+                }
                 assistantConversationIndicesAfterLastUser = [];
                 sawTransientAssistantFailureAfterLastUser = false;
                 return;

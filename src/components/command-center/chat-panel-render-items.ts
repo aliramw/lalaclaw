@@ -48,12 +48,10 @@ type MessageRenderItem = {
 };
 
 type TurnActivityRenderItem = {
-  anchorMessage?: ChatPanelRenderMessage;
-  anchorMessageId?: string;
-  anchorMessageIndex: number;
   kind: "turn-activity";
+  key: string;
+  tool: ChatPanelRenderTool;
   turnKey: string;
-  tools: ChatPanelRenderTool[];
 };
 
 export type ChatPanelRenderItem = MessageRenderItem | TurnActivityRenderItem;
@@ -70,6 +68,13 @@ type UserTurn = {
   nextUserTimestamp: number | null;
   startIndex: number;
   startTimestamp: number;
+};
+
+type TurnToolEntry = {
+  key: string;
+  orderIndex: number;
+  sortTimestamp: number;
+  tool: ChatPanelRenderTool;
 };
 
 function toFiniteTimestamp(value: unknown) {
@@ -90,21 +95,6 @@ function findMatchingUserTurnIndex(userTurns: UserTurn[], timestamp: number) {
   }
 
   return -1;
-}
-
-function findTurnActivityAnchorIndex(messages: ChatPanelRenderMessage[], userTurns: UserTurn[], turnIndex: number) {
-  const turn = userTurns[turnIndex];
-  const nextTurn = userTurns[turnIndex + 1];
-  const turnEndIndex = nextTurn ? nextTurn.startIndex : messages.length;
-
-  for (let messageIndex = turn.startIndex + 1; messageIndex < turnEndIndex; messageIndex += 1) {
-    const message = messages[messageIndex];
-    if (message?.role === "assistant") {
-      return messageIndex;
-    }
-  }
-
-  return null;
 }
 
 export function deriveChatPanelRenderItems({
@@ -156,7 +146,8 @@ export function deriveChatPanelRenderItems({
     return renderItems;
   }
 
-  const toolsByTurnIndex = new Map<number, ChatPanelRenderTool[]>();
+  const toolsByTurnIndex = new Map<number, TurnToolEntry[]>();
+  let toolOrderIndex = 0;
 
   for (const run of taskTimeline) {
     const tools = Array.isArray(run?.tools) ? run.tools.filter(Boolean) : [];
@@ -175,7 +166,16 @@ export function deriveChatPanelRenderItems({
     }
 
     const existingTools = toolsByTurnIndex.get(turnIndex) || [];
-    existingTools.push(...tools);
+    tools.forEach((tool) => {
+      const sortTimestamp = toFiniteTimestamp(tool?.timestamp) ?? runTimestamp;
+      existingTools.push({
+        key: String(tool?.id || "").trim() || `tool-${toolOrderIndex}`,
+        orderIndex: toolOrderIndex,
+        sortTimestamp,
+        tool,
+      });
+      toolOrderIndex += 1;
+    });
     toolsByTurnIndex.set(turnIndex, existingTools);
   }
 
@@ -183,38 +183,59 @@ export function deriveChatPanelRenderItems({
     return renderItems;
   }
 
-  const activityItemsByMessageIndex = new Map<number, TurnActivityRenderItem>();
+  const combinedItems: ChatPanelRenderItem[] = [];
+  let nextMessageIndex = 0;
 
-  for (const [turnIndex, tools] of toolsByTurnIndex.entries()) {
-    if (!tools.length) {
-      continue;
-    }
-
-    const anchorMessageIndex = findTurnActivityAnchorIndex(messages, userTurns, turnIndex);
-    if (anchorMessageIndex === null) {
-      continue;
-    }
-
+  for (let turnIndex = 0; turnIndex < userTurns.length; turnIndex += 1) {
     const turn = userTurns[turnIndex];
-    const anchorItem = renderItems[anchorMessageIndex];
-    activityItemsByMessageIndex.set(anchorMessageIndex, {
-      anchorMessage: anchorItem?.kind === "message" ? anchorItem.message : undefined,
-      anchorMessageId: anchorItem?.kind === "message" ? anchorItem.messageId : undefined,
-      anchorMessageIndex,
-      kind: "turn-activity",
-      turnKey: turn.messageKey,
-      tools,
-    });
+    const nextTurn = userTurns[turnIndex + 1];
+    const turnEndIndex = nextTurn ? nextTurn.startIndex : renderItems.length;
+    const orderedTools = (toolsByTurnIndex.get(turnIndex) || [])
+      .slice()
+      .sort((left, right) => {
+        if (left.sortTimestamp !== right.sortTimestamp) {
+          return left.sortTimestamp - right.sortTimestamp;
+        }
+
+        return left.orderIndex - right.orderIndex;
+      });
+    let toolIndex = 0;
+
+    while (nextMessageIndex < turn.startIndex) {
+      combinedItems.push(renderItems[nextMessageIndex]);
+      nextMessageIndex += 1;
+    }
+
+    for (let messageIndex = turn.startIndex; messageIndex < turnEndIndex; messageIndex += 1) {
+      combinedItems.push(renderItems[messageIndex]);
+
+      const nextMessageTimestamp =
+        messageIndex + 1 < turnEndIndex
+          ? toFiniteTimestamp(messages[messageIndex + 1]?.timestamp)
+          : null;
+
+      while (toolIndex < orderedTools.length) {
+        const toolEntry = orderedTools[toolIndex];
+        if (nextMessageTimestamp !== null && toolEntry.sortTimestamp > nextMessageTimestamp) {
+          break;
+        }
+
+        combinedItems.push({
+          key: `turn-activity-${turn.messageKey}-${toolEntry.key}`,
+          kind: "turn-activity",
+          tool: toolEntry.tool,
+          turnKey: turn.messageKey,
+        });
+        toolIndex += 1;
+      }
+    }
+
+    nextMessageIndex = turnEndIndex;
   }
 
-  const combinedItems: ChatPanelRenderItem[] = [];
-
-  for (let messageIndex = 0; messageIndex < renderItems.length; messageIndex += 1) {
-    const activityItem = activityItemsByMessageIndex.get(messageIndex);
-    if (activityItem) {
-      combinedItems.push(activityItem);
-    }
-    combinedItems.push(renderItems[messageIndex]);
+  while (nextMessageIndex < renderItems.length) {
+    combinedItems.push(renderItems[nextMessageIndex]);
+    nextMessageIndex += 1;
   }
 
   return combinedItems;

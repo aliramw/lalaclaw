@@ -27,6 +27,12 @@ describe("app-session-identity stored conversation keys", () => {
     );
   });
 
+  it("preserves reset-tagged IM session keys when building conversation keys", () => {
+    expect(
+      createConversationKey("agent:main:dingtalk-connector:direct:398058:reset:1773319871765", "main"),
+    ).toBe("agent:main:dingtalk-connector:direct:398058:reset:1773319871765:main");
+  });
+
   it("passes through non-conversation strings unchanged", () => {
     expect(normalizeStoredConversationKey("bad-key")).toBe("bad-key");
   });

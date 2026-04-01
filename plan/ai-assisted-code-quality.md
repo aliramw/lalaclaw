@@ -43,6 +43,84 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 
 - After each AI-involved PR, append a short summary: prompt used, files touched, tests rerun, reviewer, and whether any manual validation (UI, smoke, environment) was required. Keep at least the last three summaries in this file for traceability.
 
+### 2026-04-01 — Chat Tool Activity Card Ordering and Collapse Behavior
+
+- Prompt/workstream: make chat transcript tool activity render as separate cards, keep each chat tool card collapsed by default, and place tool cards in chronological order instead of merging them into one block above the assistant reply.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-01 Asia/Shanghai.
+- Files touched:
+  - chat transcript render surfaces such as `src/components/command-center/chat-panel-render-items.ts`, `src/components/command-center/chat-panel.tsx`, `src/components/command-center/chat-turn-activity.tsx`, and `src/components/command-center/tool-call-timeline.tsx`
+  - regression coverage such as `src/components/command-center/chat-panel.test.jsx` and `src/App.test.jsx`
+  - visual/spec governance such as `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- --run src/components/command-center/chat-panel.test.jsx -t "renders each chat tool call as its own collapsed card in chronological order between the user turn and assistant reply|keeps the streaming assistant DOM node stable when tool activity is present and timestamp changes without an explicit id"`
+  - `npm test -- --run src/App.test.jsx -t "restores historical tool activity in chat after refresh hydration"`
+  - `npm test -- --run src/components/command-center/tool-call-timeline.test.jsx`
+  - `npm test -- --run src/components/command-center/inspector-panel.test.jsx -t "renders timeline details and switches tabs|collapses individual tool cards inside the detail section"`
+- Manual/equivalent validation:
+  - UI rule synced into `dev-spec/frontend-visual-spec.md` so future chat tool-card changes have an explicit baseline
+  - inspector/tool timeline regressions rerun to confirm the new default-collapsed behavior stays scoped to chat cards and does not silently change inspector defaults
+- Reviewer/sign-off:
+  - pending human review
+  - low-to-medium risk surface because this changes transcript ordering and card grouping in the chat UI, but it avoids runtime/session transport logic
+- Reviewer checklist:
+  - confirm tool activity now appears as separate cards in the same chronological flow as the surrounding turn
+  - confirm chat cards start collapsed while inspector timeline cards still default to their previous open behavior
+  - confirm no stale tool IO appears inside assistant bubbles during streaming or hydration recovery
+- Visual spec linkage:
+  - added the chat tool-card ordering and default-collapse rule to `dev-spec/frontend-visual-spec.md` in the same workstream per repository policy
+
+### 2026-04-01 — System Message Split for Inbound IM Follow-ups
+
+- Prompt/workstream: keep aborted-run wrappers and similar transcript-side notes out of user chat bubbles by splitting them into standalone system messages, then render those notes as separate neutral cards in chat.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-01 Asia/Shanghai.
+- Files touched:
+  - transcript normalization and projection surfaces such as `server/services/transcript.ts` and `server/services/transcript.test.js`
+  - chat rendering and locale surfaces such as `src/components/command-center/chat-panel.tsx`, `src/components/command-center/chat-panel.test.jsx`, `src/locales/en.js`, and `src/locales/zh.js`
+  - visual/spec governance such as `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- --run server/services/transcript.test.js`
+  - `npm test -- --run src/components/command-center/chat-panel.test.jsx`
+  - `npm test -- --run src/App.test.jsx -t "restores historical tool activity in chat after refresh hydration"`
+- Manual/equivalent validation:
+  - compared the raw Weixin transcript wrapper shape against the projector regression so the fix preserves the note but moves it into a dedicated system card instead of silently dropping it
+  - synced the new chat IA rule into `dev-spec/frontend-visual-spec.md` in the same workstream
+- Reviewer/sign-off:
+  - pending human review
+  - low-to-medium risk surface because it changes transcript normalization and one chat-card render branch, but it does not alter runtime transport or storage contracts
+- Reviewer checklist:
+  - confirm aborted-run notes now appear as standalone neutral system cards
+  - confirm the actual IM user follow-up stays in its own normal user bubble
+  - confirm assistant streaming, tool cards, and existing chat bubble layouts remain unchanged
+- Visual spec linkage:
+  - added the system-card rule for transcript-side control notes to `dev-spec/frontend-visual-spec.md` in the same workstream per repository policy
+
+### 2026-04-01 — Retained Pending Thinking Card Continuity
+
+- Prompt/workstream: investigate why the chat thinking card briefly disappears after a turn starts, then keep the in-flight assistant card visible while a retained pending turn waits for runtime catch-up.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-01 Asia/Shanghai.
+- Files touched:
+  - retained-pending state projection surfaces such as `src/features/chat/state/chat-dashboard-session.ts`
+  - regression coverage such as `src/features/chat/state/chat-dashboard-session.test.ts` and `src/App.test.jsx`
+  - visual/spec governance such as `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- --run src/features/chat/state/chat-dashboard-session.test.ts`
+  - `npm test -- --run src/App.test.jsx -t "keeps the thinking card visible while a retained pending turn waits for runtime assistant catch-up"`
+- Manual/equivalent validation:
+  - inspected the supplied screen recording and compared it with the retained-pending projection path to confirm the gap occurred while the busy header stayed active but the transcript overlay was suppressed
+  - synced the continuity rule into `dev-spec/frontend-visual-spec.md` in the same workstream
+- Reviewer/sign-off:
+  - pending human review
+  - low-to-medium risk surface because it changes pending-overlay projection for busy chat turns, but it is scoped to chat-state rendering rather than runtime transport
+- Reviewer checklist:
+  - confirm the thinking card no longer briefly disappears during retained pending catch-up
+  - confirm we still avoid duplicate assistant overlays once real assistant content is present
+  - confirm settled assistant replies still replace the thinking card cleanly
+- Visual spec linkage:
+  - added the retained-pending thinking-card continuity rule to `dev-spec/frontend-visual-spec.md` in the same workstream per repository policy
+
 ### 2026-03-26 — Chat/Storage Ownership Refactor Validation Close-out
 
 - Prompt/workstream: continue the `app-storage` ownership split, contract/boundary guardrails, and final validation closure for the OpenClaw-aligned chat-state refactor.
