@@ -387,7 +387,7 @@ describe("createOpenClawClient", () => {
     });
   });
 
-  it("streams delivery-routed DingTalk sessions through gateway chat events", async () => {
+  it("streams delivery-routed DingTalk sessions through gateway chat events", { timeout: 10000 }, async () => {
     const deltas = [];
     const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
 

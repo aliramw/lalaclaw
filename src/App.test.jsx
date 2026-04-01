@@ -1706,6 +1706,76 @@ describe("App", () => {
     expect(occurrences).toBe(1);
   }, 10_000);
 
+  it("does not let a lagging settled runtime update shrink the latest assistant card after the reply already settled locally", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const longReply = "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。";
+    const shortReply = "行，我直接把版本提到 0.5.4，然后按规范走一遍。";
+    let latestUserTimestamp = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        latestUserTimestamp = Number(body.messages.at(-1)?.timestamp || Date.now());
+        return mockJsonResponse({
+          ...openClawSnapshot,
+          assistantMessageId: "msg-assistant-lagging-settled-1",
+          outputText: longReply,
+          conversation: [
+            { role: "user", content: "发0.5.4", timestamp: latestUserTimestamp },
+            { role: "assistant", content: longReply, timestamp: latestUserTimestamp + 20 },
+          ],
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    const { container } = render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    MockWebSocket.instances[0].simulateOpen();
+
+    const user = userEvent.setup();
+    const composer = await findComposer();
+    await user.type(composer, "发0.5.4");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(longReply)).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      MockWebSocket.instances[0].simulateMessage({
+        type: "conversation.sync",
+        conversation: [
+          { role: "user", content: "发0.5.4", timestamp: latestUserTimestamp },
+          { role: "assistant", content: shortReply, timestamp: latestUserTimestamp + 20 },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(longReply)).toBeInTheDocument();
+    });
+    expect(container.querySelectorAll('[data-message-role="assistant"]')).toHaveLength(1);
+  }, 10_000);
+
   it("keeps showing stop until an in-flight turn actually finalizes even if runtime already synced the assistant reply", async () => {
     const openClawSnapshot = createSnapshot({
       session: {

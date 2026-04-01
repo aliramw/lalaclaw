@@ -93,6 +93,105 @@ describe('createOpenClawClient', () => {
     expect(fetchCalls).toEqual([]);
   });
 
+  it('surfaces assistant error reasons from streamed DingTalk sessions without mirroring them back', async () => {
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const originalFetch = global.fetch;
+    const fetchCalls = [];
+    global.fetch = async (url, options = {}) => {
+      fetchCalls.push({
+        body: options.body ? JSON.parse(options.body) : null,
+        url: String(url),
+      });
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { messageId: 'msg-dingtalk-assistant-error' } }),
+      };
+    };
+
+    try {
+      const client = createOpenClawClient({
+        config: {
+          apiKey: '',
+          apiPath: '/v1/responses',
+          apiStyle: 'responses',
+          baseUrl: 'http://127.0.0.1:3000',
+          mode: 'openclaw',
+        },
+        execFileAsync: async (_bin, args) => {
+          const method = args[5];
+
+          if (method === 'agent') {
+            return {
+              stdout: JSON.stringify({
+                acceptedAt: 1773722999708,
+                runId: 'run-dingtalk-error-1',
+              }),
+            };
+          }
+
+          if (method === 'agent.wait') {
+            return {
+              stdout: JSON.stringify({
+                status: 'completed',
+              }),
+            };
+          }
+
+          if (method === 'chat.history') {
+            return {
+              stdout: JSON.stringify({
+                messages: [
+                  {
+                    role: 'user',
+                    content: '测试钉钉错误透传',
+                    timestamp: 1773722999708,
+                  },
+                  {
+                    role: 'assistant',
+                    content: [],
+                    stopReason: 'error',
+                    errorMessage: 'fetch failed',
+                    timestamp: 1773723000000,
+                  },
+                ],
+              }),
+            };
+          }
+
+          throw new Error(`Unexpected gateway method: ${method}`);
+        },
+        PROJECT_ROOT: process.cwd(),
+        OPENCLAW_BIN: 'openclaw',
+        clip: (text, maxLength = 180) => String(text || '').slice(0, maxLength),
+        normalizeSessionUser: (value) => String(value || '').trim(),
+        normalizeChatMessage: (message) => String(message?.content || message || '').trim(),
+        getMessageAttachments: () => [],
+        describeAttachmentForModel: () => '',
+        buildOpenClawMessageContent: () => [],
+        getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+        resolveSessionAgentId: () => 'main',
+        resolveSessionModel: () => 'openai-codex/gpt-5.4',
+        readTextIfExists: () => '',
+        tailLines: () => [],
+        loadGatewaySdk: unavailableGatewaySdk,
+      });
+
+      const reply = await client.dispatchOpenClawStream(
+        [{ role: 'user', content: '测试钉钉错误透传' }],
+        false,
+        rawSessionUser,
+        { onDelta: () => {} },
+      );
+
+      expect(reply.outputText).toBe('fetch failed');
+      expect(reply.isError).toBe(true);
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    expect(fetchCalls).toEqual([]);
+  });
+
   it('prefers stable plugin-sdk gateway runtime before legacy hashed reply bundles', () => {
     const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openclaw-sdk-stable-'));
     fs.mkdirSync(path.join(packageRoot, 'dist', 'plugin-sdk'), { recursive: true });
@@ -387,7 +486,19 @@ describe('createOpenClawClient', () => {
 
   it('delivers native Feishu session messages through the agent gateway route', async () => {
     const feishuSessionKey = 'agent:main:feishu:direct:ou_d249239ddfd11c4c3c4f5f1581c97a58';
+    const originalFetch = global.fetch;
     const gatewayCalls = [];
+    const fetchCalls = [];
+    global.fetch = async (url, options = {}) => {
+      fetchCalls.push({
+        body: options.body ? JSON.parse(options.body) : null,
+        url: String(url),
+      });
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { messageId: 'msg-feishu-assistant-1' } }),
+      };
+    };
     const client = createOpenClawClient({
       config: {
         apiKey: '',
@@ -449,24 +560,43 @@ describe('createOpenClawClient', () => {
       tailLines: () => [],
       loadGatewaySdk: unavailableGatewaySdk,
     });
+    try {
+      const reply = await client.dispatchOpenClawStream(
+        [{ role: 'user', content: '测试飞书' }],
+        true,
+        feishuSessionKey,
+        { onDelta: () => {} },
+      );
 
-    const reply = await client.dispatchOpenClawStream(
-      [{ role: 'user', content: '测试飞书' }],
-      true,
-      feishuSessionKey,
-      { onDelta: () => {} },
-    );
+      expect(reply.outputText).toBe('飞书收到。');
+      expect(gatewayCalls[0].params).toEqual(
+        expect.objectContaining({
+          sessionKey: feishuSessionKey,
+          deliver: true,
+          channel: 'feishu',
+          to: 'user:ou_d249239ddfd11c4c3c4f5f1581c97a58',
+          accountId: 'default',
+        }),
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
 
-    expect(reply.outputText).toBe('飞书收到。');
-    expect(gatewayCalls[0].params).toEqual(
-      expect.objectContaining({
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]).toEqual({
+      url: 'http://127.0.0.1:3000/tools/invoke',
+      body: {
+        action: 'send',
+        args: {
+          channel: 'feishu',
+          target: 'user:ou_d249239ddfd11c4c3c4f5f1581c97a58',
+          accountId: 'default',
+          message: '飞书收到。',
+        },
         sessionKey: feishuSessionKey,
-        deliver: true,
-        channel: 'feishu',
-        to: 'user:ou_d249239ddfd11c4c3c4f5f1581c97a58',
-        accountId: 'default',
-      }),
-    );
+        tool: 'message',
+      },
+    });
   });
 
   it('mirrors user messages to Feishu through the message tool', async () => {
@@ -655,7 +785,22 @@ describe('createOpenClawClient', () => {
 
   it('delivers native Weixin session messages through the agent gateway route', async () => {
     const weixinSessionKey = 'agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat';
+    const upstreamWeixinPeer = 'o9cq807-nAAVQdpR-TMDJV3v8bck@im.wechat';
+    const upstreamWeixinAccountId = '5f639963d1a6-im-bot';
+    const originalFetch = global.fetch;
     const gatewayCalls = [];
+    const fetchCalls = [];
+    global.fetch = async (url, options = {}) => {
+      fetchCalls.push({
+        body: options.body ? JSON.parse(options.body) : null,
+        headers: options.headers || {},
+        url: String(url),
+      });
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { messageId: 'msg-weixin-assistant-1' } }),
+      };
+    };
     const client = createOpenClawClient({
       config: {
         apiKey: '',
@@ -713,37 +858,82 @@ describe('createOpenClawClient', () => {
       getCommandCenterSessionKey: (_agentId, sessionUser) => String(sessionUser || '').trim(),
       resolveSessionAgentId: () => 'main',
       resolveSessionModel: () => 'openai-codex/gpt-5.4',
+      resolveSessionRecord: () => ({
+        deliveryContext: {
+          channel: 'openclaw-weixin',
+          to: upstreamWeixinPeer,
+          accountId: upstreamWeixinAccountId,
+        },
+        origin: {
+          to: upstreamWeixinPeer,
+          from: upstreamWeixinPeer,
+          accountId: upstreamWeixinAccountId,
+        },
+        lastTo: upstreamWeixinPeer,
+        lastAccountId: upstreamWeixinAccountId,
+      }),
       readTextIfExists: () => '',
       tailLines: () => [],
       loadGatewaySdk: unavailableGatewaySdk,
     });
+    try {
+      const reply = await client.dispatchOpenClawStream(
+        [{ role: 'user', content: '测试微信' }],
+        true,
+        weixinSessionKey,
+        { onDelta: () => {} },
+      );
 
-    const reply = await client.dispatchOpenClawStream(
-      [{ role: 'user', content: '测试微信' }],
-      true,
-      weixinSessionKey,
-      { onDelta: () => {} },
-    );
+      expect(reply.outputText).toBe('微信收到。');
+      expect(gatewayCalls[0].params).toEqual(
+        expect.objectContaining({
+          sessionKey: weixinSessionKey,
+          deliver: true,
+          channel: 'openclaw-weixin',
+          to: upstreamWeixinPeer,
+          replyTo: upstreamWeixinPeer,
+          accountId: upstreamWeixinAccountId,
+          replyAccountId: upstreamWeixinAccountId,
+          replyChannel: 'openclaw-weixin',
+        }),
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
 
-    expect(reply.outputText).toBe('微信收到。');
-    expect(gatewayCalls[0].params).toEqual(
-      expect.objectContaining({
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]).toEqual({
+      url: 'http://127.0.0.1:3000/tools/invoke',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-openclaw-account-id': upstreamWeixinAccountId,
+        'x-openclaw-message-channel': 'openclaw-weixin',
+        'x-openclaw-message-to': upstreamWeixinPeer,
+      },
+      body: {
+        action: 'send',
+        args: {
+          channel: 'openclaw-weixin',
+          target: upstreamWeixinPeer,
+          accountId: upstreamWeixinAccountId,
+          message: '微信收到。',
+        },
         sessionKey: weixinSessionKey,
-        deliver: true,
-        channel: 'openclaw-weixin',
-        to: 'o9cq807-naavqdpr-tmdjv3v8bck@im.wechat',
-      }),
-    );
-    expect(gatewayCalls[0].params.accountId).toBeUndefined();
+        tool: 'message',
+      },
+    });
   });
 
   it('mirrors user messages to Weixin through the message tool', async () => {
     const weixinSessionKey = 'agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat';
+    const upstreamWeixinPeer = 'o9cq807-nAAVQdpR-TMDJV3v8bck@im.wechat';
+    const upstreamWeixinAccountId = '5f639963d1a6-im-bot';
     const originalFetch = global.fetch;
     const fetchCalls = [];
     global.fetch = async (url, options = {}) => {
       fetchCalls.push({
         body: options.body ? JSON.parse(options.body) : null,
+        headers: options.headers || {},
         url: String(url),
       });
       return {
@@ -775,6 +965,20 @@ describe('createOpenClawClient', () => {
         getCommandCenterSessionKey: (_agentId, sessionUser) => String(sessionUser || '').trim(),
         resolveSessionAgentId: () => 'main',
         resolveSessionModel: () => 'openai-codex/gpt-5.4',
+        resolveSessionRecord: () => ({
+          deliveryContext: {
+            channel: 'openclaw-weixin',
+            to: upstreamWeixinPeer,
+            accountId: upstreamWeixinAccountId,
+          },
+          origin: {
+            to: upstreamWeixinPeer,
+            from: upstreamWeixinPeer,
+            accountId: upstreamWeixinAccountId,
+          },
+          lastTo: upstreamWeixinPeer,
+          lastAccountId: upstreamWeixinAccountId,
+        }),
         readTextIfExists: () => '',
         tailLines: () => [],
         loadGatewaySdk: unavailableGatewaySdk,
@@ -786,11 +990,18 @@ describe('createOpenClawClient', () => {
     }
 
     expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].headers).toEqual({
+      'Content-Type': 'application/json',
+      'x-openclaw-account-id': upstreamWeixinAccountId,
+      'x-openclaw-message-channel': 'openclaw-weixin',
+      'x-openclaw-message-to': upstreamWeixinPeer,
+    });
     expect(fetchCalls[0].body).toEqual({
       action: 'send',
       args: {
         channel: 'openclaw-weixin',
-        target: 'o9cq807-naavqdpr-tmdjv3v8bck@im.wechat',
+        target: upstreamWeixinPeer,
+        accountId: upstreamWeixinAccountId,
         message: 'marila：测试微信',
       },
       sessionKey: weixinSessionKey,
@@ -810,6 +1021,7 @@ describe('createOpenClawClient', () => {
     global.fetch = async (url, options = {}) => {
       fetchCalls.push({
         body: options.body ? JSON.parse(options.body) : null,
+        headers: options.headers || {},
         url: String(url),
       });
       return {
@@ -852,6 +1064,12 @@ describe('createOpenClawClient', () => {
     }
 
     expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].headers).toEqual({
+      'Content-Type': 'application/json',
+      'x-openclaw-account-id': '2874cd142f52-im-bot',
+      'x-openclaw-message-channel': 'openclaw-weixin',
+      'x-openclaw-message-to': 'o9cq807-naavqdpr-tmdjv3v8bck@im.wechat',
+    });
     expect(fetchCalls[0].body).toEqual({
       action: 'send',
       args: {
@@ -967,7 +1185,19 @@ describe('createOpenClawClient', () => {
         accountId: 'default',
       }),
     );
+    expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].body).toEqual({
+      action: 'send',
+      args: {
+        channel: 'feishu',
+        target: 'user:ou_d249239ddfd11c4c3c4f5f1581c97a58',
+        accountId: 'default',
+        message: '新的飞书会话收到。',
+      },
+      sessionKey: `agent:main:openai-user:${resetFeishuSessionUser}`,
+      tool: 'message',
+    });
+    expect(fetchCalls[1].body).toEqual({
       action: 'send',
       args: {
         channel: 'feishu',
@@ -982,7 +1212,19 @@ describe('createOpenClawClient', () => {
 
   it('delivers native WeCom session messages through the agent gateway route', async () => {
     const wecomSessionKey = 'agent:main:wecom:direct:marila';
+    const originalFetch = global.fetch;
     const gatewayCalls = [];
+    const fetchCalls = [];
+    global.fetch = async (url, options = {}) => {
+      fetchCalls.push({
+        body: options.body ? JSON.parse(options.body) : null,
+        url: String(url),
+      });
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { messageId: 'msg-wecom-assistant-1' } }),
+      };
+    };
     const client = createOpenClawClient({
       config: {
         apiKey: '',
@@ -1044,24 +1286,43 @@ describe('createOpenClawClient', () => {
       tailLines: () => [],
       loadGatewaySdk: unavailableGatewaySdk,
     });
+    try {
+      const reply = await client.dispatchOpenClawStream(
+        [{ role: 'user', content: '测试企业微信' }],
+        true,
+        wecomSessionKey,
+        { onDelta: () => {} },
+      );
 
-    const reply = await client.dispatchOpenClawStream(
-      [{ role: 'user', content: '测试企业微信' }],
-      true,
-      wecomSessionKey,
-      { onDelta: () => {} },
-    );
+      expect(reply.outputText).toBe('企业微信收到。');
+      expect(gatewayCalls[0].params).toEqual(
+        expect.objectContaining({
+          sessionKey: wecomSessionKey,
+          deliver: true,
+          channel: 'wecom',
+          to: 'wecom:marila',
+          accountId: 'default',
+        }),
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
 
-    expect(reply.outputText).toBe('企业微信收到。');
-    expect(gatewayCalls[0].params).toEqual(
-      expect.objectContaining({
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]).toEqual({
+      url: 'http://127.0.0.1:3000/tools/invoke',
+      body: {
+        action: 'send',
+        args: {
+          channel: 'wecom',
+          target: 'wecom:marila',
+          accountId: 'default',
+          message: '企业微信收到。',
+        },
         sessionKey: wecomSessionKey,
-        deliver: true,
-        channel: 'wecom',
-        to: 'wecom:marila',
-        accountId: 'default',
-      }),
-    );
+        tool: 'message',
+      },
+    });
   });
 
   it('mirrors user messages to WeCom through the message tool', async () => {
@@ -1228,7 +1489,19 @@ describe('createOpenClawClient', () => {
         accountId: 'default',
       }),
     );
+    expect(fetchCalls).toHaveLength(2);
     expect(fetchCalls[0].body).toEqual({
+      action: 'send',
+      args: {
+        channel: 'wecom',
+        target: 'wecom:marila',
+        accountId: 'default',
+        message: '新的企业微信会话收到。',
+      },
+      sessionKey: `agent:main:openai-user:${resetWecomSessionUser}`,
+      tool: 'message',
+    });
+    expect(fetchCalls[1].body).toEqual({
       action: 'send',
       args: {
         channel: 'wecom',

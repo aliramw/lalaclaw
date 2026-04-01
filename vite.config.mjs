@@ -3,7 +3,10 @@ import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { execSync } from "node:child_process";
+import { createRequire } from "node:module";
 import path from "node:path";
+
+const require = createRequire(import.meta.url);
 
 function getPackageName(id) {
   const normalized = id.split("\\").join("/");
@@ -47,22 +50,56 @@ function getDevWorkspaceInfo() {
   };
 }
 
+function normalizePort(value, fallback) {
+  const parsed = Number.parseInt(String(value || "").trim(), 10);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : fallback;
+}
+
+function resolveSharedDevServerConfig() {
+  const fallback = {
+    backendHost: "127.0.0.1",
+    backendPort: 3000,
+    frontendHost: "127.0.0.1",
+    frontendPort: 5173,
+  };
+
+  try {
+    const lalaclawCli = require("./bin/lalaclaw.js");
+    const envFilePath = lalaclawCli.resolveDefaultEnvFile();
+    const envValues = lalaclawCli.readEnvFile(envFilePath);
+    const backendHost = String(process.env.HOST || envValues.HOST || fallback.backendHost).trim() || fallback.backendHost;
+    const frontendHost = String(process.env.FRONTEND_HOST || envValues.FRONTEND_HOST || backendHost).trim() || backendHost;
+
+    return {
+      backendHost,
+      backendPort: normalizePort(process.env.PORT || envValues.PORT, fallback.backendPort),
+      frontendHost,
+      frontendPort: normalizePort(process.env.FRONTEND_PORT || envValues.FRONTEND_PORT, fallback.frontendPort),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+const sharedDevServerConfig = resolveSharedDevServerConfig();
+const backendProxyTarget = `http://${sharedDevServerConfig.backendHost}:${sharedDevServerConfig.backendPort}`;
+
 export default defineConfig({
   define: {
     "globalThis.__LALACLAW_DEV_INFO__": JSON.stringify(getDevWorkspaceInfo()),
   },
   plugins: [react(), tailwindcss()],
   server: {
-    host: "127.0.0.1",
-    port: 5173,
+    host: sharedDevServerConfig.frontendHost,
+    port: sharedDevServerConfig.frontendPort,
     strictPort: true,
     proxy: {
       "/api/runtime/ws": {
-        target: "http://127.0.0.1:5000",
+        target: backendProxyTarget,
         ws: true,
       },
       "/api": {
-        target: "http://127.0.0.1:5000",
+        target: backendProxyTarget,
       },
     },
   },

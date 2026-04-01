@@ -19,6 +19,9 @@ export type DashboardChatSessionState = ChatSessionState & {
   visibleMessages: ChatMessage[];
 };
 
+const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
+const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
+
 function cloneMessage(message: ChatMessage = { role: "assistant" }): ChatMessage {
   return {
     ...message,
@@ -237,6 +240,113 @@ function normalizeAssistantConversationContent(content = "") {
     .trim();
 }
 
+function choosePreferredAssistantReplay(previous: ChatMessage, next: ChatMessage) {
+  const previousTokenBadge = String(previous.tokenBadge || "").trim();
+  const nextTokenBadge = String(next.tokenBadge || "").trim();
+  if (previousTokenBadge !== nextTokenBadge) {
+    return nextTokenBadge.length > previousTokenBadge.length ? next : previous;
+  }
+
+  const previousContent = String(previous.content || "").trim();
+  const nextContent = String(next.content || "").trim();
+  if (previousContent !== nextContent) {
+    return nextContent.length >= previousContent.length ? next : previous;
+  }
+
+  return previous;
+}
+
+function isAssistantReplayTimestampMatch(
+  previous: ChatMessage | null | undefined,
+  next: ChatMessage | null | undefined,
+  pendingEntry: PendingChatTurn | null = null,
+) {
+  const previousTimestamp = normalizeMessageTimestamp(previous);
+  const nextTimestamp = normalizeMessageTimestamp(next);
+  if (!previousTimestamp || !nextTimestamp) {
+    return true;
+  }
+
+  if (Math.abs(nextTimestamp - previousTimestamp) <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS) {
+    return true;
+  }
+
+  const startedAt = Number(pendingEntry?.startedAt || pendingEntry?.userMessage?.timestamp || 0);
+  return Boolean(
+    startedAt
+    && previousTimestamp >= startedAt
+    && nextTimestamp >= startedAt
+    && Math.abs(nextTimestamp - previousTimestamp) <= DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS
+  );
+}
+
+function shouldCollapseAssistantPrefixReplay(
+  previous: ChatMessage | null | undefined,
+  next: ChatMessage | null | undefined,
+  pendingEntry: PendingChatTurn | null = null,
+) {
+  if (previous?.role !== "assistant" || next?.role !== "assistant") {
+    return false;
+  }
+
+  const previousId = normalizeMessageId(previous);
+  const nextId = normalizeMessageId(next);
+  if (previousId && nextId && previousId === nextId) {
+    return true;
+  }
+
+  const previousContent = normalizeAssistantConversationContent(previous.content);
+  const nextContent = normalizeAssistantConversationContent(next.content);
+  if (!previousContent || !nextContent) {
+    return false;
+  }
+
+  if (!isAssistantReplayTimestampMatch(previous, next, pendingEntry)) {
+    return false;
+  }
+
+  if (previousContent === nextContent) {
+    return true;
+  }
+
+  const shorter = previousContent.length <= nextContent.length ? previousContent : nextContent;
+  const longer = previousContent.length > nextContent.length ? previousContent : nextContent;
+  return longer.startsWith(shorter);
+}
+
+function mergePendingAssistantReplayCandidate(
+  conversationMessages: ChatMessage[] = [],
+  localAssistantCandidate: ChatMessage | null = null,
+  pendingEntry: PendingChatTurn | null = null,
+) {
+  if (!localAssistantCandidate || localAssistantCandidate.role !== "assistant") {
+    return conversationMessages;
+  }
+
+  const pendingAssistantIndex = findPendingAssistantTranscriptIndex(conversationMessages, pendingEntry);
+  if (pendingAssistantIndex < 0) {
+    return conversationMessages;
+  }
+
+  const snapshotAssistantCandidate = conversationMessages[pendingAssistantIndex];
+  if (!shouldCollapseAssistantPrefixReplay(snapshotAssistantCandidate, localAssistantCandidate, pendingEntry)) {
+    return conversationMessages;
+  }
+
+  const preferred = choosePreferredAssistantReplay(snapshotAssistantCandidate, localAssistantCandidate);
+  if (preferred === snapshotAssistantCandidate) {
+    return conversationMessages;
+  }
+
+  const nextMessages = [...conversationMessages];
+  nextMessages[pendingAssistantIndex] = cloneMessage({
+    ...preferred,
+    pending: undefined,
+    streaming: undefined,
+  });
+  return nextMessages;
+}
+
 function findPendingAssistantCandidate(
   localMessages: ChatMessage[] = [],
   pendingEntry: PendingChatTurn | null = null,
@@ -362,6 +472,7 @@ export function buildDashboardSettledMessages({
 
   let nextMessages = [...snapshotMessages];
   const localAssistantCandidate = localSettledPendingAssistantCandidate || findPendingAssistantCandidate(settledLocalMessages, pendingEntry);
+  nextMessages = mergePendingAssistantReplayCandidate(nextMessages, localAssistantCandidate, pendingEntry);
 
   if (pendingEntry.stopped) {
     if (!hasSnapshotAdvancedPastPendingTurn(nextMessages, pendingEntry) && localAssistantCandidate) {

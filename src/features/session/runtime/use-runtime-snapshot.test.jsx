@@ -2719,6 +2719,157 @@ describe("useRuntimeSnapshot", () => {
     expect(setBusy).toHaveBeenCalledWith(false);
     expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "就绪" }));
   });
+
+  it("keeps only the longer local assistant reply when the runtime snapshot replays a shorter version of the same pending turn", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [
+          { role: "user", content: "发0.5.4", timestamp: 100 },
+          { role: "assistant", content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。", timestamp: 120 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingChatTurns = {
+      "command-center:main": {
+        key: "command-center:main",
+        startedAt: 100,
+        pendingTimestamp: 120,
+        assistantMessageId: "msg-assistant-pending-1",
+        userMessage: {
+          id: "msg-user-1",
+          role: "user",
+          content: "发0.5.4",
+          timestamp: 100,
+        },
+      },
+    };
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingChatTurns["command-center:main"],
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "发0.5.4", timestamp: 100 },
+            {
+              role: "assistant",
+              content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+              timestamp: 120,
+            },
+          ],
+        },
+        pendingChatTurns,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalledWith([
+        { id: "msg-user-1", role: "user", content: "发0.5.4", timestamp: 100 },
+        {
+          role: "assistant",
+          content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+          timestamp: 120,
+        },
+      ]);
+    });
+  });
+
+  it("keeps the longer settled local assistant reply when a lagging runtime snapshot replays a shorter prefix after the turn already settled", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [
+          { role: "user", content: "发0.5.4", timestamp: 100 },
+          { role: "assistant", content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。", timestamp: 120 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "发0.5.4", timestamp: 100 },
+            {
+              id: "msg-assistant-1",
+              role: "assistant",
+              content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+              timestamp: 120,
+            },
+          ],
+        },
+        pendingChatTurns: {},
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalledWith([
+        { id: "msg-user-1", role: "user", content: "发0.5.4", timestamp: 100 },
+        {
+          id: "msg-assistant-1",
+          role: "assistant",
+          content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+          timestamp: 120,
+        },
+      ]);
+    });
+  });
 });
 
 describe("mergeRuntimeFiles", () => {

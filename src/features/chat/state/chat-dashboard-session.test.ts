@@ -677,4 +677,54 @@ describe("buildDashboardSettledMessages", () => {
       timestamp: 220,
     });
   });
+
+  it("prefers the longer local assistant replay over a shorter snapshot replay for the same pending turn", () => {
+    const messages = buildDashboardSettledMessages({
+      messages: [
+        { role: "user", content: "发0.5.4", timestamp: 100 },
+        {
+          role: "assistant",
+          content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。",
+          timestamp: 120,
+        },
+      ],
+      pendingEntry: {
+        startedAt: 100,
+        pendingTimestamp: 120,
+        assistantMessageId: "msg-assistant-pending-1",
+        userMessage: {
+          id: "msg-user-1",
+          role: "user",
+          content: "发0.5.4",
+          timestamp: 100,
+        },
+      },
+      localMessages: [
+        {
+          id: "msg-user-1",
+          role: "user",
+          content: "发0.5.4",
+          timestamp: 100,
+        },
+        {
+          role: "assistant",
+          content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+          timestamp: 120,
+        },
+      ],
+      snapshotHasAssistantReply: false,
+    });
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: "发0.5.4",
+      timestamp: 100,
+    });
+    expect(messages[1]).toMatchObject({
+      role: "assistant",
+      content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+      timestamp: 120,
+    });
+  });
 });

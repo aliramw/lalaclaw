@@ -871,6 +871,37 @@ describe("buildPendingConversationOverlayMessages", () => {
     ]);
   });
 
+  it("keeps the longer settled local assistant reply when a lagging snapshot replays a shorter prefix of the same card", () => {
+    const messages = buildDashboardSettledMessages({
+      messages: [
+        { role: "user", content: "发0.5.4", timestamp: 100 },
+        { role: "assistant", content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。", timestamp: 120 },
+      ],
+      localMessages: [
+        { id: "msg-user-1", role: "user", content: "发0.5.4", timestamp: 100 },
+        {
+          id: "msg-assistant-1",
+          role: "assistant",
+          content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+          timestamp: 120,
+        },
+      ],
+    });
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: "发0.5.4",
+      timestamp: 100,
+    });
+    expect(messages[1]).toMatchObject({
+      id: "msg-assistant-1",
+      role: "assistant",
+      content: "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+      timestamp: 120,
+    });
+  });
+
   it("can build hydrated view messages directly from local-tail merge inputs", () => {
     expect(
       buildHydratedConversationWithLocalTail(
@@ -1506,6 +1537,31 @@ describe("collapseDuplicateConversationTurns", () => {
         content: "我是 Tom Cruise，今晚我盯着，咱们直接干。你要我现在处理什么，给我一句话目标就行。",
         timestamp: 2_000,
         tokenBadge: "↑3.8k ↓99 R24.3k",
+      },
+    ]);
+  });
+
+  it("collapses a replayed assistant card when the later message extends the same reply", () => {
+    expect(
+      collapseDuplicateConversationTurns([
+        { role: "user", content: "发0.5.4", timestamp: 1_000 },
+        {
+          role: "assistant",
+          content: "行，我直接把版本提到 0.5.4，然后按规范走一遍：改版本、补 changelog、提交推送、发 GitHub Release、再次 ClawHub。",
+          timestamp: 2_000,
+        },
+        {
+          role: "assistant",
+          content: "行，我直接把版本提到 0.5.4，然后按规范走一遍：改版本、补 changelog、提交推送、发 GitHub Release、再次 ClawHub。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+          timestamp: 2_010,
+        },
+      ]),
+    ).toEqual([
+      { role: "user", content: "发0.5.4", timestamp: 1_000 },
+      {
+        role: "assistant",
+        content: "行，我直接把版本提到 0.5.4，然后按规范走一遍：改版本、补 changelog、提交推送、发 GitHub Release、再次 ClawHub。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+        timestamp: 2_010,
       },
     ]);
   });

@@ -9,6 +9,15 @@ const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
 
+function normalizeAssistantConversationContent(content = "") {
+  return String(content || "")
+    .replace(/\[\[reply_to_current\]\]/gi, "")
+    .replace(/\*\*<small>[\s\S]*?<\/small>\*\*/gi, "")
+    .replace(/<small>[\s\S]*?<\/small>/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getConversationAttachmentFingerprint(attachments: unknown = "") {
   if (!Array.isArray(attachments)) {
     return "";
@@ -29,14 +38,6 @@ function areEquivalentConversationMessages(snapshotMessage, localMessage) {
   if (!snapshotMessage || !localMessage || snapshotMessage.role !== localMessage.role) {
     return false;
   }
-
-  const normalizeAssistantConversationContent = (content = "") =>
-    String(content || "")
-      .replace(/\[\[reply_to_current\]\]/gi, "")
-      .replace(/\*\*<small>[\s\S]*?<\/small>\*\*/gi, "")
-      .replace(/<small>[\s\S]*?<\/small>/gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
 
   const snapshotContent = snapshotMessage.role === "assistant"
     ? normalizeAssistantConversationContent(snapshotMessage.content)
@@ -216,6 +217,125 @@ function hasNonDecreasingMessageTimestamps(messages: ChatMessage[] = []) {
   return true;
 }
 
+function getConversationAttachmentPayloadScore(attachments: unknown = "") {
+  if (!Array.isArray(attachments)) {
+    return 0;
+  }
+
+  return attachments.reduce((score, attachment) => {
+    let nextScore = score;
+    if (String(attachment?.dataUrl || "").trim()) {
+      nextScore += 4;
+    }
+    if (String(attachment?.previewUrl || "").trim()) {
+      nextScore += 3;
+    }
+    if (String(attachment?.textContent || "").length) {
+      nextScore += 2;
+    }
+    if (String(attachment?.fullPath || attachment?.path || "").trim()) {
+      nextScore += 1;
+    }
+    return nextScore;
+  }, 0);
+}
+
+function choosePreferredAssistantReplay(previous: ChatMessage, next: ChatMessage) {
+  const previousAttachmentScore = getConversationAttachmentPayloadScore(previous.attachments);
+  const nextAttachmentScore = getConversationAttachmentPayloadScore(next.attachments);
+  if (previousAttachmentScore !== nextAttachmentScore) {
+    return nextAttachmentScore > previousAttachmentScore ? next : previous;
+  }
+
+  const previousTokenBadge = String(previous.tokenBadge || "").trim();
+  const nextTokenBadge = String(next.tokenBadge || "").trim();
+  if (previousTokenBadge !== nextTokenBadge) {
+    return nextTokenBadge.length > previousTokenBadge.length ? next : previous;
+  }
+
+  const previousContent = String(previous.content || "").trim();
+  const nextContent = String(next.content || "").trim();
+  if (previousContent !== nextContent) {
+    return nextContent.length >= previousContent.length ? next : previous;
+  }
+
+  return next;
+}
+
+function isAssistantReplayTimestampMatch(
+  snapshotMessage: ChatMessage | null | undefined,
+  localMessage: ChatMessage | null | undefined,
+) {
+  const snapshotTimestamp = getConversationTimestamp(snapshotMessage);
+  const localTimestamp = getConversationTimestamp(localMessage);
+  if (!snapshotTimestamp || !localTimestamp) {
+    return true;
+  }
+
+  if (Math.abs(localTimestamp - snapshotTimestamp) <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS) {
+    return true;
+  }
+
+  return localTimestamp >= snapshotTimestamp
+    && Math.abs(localTimestamp - snapshotTimestamp) <= DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS;
+}
+
+function shouldCollapseAssistantPrefixReplay(
+  snapshotMessage: ChatMessage | null | undefined,
+  localMessage: ChatMessage | null | undefined,
+) {
+  if (snapshotMessage?.role !== "assistant" || localMessage?.role !== "assistant") {
+    return false;
+  }
+
+  const snapshotContent = normalizeAssistantConversationContent(snapshotMessage.content);
+  const localContent = normalizeAssistantConversationContent(localMessage.content);
+  if (!snapshotContent || !localContent) {
+    return false;
+  }
+
+  if (snapshotContent === localContent) {
+    return false;
+  }
+
+  if (!isAssistantReplayTimestampMatch(snapshotMessage, localMessage)) {
+    return false;
+  }
+
+  const shorter = snapshotContent.length <= localContent.length ? snapshotContent : localContent;
+  const longer = snapshotContent.length > localContent.length ? snapshotContent : localContent;
+  return longer.startsWith(shorter);
+}
+
+function preferSettledLocalAssistantReplay(
+  snapshotMessages: ChatMessage[] = [],
+  localMessages: ChatMessage[] = [],
+) {
+  const nextMessages = snapshotMessages.map((message) => ({ ...message }));
+  const comparableLength = Math.min(nextMessages.length, localMessages.length);
+
+  for (let index = 0; index < comparableLength; index += 1) {
+    const snapshotMessage = nextMessages[index];
+    const localMessage = localMessages[index];
+
+    if (!snapshotMessage || !localMessage || snapshotMessage.role !== localMessage.role) {
+      break;
+    }
+
+    if (snapshotMessage.role === "assistant" && shouldCollapseAssistantPrefixReplay(snapshotMessage, localMessage)) {
+      const preferred = choosePreferredAssistantReplay(snapshotMessage, localMessage);
+      nextMessages[index] = { ...preferred };
+      continue;
+    }
+
+    if (!areEquivalentConversationMessages(snapshotMessage, localMessage)) {
+      break;
+    }
+  }
+
+  return nextMessages;
+}
+
 function appendLocalTailWhenSnapshotMatchesPrefix(
   snapshotMessages: ChatMessage[] = [],
   localMessages: ChatMessage[] = [],
@@ -275,10 +395,11 @@ function mergeSettledLocalConversationTail(
 
   const restoredTrailingUserTurn = restoreMissingUserBeforeMatchingAssistant(nextMessages, normalizedLocalMessages);
   if (restoredTrailingUserTurn) {
-    return restoredTrailingUserTurn;
+    return preferSettledLocalAssistantReplay(restoredTrailingUserTurn, normalizedLocalMessages);
   }
 
-  return appendLocalTailWhenSnapshotMatchesPrefix(nextMessages, normalizedLocalMessages) || nextMessages;
+  const nextWithLocalTail = appendLocalTailWhenSnapshotMatchesPrefix(nextMessages, normalizedLocalMessages) || nextMessages;
+  return preferSettledLocalAssistantReplay(nextWithLocalTail, normalizedLocalMessages);
 }
 
 export function buildHydratedConversationWithLocalTail(

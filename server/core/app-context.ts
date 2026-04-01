@@ -265,6 +265,7 @@ export function createAppContext() {
     getCommandCenterSessionKey,
     resolveSessionAgentId,
     resolveSessionModel,
+    resolveSessionRecord,
     readTextIfExists,
     tailLines,
   });

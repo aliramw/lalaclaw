@@ -13,6 +13,7 @@ const GATEWAY_RETRY_DELAYS_MS = [250, 1000];
 const OPENCLAW_WAIT_POLL_TIMEOUT_MS = 900;
 const OPENCLAW_WAIT_POLL_COMMAND_TIMEOUT_MS = 10000;
 const LEGACY_REPLY_MODULE_RE = /^reply-[A-Za-z0-9_]{6,}\.js$/;
+const SYNTHETIC_EMPTY_OPENCLAW_RESPONSE = 'OpenClaw returned an empty response.';
 const GATEWAY_RETRYABLE_ERROR_CODES = new Set([
     'ECONNREFUSED',
     'ECONNRESET',
@@ -21,7 +22,7 @@ const GATEWAY_RETRYABLE_ERROR_CODES = new Set([
     'ETIMEDOUT',
     'UND_ERR_CONNECT_TIMEOUT',
 ]);
-function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BIN, clip, normalizeSessionUser, normalizeChatMessage, getMessageAttachments, describeAttachmentForModel, buildOpenClawMessageContent, getCommandCenterSessionKey, resolveSessionAgentId, resolveSessionModel, readTextIfExists, tailLines, loadGatewaySdk, }) {
+function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BIN, clip, normalizeSessionUser, normalizeChatMessage, getMessageAttachments, describeAttachmentForModel, buildOpenClawMessageContent, getCommandCenterSessionKey, resolveSessionAgentId, resolveSessionModel, resolveSessionRecord, readTextIfExists, tailLines, loadGatewaySdk, }) {
     const runtimeConfig = config ?? {};
     const openClawBin = String(OPENCLAW_BIN || runtimeConfig.openclawBin || 'openclaw').trim() || 'openclaw';
     const projectRoot = String(PROJECT_ROOT || process.cwd()).trim() || process.cwd();
@@ -68,6 +69,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
     const resolveModel = typeof resolveSessionModel === 'function'
         ? resolveSessionModel
         : () => 'main';
+    const getSessionRecord = typeof resolveSessionRecord === 'function'
+        ? resolveSessionRecord
+        : () => null;
     const readText = typeof readTextIfExists === 'function'
         ? readTextIfExists
         : () => '';
@@ -266,6 +270,32 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         };
         if (runtimeConfig.apiKey) {
             headers.Authorization = `Bearer ${runtimeConfig.apiKey}`;
+        }
+        if (tool === 'message' && args && typeof args === 'object') {
+            const channel = typeof args.channel === 'string' ? args.channel.trim() : '';
+            const target = typeof args.target === 'string'
+                ? args.target.trim()
+                : typeof args.to === 'string'
+                    ? args.to.trim()
+                    : '';
+            const accountId = typeof args.accountId === 'string' ? args.accountId.trim() : '';
+            const threadId = typeof args.threadId === 'string'
+                ? args.threadId.trim()
+                : typeof args.threadId === 'number' && Number.isFinite(args.threadId)
+                    ? String(args.threadId)
+                    : '';
+            if (channel) {
+                headers['x-openclaw-message-channel'] = channel;
+            }
+            if (target) {
+                headers['x-openclaw-message-to'] = target;
+            }
+            if (accountId) {
+                headers['x-openclaw-account-id'] = accountId;
+            }
+            if (threadId) {
+                headers['x-openclaw-thread-id'] = threadId;
+            }
         }
         const payload = {
             tool,
@@ -646,12 +676,15 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
     function stripWeixinResetSuffix(value = '') {
         return String(value || '').trim().replace(/:reset:[^:]+$/i, '');
     }
+    function normalizeWeixinAccountId(value = '') {
+        return String(value || '').trim() || 'default';
+    }
     function createWeixinDeliveryRoute({ accountId = '', peerId = '' } = {}) {
         const normalizedPeerId = stripWeixinResetSuffix(peerId);
         if (!normalizedPeerId) {
             return null;
         }
-        const normalizedAccountId = String(accountId || '').trim();
+        const normalizedAccountId = normalizeWeixinAccountId(accountId);
         return {
             channel: 'openclaw-weixin',
             to: normalizedPeerId,
@@ -669,6 +702,50 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             chattype: String(parsedIdentity?.chatType || '').trim() || 'direct',
             peerid: String(parsedIdentity?.peerId || '').trim(),
             accountid: String(parsedIdentity?.accountId || '').trim(),
+        };
+    }
+    function normalizeWeixinPeerCandidate(value = '') {
+        return String(value || '').trim().replace(/^(?:user|group|channel):/i, '').trim();
+    }
+    function resolveWeixinSessionDeliveryMetadata(sessionUser = '', parsedSessionUser = null) {
+        if (!parsedSessionUser) {
+            return null;
+        }
+        const agentId = resolveAgentId(sessionUser);
+        const sessionKey = getSessionKey(agentId, sessionUser);
+        const sessionRecord = getSessionRecord(agentId, sessionKey);
+        if (!sessionRecord || typeof sessionRecord !== 'object') {
+            return null;
+        }
+        const fallbackPeerId = String(parsedSessionUser?.peerid || parsedSessionUser?.peerId || '').trim();
+        const normalizedFallbackPeerId = fallbackPeerId.toLowerCase();
+        const peerCandidates = [
+            sessionRecord?.deliveryContext?.to,
+            sessionRecord?.lastTo,
+            sessionRecord?.origin?.to,
+            sessionRecord?.origin?.from,
+            sessionRecord?.origin?.label,
+        ];
+        let resolvedPeerId = fallbackPeerId;
+        for (const candidate of peerCandidates) {
+            const normalizedCandidate = normalizeWeixinPeerCandidate(candidate);
+            if (!normalizedCandidate) {
+                continue;
+            }
+            if (!normalizedFallbackPeerId || normalizedCandidate.toLowerCase() === normalizedFallbackPeerId) {
+                resolvedPeerId = normalizedCandidate;
+                break;
+            }
+        }
+        const resolvedAccountId = String(sessionRecord?.deliveryContext?.accountId
+            || sessionRecord?.lastAccountId
+            || sessionRecord?.origin?.accountId
+            || parsedSessionUser?.accountid
+            || parsedSessionUser?.accountId
+            || '').trim();
+        return {
+            accountId: resolvedAccountId,
+            peerId: resolvedPeerId,
         };
     }
     function resolveSessionDeliveryRoute(sessionUser = 'command-center') {
@@ -705,9 +782,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         }
         const parsedWeixinSessionUser = parseWeixinSessionUser(trimmedSessionUser);
         if (parsedWeixinSessionUser) {
+            const resolvedWeixinMetadata = resolveWeixinSessionDeliveryMetadata(trimmedSessionUser, parsedWeixinSessionUser);
             return createWeixinDeliveryRoute({
-                accountId: parsedWeixinSessionUser.accountid,
-                peerId: parsedWeixinSessionUser.peerid,
+                accountId: resolvedWeixinMetadata?.accountId || parsedWeixinSessionUser.accountid,
+                peerId: resolvedWeixinMetadata?.peerId || parsedWeixinSessionUser.peerid,
             });
         }
         if (!trimmedSessionUser.startsWith('dingtalk-connector:')) {
@@ -746,6 +824,58 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
     }
     function requiresDirectMultimodalRequest(messages = []) {
         return messages.some((message) => getMessageAttachmentsList(message).some((attachment) => attachment.kind === 'image' && attachment.dataUrl));
+    }
+    function isSyntheticEmptyOpenClawResponse(messageText = '') {
+        return String(messageText || '').trim() === SYNTHETIC_EMPTY_OPENCLAW_RESPONSE;
+    }
+    function normalizeOpenClawErrorText(value) {
+        return String(value || '').replace(/\r\n?/g, '\n').trim();
+    }
+    function extractOpenClawMessageError(message) {
+        if (!message || typeof message !== 'object') {
+            return '';
+        }
+        const explicitError = [
+            message.errorMessage,
+            message.error,
+            message.lastError,
+        ]
+            .map((value) => normalizeOpenClawErrorText(value))
+            .find(Boolean);
+        if (explicitError) {
+            return explicitError;
+        }
+        const stopReason = normalizeOpenClawErrorText(message.stopReason
+            || message.finishReason
+            || message.finish_reason
+            || message.status).toLowerCase();
+        if (isFailedOpenClawWaitStatus(stopReason)) {
+            return `OpenClaw session ${stopReason}`;
+        }
+        return '';
+    }
+    function extractOpenClawEventError(event) {
+        if (!event || typeof event !== 'object') {
+            return '';
+        }
+        const explicitError = [
+            event.errorMessage,
+            event.error,
+            event?.message?.errorMessage,
+            event?.message?.error,
+            event?.payload?.errorMessage,
+            event?.payload?.error,
+        ]
+            .map((value) => normalizeOpenClawErrorText(value))
+            .find(Boolean);
+        if (explicitError) {
+            return explicitError;
+        }
+        const state = normalizeOpenClawErrorText(event.state || event.status).toLowerCase();
+        if (isFailedOpenClawWaitStatus(state)) {
+            return `OpenClaw session ${state}`;
+        }
+        return '';
     }
     function buildMirroredUserMessageText(sessionUser = 'command-center', messageText = '', options = {}) {
         const trimmedMessage = String(messageText || '').trim();
@@ -797,20 +927,28 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (!deliveryRoute) {
             return false;
         }
-        return requiresDirectMultimodal || deliveryRoute.channel === 'dingtalk-connector';
+        return requiresDirectMultimodal || Boolean(deliveryRoute.channel);
     }
-    async function maybeMirrorAssistantReply(sessionUser = 'command-center', messageText = '', deliveryRoute = null, requiresDirectMultimodal = false) {
+    async function maybeMirrorAssistantReply(sessionUser = 'command-center', messageText = '', deliveryRoute = null, requiresDirectMultimodal = false, options = {}) {
         if (!shouldMirrorAssistantReply(deliveryRoute, requiresDirectMultimodal)) {
+            return null;
+        }
+        if (options?.isError || isSyntheticEmptyOpenClawResponse(messageText)) {
             return null;
         }
         return await mirrorOpenClawAssistantMessage(sessionUser, messageText);
     }
     async function callOpenClawSession(messages, sessionUser = 'command-center', timeoutMs = 30000) {
         const result = await startOpenClawSessionRun(messages, sessionUser);
-        const finalAssistant = await waitForOpenClawSessionCompletion(result, timeoutMs);
+        const finalSession = await waitForOpenClawSessionCompletion(result, timeoutMs);
+        const finalAssistant = finalSession?.assistant || null;
+        const finalText = (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
+            || finalSession?.errorText
+            || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE;
         return {
-            outputText: finalAssistant ? normalizeChatMessageValue(finalAssistant) || 'OpenClaw returned an empty response.' : 'OpenClaw returned an empty response.',
+            outputText: finalText,
             usage: finalAssistant?.usage || null,
+            ...(finalSession?.errorText && !normalizeChatMessageValue(finalAssistant) ? { isError: true } : {}),
         };
     }
     async function startOpenClawSessionRun(messages, sessionUser = 'command-center') {
@@ -860,7 +998,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             deliver: Boolean(deliveryRoute),
             channel: deliveryRoute?.channel || 'webchat',
             ...(deliveryRoute?.to ? { to: deliveryRoute.to } : {}),
+            ...(deliveryRoute?.to ? { replyTo: deliveryRoute.to } : {}),
             ...(deliveryRoute?.accountId ? { accountId: deliveryRoute.accountId } : {}),
+            ...(deliveryRoute?.accountId ? { replyAccountId: deliveryRoute.accountId } : {}),
+            ...(deliveryRoute?.channel ? { replyChannel: deliveryRoute.channel } : {}),
             lane: 'nested',
         };
     }
@@ -896,6 +1037,12 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             || entryText.includes(`\n${normalizedRequestMessage}`));
     }
     function findLatestAssistantSince(messages = [], acceptedAt = 0, requestMessage = '', options = {}) {
+        return findLatestAssistantEntrySince(messages, acceptedAt, requestMessage, options, (entry) => Boolean(normalizeChatMessageValue(entry)));
+    }
+    function findLatestAssistantErrorSince(messages = [], acceptedAt = 0, requestMessage = '', options = {}) {
+        return findLatestAssistantEntrySince(messages, acceptedAt, requestMessage, options, (entry) => Boolean(extractOpenClawMessageError(entry)));
+    }
+    function findLatestAssistantEntrySince(messages = [], acceptedAt = 0, requestMessage = '', options = {}, predicate = () => false) {
         const normalizedAcceptedAt = Number.isFinite(Number(acceptedAt)) ? Number(acceptedAt) : 0;
         const normalizedRequestMessage = String(requestMessage || '').trim();
         const strictTurnMatch = Boolean(options?.strictTurnMatch);
@@ -915,7 +1062,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (typeof turnUserIndex === 'number' && Number.isInteger(turnUserIndex) && turnUserIndex >= 0) {
             const turnAssistants = messages
                 .slice(turnUserIndex + 1)
-                .filter((entry) => entry?.role === 'assistant' && normalizeChatMessageValue(entry));
+                .filter((entry) => entry?.role === 'assistant' && predicate(entry));
             if (turnAssistants.length) {
                 return turnAssistants[turnAssistants.length - 1] || null;
             }
@@ -924,26 +1071,41 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (normalizedRequestMessage && strictTurnMatch) {
             return null;
         }
-        const assistants = [...messages].reverse().filter((entry) => entry?.role === 'assistant' && normalizeChatMessageValue(entry));
+        const assistants = [...messages].reverse().filter((entry) => entry?.role === 'assistant' && predicate(entry));
         if (normalizedAcceptedAt > 0) {
             return assistants.find((entry) => normalizeMessageTimestamp(entry?.timestamp) >= normalizedAcceptedAt) || null;
         }
         return assistants[0] || null;
     }
-    async function readOpenClawSessionAssistant(runState, options = {}) {
+    async function readOpenClawSessionSnapshot(runState, options = {}) {
         if (!runState?.sessionKey) {
-            return null;
+            return {
+                assistant: null,
+                errorText: '',
+            };
         }
         const history = await callOpenClawGateway('chat.history', {
             sessionKey: runState.sessionKey,
             limit: 50,
         }, 10000);
         const historyMessages = Array.isArray(history?.messages) ? history.messages : [];
-        return findLatestAssistantSince(historyMessages, runState.acceptedAt, runState.requestMessage, options);
+        const assistant = findLatestAssistantSince(historyMessages, runState.acceptedAt, runState.requestMessage, options);
+        const assistantWithError = findLatestAssistantErrorSince(historyMessages, runState.acceptedAt, runState.requestMessage, options);
+        return {
+            assistant,
+            errorText: extractOpenClawMessageError(assistantWithError),
+        };
+    }
+    async function readOpenClawSessionAssistant(runState, options = {}) {
+        const snapshot = await readOpenClawSessionSnapshot(runState, options);
+        return snapshot.assistant;
     }
     async function waitForOpenClawSessionCompletion(runState, timeoutMs = 30000) {
         if (!runState?.runId) {
-            return null;
+            return {
+                assistant: null,
+                errorText: '',
+            };
         }
         const waitResult = await callOpenClawGateway('agent.wait', {
             runId: runState.runId,
@@ -955,7 +1117,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (isFailedOpenClawWaitStatus(waitResult?.status)) {
             throw new Error(waitResult?.error || `OpenClaw session ${String(waitResult?.status || '').trim().toLowerCase()}`);
         }
-        return await readOpenClawSessionAssistant(runState);
+        return await readOpenClawSessionSnapshot(runState);
     }
     function extractStreamText(value) {
         if (!value) {
@@ -1104,7 +1266,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             }
         });
         return {
-            outputText: outputText || 'OpenClaw returned an empty response.',
+            outputText: outputText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
             usage,
         };
     }
@@ -1136,7 +1298,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         const deliveryRoute = resolveSessionDeliveryRoute(sessionUser);
         if (!message) {
             return {
-                outputText: 'OpenClaw returned an empty response.',
+                outputText: SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
                 usage: null,
             };
         }
@@ -1323,18 +1485,30 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
                 finalPromise,
                 new Promise((_, reject) => setTimeout(() => reject(new Error('OpenClaw session timed out')), timeoutMs + 2000)),
             ]);
-            let finalAssistant = null;
+            let finalSession = {
+                assistant: null,
+                errorText: '',
+            };
             try {
-                finalAssistant = await readOpenClawSessionAssistant(activeRunState);
+                finalSession = await readOpenClawSessionSnapshot(activeRunState);
             }
             catch { }
+            const finalAssistant = finalSession.assistant;
+            const finalErrorText = extractOpenClawEventError(finalPayload)
+                || finalSession.errorText;
             const finalText = normalizeChatMessageValue(finalPayload?.message)
                 || (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
-                || latestText;
+                || latestText
+                || finalErrorText;
+            const isErrorResponse = Boolean(finalErrorText
+                && !normalizeChatMessageValue(finalPayload?.message)
+                && !normalizeChatMessageValue(finalAssistant)
+                && !latestText);
             emitDeltaFromFullText(finalText);
             return {
-                outputText: finalText || 'OpenClaw returned an empty response.',
+                outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
                 usage: finalAssistant?.usage || null,
+                ...(isErrorResponse ? { isError: true } : {}),
             };
         }
         catch (error) {
@@ -1359,7 +1533,8 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
                 runId: runState.runId,
                 timeoutMs: OPENCLAW_WAIT_POLL_TIMEOUT_MS,
             }, OPENCLAW_WAIT_POLL_COMMAND_TIMEOUT_MS);
-            const latestAssistant = await readOpenClawSessionAssistant(runState);
+            const latestSession = await readOpenClawSessionSnapshot(runState);
+            const latestAssistant = latestSession.assistant;
             const nextText = latestAssistant ? normalizeChatMessageValue(latestAssistant) || '' : '';
             if (nextText && nextText.startsWith(latestText) && nextText.length > latestText.length) {
                 const delta = nextText.slice(latestText.length);
@@ -1376,15 +1551,24 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             if (isFailedOpenClawWaitStatus(waitResult?.status)) {
                 throw new Error(waitResult?.error || `OpenClaw session ${String(waitResult?.status || '').trim().toLowerCase()}`);
             }
-            const finalAssistant = latestAssistant || await waitForOpenClawSessionCompletion(runState, timeoutMs);
-            const finalText = finalAssistant ? normalizeChatMessageValue(finalAssistant) || latestText : latestText;
+            const finalSession = latestAssistant || latestSession.errorText
+                ? latestSession
+                : await waitForOpenClawSessionCompletion(runState, timeoutMs);
+            const finalAssistant = finalSession.assistant;
+            const finalText = (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
+                || latestText
+                || finalSession.errorText;
+            const isErrorResponse = Boolean(finalSession.errorText
+                && !normalizeChatMessageValue(finalAssistant)
+                && !latestText);
             if (finalText && finalText.startsWith(latestText) && finalText.length > latestText.length) {
                 onDelta(finalText.slice(latestText.length));
                 latestText = finalText;
             }
             return {
-                outputText: finalText || 'OpenClaw returned an empty response.',
+                outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
                 usage: finalAssistant?.usage || null,
+                ...(isErrorResponse ? { isError: true } : {}),
             };
         }
     }
@@ -1392,7 +1576,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         const runState = await startOpenClawSessionRun(messages, sessionUser);
         if (!runState) {
             return {
-                outputText: 'OpenClaw returned an empty response.',
+                outputText: SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
                 usage: null,
             };
         }
@@ -1407,7 +1591,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (deliveryRoute && requiresDirectMultimodal) {
             const result = await callOpenClaw(messages, fastMode, sessionUser, options);
             try {
-                await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, requiresDirectMultimodal);
+                await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, requiresDirectMultimodal, {
+                    isError: result.isError,
+                });
             }
             catch (error) {
                 console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
@@ -1422,7 +1608,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         }
         const result = await callOpenClawSession(messages, sessionUser);
         try {
-            await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, false);
+            await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, false, {
+                isError: result.isError,
+            });
         }
         catch (error) {
             console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
@@ -1441,7 +1629,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         if (deliveryRoute && requiresDirectMultimodal) {
             const result = await callOpenClawStream(messages, fastMode, sessionUser, options);
             try {
-                await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, requiresDirectMultimodal);
+                await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, requiresDirectMultimodal, {
+                    isError: result.isError,
+                });
             }
             catch (error) {
                 console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
@@ -1456,7 +1646,9 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         }
         const result = await callOpenClawSessionStream(messages, sessionUser, 30000, options);
         try {
-            await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, false);
+            await maybeMirrorAssistantReply(sessionUser, result.outputText, deliveryRoute, false, {
+                isError: result.isError,
+            });
         }
         catch (error) {
             console.warn('[openclaw-client] mirrorOpenClawAssistantMessage failed', {
@@ -1475,7 +1667,7 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         }
         const choice = data.choices?.[0]?.message;
         return {
-            outputText: normalizeChatMessageValue(choice) || 'OpenClaw returned an empty response.',
+            outputText: normalizeChatMessageValue(choice) || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
             usage: data.usage || null,
         };
     }

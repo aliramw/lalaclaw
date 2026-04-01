@@ -144,6 +144,82 @@ function choosePreferredSyntheticAttachmentTurn(previous: ChatMessage, next: Cha
   return next;
 }
 
+function getConversationAttachmentPayloadScore(attachments: unknown = "") {
+  if (!Array.isArray(attachments)) {
+    return 0;
+  }
+
+  return attachments.reduce((score, attachment) => {
+    let nextScore = score;
+    if (String(attachment?.dataUrl || "").trim()) {
+      nextScore += 4;
+    }
+    if (String(attachment?.previewUrl || "").trim()) {
+      nextScore += 3;
+    }
+    if (String(attachment?.textContent || "").length) {
+      nextScore += 2;
+    }
+    if (String(attachment?.fullPath || attachment?.path || "").trim()) {
+      nextScore += 1;
+    }
+    return nextScore;
+  }, 0);
+}
+
+function choosePreferredAssistantReplay(previous: ChatMessage, next: ChatMessage) {
+  const previousAttachmentScore = getConversationAttachmentPayloadScore(previous.attachments);
+  const nextAttachmentScore = getConversationAttachmentPayloadScore(next.attachments);
+  if (previousAttachmentScore !== nextAttachmentScore) {
+    return nextAttachmentScore > previousAttachmentScore ? next : previous;
+  }
+
+  const previousTokenBadge = String(previous.tokenBadge || "").trim();
+  const nextTokenBadge = String(next.tokenBadge || "").trim();
+  if (previousTokenBadge !== nextTokenBadge) {
+    return nextTokenBadge.length > previousTokenBadge.length ? next : previous;
+  }
+
+  const previousContent = String(previous.content || "").trim();
+  const nextContent = String(next.content || "").trim();
+  if (previousContent !== nextContent) {
+    return nextContent.length >= previousContent.length ? next : previous;
+  }
+
+  return previous;
+}
+
+function isAssistantReplayTimestampMatch(previousTimestamp: number, nextTimestamp: number) {
+  if (previousTimestamp > 0 && nextTimestamp > 0) {
+    return Math.abs(nextTimestamp - previousTimestamp) <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS;
+  }
+
+  return true;
+}
+
+function shouldCollapseAssistantPrefixReplay(
+  previous: ChatMessage | null | undefined,
+  next: ChatMessage | null | undefined,
+) {
+  if (previous?.role !== "assistant" || next?.role !== "assistant") {
+    return false;
+  }
+
+  const previousText = normalizeConversationContent(previous.content, previous.role);
+  const nextText = normalizeConversationContent(next.content, next.role);
+  if (!previousText || !nextText || previousText === nextText) {
+    return false;
+  }
+
+  if (!isAssistantReplayTimestampMatch(Number(previous.timestamp || 0), Number(next.timestamp || 0))) {
+    return false;
+  }
+
+  const shorter = previousText.length <= nextText.length ? previousText : nextText;
+  const longer = previousText.length > nextText.length ? previousText : nextText;
+  return longer.startsWith(shorter);
+}
+
 export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) {
   const collapsed: ChatMessage[] = [];
   let lastUserFingerprint = "";
@@ -259,16 +335,26 @@ export function collapseDuplicateConversationTurns(entries: ChatMessage[] = []) 
         }
       }
 
+      const previousAssistantEntry = collapsed[collapsed.length - 1];
       const isDuplicateAssistantReplay =
         assistantSeenForCurrentTurn
-        && Boolean(fingerprint)
-        && fingerprint === lastAssistantFingerprint
+        && previousAssistantEntry?.role === "assistant"
+        && (
+          (Boolean(fingerprint) && fingerprint === lastAssistantFingerprint)
+          || shouldCollapseAssistantPrefixReplay(previousAssistantEntry, entry)
+        )
         && (
           !currentAssistantTimestamp
           || !lastAssistantTimestamp
           || currentAssistantTimestamp >= lastAssistantTimestamp
         );
       if (isDuplicateAssistantReplay) {
+        const preferred = choosePreferredAssistantReplay(previousAssistantEntry, entry);
+        collapsed[collapsed.length - 1] = preferred;
+        lastAssistantTimestamp = Number(preferred.timestamp || currentAssistantTimestamp || 0);
+        lastAssistantFingerprint =
+          normalizeConversationContent(preferred.content, preferred.role)
+          || getConversationAttachmentFingerprint(preferred.attachments);
         continue;
       }
 
