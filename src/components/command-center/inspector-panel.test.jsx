@@ -4074,6 +4074,18 @@ describe("InspectorPanel", () => {
     expect(screen.getByRole("button", { name: "查看详情" })).toBeInTheDocument();
   });
 
+  it("keeps sibling tool cards visible after collapsing one tool card", async () => {
+    renderWithTooltip(<TestHarness />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "edit_file 收起详情" }));
+
+    expect(screen.getByRole("button", { name: "edit_file 查看详情" })).toBeInTheDocument();
+
+    const gatewayCard = getToolCard("gateway");
+    expect(within(gatewayCard).getByText("输入")).toBeInTheDocument();
+  });
+
   it("hides the files count badge when there are no files", () => {
     const [activeTab, setActiveTab] = ["timeline", () => {}];
 
