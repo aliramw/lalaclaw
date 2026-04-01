@@ -22,6 +22,9 @@ import {
   MessageAttachments,
 } from "@/components/command-center/chat-panel-attachments";
 import { messageHasVisualMedia } from "@/components/command-center/chat-panel-attachment-utils";
+import { deriveChatPanelRenderItems } from "@/components/command-center/chat-panel-render-items";
+import type { ChatPanelTaskTimelineEntry } from "@/components/command-center/chat-panel-render-items";
+import { ChatTurnActivity } from "@/components/command-center/chat-turn-activity";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton, shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
 import { getImSessionDisplayName, isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
@@ -226,6 +229,7 @@ type ChatPanelProps = {
   restoredScrollRevision?: number;
   restoredScrollState?: ChatScrollState | null;
   session?: any;
+  taskTimeline?: Array<Record<string, unknown>>;
   agentSwitcher?: ReactNode;
   brandControl?: ReactNode;
   sessionOverview?: ReactNode;
@@ -2701,6 +2705,7 @@ export function ChatPanel({
   restoredScrollRevision = 0,
   restoredScrollState = null,
   session = {},
+  taskTimeline = [],
   agentSwitcher = null,
   brandControl = null,
   sessionOverview = null,
@@ -4189,12 +4194,24 @@ export function ChatPanel({
       return <EmptyConversation loading={busy} />;
     }
 
-    let lastUserMessageId = "";
-    let lastAssistantMessageId = "";
+    const renderItems = deriveChatPanelRenderItems({
+      getMessageKey: getConversationMessageId,
+      messages,
+      taskTimeline: taskTimeline as ChatPanelTaskTimelineEntry[],
+    });
 
-    return messages.map((message, index) => {
-      const messageId = getConversationMessageId(message, index);
-      const previousMessageId = message.role === "assistant" ? lastAssistantMessageId : lastUserMessageId;
+    return renderItems.map((item) => {
+      if (item.kind === "turn-activity") {
+        return (
+          <ChatTurnActivity
+            key={item.key}
+            resolvedTheme={resolvedTheme}
+            tools={item.tools}
+          />
+        );
+      }
+
+      const { message, messageId, previousMessageId, separated } = item;
       const isLatestAssistant = latestAssistantMessageId === messageId;
       const isStreamingAssistant = Boolean(
         isLatestAssistant
@@ -4212,12 +4229,6 @@ export function ChatPanel({
           && latchedStreamingTailMessageId === messageId
           && String(message.content || "").trim(),
       );
-
-      if (message.role === "user") {
-        lastUserMessageId = messageId;
-      } else if (message.role === "assistant") {
-        lastAssistantMessageId = messageId;
-      }
 
       return (
         <MessageBubble
@@ -4243,7 +4254,7 @@ export function ChatPanel({
           sessionUser={session?.sessionUser}
           suppressOutline={isLatestAssistant && stableShowBusyBadge}
           staleWarning={message.pending && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
-          separated={index > 0 && messages[index - 1]?.role !== message.role}
+          separated={separated}
           chatFontSize={chatFontSize}
           userLabel={resolvedUserLabel}
         />
@@ -4270,6 +4281,7 @@ export function ChatPanel({
     latchedStreamingTailMessageId,
     resolvedTheme,
     session?.sessionUser,
+    taskTimeline,
     resolvedUserLabel,
     stableShowBusyBadge,
     staleSeconds,

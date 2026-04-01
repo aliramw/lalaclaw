@@ -2606,6 +2606,43 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "停止" })).toBeEnabled();
   });
 
+  it("renders tool activity before the corresponding assistant reply", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { id: "msg-user-1", role: "user", content: "帮我改一下文件", timestamp: 1000 },
+            { id: "msg-assistant-1", role: "assistant", content: "已经改好了。", timestamp: 2000 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          taskTimeline={[
+            {
+              id: "run-turn-1",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-edit-file", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const toolActivity = screen.getByRole("button", { name: "edit_file 收起详情" });
+    const assistantReply = screen.getByText("已经改好了。");
+    expect(toolActivity.compareDocumentPosition(assistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("unwraps assistant final envelope tags before rendering the message", () => {
     render(
       <TooltipProvider>

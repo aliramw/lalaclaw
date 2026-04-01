@@ -859,6 +859,7 @@ function AppContent() {
                 restoredScrollRevision={restoredChatScrollRevision}
                 restoredScrollState={restoredChatScrollState}
                 session={session}
+                taskTimeline={taskTimeline}
                 sessionOverview={statusOverview}
                 showTabsStrip={false}
                 userLabel={userLabel}
