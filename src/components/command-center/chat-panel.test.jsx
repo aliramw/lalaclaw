@@ -196,6 +196,30 @@ describe("ChatPanel", () => {
     expect(container.firstChild).not.toHaveClass("overflow-x-auto");
   });
 
+  it("renders the refreshed chat stage, empty state, and composer shell", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(container.querySelector(".cc-chat-stage")).toBeInTheDocument();
+    expect(container.querySelector(".cc-chat-empty-state")).toBeInTheDocument();
+    expect(container.querySelector(".cc-chat-composer-shell")).toBeInTheDocument();
+  });
+
   it("renders scroll buttons for overflowing tabs and scrolls the tab rail", async () => {
     const { container } = render(
       <TooltipProvider>

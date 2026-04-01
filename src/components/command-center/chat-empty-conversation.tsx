@@ -7,8 +7,8 @@ export const EmptyConversation = memo(function EmptyConversation({ loading = fal
 
   if (loading) {
     return (
-      <div>
-        <div className="flex min-h-56 items-center justify-center py-10 text-center">
+      <div className="cc-chat-empty-state">
+        <div className="flex min-h-56 items-center justify-center rounded-[20px] border border-dashed border-border/70 bg-[var(--panel-muted)] px-6 py-12 text-center">
           <div className="text-sm font-medium">{messages.chat.loadingConversation}</div>
         </div>
       </div>
@@ -16,11 +16,11 @@ export const EmptyConversation = memo(function EmptyConversation({ loading = fal
   }
 
   return (
-    <div>
-      <div className="flex min-h-56 flex-col items-center justify-center gap-4 py-10 text-center">
-        <Send className="h-8 w-8 text-foreground/85" />
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{messages.chat.waitingFirstPrompt}</div>
+    <div className="cc-chat-empty-state">
+      <div className="flex min-h-56 flex-col items-center justify-center gap-4 rounded-[20px] border border-dashed border-border/70 bg-[var(--panel-muted)] px-6 py-12 text-center">
+        <Send className="h-8 w-8 text-muted-foreground" />
+        <div className="space-y-1.5">
+          <div className="text-sm font-semibold">{messages.chat.waitingFirstPrompt}</div>
           <div className="text-sm text-muted-foreground">{messages.chat.conversationWillAppear}</div>
         </div>
       </div>
