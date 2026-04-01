@@ -161,7 +161,22 @@ export function TimelineItemCard({
           {open ? (
             <div className="space-y-3">
               <TimelineDetailCard title={messages.inspector.timeline.toolIo} emptyText={messages.inspector.empty.noTools}>
-                {item.tools?.length ? <ToolCallTimeline tools={item.tools} messages={messages} resolvedTheme={resolvedTheme} /> : null}
+                {item.tools?.length ? (
+                  <ToolCallTimeline
+                    copyLabels={{ copy: messages.markdown.copyCode, copied: messages.markdown.copiedCode }}
+                    labels={{
+                      collapse: messages.inspector.timeline.collapse,
+                      expand: messages.inspector.timeline.expand,
+                      input: messages.inspector.timeline.input,
+                      output: messages.inspector.timeline.output,
+                      none: messages.inspector.timeline.none,
+                      noOutput: messages.inspector.timeline.noOutput,
+                    }}
+                    messages={messages}
+                    resolvedTheme={resolvedTheme}
+                    tools={item.tools}
+                  />
+                ) : null}
               </TimelineDetailCard>
 
               <TimelineDetailCard title={messages.inspector.relationships.title} emptyText={messages.inspector.empty.agents}>

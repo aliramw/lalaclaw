@@ -5,24 +5,30 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToolCallTimeline } from "@/components/command-center/tool-call-timeline";
 
 function Harness() {
-  const { messages } = useI18n();
+  const { messages: i18nMessages } = useI18n();
+  const messages = {
+    common: i18nMessages.common,
+    inspector: {
+      relationships: {
+        statuses: {
+          completed: "完成",
+        },
+      },
+    },
+  };
 
   return (
     <ToolCallTimeline
-      messages={{
-        ...messages,
-        inspector: {
-          ...messages.inspector,
-          timeline: {
-            collapse: messages.inspector.timeline.collapse,
-            expand: messages.inspector.timeline.expand,
-            input: messages.inspector.timeline.input,
-            output: messages.inspector.timeline.output,
-            none: messages.inspector.timeline.none,
-            noOutput: messages.inspector.timeline.noOutput,
-          },
-        },
+      copyLabels={{ copy: "复制片段", copied: "已复制片段" }}
+      labels={{
+        collapse: "折叠卡片",
+        expand: "展开卡片",
+        input: "入参",
+        output: "出参",
+        none: "未提供",
+        noOutput: "无输出可见",
       }}
+      messages={messages}
       tools={[
         {
           id: "tool-edit",
@@ -60,15 +66,17 @@ describe("ToolCallTimeline", () => {
     renderWithProviders(<Harness />);
     const user = userEvent.setup();
 
-    expect(screen.getByRole("button", { name: "edit_file 收起详情" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "gateway 收起详情" })).toBeInTheDocument();
-    expect(screen.getAllByText("输入").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "edit_file 折叠卡片" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "gateway 折叠卡片" })).toBeInTheDocument();
+    expect(screen.getAllByText("入参").length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole("button", { name: "edit_file 收起详情" }));
-
-    expect(screen.getByRole("button", { name: "edit_file 查看详情" })).toBeInTheDocument();
-    const gatewayCard = screen.getByRole("button", { name: "gateway 收起详情" }).closest(".space-y-3");
+    const gatewayCard = screen.getByRole("button", { name: "gateway 折叠卡片" }).closest(".space-y-3");
     expect(gatewayCard).not.toBeNull();
-    expect(within(gatewayCard).getByText("输入")).toBeInTheDocument();
+    expect(within(gatewayCard).getAllByRole("button", { name: "复制片段" })).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "edit_file 折叠卡片" }));
+
+    expect(screen.getByRole("button", { name: "edit_file 展开卡片" })).toBeInTheDocument();
+    expect(within(gatewayCard).getByText("入参")).toBeInTheDocument();
   });
 });

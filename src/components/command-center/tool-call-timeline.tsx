@@ -1,20 +1,34 @@
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Copy } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 
 import { Badge } from "@/components/ui/badge";
-import { CopyCodeButton } from "@/components/command-center/inspector-panel-primitives";
 import { getLocalizedStatusLabel, normalizeStatusKey } from "@/features/session/status-display";
+import { copyTextToClipboard } from "@/components/command-center/clipboard-utils";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { cn } from "@/lib/utils";
-import { looksLikeJson } from "@/components/command-center/inspector-panel-utils";
 
 const darkToolIoTheme = themes.dracula;
 const lightToolIoTheme = themes.vsLight;
 
+type ToolCallTimelineLabels = {
+  collapse: string;
+  expand: string;
+  input: string;
+  noOutput: string;
+  none: string;
+  output: string;
+};
+
+type ToolCopyLabels = {
+  copy: string;
+  copied: string;
+};
+
 type ToolIoCodeBlockProps = {
   emptyText?: string;
   label?: string;
+  copyLabels: ToolCopyLabels;
   resolvedTheme?: "light" | "dark";
   value?: unknown;
 };
@@ -22,18 +36,67 @@ type ToolIoCodeBlockProps = {
 type ToolCallCardProps = {
   isFirst?: boolean;
   isLast?: boolean;
+  labels: ToolCallTimelineLabels;
+  copyLabels: ToolCopyLabels;
   messages: any;
   resolvedTheme?: "light" | "dark";
   tool: Record<string, any>;
 };
 
 type ToolCallTimelineProps = {
+  labels?: ToolCallTimelineLabels;
+  copyLabels?: ToolCopyLabels;
   messages: any;
   resolvedTheme?: "light" | "dark";
   tools?: Record<string, any>[];
 };
 
-export function ToolIoCodeBlock({ emptyText, label, resolvedTheme = "light", value }: ToolIoCodeBlockProps) {
+const defaultToolTimelineLabels: ToolCallTimelineLabels = {
+  collapse: "收起详情",
+  expand: "查看详情",
+  input: "输入",
+  output: "输出",
+  none: "无",
+  noOutput: "无输出",
+};
+
+const defaultToolCopyLabels: ToolCopyLabels = {
+  copy: "复制代码",
+  copied: "已复制",
+};
+
+function looksLikeJson(value = "") {
+  const trimmed = String(value || "").trim();
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    || (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
+}
+
+function ToolCopyButton({ content = "", labels }: { content?: string; labels: ToolCopyLabels }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await copyTextToClipboard(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground/75 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      aria-label={copied ? labels.copied : labels.copy}
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+export function ToolIoCodeBlock({ emptyText, label, copyLabels, resolvedTheme = "light", value }: ToolIoCodeBlockProps) {
   const content = String(value || emptyText || "").trim() || String(emptyText || "");
   const language = looksLikeJson(content) ? "json" : "text";
   const toolIoTheme = resolvedTheme === "dark" ? darkToolIoTheme : lightToolIoTheme;
@@ -53,7 +116,7 @@ export function ToolIoCodeBlock({ emptyText, label, resolvedTheme = "light", val
         )}
       >
         <span>{label}</span>
-        <CopyCodeButton content={content} />
+        <ToolCopyButton content={content} labels={copyLabels} />
       </div>
       <Highlight prism={Prism} theme={toolIoTheme} code={content} language={highlightedLanguage}>
         {({ tokens, getLineProps, getTokenProps }) => (
@@ -75,7 +138,7 @@ export function ToolIoCodeBlock({ emptyText, label, resolvedTheme = "light", val
   );
 }
 
-export function ToolCallCard({ isFirst = false, isLast = false, messages, resolvedTheme = "light", tool }: ToolCallCardProps) {
+export function ToolCallCard({ isFirst = false, isLast = false, labels, copyLabels, messages, resolvedTheme = "light", tool }: ToolCallCardProps) {
   const [open, setOpen] = useState(true);
   const normalizedStatus = normalizeStatusKey(tool.status);
   const localizedStatus = getLocalizedStatusLabel(tool.status, messages);
@@ -101,7 +164,7 @@ export function ToolCallCard({ isFirst = false, isLast = false, messages, resolv
         <button
           type="button"
           onClick={() => setOpen((current) => !current)}
-          aria-label={`${tool.name} ${open ? messages.inspector.timeline.collapse : messages.inspector.timeline.expand}`}
+          aria-label={`${tool.name} ${open ? labels.collapse : labels.expand}`}
           className="flex w-full items-center justify-between gap-3 rounded-md px-1 py-0.5 text-left transition hover:bg-muted/20"
         >
           <div className="flex min-w-0 items-center gap-1.5">
@@ -115,8 +178,8 @@ export function ToolCallCard({ isFirst = false, isLast = false, messages, resolv
 
         {open ? (
           <div className="space-y-2 text-xs leading-6">
-            <ToolIoCodeBlock label={messages.inspector.timeline.input} value={tool.input} emptyText={messages.inspector.timeline.none} resolvedTheme={resolvedTheme} />
-            <ToolIoCodeBlock label={messages.inspector.timeline.output} value={tool.output || tool.detail} emptyText={messages.inspector.timeline.noOutput} resolvedTheme={resolvedTheme} />
+            <ToolIoCodeBlock copyLabels={copyLabels} label={labels.input} value={tool.input} emptyText={labels.none} resolvedTheme={resolvedTheme} />
+            <ToolIoCodeBlock copyLabels={copyLabels} label={labels.output} value={tool.output || tool.detail} emptyText={labels.noOutput} resolvedTheme={resolvedTheme} />
           </div>
         ) : null}
       </div>
@@ -124,7 +187,13 @@ export function ToolCallCard({ isFirst = false, isLast = false, messages, resolv
   );
 }
 
-export function ToolCallTimeline({ messages, resolvedTheme = "light", tools }: ToolCallTimelineProps) {
+export function ToolCallTimeline({
+  copyLabels = defaultToolCopyLabels,
+  labels = defaultToolTimelineLabels,
+  messages,
+  resolvedTheme = "light",
+  tools,
+}: ToolCallTimelineProps) {
   if (!tools?.length) {
     return null;
   }
@@ -156,6 +225,8 @@ export function ToolCallTimeline({ messages, resolvedTheme = "light", tools }: T
           key={tool.id || `${tool.name}-${tool.timestamp}`}
           isFirst={toolIndex === 0}
           isLast={toolIndex === orderedTools.length - 1}
+          labels={labels}
+          copyLabels={copyLabels}
           tool={tool}
           messages={messages}
           resolvedTheme={resolvedTheme}
