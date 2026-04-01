@@ -4204,7 +4204,7 @@ export function ChatPanel({
       if (item.kind === "turn-activity") {
         return (
           <ChatTurnActivity
-            key={item.key}
+            key={`turn-activity-${item.turnKey}`}
             resolvedTheme={resolvedTheme}
             tools={item.tools}
           />

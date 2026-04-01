@@ -2643,7 +2643,90 @@ describe("ChatPanel", () => {
     expect(toolActivity.compareDocumentPosition(assistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("only renders tool activity for turns with a settled assistant reply", () => {
+  it("keeps tool activity as a separate block while the assistant reply keeps streaming", () => {
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { id: "msg-user-streaming-tools", role: "user", content: "继续改", timestamp: 1000 },
+            { id: "msg-assistant-streaming-tools", role: "assistant", content: "正在修改第一处", timestamp: 2000, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          taskTimeline={[
+            {
+              id: "run-streaming-tools",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-edit-file", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const initialAssistantBubble = screen.getByText("正在修改第一处").closest('[data-bubble-layout="full"]');
+    expect(initialAssistantBubble).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "edit_file 收起详情" })).toHaveLength(1);
+    expect(initialAssistantBubble?.textContent || "").not.toContain("edit_file");
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:01"}
+          messageViewportRef={null}
+          messages={[
+            { id: "msg-user-streaming-tools", role: "user", content: "继续改", timestamp: 1000 },
+            { id: "msg-assistant-streaming-tools", role: "assistant", content: "正在修改第一处\n继续修改第二处", timestamp: 2000, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          taskTimeline={[
+            {
+              id: "run-streaming-tools",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-edit-file", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+                { id: "tool-gateway", name: "gateway", status: "完成", input: "{}", output: "ok", timestamp: 1520 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const updatedAssistantBubble = screen.getByText(/继续修改第二处/).closest('[data-bubble-layout="full"]');
+    expect(updatedAssistantBubble).toBeTruthy();
+    expect(updatedAssistantBubble?.textContent || "").toContain("正在修改第一处");
+    expect(updatedAssistantBubble?.textContent || "").toContain("继续修改第二处");
+    expect(updatedAssistantBubble?.textContent || "").not.toContain("edit_file");
+    expect(updatedAssistantBubble?.textContent || "").not.toContain("gateway");
+
+    const editFileTool = screen.getByRole("button", { name: "edit_file 收起详情" });
+    const gatewayTool = screen.getByRole("button", { name: "gateway 收起详情" });
+    expect(screen.getAllByRole("button", { name: /收起详情$/ })).toHaveLength(2);
+    expect(editFileTool.compareDocumentPosition(updatedAssistantBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(gatewayTool.compareDocumentPosition(updatedAssistantBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("only renders tool activity for turns that already have an assistant reply", () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -2692,9 +2775,10 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.queryByRole("button", { name: "edit_file 收起详情" })).not.toBeInTheDocument();
+    const streamingToolActivity = screen.getByRole("button", { name: "edit_file 收起详情" });
+    const streamingAssistantReply = screen.getByText("还在处理");
     expect(screen.queryByRole("button", { name: "read_file 收起详情" })).not.toBeInTheDocument();
-
+    expect(streamingToolActivity.compareDocumentPosition(streamingAssistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const settledToolActivity = screen.getByRole("button", { name: "write_file 收起详情" });
     const settledAssistantReply = screen.getByText("已经写回。");
     expect(settledToolActivity.compareDocumentPosition(settledAssistantReply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

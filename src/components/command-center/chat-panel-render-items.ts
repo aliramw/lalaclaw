@@ -48,7 +48,7 @@ type MessageRenderItem = {
 
 type TurnActivityRenderItem = {
   kind: "turn-activity";
-  key: string;
+  turnKey: string;
   tools: ChatPanelRenderTool[];
 };
 
@@ -94,7 +94,7 @@ function findTurnActivityInsertionIndex(messages: ChatPanelRenderMessage[], user
 
   for (let messageIndex = turn.startIndex + 1; messageIndex < turnEndIndex; messageIndex += 1) {
     const message = messages[messageIndex];
-    if (message?.role === "assistant" && !message.pending && !message.streaming) {
+    if (message?.role === "assistant" && !message.pending) {
       return messageIndex;
     }
   }
@@ -190,7 +190,7 @@ export function deriveChatPanelRenderItems({
     const turn = userTurns[turnIndex];
     activityItemsByMessageIndex.set(insertionIndex, {
       kind: "turn-activity",
-      key: `turn-activity-${turn.messageKey}`,
+      turnKey: turn.messageKey,
       tools,
     });
   }
