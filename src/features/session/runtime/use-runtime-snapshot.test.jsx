@@ -254,6 +254,112 @@ describe("useRuntimeSnapshot", () => {
     ]);
   });
 
+  it("preserves existing tool calls when a later timeline update for the same run omits them", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const initialTool = {
+      id: "tool-edit-1",
+      name: "edit_file",
+      status: "完成",
+      input: '{"file":"README.md"}',
+      output: "ok",
+      timestamp: 1010,
+    };
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "运行中",
+        },
+        taskTimeline: [
+          {
+            id: "run-tool-preserve-1",
+            timestamp: 1000,
+            prompt: "继续执行",
+            status: "进行中",
+            toolsSummary: "edit_file(完成)",
+            tools: [initialTool],
+            outcome: "执行中",
+          },
+        ],
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession({ mode: "openclaw" }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.taskTimeline).toEqual([
+        expect.objectContaining({
+          id: "run-tool-preserve-1",
+          tools: [expect.objectContaining(initialTool)],
+        }),
+      ]);
+    });
+
+    act(() => {
+      result.current.applySnapshot({
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "已完成",
+        },
+        taskTimeline: [
+          {
+            id: "run-tool-preserve-1",
+            timestamp: 1000,
+            prompt: "继续执行",
+            status: "已完成",
+            toolsSummary: "",
+            tools: [],
+            outcome: "执行完成",
+          },
+        ],
+        conversation: [],
+      });
+    });
+
+    expect(result.current.taskTimeline).toEqual([
+      expect.objectContaining({
+        id: "run-tool-preserve-1",
+        status: "已完成",
+        outcome: "执行完成",
+        tools: [expect.objectContaining(initialTool)],
+      }),
+    ]);
+  });
+
   it("trusts an empty idle snapshot over a stale settled local tail for fresh reset sessions", async () => {
     const setBusy = vi.fn();
     const setFastMode = vi.fn();
