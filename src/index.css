@@ -18,7 +18,7 @@
   --text: oklch(0.238 0.014 253.1);
   --text-muted: #715f4c;
   --text-subtle: #958166;
-  --focus-ring: #ea7800;
+  --focus-ring: #d06a00;
   --foreground: var(--text);
   --card: var(--surface);
   --card-foreground: var(--text);
