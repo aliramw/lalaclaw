@@ -1862,7 +1862,26 @@ export function createOpenClawClient({
             ? latestAssistantState.value
             : null;
           const nextText = latestAssistant ? normalizeChatMessageValue(latestAssistant) || '' : '';
+          const previousLatestText = latestText;
           emitDeltaFromFullText(nextText);
+          const historyReplyMatchesActivePrefix =
+            !previousLatestText
+            || nextText === previousLatestText
+            || nextText.startsWith(previousLatestText);
+          if (!settled && latestAssistant && nextText && historyReplyMatchesActivePrefix) {
+            settled = true;
+            resolveFinal({
+              event: 'chat',
+              payload: {
+                sessionKey: activeRunState.sessionKey,
+                runId: activeRunState.runId,
+                state: 'final',
+                message: latestAssistant,
+                source: 'history',
+              },
+            });
+            return;
+          }
           const waitResult = waitResultState.status === 'fulfilled' ? waitResultState.value : null;
           if (settleFromSilentWaitResult(waitResult)) {
             return;
@@ -2045,6 +2064,23 @@ export function createOpenClawClient({
       }
 
       if (String(waitResult?.status || '').trim().toLowerCase() === 'timeout') {
+        if (latestAssistant || latestSession.errorText) {
+          const finalAssistant = latestAssistant;
+          const finalText =
+            (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
+            || latestText
+            || latestSession.errorText;
+          const isErrorResponse = Boolean(
+            latestSession.errorText
+            && !normalizeChatMessageValue(finalAssistant)
+            && !latestText,
+          );
+          return {
+            outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
+            usage: finalAssistant?.usage || null,
+            ...(isErrorResponse ? { isError: true } : {}),
+          };
+        }
         continue;
       }
 

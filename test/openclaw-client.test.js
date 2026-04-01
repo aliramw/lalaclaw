@@ -1545,6 +1545,217 @@ describe("createOpenClawClient", () => {
     expect(result.outputText).toBe("前半段后半段");
   });
 
+  it("finalizes a command-center stream from strict-turn history when the final gateway event never arrives", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "delta",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "前半段" }],
+              },
+            },
+          });
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn(async (_cmd, args) => {
+      if (args.includes("agent.wait")) {
+        return {
+          stdout: JSON.stringify({
+            status: "timeout",
+          }),
+        };
+      }
+
+      if (args.includes("chat.history")) {
+        return {
+          stdout: JSON.stringify({
+            messages: [
+              {
+                role: "user",
+                timestamp: 2_000,
+                content: [{ type: "text", text: "继续" }],
+              },
+              {
+                role: "assistant",
+                timestamp: 2_100,
+                content: [{ type: "text", text: "前半段后半段" }],
+                usage: { output_tokens: 9 },
+              },
+            ],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected gateway call: ${args.join(" ")}`);
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    let settled = false;
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    ).then((value) => {
+      settled = true;
+      return value;
+    });
+
+    await flushGatewayTurnSetup();
+    await vi.advanceTimersByTimeAsync(1600);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(settled).toBe(true);
+
+    const result = await promise;
+    expect(deltas).toEqual(["前半段", "后半段"]);
+    expect(result).toEqual({
+      outputText: "前半段后半段",
+      usage: { output_tokens: 9 },
+    });
+  });
+
+  it("finalizes the fallback polling stream from current-turn history when agent.wait keeps timing out", async () => {
+    vi.useFakeTimers();
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onClose?.(1000, "");
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 2_000,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn(async (_cmd, args) => {
+      if (args.includes("agent.wait")) {
+        return {
+          stdout: JSON.stringify({
+            status: "timeout",
+          }),
+        };
+      }
+
+      if (args.includes("chat.history")) {
+        return {
+          stdout: JSON.stringify({
+            messages: [
+              {
+                role: "user",
+                timestamp: 2_000,
+                content: [{ type: "text", text: "继续" }],
+              },
+              {
+                role: "assistant",
+                timestamp: 2_100,
+                content: [{ type: "text", text: "恢复输出" }],
+                usage: { output_tokens: 7 },
+              },
+            ],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected gateway call: ${args.join(" ")}`);
+    });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    let settled = false;
+    const promise = client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    ).then((value) => {
+      settled = true;
+      return value;
+    });
+
+    await flushGatewayTurnSetup();
+    await vi.advanceTimersByTimeAsync(1200);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(settled).toBe(true);
+
+    const result = await promise;
+    expect(deltas).toEqual(["恢复输出"]);
+    expect(result).toEqual({
+      outputText: "恢复输出",
+      usage: { output_tokens: 7 },
+    });
+  });
+
   it("returns mock browser peek details when running outside openclaw mode", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

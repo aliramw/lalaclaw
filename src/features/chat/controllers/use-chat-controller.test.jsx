@@ -1291,7 +1291,7 @@ describe("useChatController", () => {
     ]);
   });
 
-  it("keeps the pending turn tracked until runtime catches up when the success snapshot is still assistant-only", async () => {
+  it("clears the pending turn once the success snapshot already returned a final assistant reply", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();
     const setPendingChatTurns = vi.fn();
@@ -1361,16 +1361,7 @@ describe("useChatController", () => {
     });
 
     const pendingSnapshots = collectPendingSnapshots(setPendingChatTurns);
-    expect(pendingSnapshots.at(-1)).toEqual({
-      "command-center:main": expect.objectContaining({
-        assistantMessageId: "msg-assistant-pending-1",
-        suppressPendingPlaceholder: true,
-        userMessage: expect.objectContaining({
-          content: "1",
-          id: "msg-user-1",
-        }),
-      }),
-    });
+    expect(pendingSnapshots.at(-1)).toEqual({});
   });
 
   it("restores the current user before final assistant replacement when runtime has temporarily collapsed the view to assistant-only", async () => {
@@ -2259,7 +2250,7 @@ describe("useChatController", () => {
     });
   });
 
-  it("persists the optimistic pending turn until runtime catches up when the success payload omits conversation", async () => {
+  it("clears the persisted pending turn when the success payload omits conversation but already returns final output", async () => {
     const setBusy = vi.fn();
     const setPendingChatTurns = vi.fn();
     const setSession = vi.fn();
@@ -2332,14 +2323,7 @@ describe("useChatController", () => {
         { id: "msg-user-persist-1", role: "user", content: "发完立刻刷新", timestamp: 3000 },
         { id: "msg-assistant-persist-runtime-catchup-1", role: "assistant", content: "任务完成", timestamp: expect.any(Number) },
       ],
-      pendingEntry: expect.objectContaining({
-        assistantMessageId: "msg-assistant-persist-runtime-catchup-1",
-        suppressPendingPlaceholder: true,
-        userMessage: expect.objectContaining({
-          id: "msg-user-persist-1",
-          content: "发完立刻刷新",
-        }),
-      }),
+      clearPendingKey: "command-center:main",
     });
   });
 

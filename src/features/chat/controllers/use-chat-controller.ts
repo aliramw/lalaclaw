@@ -8,6 +8,7 @@ import {
 import {
   consumeChatStream,
   conversationIncludesUserTurn,
+  hasVisibleAssistantContent,
   isAbortError,
   isNdjsonStreamResponse,
   shouldSuppressPendingPlaceholder,
@@ -596,9 +597,10 @@ export function useChatController({
       const isSessionResetCommand = /^\/(?:new|reset)(?:\s|$)/i.test(String(resolvedEntry.content || "").trim());
       const payloadIncludesUserTurn = Array.isArray(payload.conversation)
         && conversationIncludesUserTurn(payload.conversation, resolvedEntry);
+      const payloadHasFinalAssistantReply = hasVisibleAssistantContent(String(payload.outputText || ""));
       const canSyncConversationFromPayload = Array.isArray(payload.conversation)
         && (isSessionResetCommand || payloadIncludesUserTurn);
-      retainPendingUntilRuntimeCatchup = !isSessionResetCommand && !payloadIncludesUserTurn;
+      retainPendingUntilRuntimeCatchup = !isSessionResetCommand && !payloadIncludesUserTurn && !payloadHasFinalAssistantReply;
 
       if (isTabActive(targetTabId) && payload.session) {
         applySnapshot?.(payload, { syncConversation: canSyncConversationFromPayload });
