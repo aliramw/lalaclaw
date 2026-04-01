@@ -662,7 +662,7 @@ function FilesTab({
               loadWorkspaceRoot().catch(() => {});
             }}
             selectedDirectoryPath={selectedDirectoryPath}
-            visibleWorkspaceCount={visibleWorkspaceCount}
+            visibleWorkspaceCount={visibleWorkspaceCount ?? 0}
             workspaceFilterInput={workspaceFilterInput}
             workspaceNodes={workspaceNodes}
             workspaceState={workspaceState}

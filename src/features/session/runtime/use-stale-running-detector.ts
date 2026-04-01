@@ -1,63 +1,60 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
 
 const STALE_THRESHOLD_MS = 45_000;
 const CHECK_INTERVAL_MS = 5_000;
 
-type StaleRunningMessage = {
-  content?: unknown;
-  pending?: boolean;
-  role?: string;
-};
-
 type UseStaleRunningDetectorInput = {
-  busy?: boolean;
-  messages?: StaleRunningMessage[];
+  run?: Partial<ChatRunState> | null;
 };
 
-export function useStaleRunningDetector({ busy = false, messages = [] }: UseStaleRunningDetectorInput) {
+export function useStaleRunningDetector({ run = null }: UseStaleRunningDetectorInput) {
   const [staleSeconds, setStaleSeconds] = useState(0);
-  const busySinceRef = useRef(0);
-  const lastContentChangeRef = useRef(0);
-  const messagesLengthRef = useRef(messages.length);
+  const busySinceRef = useRef<number | null>(null);
+  const lastDeltaAtRef = useRef<number | null>(null);
+  const runIsBusy = useMemo(() => selectChatRunBusy(run), [run]);
+  const startedAt = Number(run?.startedAt || 0) || null;
+  const lastDeltaAt = Number(run?.lastDeltaAt || 0) || null;
 
   useEffect(() => {
-    if (busy) {
-      const now = Date.now();
+    if (runIsBusy) {
+      const baseline = startedAt || Date.now();
       if (!busySinceRef.current) {
-        busySinceRef.current = now;
-        lastContentChangeRef.current = now;
+        busySinceRef.current = baseline;
+      }
+      if (!lastDeltaAtRef.current) {
+        lastDeltaAtRef.current = lastDeltaAt || baseline;
       }
     } else {
-      busySinceRef.current = 0;
-      lastContentChangeRef.current = 0;
+      busySinceRef.current = null;
+      lastDeltaAtRef.current = null;
       setStaleSeconds(0);
     }
-  }, [busy]);
+  }, [lastDeltaAt, runIsBusy, startedAt]);
 
   useEffect(() => {
-    if (!busy) {
+    if (!runIsBusy) {
       return;
     }
-    if (messages.length !== messagesLengthRef.current) {
-      messagesLengthRef.current = messages.length;
-      lastContentChangeRef.current = Date.now();
-      setStaleSeconds(0);
-      return;
-    }
-    const last = messages[messages.length - 1];
-    if (last?.role === "assistant" && last?.content && !last?.pending) {
-      lastContentChangeRef.current = Date.now();
+
+    if (startedAt && (!busySinceRef.current || startedAt > busySinceRef.current)) {
+      busySinceRef.current = startedAt;
       setStaleSeconds(0);
     }
-  }, [busy, messages]);
+
+    if (lastDeltaAt && (!lastDeltaAtRef.current || lastDeltaAt > lastDeltaAtRef.current)) {
+      lastDeltaAtRef.current = lastDeltaAt;
+      setStaleSeconds(0);
+    }
+  }, [lastDeltaAt, runIsBusy, startedAt]);
 
   useEffect(() => {
-    if (!busy) {
+    if (!runIsBusy) {
       return undefined;
     }
 
     const id = setInterval(() => {
-      const baseline = Math.max(busySinceRef.current, lastContentChangeRef.current);
+      const baseline = Math.max(busySinceRef.current || 0, lastDeltaAtRef.current || 0);
       if (!baseline) {
         return;
       }
@@ -70,7 +67,7 @@ export function useStaleRunningDetector({ busy = false, messages = [] }: UseStal
     }, CHECK_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [busy]);
+  }, [runIsBusy]);
 
   return {
     isStaleRunning: staleSeconds > 0,

@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Keyboard, Languages, LogOut, Monitor, Moon, Plus, RotateCcw, Sun, X } from "lucide-react";
+import { randomBetween, stepAngleDegrees, randomNormal } from "./session-math-utils";
+import { isAquaticWalkerSpecies, buildSamplesFromAbsolutePoints, buildBezierSamplesFromAbsolutePoints } from "./session-walker-utils";
+import { createViewportBounds, pickRandomEdgeStart, pickRandomInteriorPoint, pickDiagonalInteriorPoint } from "./session-viewport-utils";
+import { getRandomTargetDurationMs, isSeparatedFromPoints, buildPrimaryLobsterWalkPath, buildCompanionLobsterWalkPath } from "./session-path-builder";
 import {
   DropdownIcon,
   DropdownMenu,
@@ -30,6 +34,9 @@ import dingtalkLogoMarkup from "@/assets/im-logos/im-logo-dingtalk.svg?raw";
 import feishuLogoMarkup from "@/assets/im-logos/im-logo-feishu.svg?raw";
 import wecomLogoMarkup from "@/assets/im-logos/im-logo-wecom.svg?raw";
 import weixinLogoMarkup from "@/assets/im-logos/im-logo-weixin.svg?raw";
+import { ContextUsageRing } from "./session-context-ring";
+import { clamp } from "./session-math-utils";
+import { BlockTooltipContent } from "./session-tooltip-content";
 
 type SessionOverviewSession = {
   agentId?: string;
@@ -178,10 +185,7 @@ const OverviewDropdownMenuCheckboxItem = DropdownMenuCheckboxItem as any;
 const OverviewDropdownMenuItem = DropdownMenuItem as any;
 
 const thinkModeOptions = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
-const LOBSTER_WALK_MARGIN = 32;
 const LOBSTER_SPEED_PX_PER_SECOND = 150;
-const LOBSTER_MIN_DURATION_MS = 5000;
-const LOBSTER_MAX_DURATION_MS = 15000;
 const CRAB_SPAWN_PROBABILITY = lobsterWalkTuning.crabSpawnProbability;
 const OCTOPUS_SPAWN_PROBABILITY = lobsterWalkTuning.octopusSpawnProbability;
 const PUFFER_SPAWN_PROBABILITY = lobsterWalkTuning.pufferSpawnProbability;
@@ -196,8 +200,6 @@ const LOBSTER_COMPANION_MAX_FONT_SIZE_PX = 180;
 const LOBSTER_COMPANION_MEAN_FONT_SIZE_PX = 72;
 const LOBSTER_COMPANION_STD_DEV_FONT_SIZE_PX = 28;
 const LOBSTER_MAX_FONT_SIZE_PX = lobsterWalkTuning.primaryFontSizePx;
-const LOBSTER_MIN_RANDOM_POINT_COUNT = 5;
-const LOBSTER_MAX_RANDOM_POINT_COUNT = 10;
 const WALKER_TURN_STEP_DEGREES = 6;
 const OCTOPUS_BREATH_SCALE = 0.1;
 const OCTOPUS_WIDTH_SQUASH_SCALE = 0.1;
@@ -217,41 +219,9 @@ const IM_PLATFORM_LOGOS = {
   },
 };
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
 
-function randomBetween(min, max) {
-  return min + (Math.random() * (max - min));
-}
 
-function normalizeAngleDelta(delta) {
-  let normalized = delta;
-  while (normalized > 180) normalized -= 360;
-  while (normalized < -180) normalized += 360;
-  return normalized;
-}
 
-function stepAngleDegrees(current, target, maxStep = WALKER_TURN_STEP_DEGREES) {
-  if (!Number.isFinite(current)) {
-    return target;
-  }
-
-  const delta = normalizeAngleDelta(target - current);
-  if (Math.abs(delta) <= maxStep) {
-    return target;
-  }
-
-  return current + (Math.sign(delta) * maxStep);
-}
-
-function randomNormal(mean, standardDeviation) {
-  const u1 = Math.max(Math.random(), Number.EPSILON);
-  const u2 = Math.random();
-  const magnitude = Math.sqrt(-2 * Math.log(u1));
-  const z0 = magnitude * Math.cos(2 * Math.PI * u2);
-  return mean + (z0 * standardDeviation);
-}
 
 function sampleCompanionFontSize() {
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -271,177 +241,17 @@ function sampleCompanionFontSize() {
   );
 }
 
-function distanceBetween(a, b) {
-  return Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
-}
 
-function getWalkerForwardVector(species = "", motionAngle: number | null = 0) {
-  const normalizedMotionAngle = Number.isFinite(motionAngle) ? Number(motionAngle) : 0;
-  const radians = ((species === "crab" ? normalizedMotionAngle : normalizedMotionAngle - 90) * Math.PI) / 180;
-  return {
-    x: Math.cos(radians),
-    y: Math.sin(radians),
-  };
-}
 
-function isAquaticWalkerSpecies(species = "") {
-  return species === "puffer" || species === "fish" || species === "tropical-fish";
-}
 
-function chaikinSmooth(points, iterations = 3) {
-  let smoothed = points;
 
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const next = [smoothed[0]];
-    for (let index = 0; index < smoothed.length - 1; index += 1) {
-      const current = smoothed[index];
-      const following = smoothed[index + 1];
-      next.push({
-        x: (0.75 * current.x) + (0.25 * following.x),
-        y: (0.75 * current.y) + (0.25 * following.y),
-      });
-      next.push({
-        x: (0.25 * current.x) + (0.75 * following.x),
-        y: (0.25 * current.y) + (0.75 * following.y),
-      });
-    }
-    next.push(smoothed.at(-1));
-    smoothed = next;
-  }
 
-  return smoothed;
-}
 
-function buildSamplesFromAbsolutePoints(points: SessionOverviewPoint[], startPoint: SessionOverviewPoint): SessionOverviewSample[] {
-  let totalLength = 0;
-  return points.map((point, index) => {
-    if (index > 0) {
-      totalLength += distanceBetween(points[index - 1], point);
-    }
 
-    return {
-      length: totalLength,
-      x: point.x - startPoint.x,
-      y: point.y - startPoint.y,
-    };
-  });
-}
 
-function buildBezierSamplesFromAbsolutePoints(
-  startPoint: SessionOverviewPoint,
-  controlPoint: SessionOverviewPoint,
-  endPoint: SessionOverviewPoint,
-  sampleCount = 64,
-): SessionOverviewSample[] {
-  const points: SessionOverviewPoint[] = [];
-  for (let index = 0; index <= sampleCount; index += 1) {
-    const t = index / sampleCount;
-    const inverse = 1 - t;
-    points.push({
-      x: (inverse * inverse * startPoint.x) + (2 * inverse * t * controlPoint.x) + (t * t * endPoint.x),
-      y: (inverse * inverse * startPoint.y) + (2 * inverse * t * controlPoint.y) + (t * t * endPoint.y),
-    });
-  }
 
-  return buildSamplesFromAbsolutePoints(points, startPoint);
-}
 
-function createViewportBounds(originRect: SessionOverviewRect) {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const minLeft = LOBSTER_WALK_MARGIN;
-  const maxLeft = Math.max(minLeft, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN);
-  const minTop = LOBSTER_WALK_MARGIN;
-  const maxTop = Math.max(minTop, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN);
 
-  return {
-    maxLeft,
-    maxTop,
-    minLeft,
-    minTop,
-  };
-}
-
-function pickRandomEdgeStart(originRect: SessionOverviewRect): SessionOverviewPoint {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const side = Math.floor(Math.random() * 4);
-
-  if (side === 0) {
-    return {
-      x: randomBetween(LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN),
-      y: -originRect.height - LOBSTER_OFFSCREEN_PADDING,
-    };
-  }
-
-  if (side === 1) {
-    return {
-      x: viewportWidth + LOBSTER_OFFSCREEN_PADDING,
-      y: randomBetween(LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN),
-    };
-  }
-
-  if (side === 2) {
-    return {
-      x: randomBetween(LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN),
-      y: viewportHeight + LOBSTER_OFFSCREEN_PADDING,
-    };
-  }
-
-  return {
-    x: -originRect.width - LOBSTER_OFFSCREEN_PADDING,
-    y: randomBetween(LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN),
-  };
-}
-
-function getNearestEdgeExitPoint(point: SessionOverviewPoint, originRect: SessionOverviewRect): SessionOverviewPoint {
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const candidates = [
-    { distance: point.x, point: { x: -originRect.width - LOBSTER_OFFSCREEN_PADDING, y: clamp(point.y, LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN) } },
-    { distance: viewportWidth - point.x, point: { x: viewportWidth + LOBSTER_OFFSCREEN_PADDING, y: clamp(point.y, LOBSTER_WALK_MARGIN, viewportHeight - originRect.height - LOBSTER_WALK_MARGIN) } },
-    { distance: point.y, point: { x: clamp(point.x, LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN), y: -originRect.height - LOBSTER_OFFSCREEN_PADDING } },
-    { distance: viewportHeight - point.y, point: { x: clamp(point.x, LOBSTER_WALK_MARGIN, viewportWidth - originRect.width - LOBSTER_WALK_MARGIN), y: viewportHeight + LOBSTER_OFFSCREEN_PADDING } },
-  ];
-
-  return candidates.sort((a, b) => a.distance - b.distance)[0]?.point || {
-    x: point.x,
-    y: point.y,
-  };
-}
-
-function pickRandomInteriorPoint(originRect: SessionOverviewRect): SessionOverviewPoint {
-  const bounds = createViewportBounds(originRect);
-  return {
-    x: randomBetween(bounds.minLeft, bounds.maxLeft),
-    y: randomBetween(bounds.minTop, bounds.maxTop),
-  };
-}
-
-function pickDiagonalInteriorPoint(startPoint: SessionOverviewPoint, originRect: SessionOverviewRect): SessionOverviewPoint {
-  const bounds = createViewportBounds(originRect);
-  const horizontalDirection = Math.random() < 0.5 ? -1 : 1;
-  const verticalDirection = Math.random() < 0.5 ? -1 : 1;
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-
-  return {
-    x: clamp(
-      startPoint.x + (horizontalDirection * randomBetween(viewportWidth * 0.16, viewportWidth * 0.34)),
-      bounds.minLeft,
-      bounds.maxLeft,
-    ),
-    y: clamp(
-      startPoint.y + (verticalDirection * randomBetween(viewportHeight * 0.16, viewportHeight * 0.34)),
-      bounds.minTop,
-      bounds.maxTop,
-    ),
-  };
-}
-
-function getRandomTargetDurationMs() {
-  return randomBetween(LOBSTER_MIN_DURATION_MS, LOBSTER_MAX_DURATION_MS);
-}
 
 function SessionSearchDialog({
   messages,
@@ -668,185 +478,10 @@ function SessionSearchDialog({
   ), document.body);
 }
 
-function createBreakoutAnchor({
-  avoidPoints,
-  bounds,
-  originRect,
-  startPoint,
-}: {
-  avoidPoints: SessionOverviewPoint[];
-  bounds: ReturnType<typeof createViewportBounds>;
-  originRect: SessionOverviewRect;
-  startPoint: SessionOverviewPoint;
-}): SessionOverviewPoint | null {
-  if (!avoidPoints.length) {
-    return null;
-  }
 
-  const nearest = avoidPoints.reduce<{ distance: number; point: SessionOverviewPoint } | null>((best, point) => {
-    const distance = distanceBetween(startPoint, point);
-    if (!best || distance < best.distance) {
-      return { distance, point };
-    }
-    return best;
-  }, null);
 
-  if (!nearest || nearest.distance > (originRect.width || 40) * 1.8) {
-    return null;
-  }
 
-  const dx = startPoint.x - nearest.point.x;
-  const dy = startPoint.y - nearest.point.y;
-  const magnitude = Math.hypot(dx, dy) || 1;
 
-  return {
-    x: clamp(startPoint.x + ((dx / magnitude) * 96), bounds.minLeft, bounds.maxLeft),
-    y: clamp(startPoint.y + ((dy / magnitude) * 96), bounds.minTop, bounds.maxTop),
-  };
-}
-
-function isSeparatedFromPoints(candidate: SessionOverviewPoint, avoidPoints: SessionOverviewPoint[], minimumDistance: number) {
-  return avoidPoints.every((point) => distanceBetween(candidate, point) >= minimumDistance);
-}
-
-function buildRandomWalkPath({
-  avoidPoints = [],
-  initialMotionAngle = null,
-  originRect,
-  resolveEndPoint,
-  species = "lobster",
-  startPoint,
-  targetDurationMs = null,
-}: {
-  avoidPoints?: SessionOverviewPoint[];
-  initialMotionAngle?: number | null;
-  originRect: SessionOverviewRect;
-  resolveEndPoint: (point: SessionOverviewPoint) => SessionOverviewPoint;
-  species?: string;
-  startPoint: SessionOverviewPoint;
-  targetDurationMs?: number | null;
-}): SessionOverviewWalkPath {
-  const bounds = createViewportBounds(originRect);
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const minStep = Math.max(72, Math.min(viewportWidth, viewportHeight) * 0.1);
-  const desiredDurationMs = targetDurationMs ?? getRandomTargetDurationMs();
-  const targetDistance = (LOBSTER_SPEED_PX_PER_SECOND * desiredDurationMs) / 1000;
-  const desiredPointCount = clamp(
-    Math.round(desiredDurationMs / 1800) + 2,
-    LOBSTER_MIN_RANDOM_POINT_COUNT,
-    LOBSTER_MAX_RANDOM_POINT_COUNT,
-  );
-  const minimumClearance = Math.max(originRect.width, originRect.height) * 1.4;
-
-  let bestPath: SessionOverviewWalkPath | null = null;
-
-  for (let attempt = 0; attempt < 18; attempt += 1) {
-    const anchors: SessionOverviewPoint[] = [startPoint];
-    const breakoutAnchor = createBreakoutAnchor({ avoidPoints, bounds, originRect, startPoint });
-    let previous = startPoint;
-
-    if (Number.isFinite(initialMotionAngle)) {
-      const forward = getWalkerForwardVector(species, initialMotionAngle);
-      const headingAnchor = {
-        x: clamp(startPoint.x + (forward.x * (minStep * 0.9)), bounds.minLeft, bounds.maxLeft),
-        y: clamp(startPoint.y + (forward.y * (minStep * 0.9)), bounds.minTop, bounds.maxTop),
-      };
-
-      if (
-        distanceBetween(startPoint, headingAnchor) >= minStep * 0.45 &&
-        isSeparatedFromPoints(headingAnchor, avoidPoints, minimumClearance * 0.8)
-      ) {
-        anchors.push(headingAnchor);
-        previous = headingAnchor;
-      }
-    }
-
-    if (breakoutAnchor && distanceBetween(startPoint, breakoutAnchor) >= minStep * 0.6) {
-      anchors.push(breakoutAnchor);
-      previous = breakoutAnchor;
-    }
-
-    while (anchors.length < desiredPointCount + 1) {
-      const candidate = {
-        x: randomBetween(bounds.minLeft, bounds.maxLeft),
-        y: randomBetween(bounds.minTop, bounds.maxTop),
-      };
-      const farEnough = distanceBetween(previous, candidate) >= minStep;
-      if (!farEnough || !isSeparatedFromPoints(candidate, avoidPoints, minimumClearance)) {
-        continue;
-      }
-
-      anchors.push(candidate);
-      previous = candidate;
-    }
-
-    anchors.push(resolveEndPoint(previous));
-    const smoothedPoints = chaikinSmooth(anchors, 3);
-    const samples = buildSamplesFromAbsolutePoints(smoothedPoints, startPoint);
-    const totalLength = samples.at(-1)?.length || 0;
-    const candidatePath = {
-      durationMs: (totalLength / LOBSTER_SPEED_PX_PER_SECOND) * 1000,
-      samples,
-      totalLength,
-    };
-
-    if (!bestPath || Math.abs(candidatePath.totalLength - targetDistance) < Math.abs(bestPath.totalLength - targetDistance)) {
-      bestPath = candidatePath;
-    }
-  }
-
-  if (bestPath) {
-    return bestPath;
-  }
-
-  const fallbackEndPoint = resolveEndPoint(startPoint);
-  const fallbackSamples = buildSamplesFromAbsolutePoints([startPoint, fallbackEndPoint], startPoint);
-  const fallbackLength = fallbackSamples.at(-1)?.length || 0;
-  return {
-    durationMs: (fallbackLength / LOBSTER_SPEED_PX_PER_SECOND) * 1000,
-    samples: fallbackSamples,
-    totalLength: fallbackLength,
-  };
-}
-
-function buildPrimaryLobsterWalkPath(
-  originRect: SessionOverviewRect,
-  startPoint: SessionOverviewPoint,
-  endPoint = startPoint,
-  avoidPoints: SessionOverviewPoint[] = [],
-  targetDurationMs: number | null = null,
-  initialMotionAngle: number | null = null,
-): SessionOverviewWalkPath {
-  return buildRandomWalkPath({
-    avoidPoints,
-    initialMotionAngle,
-    originRect,
-    resolveEndPoint: () => endPoint,
-    species: "lobster",
-    startPoint,
-    targetDurationMs,
-  });
-}
-
-function buildCompanionLobsterWalkPath(
-  originRect: SessionOverviewRect,
-  startPoint: SessionOverviewPoint,
-  avoidPoints: SessionOverviewPoint[] = [],
-  targetDurationMs: number | null = null,
-  species = "lobster",
-  initialMotionAngle: number | null = null,
-): SessionOverviewWalkPath {
-  return buildRandomWalkPath({
-    avoidPoints,
-    initialMotionAngle,
-    originRect,
-    resolveEndPoint: (point) => getNearestEdgeExitPoint(point, originRect),
-    species,
-    startPoint,
-    targetDurationMs,
-  });
-}
 
 function buildOctopusWalkPath(
   originRect: SessionOverviewRect,
@@ -999,7 +634,7 @@ function getWalkerTransform(point, walker) {
     const dx = Math.abs(point.dx) > 0.01 ? point.dx : Math.cos(((walker.motionAngle || 0) * Math.PI) / 180);
     const dy = Math.abs(point.dy) > 0.01 ? point.dy : Math.sin(((walker.motionAngle || 0) * Math.PI) / 180);
     const targetAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-    const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle);
+    const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle, WALKER_TURN_STEP_DEGREES);
     walker.motionAngle = motionAngle;
     return {
       emojiTransform: "scaleX(1.08) scaleY(0.92)",
@@ -1015,7 +650,7 @@ function getWalkerTransform(point, walker) {
       -PUFFER_MAX_PITCH_DEGREES,
       PUFFER_MAX_PITCH_DEGREES,
     );
-    const motionAngle = stepAngleDegrees(walker.motionAngle, targetPitch);
+    const motionAngle = stepAngleDegrees(walker.motionAngle, targetPitch, WALKER_TURN_STEP_DEGREES);
     walker.motionAngle = motionAngle;
     return {
       emojiTransform: walker.mirrored ? "scaleX(-1)" : "",
@@ -1026,7 +661,7 @@ function getWalkerTransform(point, walker) {
   const dx = Math.abs(point.dx) > 0.01 ? point.dx : Math.cos((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
   const dy = Math.abs(point.dy) > 0.01 ? point.dy : Math.sin((((walker.motionAngle || 0) - 90) * Math.PI) / 180);
   const targetAngle = Math.atan2(dy || -1, dx || 0) * (180 / Math.PI) + 90;
-  const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle);
+  const motionAngle = stepAngleDegrees(walker.motionAngle, targetAngle, WALKER_TURN_STEP_DEGREES);
   walker.motionAngle = motionAngle;
   return {
     emojiTransform: "",
@@ -1206,49 +841,6 @@ function getContextUsageRatio(contextUsed, contextMax) {
   }
 
   return clamp(contextUsed / contextMax, 0, 1);
-}
-
-function ContextUsageRing({ color, ratio, resolvedTheme }: { color?: string; ratio?: number; resolvedTheme?: string }) {
-  const normalizedRatio = clamp(ratio, 0, 1);
-  const radius = 6;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - normalizedRatio);
-  const trackColor = resolvedTheme === "light" ? "rgba(15, 23, 42, 0.12)" : "rgba(255, 255, 255, 0.18)";
-
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-flex h-4 w-4 shrink-0 items-center justify-center"
-      data-testid="context-usage-ring"
-      style={{ color }}
-    >
-      <svg className="-rotate-90" viewBox="0 0 16 16" width="16" height="16">
-        <circle cx="8" cy="8" r={radius} fill="none" stroke={trackColor} strokeWidth="2" />
-        <circle
-          cx="8"
-          cy="8"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          strokeWidth="2"
-        />
-      </svg>
-    </span>
-  );
-}
-
-function BlockTooltipContent({ label, value }: { label?: ReactNode; value?: ReactNode }) {
-  return (
-    <OverviewTooltipContent side="bottom" className="px-2.5 py-2">
-      <div className="space-y-0.5">
-        <div className="text-[10px] uppercase text-background/70">{label}</div>
-        <div className="max-w-[28rem] break-words">{value}</div>
-      </div>
-    </OverviewTooltipContent>
-  );
 }
 
 function SelectStatusPill({

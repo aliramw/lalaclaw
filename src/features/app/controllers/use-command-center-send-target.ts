@@ -1,7 +1,7 @@
 import type { MutableRefObject } from "react";
 import type { ChatTab, ChatTabMeta } from "@/types/chat";
 import type { AppSession } from "@/types/runtime";
-import { createAgentSessionUser, defaultSessionUser } from "@/features/app/storage";
+import { createAgentSessionUser, defaultSessionUser } from "@/features/app/state/app-session-identity";
 
 type SessionStateSnapshot = {
   sessionUser?: string;

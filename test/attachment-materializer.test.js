@@ -4,6 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { materializeInlineAttachments } from "../server/services/attachment-materializer.ts";
 
+function buildLocalDayStamp(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 describe("materializeInlineAttachments", () => {
   const tempRoots = [];
 
@@ -18,7 +25,8 @@ describe("materializeInlineAttachments", () => {
   });
 
   it("writes inline data-url attachments to disk and backfills path fields", () => {
-    vi.setSystemTime(new Date("2026-03-25T00:40:00+08:00"));
+    const now = new Date("2026-03-25T00:40:00+08:00");
+    vi.setSystemTime(now);
     const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-attachment-materializer-"));
     tempRoots.push(rootDir);
 
@@ -36,7 +44,7 @@ describe("materializeInlineAttachments", () => {
     );
 
     expect(attachment.fullPath).toMatch(
-      new RegExp(`${rootDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/media/web-uploads/2026-03-25/.+-wukong-mibai-eyes-brave\\.png$`),
+      new RegExp(`${rootDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/media/web-uploads/${buildLocalDayStamp(now)}/.+-wukong-mibai-eyes-brave\\.png$`),
     );
     expect(attachment.path).toBe(attachment.fullPath);
     expect(fs.existsSync(attachment.fullPath)).toBe(true);

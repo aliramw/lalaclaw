@@ -181,6 +181,43 @@ describe("createChatHandler", () => {
     });
   });
 
+  it("sanitizes internal openclaw command failures in json responses", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchOpenClaw: vi.fn(async () => {
+        throw new Error(
+          [
+            "Command failed: /Users/marila/.npm-global/bin/openclaw --token 208f9a617a5d3ca45171c3f1716d77b4322b4aafefbb8710",
+            "Gateway call failed: Error: gateway closed (1006 abnormal closure (no close frame)): no close reason",
+            "Gateway target: ws://127.0.0.1:18789/",
+            "Source: cli --url",
+            "Config: /Users/marila/.openclaw/openclaw.json",
+          ].join("\n"),
+        );
+      }),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.responseRecorder.calls[0]).toMatchObject({
+      statusCode: 500,
+      payload: {
+        ok: false,
+        error: "OpenClaw gateway unavailable.",
+      },
+    });
+    expect(harness.responseRecorder.calls[0].payload.error).not.toContain("--token");
+    expect(harness.responseRecorder.calls[0].payload.error).not.toContain("/Users/marila");
+    expect(harness.responseRecorder.calls[0].payload.error).not.toContain("Command failed:");
+  });
+
   it("handles fast commands without dispatching a model request", async () => {
     const harness = createHandler({
       parseRequestBody: vi.fn(async () => ({
@@ -692,6 +729,67 @@ describe("createChatHandler", () => {
 
     expect(harness.responseRecorder.sendJson).not.toHaveBeenCalled();
     expect(writes.some((chunk) => String(chunk || "").includes("\"message.error\""))).toBe(false);
+  });
+
+  it("sanitizes internal openclaw command failures in streamed error events", async () => {
+    let rejectDispatch;
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: true,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchOpenClawStream: vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            rejectDispatch = reject;
+          }),
+      ),
+    });
+
+    const req = new EventEmitter();
+    req.once = req.once.bind(req);
+    const writes = [];
+    const res = new EventEmitter();
+    res.once = res.once.bind(res);
+    res.headersSent = false;
+    res.destroyed = false;
+    res.writableEnded = false;
+    res.writeHead = vi.fn(() => {
+      res.headersSent = true;
+    });
+    res.write = vi.fn((chunk) => {
+      writes.push(String(chunk || ""));
+    });
+    res.end = vi.fn(() => {
+      res.writableEnded = true;
+    });
+
+    const handlerPromise = harness.handler(req, res);
+    await vi.waitFor(() => {
+      expect(harness.dispatchOpenClawStream).toHaveBeenCalledTimes(1);
+    });
+
+    rejectDispatch?.(
+      new Error(
+        [
+          "Command failed: /Users/marila/.npm-global/bin/openclaw --token 208f9a617a5d3ca45171c3f1716d77b4322b4aafefbb8710",
+          "Gateway call failed: Error: gateway closed (1006 abnormal closure (no close frame)): no close reason",
+          "Gateway target: ws://127.0.0.1:18789/",
+          "Config: /Users/marila/.openclaw/openclaw.json",
+        ].join("\n"),
+      ),
+    );
+    await expect(handlerPromise).resolves.toBeUndefined();
+
+    const errorChunk = writes.find((chunk) => chunk.includes("\"message.error\"")) || "";
+    expect(errorChunk).toContain("OpenClaw gateway unavailable.");
+    expect(errorChunk).not.toContain("--token");
+    expect(errorChunk).not.toContain("/Users/marila");
+    expect(errorChunk).not.toContain("Command failed:");
   });
 
   it("creates a fresh session for reset commands and copies preferences", async () => {

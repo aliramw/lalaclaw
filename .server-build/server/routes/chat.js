@@ -14,6 +14,43 @@ function createMockReply(intent = '', clip) {
 function parseRequestedSessionUser(value) {
     return String(value || 'command-center').trim() || 'command-center';
 }
+function getErrorMessage(error) {
+    return error instanceof Error
+        ? error.message
+        : String(error?.message || '').trim() || 'Unknown server error';
+}
+function sanitizeChatErrorMessage(error) {
+    const message = getErrorMessage(error).replace(/\r\n?/g, '\n').trim();
+    if (!message) {
+        return 'Unknown server error';
+    }
+    const sensitivePatterns = [
+        /^Command failed:/i,
+        /\b--token\b/i,
+        /\bGateway target:\b/i,
+        /\bSource:\s*cli\b/i,
+        /\bConfig:\s*[/~]/i,
+        /\bspawn openclaw\b/i,
+        /\/Users\//,
+    ];
+    const gatewayUnavailablePatterns = [
+        /\bgateway closed\b/i,
+        /\babnormal closure\b/i,
+        /\bhandshake timeout\b/i,
+        /\bECONNREFUSED\b/i,
+        /\bECONNRESET\b/i,
+        /\bEPIPE\b/i,
+        /\bsocket hang up\b/i,
+    ];
+    const hasSensitiveDetails = sensitivePatterns.some((pattern) => pattern.test(message));
+    if (!hasSensitiveDetails) {
+        return message;
+    }
+    if (gatewayUnavailablePatterns.some((pattern) => pattern.test(message))) {
+        return 'OpenClaw gateway unavailable.';
+    }
+    return 'OpenClaw request failed.';
+}
 function createChatStopHandler({ callOpenClawGateway, config, getCommandCenterSessionKey, parseRequestBody, resolveSessionAgentId, sendJson, }) {
     return async function handleChatStop(req, res) {
         try {
@@ -32,7 +69,7 @@ function createChatStopHandler({ callOpenClawGateway, config, getCommandCenterSe
             const stopError = error;
             sendJson(res, 500, {
                 ok: false,
-                error: stopError.message || 'Unknown server error',
+                error: sanitizeChatErrorMessage(stopError),
             });
         }
     };
@@ -471,12 +508,13 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
         }
         catch (error) {
             const chatError = error;
+            const safeErrorMessage = sanitizeChatErrorMessage(chatError);
             if (res.headersSent) {
                 if (!clientDisconnected && !res.destroyed && !res.writableEnded) {
                     writeChatStreamEvent(res, {
                         type: 'message.error',
                         messageId: typeof assistantMessageId === 'string' ? assistantMessageId : '',
-                        error: chatError.message || 'Unknown server error',
+                        error: safeErrorMessage,
                     });
                     res.end();
                 }
@@ -484,7 +522,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
             }
             sendJson(res, 500, {
                 ok: false,
-                error: chatError.message || 'Unknown server error',
+                error: safeErrorMessage,
             });
         }
     };

@@ -7,12 +7,11 @@ import type {
   SessionFile,
   SessionFileRewrite,
 } from "@/types/chat";
-import {
-  createAgentTabId,
-  defaultSessionUser,
-  hasSnapshotAdvancedPastPendingTurn,
-} from "@/features/app/storage";
+import type { AppSession } from "@/types/runtime";
 import { createBaseSession } from "@/features/app/state";
+import { createAgentTabId, createConversationKey, defaultSessionUser } from "@/features/app/state/app-session-identity";
+import { resolveRuntimePendingEntry } from "@/features/chat/state/chat-runtime-pending";
+import { deriveLegacyChatRunState, selectChatRunBusy } from "@/features/chat/state/chat-session-state";
 import {
   createImRuntimeAnchorSessionUser,
   getImSessionDisplayName,
@@ -20,7 +19,6 @@ import {
   isImSessionUser,
   resolveImSessionType,
 } from "@/features/session/im-session";
-import { normalizeStatusKey } from "@/features/session/status-display";
 import { buildCanonicalImSessionUser } from "@/lib/im-session-key";
 
 const chatScrollBottomThresholdPx = 48;
@@ -155,7 +153,12 @@ export function mergeSessionFileRewrites(
   return merged;
 }
 
-export function createSessionForTab(messages, tab, meta, cachedSession = null) {
+export function createSessionForTab(
+  messages: any,
+  tab: ChatTab | null | undefined,
+  meta: ChatTabMeta | null | undefined,
+  cachedSession: AppSession | null | undefined = null,
+): AppSession {
   if (cachedSession) {
     return cachedSession;
   }
@@ -361,54 +364,38 @@ export function isChatTabBusy({
   pendingChatTurns?: ConversationPendingMap;
 } = {}) {
   const normalizedTabId = String(tabId || "").trim();
-  const trackedPendingEntry = Object.values(pendingChatTurns || {}).find((entry) => String(entry?.tabId || "").trim() === normalizedTabId) || null;
-  if (trackedPendingEntry) {
-    const currentMessages = messagesByTabId?.[tabId] || [];
-    const hasAdvancedPastPending = hasSnapshotAdvancedPastPendingTurn(currentMessages, trackedPendingEntry);
-    const hasSettledTrackedReply = !hasActiveAssistantReply(currentMessages)
-      && hasTrackedPendingAssistantReply(currentMessages, trackedPendingEntry);
-    if (!hasAdvancedPastPending && !hasSettledTrackedReply) {
-      return true;
-    }
-  }
+  const normalizedSessionUser = String(sessionUser || "").trim();
+  const normalizedAgentId = resolveAgentIdFromTabId(normalizedTabId);
+  const tabMessages = messagesByTabId?.[tabId] || [];
+  const conversationKey = createConversationKey(normalizedSessionUser, normalizedAgentId);
+  const trackedPendingEntry = pendingChatTurns?.[conversationKey]
+    || Object.values(pendingChatTurns || {}).find((entry) => String(entry?.tabId || "").trim() === normalizedTabId)
+    || null;
+  const pendingEntry = resolveRuntimePendingEntry({
+    agentId: normalizedAgentId,
+    conversationKey,
+    conversationMessages: tabMessages,
+    localMessages: [],
+    pendingChatTurns: trackedPendingEntry ? { [conversationKey]: trackedPendingEntry } : {},
+    sessionStatus,
+    sessionUser: normalizedSessionUser,
+  });
+  const run = deriveLegacyChatRunState({
+    allowSessionStatusBusy:
+      normalizedTabId === String(activeChatTabId || "").trim()
+      && isImSessionUser(sessionUser),
+    messages: tabMessages,
+    pendingEntry,
+    rawBusy: Boolean(busyByTabId?.[tabId]),
+    sessionStatus,
+    tabId: normalizedTabId,
+  });
 
-  if (hasActiveAssistantReply(messagesByTabId?.[tabId] || [])) {
-    return true;
-  }
-
-  if (
-    tabId === activeChatTabId
-    && isImSessionUser(sessionUser)
-    && ["running", "dispatching"].includes(normalizeStatusKey(sessionStatus))
-  ) {
-    return true;
-  }
-
-  return Boolean(busyByTabId?.[tabId]);
+  return selectChatRunBusy(run);
 }
 
 function normalizeRuntimeIdentityValue(value = "") {
   return String(value || "").trim();
-}
-
-function hasTrackedPendingAssistantReply(messages: ChatMessage[] = [], pendingEntry: ConversationPendingMap[string] | null = null) {
-  if (pendingEntry?.stopped) {
-    return false;
-  }
-
-  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
-  if (!assistantMessageId) {
-    return false;
-  }
-
-  return (messages || []).some(
-    (message) =>
-      message?.role === "assistant"
-      && !message?.pending
-      && !message?.streaming
-      && String(message?.id || "").trim() === assistantMessageId
-      && Boolean(String(message?.content || "").trim()),
-  );
 }
 
 export function hasActiveAssistantReply(messages: ChatMessage[] = []) {
@@ -504,7 +491,7 @@ export function buildInitialMessagesByTabId(stored, activeChatTabId) {
   }
 
   return {
-    [activeChatTabId]: stored?.messages || [],
+    [activeChatTabId]: [],
   };
 }
 

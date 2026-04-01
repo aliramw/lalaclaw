@@ -11,6 +11,7 @@ const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_WORKSPACE_FILE_LIMIT = 200;
 const DEFAULT_FRONTEND_URL = 'http://127.0.0.1:5173';
+const LIVE_CONFIG_TIMEOUT_MS = 1500;
 const LALACLAW_VERSION = (() => {
     try {
         const packageJsonPath = path.resolve(__dirname, '..', '..', 'package.json');
@@ -170,7 +171,7 @@ function choosePreferredReplayTurn(previous, next) {
     if (previousText !== nextText) {
         return nextText.length >= previousText.length ? next : previous;
     }
-    return next;
+    return previous;
 }
 function choosePreferredAssistantReplay(previous, next) {
     const previousAttachmentScore = getConversationAttachmentPayloadScore(previous.attachments);
@@ -189,6 +190,28 @@ function choosePreferredAssistantReplay(previous, next) {
         return nextContent.length >= previousContent.length ? next : previous;
     }
     return previous;
+}
+function isAssistantReplayTimestampMatch(previousTimestamp, nextTimestamp) {
+    if (previousTimestamp > 0 && nextTimestamp > 0) {
+        return Math.abs(nextTimestamp - previousTimestamp) <= DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS;
+    }
+    return true;
+}
+function shouldCollapseAssistantPrefixReplay(previous, next) {
+    if (previous?.role !== 'assistant' || next?.role !== 'assistant') {
+        return false;
+    }
+    const previousText = normalizeConversationContent(previous.content);
+    const nextText = normalizeConversationContent(next.content);
+    if (!previousText || !nextText || previousText === nextText) {
+        return false;
+    }
+    if (!isAssistantReplayTimestampMatch(Number(previous.timestamp || 0), Number(next.timestamp || 0))) {
+        return false;
+    }
+    const shorter = previousText.length <= nextText.length ? previousText : nextText;
+    const longer = previousText.length > nextText.length ? previousText : nextText;
+    return longer.startsWith(shorter);
 }
 function collapseDuplicateConversationTurns(entries = []) {
     const collapsed = [];
@@ -285,15 +308,21 @@ function collapseDuplicateConversationTurns(entries = []) {
             const fingerprint = normalizeConversationContent(entry.content)
                 || getConversationAttachmentFingerprint(entry.attachments);
             const timestamp = Number(entry.timestamp || 0);
+            const previousAssistantEntry = collapsed[collapsed.length - 1];
             const isImmediateDuplicateAssistant = assistantSeenForCurrentTurn
                 && !pendingReplayBeforeAssistant
                 && !suppressAssistantReplay
-                && Boolean(fingerprint)
-                && fingerprint === lastAssistantFingerprint;
+                && previousAssistantEntry?.role === 'assistant'
+                && ((Boolean(fingerprint) && fingerprint === lastAssistantFingerprint)
+                    || shouldCollapseAssistantPrefixReplay(previousAssistantEntry, entry));
             if (isImmediateDuplicateAssistant) {
-                const previousAssistantEntry = collapsed[collapsed.length - 1];
                 if (previousAssistantEntry?.role === 'assistant') {
-                    collapsed[collapsed.length - 1] = choosePreferredAssistantReplay(previousAssistantEntry, entry);
+                    const preferred = choosePreferredAssistantReplay(previousAssistantEntry, entry);
+                    collapsed[collapsed.length - 1] = preferred;
+                    lastAssistantTimestamp = Number(preferred.timestamp || timestamp || 0);
+                    lastAssistantFingerprint =
+                        normalizeConversationContent(preferred.content)
+                            || getConversationAttachmentFingerprint(preferred.attachments);
                 }
                 continue;
             }
@@ -518,6 +547,37 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         value: null,
     };
     let liveConfigFetchPromise = null;
+    function extractTranscriptSessionStatusKey(entry = null) {
+        if (entry?.type !== 'message' || entry?.message?.role !== 'toolResult') {
+            return '';
+        }
+        const statusText = extractTextSegments(entry?.message?.content).join('\n').trim();
+        return statusText.match(/^\s*status:\s*(.+)$/im)?.[1]?.trim() || '';
+    }
+    function scopeDashboardEntriesToSession(entries = [], sessionKey = '') {
+        const normalizedSessionKey = String(sessionKey || '').trim();
+        if (!normalizedSessionKey || !entries.length) {
+            return entries;
+        }
+        const sessionMarkers = entries
+            .map((entry, index) => ({
+            index,
+            sessionKey: extractTranscriptSessionStatusKey(entry),
+        }))
+            .filter((entry) => entry.sessionKey);
+        const matchedMarker = [...sessionMarkers]
+            .reverse()
+            .find((entry) => entry.sessionKey === normalizedSessionKey);
+        if (!matchedMarker) {
+            return entries;
+        }
+        const nextMarker = sessionMarkers.find((entry) => entry.index > matchedMarker.index);
+        let startIndex = matchedMarker.index;
+        if (startIndex > 0 && entries[startIndex - 1]?.type === 'session') {
+            startIndex -= 1;
+        }
+        return entries.slice(startIndex, nextMarker?.index || entries.length);
+    }
     function inferOpenClawSessionStatus(parsedStatus, conversation = []) {
         const latestUserTimestamp = [...conversation]
             .reverse()
@@ -552,7 +612,12 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         }
         liveConfigFetchPromise = (async () => {
             try {
-                const result = await callOpenClawGateway('config.get');
+                const result = await Promise.race([
+                    callOpenClawGateway('config.get'),
+                    new Promise((resolve) => {
+                        setTimeout(() => resolve(null), LIVE_CONFIG_TIMEOUT_MS);
+                    }),
+                ]);
                 const nextConfig = result?.config ||
                     result?.resolved ||
                     result?.parsed ||
@@ -898,6 +963,7 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
             : transcriptPath
                 ? readJsonLines(transcriptPath).slice(-240)
                 : [];
+        const sessionEntries = scopeDashboardEntriesToSession(entries, sessionKey);
         const injectedFiles = sessionRecord?.systemPromptReport?.injectedWorkspaceFiles || [];
         const [statusResult, browserPeek, liveConfig] = await Promise.all([
             invokeOpenClawTool('session_status', {}, sessionKey).catch(() => null),
@@ -909,7 +975,7 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         ]);
         const statusText = statusResult?.details?.statusText || extractTextSegments(statusResult?.content).join('\n');
         const parsedStatus = parseSessionStatusText(statusText);
-        const latestAssistant = [...entries]
+        const latestAssistant = [...sessionEntries]
             .reverse()
             .find((entry) => entry.type === 'message' && entry.message?.role === 'assistant');
         const latestModel = parsedStatus?.modelDisplay ||
@@ -920,9 +986,9 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         const availableAgents = collectAvailableAgents(config.localConfig, [agentId]);
         const availableMentionAgents = collectAllowedSubagents(config.localConfig, agentId);
         const availableSkills = collectAvailableSkills(liveConfig || config.localConfig, agentId);
-        const gatewayConversation = collectConversationMessages(entries);
+        const gatewayConversation = collectConversationMessages(sessionEntries);
         const mergedConversation = mergeConversationMessages(gatewayConversation, localConversation);
-        const latestRunUsage = collectLatestRunUsage(entries);
+        const latestRunUsage = collectLatestRunUsage(sessionEntries);
         const tokenBadge = formatTokenBadge(latestRunUsage || {
             input: parsedStatus?.tokensInput || 0,
             output: parsedStatus?.tokensOutput || 0,
@@ -966,12 +1032,12 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
                 availableSkills,
             },
             conversation: mergedConversation,
-            taskRelationships: collectTaskRelationships(entries, agentId),
-            taskTimeline: collectTaskTimeline(entries, [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }),
-            toolHistory: collectToolHistory(entries),
-            files: mergeProjectedFiles(collectFiles([...entries, ...localFileEntries], [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }), []),
-            artifacts: collectArtifacts(entries),
-            snapshots: collectSnapshots(entries, sessionRecord),
+            taskRelationships: collectTaskRelationships(sessionEntries, agentId),
+            taskTimeline: collectTaskTimeline(sessionEntries, [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }),
+            toolHistory: collectToolHistory(sessionEntries),
+            files: mergeProjectedFiles(collectFiles([...sessionEntries, ...localFileEntries], [PROJECT_ROOT, config.workspaceRoot], { injectedFiles }), []),
+            artifacts: collectArtifacts(sessionEntries),
+            snapshots: collectSnapshots(sessionEntries, sessionRecord),
             agents: buildAgentGraph(),
             peeks: {
                 workspace: buildWorkspacePeek(workspaceRoot),

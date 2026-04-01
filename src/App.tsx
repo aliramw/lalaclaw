@@ -15,7 +15,7 @@ import { SettingsDialog } from "@/components/command-center/settings-dialog";
 import { useCommandCenter } from "@/features/app/controllers";
 import { AccessGate } from "@/features/auth/access-gate";
 import { useAccessGate } from "@/features/auth/access-context";
-import { defaultInspectorPanelWidth, maxInspectorPanelWidth, minInspectorPanelWidth } from "@/features/app/storage";
+import { defaultInspectorPanelWidth, maxInspectorPanelWidth, minInspectorPanelWidth } from "@/features/app/state/app-preferences";
 import { getLocalizedStatusLabel, getRelationshipStatusBadgeProps, normalizeStatusKey } from "@/features/session/status-display";
 import { I18nProvider } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
@@ -352,6 +352,7 @@ function AppContent() {
   const { accessMode, loggingOut, logout } = useAccessGate();
   const {
     activeChatTabId,
+    activeChatRun,
     activeQueuedMessages,
     activeTab,
     agents,
@@ -647,6 +648,12 @@ function AppContent() {
     () => getCompactInspectorPanelWidth(splitLayoutWidth),
     [getCompactInspectorPanelWidth, splitLayoutWidth],
   );
+  const environmentPeek = peeks?.environment && typeof peeks.environment === "object"
+    ? peeks.environment as { items?: Array<{ label?: string; value?: string }> }
+    : null;
+  const workspacePeek = peeks?.workspace && typeof peeks.workspace === "object"
+    ? peeks.workspace as { entries?: Record<string, unknown>[]; totalCount?: number }
+    : null;
   const settingsEnvironmentItems = useMemo(() => [
     {
       label: i18nMessages.inspector.environment.runtimeTransport,
@@ -668,10 +675,10 @@ function AppContent() {
           value: runtimeFallbackReason,
         }]
       : []),
-    ...(peeks?.environment?.items || []),
+    ...(environmentPeek?.items || []),
   ], [
+    environmentPeek?.items,
     i18nMessages,
-    peeks?.environment?.items,
     runtimeFallbackReason,
     runtimeReconnectAttempts,
     runtimeSocketStatus,
@@ -790,9 +797,9 @@ function AppContent() {
     taskTimeline,
     workspaceFilesOpen,
   ]);
-  const chatWorkspaceFiles = peeks?.workspace?.entries || [];
-  const chatWorkspaceCount = Number(peeks?.workspace?.totalCount);
-  const chatWorkspaceLoaded = Array.isArray(peeks?.workspace?.entries);
+  const chatWorkspaceFiles = workspacePeek?.entries || [];
+  const chatWorkspaceCount = Number(workspacePeek?.totalCount);
+  const chatWorkspaceLoaded = Array.isArray(workspacePeek?.entries);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -855,6 +862,7 @@ function AppContent() {
                 promptSyncVersion={promptSyncVersion}
                 promptRef={promptRef}
                 resolvedTheme={resolvedTheme}
+                run={activeChatRun}
                 restoredScrollKey={restoredChatScrollKey}
                 restoredScrollRevision={restoredChatScrollRevision}
                 restoredScrollState={restoredChatScrollState}

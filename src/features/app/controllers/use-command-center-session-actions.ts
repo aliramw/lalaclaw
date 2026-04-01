@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { AppSession } from "@/types/runtime";
 import type { ChatTab } from "@/types/chat";
-import { createAgentSessionUser, defaultSessionUser } from "@/features/app/storage";
+import { createAgentSessionUser, defaultSessionUser } from "@/features/app/state/app-session-identity";
 import { resolveAgentIdFromTabId } from "@/features/app/controllers/use-command-center-helpers";
 
 type SessionActionsI18n = {
@@ -35,7 +35,6 @@ type ModelSwitchNotice = {
 
 type UseCommandCenterSessionActionsOptions = {
   activeChatTab: ChatTab | undefined;
-  applyOpenAgentTab: (nextAgent: string) => Promise<{ created: boolean; tabId: string | null }>;
   i18n: SessionActionsI18n;
   loadRuntime: (sessionUser: string, options?: { agentId?: string }) => Promise<unknown>;
   model: string;

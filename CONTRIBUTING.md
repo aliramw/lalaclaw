@@ -22,6 +22,16 @@ npm run build
 
 Run `npm run test:coverage` when you are making broader release-facing, cross-cutting, or high-risk changes and want a wider regression signal.
 
+For ownership refactors or boundary-only changes around `app/storage`, `app/state`, `chat/state`, or `theme`, you can also run the focused architecture guardrail:
+
+```bash
+npm run list:architecture:contracts
+npm run list:architecture:contracts:json
+npm run check:architecture:contracts
+```
+
+Architecture contract files are auto-discovered from those feature folders when they use the existing naming patterns such as `*-core-api.test.*`, `*-boundary.test.*`, or `*-compatibility-api.test.*`. The JSON listing also includes a small per-feature summary so CI or local tooling can confirm the matrix shape quickly.
+
 For browser-level end-to-end coverage, install the Playwright browser once and then run:
 
 ```bash
@@ -129,6 +139,7 @@ That smoke installs the published tarball into a clean temp directory, starts `l
   - `npm test`
   - `npm run build`
   - `npm run test:coverage` for broader release-facing changes
+  - `npm run check:architecture:contracts` when the change is mainly about module ownership, public API surface, or dependency direction
 - Avoid unrelated formatting churn in touched files.
 - If your change affects OpenClaw integration, prefer mock-safe tests by default.
 
@@ -151,6 +162,7 @@ That smoke installs the published tarball into a clean temp directory, starts `l
   - Docs-only or copy-only changes may skip tests, but say so explicitly in the PR.
   - Typical UI or small backend logic changes should run affected tests, or `npm test` if the impact is unclear.
   - Runtime, session, storage, streaming, hydration, pending recovery, or concurrency changes should run affected tests and prefer `App`-level or controller-level regressions.
+  - Boundary-only refactors that mostly tighten exports, compatibility shells, or dependency direction should also consider `npm run check:architecture:contracts` as the narrow architecture regression pass.
   - Release-facing changes, dependency upgrades, build pipeline changes, or version bumps should run `npm run lint`, `npm test`, `npm run build`, and `npm run pack:release`, plus `npm run test:coverage` when the risk is broad.
 - If your change depends on built output, run `npm run build` and verify against `npm run lalaclaw:start` or `npm start`.
 - If you are validating a release artifact, install the tarball generated under `artifacts/` in a clean temporary directory and check the installed app itself, not only the source workspace.

@@ -5,27 +5,27 @@ import type {
   ConversationPendingMap,
 } from "@/types/chat";
 import type { AppSession } from "@/types/runtime";
-import {
-  createConversationKey,
-  defaultSessionUser,
-  mergePendingConversation,
-  pruneCompletedPendingChatTurns,
-} from "@/features/app/storage";
+import { createConversationKey, defaultSessionUser } from "@/features/app/state/app-session-identity";
+import { pruneCompletedPendingChatTurns } from "@/features/app/state/app-pending-storage";
 import {
   createSessionForTab,
   createTabMeta,
   getSettledMessageKeys,
 } from "@/features/app/controllers/use-command-center-helpers";
+import { buildDashboardChatSessionState } from "@/features/chat/state/chat-dashboard-session";
 
-export function resolveInitialActiveChatTabId(stored, initialChatTabs: ChatTab[] = []) {
+export function resolveInitialActiveChatTabId(
+  stored: Record<string, unknown> | null | undefined,
+  initialChatTabs: ChatTab[] = [],
+) {
   const requested = String(stored?.activeChatTabId || "").trim();
   return initialChatTabs.some((tab) => tab.id === requested) ? requested : initialChatTabs[0]?.id || "";
 }
 
 export function buildStoredPendingChatTurns(
-  rawStoredPendingChatTurns,
-  initialMessagesByTabId,
-  initialTabMetaById,
+  rawStoredPendingChatTurns: ConversationPendingMap = {},
+  initialMessagesByTabId: Record<string, ChatMessage[]> = {},
+  initialTabMetaById: Record<string, ChatTabMeta> = {},
 ): ConversationPendingMap {
   const pruned = pruneCompletedPendingChatTurns(rawStoredPendingChatTurns, initialMessagesByTabId, initialTabMetaById);
   const tabIdByConversationKey = Object.fromEntries(
@@ -60,24 +60,26 @@ export function buildInitialHydratedMessagesByTabId(
   initialTabMetaById: Record<string, ChatTabMeta> = {},
   initialMessagesByTabId: Record<string, ChatMessage[]> = {},
   storedPendingChatTurns: ConversationPendingMap = {},
-  thinkingPlaceholder = "",
+  _thinkingPlaceholder = "",
 ) {
   return Object.fromEntries(
     initialChatTabs.map((tab) => {
+      const baseMessages = initialMessagesByTabId[tab.id] || [];
       const meta = initialTabMetaById[tab.id] || createTabMeta(tab);
       const conversationKey = createConversationKey(meta.sessionUser, meta.agentId);
-      const pendingEntry = storedPendingChatTurns[conversationKey] || null;
-      const baseMessages = initialMessagesByTabId[tab.id] || [];
-
-      return [
-        tab.id,
-        mergePendingConversation(
-          baseMessages,
-          pendingEntry,
-          thinkingPlaceholder,
-          baseMessages,
-        ),
-      ];
+      const pendingEntry = storedPendingChatTurns[conversationKey];
+      const dashboardState = buildDashboardChatSessionState({
+        agentId: meta.agentId,
+        conversationKey,
+        messages: baseMessages,
+        pendingEntry,
+        rawBusy: Boolean(pendingEntry),
+        sessionStatus: "",
+        source: "history",
+        thinkingPlaceholder: _thinkingPlaceholder,
+        transport: "idle",
+      });
+      return [tab.id, dashboardState.settledMessages];
     }),
   );
 }

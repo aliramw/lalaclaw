@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ChatScrollState } from "@/types/chat";
-import { createConversationKey } from "@/features/app/storage";
+import { createConversationKey } from "@/features/app/state/app-session-identity";
 import { maxPromptRows } from "@/features/chat/utils";
 import {
   areEquivalentChatScrollState,

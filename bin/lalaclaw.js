@@ -386,11 +386,10 @@ function isSourceCheckout(projectRoot = PROJECT_ROOT) {
     return true;
   }
 
-  const sourceMarkers = [
-    path.join(projectRoot, 'src', 'main.jsx'),
-    path.join(projectRoot, 'vite.config.mjs'),
-  ];
-  return sourceMarkers.every((filePath) => fs.existsSync(filePath));
+  const srcDir = path.join(projectRoot, 'src');
+  const viteConfig = path.join(projectRoot, 'vite.config.mjs');
+
+  return fs.existsSync(srcDir) && fs.existsSync(viteConfig);
 }
 
 function detectLocalOpenClaw() {
@@ -2230,7 +2229,7 @@ function runChild(command, args, env) {
 
 function ensureDevelopmentAssetsAvailable() {
   const requiredPaths = [
-    path.join(PROJECT_ROOT, 'src', 'main.jsx'),
+    path.join(PROJECT_ROOT, 'src', 'main.tsx'),
     path.join(PROJECT_ROOT, 'vite.config.mjs'),
     path.join(PROJECT_ROOT, 'node_modules'),
   ];

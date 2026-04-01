@@ -164,6 +164,7 @@ function createAppContext() {
         getCommandCenterSessionKey,
         resolveSessionAgentId,
         resolveSessionModel,
+        resolveSessionRecord,
         readTextIfExists: config_1.readTextIfExists,
         tailLines,
     });

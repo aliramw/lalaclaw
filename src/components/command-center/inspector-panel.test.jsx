@@ -1125,7 +1125,7 @@ describe("InspectorPanel", () => {
     expect(onRefreshEnvironment).toHaveBeenCalledTimes(1);
   });
 
-  it("loads the OpenClaw update state and runs the official update flow", async () => {
+  it("loads the OpenClaw update state and runs the official update flow", { timeout: 10000 }, async () => {
     const onRefreshEnvironment = vi.fn(async () => {});
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);

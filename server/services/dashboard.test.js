@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createDashboardService } from "./dashboard.ts";
+import { createDashboardService, mergeConversationMessages } from "./dashboard.ts";
 import { createTranscriptProjector } from "./transcript.ts";
 
 function buildTestTranscriptProjector(rootDir) {
@@ -37,6 +37,7 @@ describe("createDashboardService", () => {
   const tempDirs = [];
 
   afterEach(() => {
+    vi.useRealTimers();
     while (tempDirs.length) {
       fs.rmSync(tempDirs.pop(), { force: true, recursive: true });
     }
@@ -252,6 +253,143 @@ describe("createDashboardService", () => {
 
     expect(snapshot.session.status).toBe("运行中");
     expect(snapshot.conversation.at(-1)).toMatchObject({ role: "user", content: "我测试一下" });
+  });
+
+  it("scopes fallback transcript history to the requested session when another IM session shares the same file tail", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-fallback-scope-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const sessionKey = "agent:main:dingtalk-connector:direct:398058";
+    const otherSessionKey = "agent:main:dingtalk-connector:direct:998877";
+    const sessionRecord = {
+      updatedAt: 1773722999708,
+      sessionId: "missing-session-id",
+    };
+
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify({
+        [sessionKey]: sessionRecord,
+      }),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(sessionsDir, "fallback.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "fallback", timestamp: "2026-03-17T04:40:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:40:01.000Z",
+          message: {
+            role: "toolResult",
+            content: [{ type: "text", text: `status: ${sessionKey}` }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:40:10.000Z",
+          message: {
+            role: "user",
+            timestamp: 1773722410000,
+            content: [{ type: "text", text: "当前会话消息" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:40:15.000Z",
+          message: {
+            role: "assistant",
+            timestamp: 1773722415000,
+            content: [{ type: "text", text: "当前会话回复" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:40:20.000Z",
+          message: {
+            role: "toolResult",
+            content: [{ type: "text", text: `status: ${otherSessionKey}` }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-03-17T04:40:25.000Z",
+          message: {
+            role: "user",
+            timestamp: 1773722425000,
+            content: [{ type: "text", text: "别的会话消息" }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = buildTestTranscriptProjector(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: projector.collectConversationMessages,
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: { mode: "openclaw", workspaceRoot: rootDir, model: "openai-codex/gpt-5.4", localConfig: {} },
+      extractTextSegments: projector.extractTextSegments,
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => String(nextSessionUser || "").startsWith("agent:") ? nextSessionUser : sessionKey,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: projector.getTranscriptEntriesForSession,
+      getTranscriptPath: projector.getTranscriptPath,
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: projector.readJsonLines,
+      readTextIfExists: (filePath) => (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""),
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: () => sessionRecord,
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot(sessionUser, { agentId: "main" });
+
+    expect(snapshot.session.status).toBe("就绪");
+    expect(snapshot.conversation).toEqual([
+      {
+        role: "user",
+        timestamp: 1773722410000,
+        content: "当前会话消息",
+      },
+      {
+        role: "assistant",
+        timestamp: 1773722415000,
+        content: "当前会话回复",
+      },
+    ]);
   });
 
   it("strips Feishu sender ids from displayed user messages", async () => {
@@ -1087,5 +1225,117 @@ describe("createDashboardService", () => {
     ]));
     expect(environmentItems.find((item) => item.label === "openclaw.logs.supervisorPath")).not.toHaveProperty("previewable");
     expect(environmentItems.find((item) => item.label === "gateway.apiPath")).not.toHaveProperty("previewable");
+  });
+
+  it("falls back to local config when config.get stalls so runtime snapshots still resolve", async () => {
+    vi.useFakeTimers();
+
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-live-config-timeout-"));
+    tempDirs.push(rootDir);
+
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      callOpenClawGateway: async (method) => {
+        if (method === "config.get") {
+          return await new Promise(() => {});
+        }
+        return {};
+      },
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => [],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: () => [],
+      collectArtifacts: () => [],
+      collectConversationMessages: () => [],
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: {
+        mode: "openclaw",
+        workspaceRoot: rootDir,
+        model: "openai-codex/gpt-5.4",
+        localConfig: {},
+      },
+      extractTextSegments: () => [],
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getTranscriptEntriesForSession: () => [],
+      getTranscriptPath: () => "",
+      getRuntimeHubDebugInfo: () => null,
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      findLatestSessionForAgent: () => null,
+      parseSessionStatusText: () => null,
+      readJsonLines: () => [],
+      readTextIfExists: () => "",
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: () => null,
+      resolveSessionThinkMode: () => "off",
+      buildAgentGraph: () => [],
+      tailLines: () => [],
+    });
+
+    let settled = false;
+    const snapshotPromise = dashboard.buildDashboardSnapshot("command-center", { agentId: "main" }).then((snapshot) => {
+      settled = true;
+      return snapshot;
+    });
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await Promise.resolve();
+
+    expect(settled).toBe(true);
+
+    const snapshot = await snapshotPromise;
+    expect(snapshot.session.sessionUser).toBe("command-center");
+    expect(snapshot.session.selectedModel).toBe("openai-codex/gpt-5.4");
+  });
+});
+
+describe("mergeConversationMessages", () => {
+  it("collapses assistant replays that extend the same visible reply", () => {
+    expect(
+      mergeConversationMessages(
+        [
+          { role: "user", content: "发0.5.4", timestamp: 1_000 },
+          {
+            role: "assistant",
+            content: "行，我直接把版本提到 0.5.4，然后按规范走一遍：改版本、补 changelog、提交推送、发 GitHub Release、再次 ClawHub。",
+            timestamp: 2_000,
+          },
+        ],
+        [
+          {
+            role: "assistant",
+            content: "行，我直接把版本提到 0.5.4，然后按规范走一遍：改版本、补 changelog、提交推送、发 GitHub Release、再次 ClawHub。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+            timestamp: 2_010,
+          },
+        ],
+      ),
+    ).toEqual([
+      { role: "user", content: "发0.5.4", timestamp: 1_000 },
+      {
+        role: "assistant",
+        content: "行，我直接把版本提到 0.5.4，然后按规范走一遍：改版本、补 changelog、提交推送、发 GitHub Release、再次 ClawHub。版本文件改完了。现在我跑一次测试并把改动提交，推上去。",
+        timestamp: 2_010,
+      },
+    ]);
   });
 });

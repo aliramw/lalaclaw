@@ -42,6 +42,7 @@ type MessageRenderItem = {
   key: string;
   message: ChatPanelRenderMessage;
   messageId: string;
+  messageIndex: number;
   previousMessageId: string;
   separated: boolean;
 };
@@ -126,6 +127,7 @@ export function deriveChatPanelRenderItems({
       key: messageRenderKey,
       message,
       messageId,
+      messageIndex: index,
       previousMessageId: message.role === "assistant" ? lastAssistantMessageId : lastUserMessageId,
       separated: index > 0 && messages[index - 1]?.role !== message.role,
     });

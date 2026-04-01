@@ -1,11 +1,7 @@
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronLeft, ChevronRight, Copy, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
-import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import { ArrowDown, ChevronLeft, ChevronRight, Mic, Paperclip, Pencil, RotateCcw, Send, Square, Trash2, X } from "lucide-react";
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import dingtalkLogoMarkup from "@/assets/im-logos/im-logo-dingtalk.svg?raw";
-import feishuLogoMarkup from "@/assets/im-logos/im-logo-feishu.svg?raw";
-import wecomLogoMarkup from "@/assets/im-logos/im-logo-wecom.svg?raw";
-import weixinLogoMarkup from "@/assets/im-logos/im-logo-weixin.svg?raw";
 import { Badge } from "@/components/ui/badge";
 import {
   ButtonSurface as Button,
@@ -17,19 +13,40 @@ import {
   TooltipSurface as Tooltip,
   TooltipTriggerSurface as TooltipTrigger,
 } from "@/components/command-center/chat-panel-surfaces";
-import {
-  ComposerAttachments,
-  MessageAttachments,
-} from "@/components/command-center/chat-panel-attachments";
+import { ComposerAttachments } from "@/components/command-center/chat-panel-attachments";
 import { messageHasVisualMedia } from "@/components/command-center/chat-panel-attachment-utils";
 import { deriveChatPanelRenderItems } from "@/components/command-center/chat-panel-render-items";
 import type { ChatPanelTaskTimelineEntry } from "@/components/command-center/chat-panel-render-items";
 import { ChatTurnActivity } from "@/components/command-center/chat-turn-activity";
 import { useFilePreview } from "@/components/command-center/use-file-preview";
 import { shouldShowBubbleTopJumpButton, shouldSuppressComposerReplay } from "@/components/command-center/chat-panel-utils";
-import { getImSessionDisplayName, isDingTalkSessionUser, isImSessionUser, resolveImSessionType } from "@/features/session/im-session";
-import { isOfflineStatus, normalizeStatusKey } from "@/features/session/status-display";
-import { createConversationKey } from "@/features/app/storage";
+import {
+  extractHeadingOutline,
+  shouldUseCompactAssistantBubble,
+  type MessageOutlineItem,
+} from "@/components/command-center/chat-message-utils";
+import { isImSessionUser } from "@/features/session/im-session";
+import { buildCurrentConversationTitle, splitImTabTitleForDisplay, stripDingTalkImagePlaceholderForDisplay, unwrapAssistantEnvelope } from "./chat-im-utils";
+import { estimateVisualLineCount, getAgentMentionMatch, shouldIgnoreMentionKeyUp } from "./chat-text-utils";
+import { buildConversationMessageFingerprint, hashConversationMessageFingerprint, normalizeConversationMessageFingerprintPart } from "./chat-message-id-utils";
+import { hasActiveModalSurface, isEditableTarget, isManualScrollKey } from "./chat-dom-utils";
+import { calculateBubbleTopFocusScrollTop, calculatePinnedLatestBubbleScrollTop } from "./chat-scroll-utils";
+import { getSpeechRecognitionConstructor, joinPromptWithSpeechTranscript } from "./chat-speech-utils";
+import { getRefCurrent } from "./chat-react-utils";
+import type { NodeRefTarget } from "./chat-react-utils";
+import { normalizeSkillMention } from "./chat-skill-utils";
+import { EmptyConversation } from "./chat-empty-conversation";
+import { StreamingTailDots } from "./chat-streaming-indicator";
+import { BubbleTopJumpButton } from "./chat-navigation-buttons";
+import { AgentLabel } from "./chat-agent-label";
+import { ResetConversationDialog } from "./chat-reset-dialog";
+import { ImTabLogo } from "./chat-im-tab-logo";
+import { MessageMeta } from "./chat-message-meta";
+import { UserMessageBubble } from "./chat-user-bubble";
+import { PendingAssistantBubble } from "./chat-pending-bubble";
+import { isOfflineStatus } from "@/features/session/status-display";
+import { createConversationKey } from "@/features/app/state/app-session-identity";
+import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
 import { maxPromptRows } from "@/features/chat/utils";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
@@ -47,6 +64,7 @@ type AttachmentLike = {
   path?: string;
   previewUrl?: string;
   size?: number;
+  storageKey?: string;
 };
 
 type MessageLike = {
@@ -60,16 +78,9 @@ type MessageLike = {
   tokenBadge?: string;
 };
 
-type MutableNodeRef<T> = { current: T | null };
-
-type NodeRefTarget<T> =
-  | RefObject<T | null>
-  | MutableNodeRef<T>
-  | ((node: T | null) => void)
-  | null;
-
 type MessageBubbleProps = {
   agentLabel?: string;
+  assistantVisualState?: "settled" | "pending" | "streaming";
   animateViewportScroll?: (viewport: HTMLElement | null, top: number, duration?: number) => void;
   bubbleAnchorRef?: ((node: HTMLElement | null) => void) | { current: HTMLElement | null } | null;
   files?: Array<Record<string, unknown>>;
@@ -152,12 +163,6 @@ type FocusMessageRequest = {
   timestamp?: number;
 } | null;
 
-type MessageOutlineItem = {
-  id: string;
-  level: number;
-  text: string;
-};
-
 function useLatchedBoolean(value: boolean, releaseDelayMs = busyIndicatorVisualHoldMs) {
   const [latchedValue, setLatchedValue] = useState(Boolean(value));
   const releaseTimeoutRef = useRef(0);
@@ -225,11 +230,12 @@ type ChatPanelProps = {
   promptRef?: NodeRefTarget<HTMLTextAreaElement>;
   queuedMessages?: Array<Record<string, unknown>>;
   resolvedTheme?: string;
+  run?: Partial<ChatRunState> | null;
   restoredScrollKey?: string;
   restoredScrollRevision?: number;
   restoredScrollState?: ChatScrollState | null;
   session?: any;
-  taskTimeline?: Array<Record<string, unknown>>;
+  taskTimeline?: ChatPanelTaskTimelineEntry[];
   agentSwitcher?: ReactNode;
   brandControl?: ReactNode;
   sessionOverview?: ReactNode;
@@ -268,14 +274,6 @@ const chatTabWrapperHeightPx = chatTabShortcutBandHeightPx + chatTabBodyHeightPx
 const streamingTailIndicatorClearDelayMs = 420;
 const speechRecognitionStatusResetDelayMs = 2200;
 const voiceInputShortcutLabel = "Cmd + Shift + .";
-const IM_TAB_LOGOS = {
-  "dingtalk-connector": dingtalkLogoMarkup,
-  feishu: feishuLogoMarkup,
-  wecom: wecomLogoMarkup,
-  "openclaw-weixin": weixinLogoMarkup,
-};
-
-const assistantCompactThreshold = 72;
 const chatFontSizeClassNames = {
   small: {
     userText: "text-[12px] font-normal leading-5",
@@ -340,300 +338,6 @@ const chatFontSizeButtonClassNames = {
   large: "text-[16px]",
 };
 
-function unwrapAssistantEnvelope(content = "", role = "") {
-  const text = String(content || "");
-  if (role !== "assistant") {
-    return text;
-  }
-
-  const match = text.trim().match(/^<final>([\s\S]*?)<\/final>$/i);
-  if (!match) {
-    return text;
-  }
-
-  const unwrapped = String(match[1] || "").trim();
-  return unwrapped || text;
-}
-
-function stripDingTalkImagePlaceholderForDisplay(content = "", sessionUser = "") {
-  const text = String(content || "");
-  if (!isDingTalkSessionUser(sessionUser)) {
-    return text;
-  }
-
-  return text.replace(/^\[(?:图片|image)\]\s*\n+(?=!\[[^\]]*\]\([^)]+\))/iu, "");
-}
-
-function splitImTabTitleForDisplay(title = "", agentId = "", sessionUser = "") {
-  const normalizedTitle = String(title || "").trim();
-  const normalizedAgentId = String(agentId || "").trim();
-  const imType = resolveImSessionType(sessionUser);
-
-  if (!normalizedTitle || !normalizedAgentId || !imType) {
-    return null;
-  }
-
-  const agentSuffix = ` ${normalizedAgentId}`;
-  if (!normalizedTitle.endsWith(agentSuffix) || normalizedTitle.length <= agentSuffix.length) {
-    return null;
-  }
-
-  const platformLabel = normalizedTitle.slice(0, -agentSuffix.length).trim();
-  if (!platformLabel) {
-    return null;
-  }
-
-  return {
-    channel:
-      imType === "dingtalk"
-        ? "dingtalk-connector"
-        : imType === "weixin"
-          ? "openclaw-weixin"
-          : imType,
-    platformLabel,
-  };
-}
-
-function ImTabLogo({ active = false, channel = "" }) {
-  const markup = IM_TAB_LOGOS[channel];
-
-  if (!markup) {
-    return null;
-  }
-
-  return (
-    <span
-      aria-hidden="true"
-      data-im-logo={channel}
-      className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden rounded-[5px] [&_svg]:h-full [&_svg]:w-full",
-        active
-          ? "h-[18px] w-[18px] border border-white/55 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.18),0_0_0_1px_rgba(255,255,255,0.14)]"
-          : "h-4 w-4 bg-muted/65",
-      )}
-      dangerouslySetInnerHTML={{ __html: markup }}
-    />
-  );
-}
-
-function buildCurrentConversationTitle(agentId = "", sessionUser = "", currentConversationLabel = "", locale = "zh") {
-  const normalizedAgentId = String(agentId || "").trim();
-  const normalizedCurrentConversationLabel = String(currentConversationLabel || "").trim();
-  const imLabel = getImSessionDisplayName(sessionUser, { locale, shortWecom: true });
-
-  if (imLabel && normalizedAgentId && normalizedCurrentConversationLabel) {
-    return `${imLabel} - ${normalizedAgentId} - ${normalizedCurrentConversationLabel}`;
-  }
-
-  if (normalizedAgentId && normalizedCurrentConversationLabel) {
-    return `${normalizedAgentId} - ${normalizedCurrentConversationLabel}`;
-  }
-
-  return normalizedAgentId || normalizedCurrentConversationLabel;
-}
-
-function ResetConversationDialog({ messages, onCancel, onConfirm, open }) {
-  const titleId = useId();
-  const descriptionId = useId();
-  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    cancelButtonRef.current?.focus();
-
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancel?.();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onCancel, open]);
-
-  if (!open || typeof document === "undefined") {
-    return null;
-  }
-
-  return createPortal(
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[2px]">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        className="w-full max-w-[30rem] rounded-2xl border border-border/80 bg-card p-5 shadow-2xl sm:p-6"
-      >
-        <div className="space-y-2">
-          <h2 id={titleId} className="text-lg font-semibold leading-7 text-foreground">
-            {messages.title}
-          </h2>
-          <p id={descriptionId} className="text-sm leading-6 text-muted-foreground">
-            {messages.description}
-          </p>
-        </div>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <Button
-            ref={cancelButtonRef}
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-          >
-            {messages.cancel}
-          </Button>
-          <Button
-            type="button"
-            variant="default"
-            onClick={onConfirm}
-          >
-            {messages.confirm}
-          </Button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function slugifyHeading(value = "") {
-  return String(value || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[`*_~[\]()]/g, "")
-    .replace(/[^\p{Letter}\p{Number}\s-]/gu, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "") || "section";
-}
-
-function stripInlineMarkdown(value = "") {
-  return String(value || "")
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[`*_~]/g, "")
-    .trim();
-}
-
-function extractHeadingOutline(content = ""): MessageOutlineItem[] {
-  const seen = new Map();
-  return String(content || "")
-    .split("\n")
-    .map((line) => {
-      const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line.trim());
-      if (!match) {
-        return null;
-      }
-      const text = stripInlineMarkdown(String(match[2] || "").replace(/\s+#+\s*$/, ""));
-      if (!text) {
-        return null;
-      }
-      const baseSlug = slugifyHeading(text);
-      const currentCount = (seen.get(baseSlug) || 0) + 1;
-      seen.set(baseSlug, currentCount);
-      return {
-        id: currentCount === 1 ? baseSlug : `${baseSlug}-${currentCount}`,
-        level: String(match[1] || "").length,
-        text,
-      };
-    })
-    .filter((item): item is MessageOutlineItem => Boolean(item));
-}
-
-function measureMessageDensity(content = "") {
-  return Array.from(content).reduce((total, char) => {
-    if (/\p{Script=Han}/u.test(char)) {
-      return total + 1.7;
-    }
-    if (/\s/.test(char)) {
-      return total + 0.35;
-    }
-    return total + 1;
-  }, 0);
-}
-
-function shouldUseCompactAssistantBubble(content = "") {
-  const text = String(content || "").trim();
-
-  if (!text) {
-    return true;
-  }
-
-  const hasBlockStructure =
-    text.includes("\n\n") ||
-    /```/.test(text) ||
-    /(^|\s)([-*+]|\d+\.)\s/.test(text) ||
-    /^#{1,6}\s/m.test(text) ||
-    /^\|.*\|$/m.test(text) ||
-    /^>\s/m.test(text);
-  const hasLongLink = /https?:\/\/\S{24,}/i.test(text);
-  const normalized = text.replace(/[*_`~[\]()#>|-]/g, " ").replace(/\s+/g, " ").trim();
-
-  return !hasBlockStructure && !hasLongLink && measureMessageDensity(normalized) <= assistantCompactThreshold;
-}
-
-function estimateVisualLineCount(content = "") {
-  const lines = String(content || "")
-    .split("\n")
-    .filter((line) => line.trim().length > 0);
-  return Math.max(lines.length, 1);
-}
-
-function EmptyConversation({ loading = false }: { loading?: boolean }) {
-  const { messages } = useI18n();
-
-  if (loading) {
-    return (
-      <div>
-        <div className="flex min-h-56 items-center justify-center py-10 text-center">
-          <div className="text-sm font-medium">{messages.chat.loadingConversation}</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="flex min-h-56 flex-col items-center justify-center gap-4 py-10 text-center">
-        <Send className="h-8 w-8 text-foreground/85" />
-        <div className="space-y-1">
-          <div className="text-sm font-medium">{messages.chat.waitingFirstPrompt}</div>
-          <div className="text-sm text-muted-foreground">{messages.chat.conversationWillAppear}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function getAgentMentionMatch(value = "", caret = 0) {
-  const safeValue = String(value || "");
-  const safeCaret = Number.isFinite(caret) ? Math.max(0, Math.min(caret, safeValue.length)) : safeValue.length;
-  const beforeCaret = safeValue.slice(0, safeCaret);
-  const match = /(^|\s)@([^\s@]*)$/.exec(beforeCaret);
-
-  if (!match) {
-    return null;
-  }
-
-  return {
-    start: beforeCaret.length - String(match[2] || "").length - 1,
-    end: safeCaret,
-    query: match[2] || "",
-  };
-}
-
-function shouldIgnoreMentionKeyUp(key = "") {
-  return key === "ArrowDown" || key === "ArrowUp" || key === "Enter" || key === "Tab" || key === "Escape";
-}
-
 function getTextareaCaretAnchor(textarea, caretIndex = 0) {
   if (!textarea || typeof window === "undefined" || typeof document === "undefined") {
     return null;
@@ -686,79 +390,115 @@ function getTextareaCaretAnchor(textarea, caretIndex = 0) {
   };
 }
 
-function normalizeSkillMention(skill) {
-  if (typeof skill === "string") {
-    const name = skill.trim();
-    return name ? { name, ownerAgentId: "" } : null;
-  }
-
-  const name = String(skill?.name || "").trim();
-  if (!name) {
-    return null;
-  }
-
-  return {
-    name,
-    ownerAgentId: String(skill?.ownerAgentId || "").trim(),
-  };
-}
-
-function findLatestAssistantMessageId(messages: MessageLike[] = []) {
+function findLatestAssistantMessageMeta(
+  messages: MessageLike[] = [],
+  {
+    latestMessageIsAssistant = false,
+    preferRunState = false,
+    run = null,
+  }: {
+    latestMessageIsAssistant?: boolean;
+    preferRunState?: boolean;
+    run?: Partial<ChatRunState> | null;
+  } = {},
+) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const entry = messages[index];
     if (entry?.role === "assistant") {
-      return getConversationMessageId(entry, index);
+      const assistantVisualState = resolveAssistantVisualState({
+        message: entry,
+        isLatestAssistant: true,
+        latestMessageIsAssistant,
+        preferRunState,
+        run,
+      });
+      return {
+        id: getConversationMessageId(entry, index, { assistantVisualState }),
+        index,
+      };
     }
   }
-  return "";
+  return { id: "", index: -1 };
 }
 
-function normalizeConversationMessageFingerprintPart(value = "") {
-  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
+function isTransientAssistantVisualState({
+  assistantVisualState = "settled",
+  message,
+}: {
+  assistantVisualState?: "settled" | "pending" | "streaming";
+  message?: MessageLike;
+} = {}) {
+  return message?.role === "assistant" && (assistantVisualState === "pending" || assistantVisualState === "streaming");
 }
 
-function hashConversationMessageFingerprint(value = "") {
-  const source = String(value || "");
-  if (!source) {
-    return "";
+function resolveAssistantVisualState({
+  isLatestAssistant = null,
+  message,
+  messageId = "",
+  latestAssistantMessageId = "",
+  latestMessageIsAssistant = false,
+  preferRunState = false,
+  run = null,
+}: {
+  isLatestAssistant?: boolean | null;
+  message?: MessageLike;
+  messageId?: string;
+  latestAssistantMessageId?: string;
+  latestMessageIsAssistant?: boolean;
+  preferRunState?: boolean;
+  run?: Partial<ChatRunState> | null;
+} = {}) {
+  if (message?.role !== "assistant") {
+    return "settled" as const;
   }
 
-  let hash = 0;
-  for (let index = 0; index < source.length; index += 1) {
-    hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
+  const runIsBusy = selectChatRunBusy(run);
+  const matchesLatestAssistant =
+    typeof isLatestAssistant === "boolean"
+      ? isLatestAssistant
+      : Boolean(latestAssistantMessageId && latestAssistantMessageId === messageId);
+  if (runIsBusy && latestMessageIsAssistant && matchesLatestAssistant) {
+    return String(run?.streamText || "").trim() || String(message?.content || "").trim()
+      ? "streaming" as const
+      : "pending" as const;
   }
 
-  return Math.abs(hash).toString(36);
+  if (preferRunState) {
+    return "settled" as const;
+  }
+
+  if (message?.pending) {
+    return "pending" as const;
+  }
+
+  if (message?.streaming) {
+    return "streaming" as const;
+  }
+
+  return "settled" as const;
 }
 
-function buildConversationMessageFingerprint(message: MessageLike = {}) {
-  return [
-    normalizeConversationMessageFingerprintPart(message?.role || ""),
-    normalizeConversationMessageFingerprintPart(message?.content || ""),
-    Number.isFinite(Number(message?.timestamp)) ? Number(message.timestamp) : "",
-    normalizeConversationMessageFingerprintPart(message?.tokenBadge || ""),
-    ...(Array.isArray(message?.attachments)
-      ? message.attachments.map((attachment) => [
-          normalizeConversationMessageFingerprintPart(attachment?.id || ""),
-          normalizeConversationMessageFingerprintPart(attachment?.name || ""),
-          normalizeConversationMessageFingerprintPart(attachment?.path || attachment?.fullPath || ""),
-        ].join("|"))
-      : []),
-  ].join("||");
-}
-
-function buildConversationMessageRenderKey(message: MessageLike = {}, index = 0) {
+function buildConversationMessageRenderKey(
+  message: MessageLike = {},
+  index = 0,
+  {
+    assistantVisualState = "settled",
+  }: {
+    assistantVisualState?: "settled" | "pending" | "streaming";
+  } = {},
+) {
   const explicitId = String(message?.id || "").trim();
   if (explicitId) {
     return explicitId;
   }
 
-  if (message?.role === "assistant" && (message?.pending || message?.streaming)) {
+  if (isTransientAssistantVisualState({ assistantVisualState, message })) {
     const contentSeed = String(message?.content || "")
       .split("\n")
       .map((line) => line.trim())
-      .find(Boolean) || "";
-    const normalizedSeed = normalizeConversationMessageFingerprintPart(contentSeed);
+      .find(Boolean)
+      || "";
+    const normalizedSeed = normalizeConversationMessageFingerprintPart(contentSeed).slice(0, 48);
     if (normalizedSeed) {
       return `assistant-live-${hashConversationMessageFingerprint(normalizedSeed)}`;
     }
@@ -768,7 +508,15 @@ function buildConversationMessageRenderKey(message: MessageLike = {}, index = 0)
   return `message-${hashConversationMessageFingerprint(buildConversationMessageFingerprint(message)) || index}`;
 }
 
-function getConversationMessageId(message: MessageLike = {}, index = 0) {
+function getConversationMessageId(
+  message: MessageLike = {},
+  index = 0,
+  {
+    assistantVisualState = "settled",
+  }: {
+    assistantVisualState?: "settled" | "pending" | "streaming";
+  } = {},
+) {
   const explicitId = String(message?.id || "").trim();
   if (explicitId) {
     return explicitId;
@@ -776,95 +524,11 @@ function getConversationMessageId(message: MessageLike = {}, index = 0) {
 
   // Keep transient assistant bubbles stable even if upstream streaming snapshots
   // refresh their timestamps on every delta.
-  if (message?.role === "assistant" && (message?.pending || message?.streaming)) {
+  if (isTransientAssistantVisualState({ assistantVisualState, message })) {
     return `assistant-live-${index}`;
   }
 
   return `${message?.timestamp || "message"}-${index}`;
-}
-
-function calculatePinnedLatestBubbleScrollTop(viewport, bubble, ratio = 0.2) {
-  if (!viewport || !bubble) {
-    return 0;
-  }
-
-  const viewportRect = viewport.getBoundingClientRect();
-  const bubbleRect = bubble.getBoundingClientRect();
-  const bubbleTop = viewport.scrollTop + (bubbleRect.top - viewportRect.top);
-  const targetTop = bubbleTop - viewport.clientHeight * ratio;
-
-  return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
-}
-
-function calculateBubbleTopFocusScrollTop(viewport, bubble) {
-  if (!viewport || !bubble) {
-    return 0;
-  }
-
-  const viewportRect = viewport.getBoundingClientRect();
-  const bubbleRect = bubble.getBoundingClientRect();
-  const bubbleTop = viewport.scrollTop + (bubbleRect.top - viewportRect.top);
-  const targetTop = bubbleTop - viewport.clientHeight * 0.3;
-
-  return Math.max(0, Math.min(targetTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight)));
-}
-
-function isEditableTarget(target) {
-  if (!target || typeof target.closest !== "function") {
-    return false;
-  }
-
-  return Boolean(target.closest("textarea, input, select, [contenteditable='true'], [contenteditable='']"));
-}
-
-function isManualScrollKey(event) {
-  const key = String(event?.key || "");
-  return [
-    "ArrowUp",
-    "ArrowDown",
-    "PageUp",
-    "PageDown",
-    "Home",
-    "End",
-    " ",
-    "Spacebar",
-  ].includes(key);
-}
-
-function getSpeechRecognitionConstructor() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const speechWindow = window as Window & {
-    SpeechRecognition?: any;
-    webkitSpeechRecognition?: any;
-  };
-  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null;
-}
-
-function hasActiveModalSurface() {
-  if (typeof document === "undefined") {
-    return false;
-  }
-
-  return Boolean(document.querySelector("[aria-modal='true']"));
-}
-
-function joinPromptWithSpeechTranscript(basePrompt = "", transcript = "") {
-  const normalizedBase = String(basePrompt || "");
-  const normalizedTranscript = String(transcript || "").trim();
-  if (!normalizedTranscript) {
-    return normalizedBase;
-  }
-
-  if (!normalizedBase.trim()) {
-    return normalizedTranscript;
-  }
-
-  return /\s$/.test(normalizedBase)
-    ? `${normalizedBase}${normalizedTranscript}`
-    : `${normalizedBase} ${normalizedTranscript}`;
 }
 
 function buildSpeechTranscriptFromResults(results: Array<{ 0?: { transcript?: string } }> = []) {
@@ -934,154 +598,6 @@ function buildSpeechTranscriptFromResults(results: Array<{ 0?: { transcript?: st
   return transcript;
 }
 
-function getRefCurrent<T>(
-  ref:
-    | NodeRefTarget<T>
-    | undefined,
-): T | null {
-  if (!ref || typeof ref === "function") {
-    return null;
-  }
-  return ref.current;
-}
-
-function CopyMessageButton({ content }) {
-  const { messages } = useI18n();
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard?.writeText?.(String(content || ""));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {}
-  };
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="pointer-events-none inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded-sm text-muted-foreground/75 opacity-0 transition hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/message:pointer-events-auto group-hover/message:opacity-100"
-          aria-label={copied ? messages.chat.copiedMessage : messages.chat.copyMessage}
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">{copied ? messages.chat.copiedMessageTitle : messages.chat.copyMessageTitle}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function PreviousUserMessageButton({ onClick }) {
-  const { messages } = useI18n();
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={onClick}
-          className="pointer-events-none inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded-sm text-muted-foreground/75 opacity-0 transition hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/message:pointer-events-auto group-hover/message:opacity-100"
-          aria-label={messages.chat.jumpToPreviousUserMessage}
-        >
-          <ArrowUp className="h-3.5 w-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">{messages.chat.jumpToPreviousUserMessage}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function BubbleTopJumpButton({ onClick }) {
-  const { messages } = useI18n();
-
-  return (
-    <div className="pointer-events-none sticky top-2 z-10 -mb-7 flex justify-end px-2">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={onClick}
-            className="pointer-events-none inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-background/92 text-muted-foreground opacity-0 backdrop-blur transition hover:bg-background hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100"
-            aria-label={messages.chat.jumpToMessageTop}
-          >
-            <ArrowUpToLine className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="left">{messages.chat.jumpToMessageTop}</TooltipContent>
-      </Tooltip>
-    </div>
-  );
-}
-
-function MessageMeta({
-  align,
-  content,
-  copyFirst = false,
-  formatTime,
-  onJumpPreviousUserMessage,
-  pending,
-  streaming,
-  sticky,
-  compact,
-  timestamp,
-  textClassName,
-}: {
-  align?: "left" | "right";
-  content?: string;
-  copyFirst?: boolean;
-  formatTime: (value: unknown) => string;
-  onJumpPreviousUserMessage?: (() => void) | null;
-  pending?: boolean;
-  streaming?: boolean;
-  sticky?: boolean;
-  compact?: boolean;
-  timestamp?: number | string;
-  textClassName?: string;
-}) {
-  void align;
-  void streaming;
-  const baseClassName = cn(
-    "flex items-center gap-1 text-muted-foreground tabular-nums",
-    textClassName,
-    sticky ? "sticky top-0" : "",
-    compact ? "self-center" : "self-start pt-2.5",
-  );
-
-  if (copyFirst) {
-    return (
-      <div className={baseClassName}>
-        {onJumpPreviousUserMessage ? <PreviousUserMessageButton onClick={onJumpPreviousUserMessage} /> : null}
-        {pending ? null : <CopyMessageButton content={content} />}
-        <time>{formatTime(timestamp)}</time>
-      </div>
-    );
-  }
-
-  return (
-    <div className={baseClassName}>
-      <time>{formatTime(timestamp)}</time>
-      {pending ? null : <CopyMessageButton content={content} />}
-      {onJumpPreviousUserMessage ? <PreviousUserMessageButton onClick={onJumpPreviousUserMessage} /> : null}
-    </div>
-  );
-}
-
-function StreamingTailDots() {
-  return (
-    <span
-      aria-hidden="true"
-      data-streaming-tail-dots="true"
-      className="cc-streaming-tail-dots ml-1.5 inline-flex items-center gap-1 align-middle text-foreground/70"
-    >
-      <span className="cc-streaming-tail-dot" />
-      <span className="cc-streaming-tail-dot cc-streaming-tail-dot-2" />
-      <span className="cc-streaming-tail-dot cc-streaming-tail-dot-3" />
-    </span>
-  );
-}
 
 function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }: {
   headingScopeId: string;
@@ -1200,31 +716,6 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }:
   );
 }
 
-function MessageLabel({ align = "left", value, textClassName }) {
-  return (
-    <div
-      className={cn(
-        "mb-1 max-w-full truncate px-1 text-muted-foreground/85",
-        textClassName,
-        align === "right" ? "text-right" : "text-left",
-      )}
-    >
-      {value}
-    </div>
-  );
-}
-
-function AgentLabel({ tokenBadge, value, textClassName, tokenBadgeClassName }: { tokenBadge?: string; value?: string; textClassName?: string; tokenBadgeClassName?: string }) {
-  return (
-    <div className={cn("mb-1 flex max-w-full items-center gap-2 px-1 text-muted-foreground/85", textClassName)}>
-      <span className="truncate">
-        {value}
-      </span>
-      {tokenBadge ? <span className={cn("shrink-0 text-muted-foreground/70", tokenBadgeClassName)}>{tokenBadge}</span> : null}
-    </div>
-  );
-}
-
 function areMessageAttachmentsEqual(left: AttachmentLike[] = [], right: AttachmentLike[] = []) {
   if (left === right) {
     return true;
@@ -1249,6 +740,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
   }
 
   return previous.agentLabel === next.agentLabel
+    && previous.assistantVisualState === next.assistantVisualState
     && previous.animateViewportScroll === next.animateViewportScroll
     && previous.bubbleAnchorRef === next.bubbleAnchorRef
     && previous.files === next.files
@@ -1273,14 +765,13 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.message?.role === next.message?.role
     && previous.message?.content === next.message?.content
     && previous.message?.timestamp === next.message?.timestamp
-    && Boolean(previous.message?.pending) === Boolean(next.message?.pending)
-    && Boolean(previous.message?.streaming) === Boolean(next.message?.streaming)
     && String(previous.message?.tokenBadge || "") === String(next.message?.tokenBadge || "")
     && areMessageAttachmentsEqual(previous.message?.attachments || [], next.message?.attachments || []);
 }
 
 const MessageBubble = memo(function MessageBubble({
   agentLabel,
+  assistantVisualState = "settled",
   animateViewportScroll,
   bubbleAnchorRef,
   files,
@@ -1309,7 +800,8 @@ const MessageBubble = memo(function MessageBubble({
   const bubbleSurfaceRef = useRef<HTMLElement | null>(null);
   const bubbleTopSentinelRef = useRef<HTMLDivElement | null>(null);
   const isUser = message.role === "user";
-  const isPending = Boolean(message.pending);
+  const isPending = assistantVisualState === "pending";
+  const bubbleStreaming = assistantVisualState === "streaming";
   const renderedContent = useMemo(
     () => stripDingTalkImagePlaceholderForDisplay(
       unwrapAssistantEnvelope(message.content, message.role),
@@ -1318,16 +810,16 @@ const MessageBubble = memo(function MessageBubble({
     [message.content, message.role, sessionUser],
   );
   const supportsBubbleTopJump = !messageHasVisualMedia(message);
-  const assistantTurnInProgress = !isUser && !isPending && (isStreamingAssistant || showStreamingTail);
+  const assistantTurnInProgress = !isUser && !isPending && (bubbleStreaming || showStreamingTail);
   const useCompactAssistantBubble = useMemo(
-    () => !isUser && !isPending && !assistantTurnInProgress && shouldUseCompactAssistantBubble(renderedContent),
-    [assistantTurnInProgress, isPending, isUser, renderedContent],
+    () => !isUser && !isPending && shouldUseCompactAssistantBubble(renderedContent),
+    [isPending, isUser, renderedContent],
   );
   const visualLineCount = estimateVisualLineCount(renderedContent);
   const compactMeta = visualLineCount <= 1;
   const outlineItems = useMemo(
-    () => (!isUser && !isPending && !assistantTurnInProgress && !suppressOutline ? extractHeadingOutline(renderedContent) : []),
-    [assistantTurnInProgress, isPending, isUser, renderedContent, suppressOutline],
+    () => (!isUser && !isPending && !bubbleStreaming && !suppressOutline ? extractHeadingOutline(renderedContent) : []),
+    [bubbleStreaming, isPending, isUser, renderedContent, suppressOutline],
   );
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
@@ -1495,104 +987,64 @@ const MessageBubble = memo(function MessageBubble({
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect?.();
     };
-  }, [isPending, isUser, messageViewportRef, message.pending, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
+  }, [assistantVisualState, isPending, isUser, messageViewportRef, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
 
   if (isUser) {
     return (
-      <>
-        <div
-          ref={setBubbleNode}
-          {...messageBubbleAttributes}
-          className="group/message flex w-full justify-end"
-        >
-          <div className="flex max-w-full flex-col items-end">
-            <MessageLabel align="right" value={userLabel} textClassName={fontSizeStyles.label} />
-            <div className="flex max-w-full items-center gap-2">
-              <MessageMeta
-                align="left"
-                content={message.content}
-                copyFirst
-                formatTime={formatTime}
-                onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-                pending={false}
-                streaming={false}
-                compact
-                textClassName={fontSizeStyles.meta}
-                timestamp={message.timestamp}
-              />
-              <Card ref={setBubbleSurfaceNode} data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName, focusBubbleClassName)}>
-                {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
-                <CardContent className={cn(bubbleContentClassName, message.attachments?.length && "space-y-2")}>
-                  <MessageAttachments
-                    attachments={message.attachments}
-                    onPreviewImage={handleOpenImagePreview}
-                    scrollAnchorBaseId={`${headingScopeId}-attachment`}
-                  />
-                  {message.content ? (
-                    <MarkdownContent
-                      content={renderedContent}
-                      files={files as any}
-                      fontSize={chatFontSize as any}
-                      headingScopeId={headingScopeId}
-                      resolvedTheme={resolvedTheme}
-                      streaming={false}
-                      onOpenFilePreview={handleOpenFilePreview}
-                      onOpenImagePreview={handleOpenImagePreview}
-                      className={fontSizeStyles.userMarkdown}
-                    />
-                  ) : null}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </div>
-      </>
+      <UserMessageBubble
+        bubbleBaseClassName={bubbleBaseClassName}
+        bubbleContentClassName={bubbleContentClassName}
+        chatFontSize={chatFontSize}
+        files={files}
+        focusBubbleClassName={focusBubbleClassName}
+        fontSizeStyles={fontSizeStyles}
+        formatTime={formatTime}
+        handleJumpBubbleTop={handleJumpBubbleTop}
+        handleJumpPreviousMessage={handleJumpPreviousMessage}
+        handleOpenFilePreview={handleOpenFilePreview}
+        handleOpenImagePreview={handleOpenImagePreview}
+        headingScopeId={headingScopeId}
+        message={message}
+        messageBubbleAttributes={messageBubbleAttributes}
+        previousMessageId={previousMessageId}
+        renderedContent={renderedContent}
+        resolvedTheme={resolvedTheme}
+        setBubbleNode={setBubbleNode}
+        setBubbleSurfaceNode={setBubbleSurfaceNode}
+        showBubbleTopJump={showBubbleTopJump}
+        supportsBubbleTopJump={supportsBubbleTopJump}
+        userBubbleClassName={userBubbleClassName}
+        userBubbleWidthClassName={userBubbleWidthClassName}
+        userLabel={userLabel}
+      />
     );
   }
 
   if (isPending) {
     return (
-      <div
-        ref={setBubbleNode}
-        {...messageBubbleAttributes}
-        className="group/message flex w-fit max-w-full"
-      >
-        <div className="flex max-w-full flex-col items-start">
-          <AgentLabel value={agentLabel} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
-          <div className="inline-flex max-w-full items-center gap-2">
-            <Card
-              ref={setBubbleSurfaceNode}
-              data-bubble-layout="compact"
-              className={cn(
-                bubbleBaseClassName,
-                "cc-thinking-bubble inline-block w-fit max-w-[min(60vw,14rem)] shrink-0 motion-reduce:animate-none",
-                "cc-assistant-bubble",
-                assistantBubbleClassName,
-                focusBubbleClassName,
-              )}
-            >
-              {bubbleTopJumpButton}
-              <CardContent className={bubbleContentClassName}>
-                <MarkdownContent
-                  content={renderedContent}
-                  files={files as any}
-                  fontSize={chatFontSize as any}
-                  headingScopeId={headingScopeId}
-                  resolvedTheme={resolvedTheme}
-                  streaming={isStreamingAssistant}
-                  onOpenFilePreview={handleOpenFilePreview}
-                  onOpenImagePreview={handleOpenImagePreview}
-                  className={fontSizeStyles.pendingMarkdown}
-                />
-              </CardContent>
-            </Card>
-            <MessageMeta align="right" content={renderedContent} formatTime={formatTime} pending compact textClassName={fontSizeStyles.meta} timestamp={message.timestamp} />
-          </div>
-          {staleWarning ? (
-            <p className="mt-1 text-xs text-muted-foreground/80">{staleWarning}</p>
-          ) : null}
-        </div>
-      </div>
+      <PendingAssistantBubble
+        agentLabel={agentLabel}
+        assistantBubbleClassName={assistantBubbleClassName}
+        bubbleBaseClassName={bubbleBaseClassName}
+        bubbleContentClassName={bubbleContentClassName}
+        bubbleStreaming={bubbleStreaming}
+        bubbleTopJumpButton={bubbleTopJumpButton}
+        chatFontSize={chatFontSize}
+        files={files}
+        focusBubbleClassName={focusBubbleClassName}
+        fontSizeStyles={fontSizeStyles}
+        formatTime={formatTime}
+        handleOpenFilePreview={handleOpenFilePreview}
+        handleOpenImagePreview={handleOpenImagePreview}
+        headingScopeId={headingScopeId}
+        message={message}
+        messageBubbleAttributes={messageBubbleAttributes}
+        renderedContent={renderedContent}
+        resolvedTheme={resolvedTheme}
+        setBubbleNode={setBubbleNode}
+        setBubbleSurfaceNode={setBubbleSurfaceNode}
+        staleWarning={staleWarning}
+      />
     );
   }
 
@@ -1649,7 +1101,7 @@ const MessageBubble = memo(function MessageBubble({
                   content={renderedContent}
                   formatTime={formatTime}
                   onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-                  streaming={isStreamingAssistant}
+                  streaming={bubbleStreaming}
                   textClassName={fontSizeStyles.meta}
                   timestamp={message.timestamp}
                 />
@@ -1667,7 +1119,7 @@ const MessageBubble = memo(function MessageBubble({
                 content={renderedContent}
                 formatTime={formatTime}
                 onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-                streaming={isStreamingAssistant}
+                streaming={bubbleStreaming}
                 sticky
                 textClassName={fontSizeStyles.meta}
                 timestamp={message.timestamp}
@@ -1711,7 +1163,7 @@ const MessageBubble = memo(function MessageBubble({
                   fontSize={chatFontSize as any}
                   headingScopeId={headingScopeId}
                   resolvedTheme={resolvedTheme}
-                  streaming={isStreamingAssistant}
+                  streaming={bubbleStreaming}
                   onOpenFilePreview={handleOpenFilePreview}
                   onOpenImagePreview={handleOpenImagePreview}
                   className={fontSizeStyles.compactMarkdown}
@@ -1726,7 +1178,7 @@ const MessageBubble = memo(function MessageBubble({
               formatTime={formatTime}
               onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
               compact={compactMeta}
-              streaming={isStreamingAssistant}
+              streaming={bubbleStreaming}
               textClassName={fontSizeStyles.meta}
               timestamp={message.timestamp}
             />
@@ -1772,7 +1224,7 @@ const MessageBubble = memo(function MessageBubble({
                 fontSize={chatFontSize as any}
                 headingScopeId={headingScopeId}
                 resolvedTheme={resolvedTheme}
-                streaming={isStreamingAssistant}
+                streaming={bubbleStreaming}
                 onOpenFilePreview={handleOpenFilePreview}
                 onOpenImagePreview={handleOpenImagePreview}
                 className={fontSizeStyles.markdown}
@@ -1786,7 +1238,7 @@ const MessageBubble = memo(function MessageBubble({
             content={renderedContent}
             formatTime={formatTime}
             onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-            streaming={isStreamingAssistant}
+            streaming={bubbleStreaming}
             sticky
             textClassName={fontSizeStyles.meta}
             timestamp={message.timestamp}
@@ -1880,7 +1332,7 @@ function QueuedMessages({ items, onClearAll, onEditItem, onRemoveItem, textClass
   }
 
   return (
-    <div data-testid="queued-messages-panel" className="rounded-xl border border-border/70 bg-background/85 px-2.5 py-2 shadow-xs">
+    <div data-testid="queued-messages-panel" className="min-w-0 rounded-xl border border-border/70 bg-background/85 px-2.5 py-2 shadow-xs">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
           <Badge variant="default" className="h-5 shrink-0 px-1.5 py-0 text-[10px]">
@@ -1904,13 +1356,13 @@ function QueuedMessages({ items, onClearAll, onEditItem, onRemoveItem, textClass
           </Tooltip>
         ) : null}
       </div>
-      <div className="cc-scroll-region grid max-h-32 gap-1 overflow-y-auto pr-0.5">
+      <div className="cc-scroll-region grid min-w-0 max-h-32 gap-1 overflow-y-auto pr-0.5">
         {items.map((item, index) => {
           const contentText = String(item?.content || "");
           const displayText = contentText.trim() || (item?.attachments?.length ? messages.chat.queuedAttachmentOnly : "");
 
           return (
-            <div key={item.id} className="flex items-center gap-2 rounded-lg border border-border/65 bg-muted/25 px-2 py-1.5">
+            <div key={item.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-border/65 bg-muted/25 px-2 py-1.5">
               <span className="shrink-0 text-[10px] font-medium text-muted-foreground/90">#{index + 1}</span>
               <span className={cn("min-w-0 flex-1 truncate text-foreground/95", textClassName)} title={displayText || contentText}>
                 {displayText}
@@ -2756,6 +2208,7 @@ export function ChatPanel({
   promptRef,
   queuedMessages = [],
   resolvedTheme,
+  run = null,
   restoredScrollKey = "",
   restoredScrollRevision = 0,
   restoredScrollState = null,
@@ -2864,14 +2317,7 @@ export function ChatPanel({
       after: placeholderText.slice(agentIndex + agentName.length),
     };
   }, [currentAgentName, promptPlaceholderVisual]);
-  const latestMessageCardKey = useMemo(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) {
-      return "";
-    }
-
-    return [lastMessage.role || "", lastMessage.timestamp || "", lastMessage.pending ? "pending" : "done"].join("::");
-  }, [messages]);
+  const latestMessageIsAssistant = messages[messages.length - 1]?.role === "assistant";
   const latestUserMessageKey = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const candidate = messages[index];
@@ -2884,59 +2330,95 @@ export function ChatPanel({
 
     return "";
   }, [messages]);
-  const latestAssistantMessageId = useMemo(() => findLatestAssistantMessageId(messages), [messages]);
-  const hasActiveAssistantReply = useMemo(
-    () => messages.some((message) => message?.role === "assistant" && (message?.pending || message?.streaming)),
-    [messages],
+  const effectiveRun = useMemo(
+    () =>
+      run
+        ? {
+            ...createEmptyChatRunState(),
+            ...run,
+          }
+        : deriveLegacyChatRunState({
+            allowSessionStatusBusy: isImSessionUser(session.sessionUser),
+            messages,
+            rawBusy: busy,
+            sessionStatus: session.status,
+            trustBusySignal: true,
+          }),
+    [busy, messages, run, session.sessionUser, session.status],
   );
-  const showBusyBadge = busy
-    || hasActiveAssistantReply
-    || (
-      isImSessionUser(session.sessionUser)
-      && ["running", "dispatching"].includes(normalizeStatusKey(session.status))
-    );
+  const latestAssistantMeta = useMemo(
+    () =>
+      findLatestAssistantMessageMeta(messages, {
+        latestMessageIsAssistant,
+        preferRunState: Boolean(run),
+        run: effectiveRun,
+      }),
+    [effectiveRun, latestMessageIsAssistant, messages, run],
+  );
+  const latestAssistantMessageId = latestAssistantMeta.id;
+  const latestAssistantMessageIndex = latestAssistantMeta.index;
+  const showBusyBadge = selectChatRunBusy(effectiveRun);
   const stableShowBusyBadge = useLatchedBoolean(showBusyBadge);
   const showStopButton = Boolean(onStop) && showBusyBadge;
-  const { isStaleRunning, staleSeconds } = useStaleRunningDetector({ busy: stableShowBusyBadge, messages });
-  const latestAssistantMessage = useMemo(() => {
-    if (!latestAssistantMessageId) {
-      return null;
+  const allowLegacyStreamingVisual = !run || showBusyBadge;
+  const latestMessageCardKey = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) {
+      return "";
     }
 
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const candidate = messages[index];
-      if (candidate?.role !== "assistant") {
-        continue;
-      }
-      if (getConversationMessageId(candidate, index) === latestAssistantMessageId) {
-        return candidate;
-      }
-    }
-
-    return null;
-  }, [latestAssistantMessageId, messages]);
+    const lastMessageVisualState = resolveAssistantVisualState({
+      isLatestAssistant: latestMessageIsAssistant && lastMessage.role === "assistant",
+      message: lastMessage,
+      latestAssistantMessageId,
+      latestMessageIsAssistant,
+      preferRunState: Boolean(run),
+      run: effectiveRun,
+    });
+    return [
+      lastMessage.role || "",
+      lastMessage.timestamp || "",
+      lastMessageVisualState,
+    ].join("::");
+  }, [effectiveRun, latestAssistantMessageId, latestMessageIsAssistant, messages, run]);
+  const { isStaleRunning, staleSeconds } = useStaleRunningDetector({ run: effectiveRun });
+  const latestAssistantMessage = latestAssistantMessageIndex >= 0 ? messages[latestAssistantMessageIndex] || null : null;
+  const latestAssistantVisualState = useMemo(
+    () =>
+      latestAssistantMessage
+        ? resolveAssistantVisualState({
+            message: latestAssistantMessage,
+            messageId: latestAssistantMessageId,
+            latestAssistantMessageId,
+            latestMessageIsAssistant,
+            preferRunState: Boolean(run),
+            run: effectiveRun,
+          })
+        : "settled",
+    [effectiveRun, latestAssistantMessage, latestAssistantMessageId, latestMessageIsAssistant, run],
+  );
   const latestAssistantCanShowStreamingTail = useMemo(
     () => Boolean(
       latestAssistantMessageId
         && latestAssistantMessage?.role === "assistant"
         && messages[messages.length - 1]?.role === "assistant"
-        && !latestAssistantMessage?.pending
+        && latestAssistantVisualState !== "pending"
         && String(latestAssistantMessage?.content || "").trim()
-        && (showBusyBadge || hasActiveAssistantReply),
+        && (showBusyBadge || String(effectiveRun.streamText || "").trim()),
     ),
-    [hasActiveAssistantReply, latestAssistantMessage, latestAssistantMessageId, messages, showBusyBadge],
+    [effectiveRun.streamText, latestAssistantMessage, latestAssistantMessageId, latestAssistantVisualState, messages, showBusyBadge],
   );
   const latestAssistantRenderKey = useMemo(
     () =>
       latestAssistantMessage
         ? [
-            latestAssistantMessage.timestamp,
-            latestAssistantMessage.pending ? "pending" : "done",
+          latestAssistantMessage.timestamp,
+            latestAssistantVisualState,
             latestAssistantMessage.content || "",
             latestAssistantMessage.attachments?.length || 0,
           ].join("::")
         : "",
-    [latestAssistantMessage],
+    [latestAssistantMessage, latestAssistantVisualState],
   );
 
   useEffect(() => {
@@ -3095,7 +2577,6 @@ export function ChatPanel({
       ownerAgentId: skill.ownerAgentId,
     })),
   ];
-  const latestMessageIsAssistant = messages[messages.length - 1]?.role === "assistant";
   const latestAssistantIsCompactIntro = useMemo(
     () =>
       Boolean(
@@ -3866,7 +3347,8 @@ export function ChatPanel({
       }
       applyRestoredScroll();
     });
-    restoredScrollStabilizerRefs.current = [40, 120, 240, 480].map(scheduleRestoreStabilizer);
+    // Bottom-pinned restores sometimes need a later retry if layout metrics arrive after hydration.
+    restoredScrollStabilizerRefs.current = [40, 120, 240, 480, 960, 1600].map(scheduleRestoreStabilizer);
 
     const latestViewport = resolvedMessageViewport;
     if (latestViewport) {
@@ -4118,7 +3600,7 @@ export function ChatPanel({
 
   useLayoutEffect(() => {
     alignLatestAssistantReply();
-  }, [alignLatestAssistantReply, latestAssistantMessage?.streaming, latestAssistantMessageId, latestAssistantRenderKey]);
+  }, [alignLatestAssistantReply, latestAssistantMessageId, latestAssistantRenderKey, latestAssistantVisualState]);
 
   useEffect(() => {
     const viewport = resolvedMessageViewport;
@@ -4253,7 +3735,7 @@ export function ChatPanel({
       getMessageKey: getConversationMessageId,
       getMessageRenderKey: buildConversationMessageRenderKey,
       messages,
-      taskTimeline: taskTimeline as ChatPanelTaskTimelineEntry[],
+      taskTimeline,
     });
 
     return renderItems.map((item) => {
@@ -4271,19 +3753,24 @@ export function ChatPanel({
         );
       }
 
-      const { key: messageRenderKey, message, messageId, previousMessageId, separated } = item;
-      const isLatestAssistant = latestAssistantMessageId === messageId;
-      const isStreamingAssistant = Boolean(
-        isLatestAssistant
-          && latestMessageIsAssistant
-          && message.role === "assistant"
-          && !message.pending
-          && message.streaming
-          && String(message.content || "").trim(),
-      );
+      const { message, messageIndex, previousMessageId, separated } = item;
+      const isLatestAssistant = latestAssistantMessageIndex === messageIndex;
+      const initialMessageId = getConversationMessageId(message, messageIndex);
+      const assistantVisualState = resolveAssistantVisualState({
+        isLatestAssistant,
+        message,
+        messageId: initialMessageId,
+        latestAssistantMessageId,
+        latestMessageIsAssistant,
+        preferRunState: Boolean(run),
+        run: allowLegacyStreamingVisual ? effectiveRun : { status: "idle", streamText: "" },
+      });
+      const messageId = getConversationMessageId(message, messageIndex, { assistantVisualState });
+      const messageRenderKey = buildConversationMessageRenderKey(message, messageIndex, { assistantVisualState });
+      const isStreamingAssistant = assistantVisualState === "streaming" && Boolean(String(message.content || "").trim());
       const showStreamingTail = Boolean(
         message.role === "assistant"
-          && !message.pending
+          && assistantVisualState !== "pending"
           && isLatestAssistant
           && latchedStreamingTailMessageId
           && latchedStreamingTailMessageId === messageId
@@ -4293,6 +3780,7 @@ export function ChatPanel({
       return (
         <MessageBubble
           agentLabel={agentLabel}
+          assistantVisualState={assistantVisualState}
           animateViewportScroll={animateViewportScroll}
           bubbleAnchorRef={isLatestAssistant ? latestAssistantBubbleRef : undefined}
           handleOpenFilePreview={handleOpenPreview}
@@ -4313,7 +3801,7 @@ export function ChatPanel({
           resolvedTheme={resolvedTheme}
           sessionUser={session?.sessionUser}
           suppressOutline={isLatestAssistant && stableShowBusyBadge}
-          staleWarning={message.pending && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
+          staleWarning={isLatestAssistant && isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : null}
           separated={separated}
           chatFontSize={chatFontSize}
           userLabel={resolvedUserLabel}
@@ -4321,6 +3809,7 @@ export function ChatPanel({
       );
     });
   }, [
+    allowLegacyStreamingVisual,
     agentLabel,
     animateViewportScroll,
     busy,
@@ -4332,7 +3821,9 @@ export function ChatPanel({
     highlightedMessageId,
     i18n.chat,
     isStaleRunning,
+    effectiveRun,
     latestAssistantMessageId,
+    latestAssistantMessageIndex,
     latestMessageIsAssistant,
     markUserScrollTakeover,
     messages,
@@ -4340,6 +3831,7 @@ export function ChatPanel({
     openImagePreview,
     latchedStreamingTailMessageId,
     resolvedTheme,
+    run,
     session?.sessionUser,
     taskTimeline,
     resolvedUserLabel,

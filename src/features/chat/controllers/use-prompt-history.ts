@@ -35,6 +35,7 @@ type UsePromptHistoryInput = {
   handleSend: () => void;
   promptHistoryByConversation?: Record<string, string[]>;
   promptRef: RefObject<HTMLTextAreaElement | null>;
+  sendBlocked?: boolean;
   setPrompt: (prompt: string) => void;
   syncPromptInput: (prompt: string) => void;
 };
@@ -55,6 +56,7 @@ export function usePromptHistory({
   handleSend,
   promptHistoryByConversation,
   promptRef,
+  sendBlocked = false,
   setPrompt,
   syncPromptInput,
 }: UsePromptHistoryInput) {
@@ -127,6 +129,10 @@ export function usePromptHistory({
     const isPlainEnter = event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
     if (composerSendMode === "enter-send" && isPlainEnter && !isImeComposingEvent(event)) {
       event.preventDefault();
+      if (sendBlocked) {
+        lastPlainEnterRef.current = { timestamp: 0, expectedValue: "" };
+        return;
+      }
       lastPlainEnterRef.current = { timestamp: 0, expectedValue: "" };
       handleSend();
       return;

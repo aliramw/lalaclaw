@@ -1,6 +1,17 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const attachmentStorageMocks = vi.hoisted(() => ({
+  hydrateAttachmentStateByKeyFromStorage: vi.fn(),
+  serializeAttachmentStateByKeyForStorage: vi.fn(),
+}));
+
+vi.mock("@/lib/attachment-storage", () => ({
+  hydrateAttachmentStateByKeyFromStorage: attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage,
+  serializeAttachmentStateByKeyForStorage: attachmentStorageMocks.serializeAttachmentStateByKeyForStorage,
+}));
+
 import * as AppModule from "@/App";
 import { buildDevWorkspaceLabel } from "@/lib/dev-workspace-label";
 import { devWorkspacePageReloader } from "@/lib/dev-workspace-page-reloader";
@@ -389,6 +400,16 @@ describe("App", () => {
     window.localStorage.setItem(localeStorageKey, "zh");
     delete globalThis.__LALACLAW_DEV_INFO__;
     vi.stubGlobal("confirm", vi.fn(() => true));
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockReset();
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockReset();
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockImplementation(async (messagesByKey = {}, pendingChatTurns = {}) => ({
+      messagesByKey,
+      pendingChatTurns,
+    }));
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockImplementation(async (messagesByKey = {}, pendingChatTurns = {}) => ({
+      messagesByKey,
+      pendingChatTurns,
+    }));
     originalWebSocket = globalThis.WebSocket;
     globalThis.WebSocket = MockWebSocket;
     MockWebSocket.instances = [];
@@ -450,6 +471,79 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/chat", expect.objectContaining({ method: "POST" }));
+    });
+  }, 10_000);
+
+  it("releases a locally settled stop state before the next enter-send prompt", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const secondReply = createDeferred();
+    let chatCallCount = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatCallCount += 1;
+        if (chatCallCount === 1) {
+          return mockJsonResponse({
+            ...openClawSnapshot,
+            outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+            metadata: { status: "已完成 / 标准" },
+          });
+        }
+
+        return secondReply.promise.then(() => mockJsonResponse({
+          ...openClawSnapshot,
+          outputText: `已处理：${body.messages.at(-1)?.content || ""}`,
+          metadata: { status: "已完成 / 标准" },
+        }));
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("main - 当前会话")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    const composer = await findComposer();
+
+    await user.type(composer, "第一条");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(hasMessageText("第一条", "user")).toBe(true);
+      expect(hasMessageText("已处理：第一条", "assistant")).toBe(true);
+    });
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+
+    await user.clear(composer);
+    await user.type(composer, "第二条");
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(hasMessageText("第二条", "user")).toBe(true);
+    });
+    expect(composer).toHaveValue("");
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === "/api/chat" && init?.method === "POST")).toHaveLength(2);
+
+    secondReply.resolve();
+
+    await waitFor(() => {
+      expect(hasMessageText("已处理：第二条", "assistant")).toBe(true);
     });
   }, 10_000);
 
@@ -1616,6 +1710,278 @@ describe("App", () => {
     });
   }, 10_000);
 
+  it("keeps the active user turn visible when a lagging runtime update briefly contains only the current assistant reply", async () => {
+    window.localStorage.setItem("cc-debug-events", "1");
+    window.__CC_DEBUG_EVENTS__ = [];
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const promptText = "当前 turn 不能消失";
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        return mockJsonResponse({
+          ...openClawSnapshot,
+          assistantMessageId: "msg-assistant-live-lag-1",
+          outputText: "收到。",
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    MockWebSocket.instances[0].simulateOpen();
+
+    const user = userEvent.setup();
+    const composer = await findComposer();
+    await user.type(composer, promptText);
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(hasMessageText(promptText, "user")).toBe(true);
+      expect(screen.getByText("收到。")).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      MockWebSocket.instances[0].simulateMessage({
+        type: "conversation.sync",
+        conversation: [
+          { id: "msg-assistant-live-lag-1", role: "assistant", content: "收", timestamp: 120 },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(hasMessageText(promptText, "user")).toBe(true);
+    });
+
+    const normalizedPrompt = promptText.replace(/\s+/g, "");
+    const occurrences = getNormalizedBodyText().split(normalizedPrompt).length - 1;
+    expect(occurrences).toBe(1);
+  }, 10_000);
+
+  it("does not let a lagging settled runtime update shrink the latest assistant card after the reply already settled locally", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const longReply = "行，我直接把版本提到 0.5.4，然后按规范走一遍。版本文件改完了。现在我跑一次测试并把改动提交，推上去。";
+    const shortReply = "行，我直接把版本提到 0.5.4，然后按规范走一遍。";
+    let latestUserTimestamp = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        latestUserTimestamp = Number(body.messages.at(-1)?.timestamp || Date.now());
+        return mockJsonResponse({
+          ...openClawSnapshot,
+          assistantMessageId: "msg-assistant-lagging-settled-1",
+          outputText: longReply,
+          conversation: [
+            { role: "user", content: "发0.5.4", timestamp: latestUserTimestamp },
+            { role: "assistant", content: longReply, timestamp: latestUserTimestamp + 20 },
+          ],
+          metadata: { status: "已完成 / 标准" },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    const { container } = render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    MockWebSocket.instances[0].simulateOpen();
+
+    const user = userEvent.setup();
+    const composer = await findComposer();
+    await user.type(composer, "发0.5.4");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(longReply)).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      MockWebSocket.instances[0].simulateMessage({
+        type: "conversation.sync",
+        conversation: [
+          { role: "user", content: "发0.5.4", timestamp: latestUserTimestamp },
+          { role: "assistant", content: shortReply, timestamp: latestUserTimestamp + 20 },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(longReply)).toBeInTheDocument();
+    });
+    expect(container.querySelectorAll('[data-message-role="assistant"]')).toHaveLength(1);
+  }, 10_000);
+
+  it("keeps showing stop until an in-flight turn actually finalizes even if runtime already synced the assistant reply", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const firstTurn = createDeferred();
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        return firstTurn.promise.then(() =>
+          mockJsonResponse({
+            ...openClawSnapshot,
+            assistantMessageId: "msg-assistant-live-finalize-1",
+            outputText: "收到。",
+            metadata: { status: "已完成 / 标准" },
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    MockWebSocket.instances[0].simulateOpen();
+
+    const user = userEvent.setup();
+    const composer = await findComposer();
+    await user.type(composer, "第一条");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      const now = Date.now();
+      MockWebSocket.instances[0].simulateMessage({
+        type: "conversation.sync",
+        conversation: [
+          { role: "user", content: "第一条", timestamp: now + 1000 },
+          { id: "msg-assistant-live-finalize-1", role: "assistant", content: "收到。", timestamp: now + 2000 },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
+
+    firstTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    });
+  }, 10_000);
+
+  it("releases the stop state once a locally-settled assistant reply finishes even when runtime never echoes the turn", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const firstTurn = createDeferred();
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        return firstTurn.promise.then(() =>
+          mockJsonResponse({
+            ...openClawSnapshot,
+            assistantMessageId: "msg-assistant-local-final-1",
+            outputText: "本地已完成",
+            metadata: { status: "已完成 / 标准" },
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    const { container } = render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    MockWebSocket.instances[0].simulateOpen();
+
+    const user = userEvent.setup();
+    const composer = await findComposer();
+    await user.type(composer, "本地完成但 runtime 不回写");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
+    });
+
+    firstTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("本地已完成")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
+    });
+  }, 10_000);
+
   it("suppresses dispatching a rapid duplicate while the current reply is still pending", async () => {
     const openClawSnapshot = createSnapshot({
       session: {
@@ -2620,6 +2986,162 @@ describe("App", () => {
     });
   });
 
+  it("does not re-add cleared main-tab messages when attachment hydration resolves after reset", async () => {
+    const hydrationDeferred = createDeferred();
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockReturnValueOnce(hydrationDeferred.promise);
+
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        {
+          id: "msg-user-image-reset-1",
+          role: "user",
+          content: "这条旧图片消息不该回来",
+          timestamp: 1,
+          attachments: [
+            {
+              id: "attachment-image-reset-1",
+              kind: "image",
+              name: "reset-late.png",
+              mimeType: "image/png",
+              storageKey: "attachment-image-reset-1",
+            },
+          ],
+        },
+        { id: "msg-assistant-reset-1", role: "assistant", content: "旧回复", timestamp: 2 },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          {
+            id: "msg-user-image-reset-1",
+            role: "user",
+            content: "这条旧图片消息不该回来",
+            timestamp: 1,
+            attachments: [
+              {
+                id: "attachment-image-reset-1",
+                kind: "image",
+                name: "reset-late.png",
+                mimeType: "image/png",
+                storageKey: "attachment-image-reset-1",
+              },
+            ],
+          },
+          { id: "msg-assistant-reset-1", role: "assistant", content: "旧回复", timestamp: 2 },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (!url.startsWith("/api/runtime")) {
+        throw new Error(`Unexpected fetch: ${url}`);
+      }
+
+      const params = new URL(url, "http://localhost").searchParams;
+      const sessionUser = params.get("sessionUser") || "command-center";
+
+      if (sessionUser.startsWith("command-center-reset-")) {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              sessionUser,
+              sessionKey: `agent:main:openai-user:${sessionUser}`,
+              updatedLabel: "刚刚重置",
+            },
+            conversation: [],
+          }),
+        );
+      }
+
+      return mockJsonResponse(
+        createSnapshot({
+          session: {
+            ...createSnapshot().session,
+            sessionUser,
+            sessionKey: `agent:main:openai-user:${sessionUser}`,
+          },
+          conversation: [
+            { id: "msg-user-image-reset-1", role: "user", content: "这条旧图片消息不该回来", timestamp: 1 },
+            { id: "msg-assistant-reset-1", role: "assistant", content: "旧回复", timestamp: 2 },
+          ],
+        }),
+      );
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    expect(await screen.findByText("这条旧图片消息不该回来")).toBeInTheDocument();
+    expect(screen.getByText("旧回复")).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("开启新会话"));
+    await user.click(await screen.findByRole("button", { name: "确定" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("这条旧图片消息不该回来")).not.toBeInTheDocument();
+      expect(screen.queryByText("旧回复")).not.toBeInTheDocument();
+    });
+
+    hydrationDeferred.resolve({
+      messagesByKey: {
+        "agent:main": [
+          {
+            id: "msg-user-image-reset-1",
+            role: "user",
+            content: "这条旧图片消息不该回来",
+            timestamp: 1,
+            attachments: [
+              {
+                id: "attachment-image-reset-1",
+                kind: "image",
+                name: "reset-late.png",
+                mimeType: "image/png",
+                storageKey: "attachment-image-reset-1",
+                dataUrl: "data:image/png;base64,AAAA",
+                previewUrl: "data:image/png;base64,AAAA",
+              },
+            ],
+          },
+          { id: "msg-assistant-reset-1", role: "assistant", content: "旧回复", timestamp: 2 },
+        ],
+      },
+      pendingChatTurns: {},
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("这条旧图片消息不该回来")).not.toBeInTheDocument();
+      expect(screen.queryByText("旧回复")).not.toBeInTheDocument();
+    });
+  });
+
   it("recalls sent prompts with arrow keys when the input is empty", async () => {
     const fetchMock = vi.fn(async (input, init) => {
       const url = String(input);
@@ -3001,6 +3523,426 @@ describe("App", () => {
     expect(await screen.findByAltText("persisted.png")).toBeInTheDocument();
   });
 
+  it("restores IM image messages and replies from stored messages after refresh", async () => {
+    const feishuSessionUser = "agent:main:feishu:direct:ou_test_image";
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main::feishu",
+      activeTab: "timeline",
+      chatTabs: [
+        { id: "agent:main::feishu", agentId: "main", sessionUser: feishuSessionUser },
+      ],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: feishuSessionUser,
+      tabMetaById: {
+        "agent:main::feishu": {
+          agentId: "main",
+          sessionUser: feishuSessionUser,
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        {
+          id: "msg-user-image-1",
+          role: "user",
+          content: "帮我看看这张图",
+          timestamp: 100,
+          attachments: [
+            {
+              id: "attachment-image-1",
+              kind: "image",
+              name: "im-refresh.png",
+              mimeType: "image/png",
+              dataUrl: "data:image/png;base64,AAAA",
+              previewUrl: "data:image/png;base64,AAAA",
+            },
+          ],
+        },
+        {
+          id: "msg-assistant-image-1",
+          role: "assistant",
+          content: "这是一张测试图片。",
+          timestamp: 101,
+        },
+      ],
+      messagesByTabId: {
+        "agent:main::feishu": [
+          {
+            id: "msg-user-image-1",
+            role: "user",
+            content: "帮我看看这张图",
+            timestamp: 100,
+            attachments: [
+              {
+                id: "attachment-image-1",
+                kind: "image",
+                name: "im-refresh.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,AAAA",
+                previewUrl: "data:image/png;base64,AAAA",
+              },
+            ],
+          },
+          {
+            id: "msg-assistant-image-1",
+            role: "assistant",
+            content: "这是一张测试图片。",
+            timestamp: 101,
+          },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId: "main",
+              selectedAgentId: "main",
+              sessionUser: feishuSessionUser,
+              sessionKey: `agent:main:openai-user:${feishuSessionUser}`,
+              status: "空闲",
+            },
+            conversation: [
+              {
+                id: "msg-user-image-1",
+                role: "user",
+                content: "帮我看看这张图",
+                timestamp: 100,
+                attachments: [
+                  {
+                    id: "attachment-image-1",
+                    kind: "image",
+                    name: "im-refresh.png",
+                    mimeType: "image/png",
+                    dataUrl: "data:image/png;base64,AAAA",
+                    previewUrl: "data:image/png;base64,AAAA",
+                  },
+                ],
+              },
+              {
+                id: "msg-assistant-image-1",
+                role: "assistant",
+                content: "这是一张测试图片。",
+                timestamp: 101,
+              },
+            ],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    const { unmount } = render(<App />);
+
+    expect(await screen.findByAltText("im-refresh.png")).toBeInTheDocument();
+    expect(await screen.findByText("这是一张测试图片。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+
+    unmount();
+
+    render(<App />);
+
+    expect(await screen.findByAltText("im-refresh.png")).toBeInTheDocument();
+    expect(await screen.findByText("这是一张测试图片。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+  });
+
+  it("restores an IM pending image turn after refresh while the request is still running", async () => {
+    const feishuSessionUser = "agent:main:feishu:direct:ou_test_pending_image";
+    const conversationKey = `${feishuSessionUser}:main`;
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main::feishu",
+      activeTab: "timeline",
+      chatTabs: [
+        { id: "agent:main::feishu", agentId: "main", sessionUser: feishuSessionUser },
+      ],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: feishuSessionUser,
+      tabMetaById: {
+        "agent:main::feishu": {
+          agentId: "main",
+          sessionUser: feishuSessionUser,
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [],
+      messagesByTabId: {
+        "agent:main::feishu": [],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        [conversationKey]: {
+          key: conversationKey,
+          startedAt: 100,
+          pendingTimestamp: 101,
+          userMessage: {
+            id: "msg-user-im-image-1",
+            role: "user",
+            content: "帮我看看这张图",
+            timestamp: 100,
+            attachments: [
+              {
+                id: "attachment-image-pending-1",
+                kind: "image",
+                name: "im-pending.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,BBBB",
+                previewUrl: "data:image/png;base64,BBBB",
+              },
+            ],
+          },
+          agentId: "main",
+          sessionUser: feishuSessionUser,
+        },
+      }),
+    );
+
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId: "main",
+              selectedAgentId: "main",
+              sessionUser: feishuSessionUser,
+              sessionKey: `agent:main:openai-user:${feishuSessionUser}`,
+              status: "空闲",
+            },
+            conversation: [
+              {
+                id: "msg-user-im-image-1",
+                role: "user",
+                content: "帮我看看这张图",
+                timestamp: 100,
+                attachments: [
+                  {
+                    id: "attachment-image-pending-1",
+                    kind: "image",
+                    name: "im-pending.png",
+                    mimeType: "image/png",
+                    dataUrl: "data:image/png;base64,BBBB",
+                    previewUrl: "data:image/png;base64,BBBB",
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("帮我看看这张图")).toBeInTheDocument();
+      expect(screen.getByAltText("im-pending.png")).toBeInTheDocument();
+      expect(screen.getByText("正在思考…")).toBeInTheDocument();
+      expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    });
+
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "停止" })).toBeEnabled();
+  });
+
+  it("restores an IM pending image turn after switching from the main tab", async () => {
+    const feishuSessionUser = "agent:main:feishu:direct:ou_test_pending_image_tab_switch";
+    const conversationKey = `${feishuSessionUser}:main`;
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [
+        { id: "agent:main", agentId: "main", sessionUser: "command-center" },
+        { id: "agent:main::feishu", agentId: "main", sessionUser: feishuSessionUser },
+      ],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+        "agent:main::feishu": {
+          agentId: "main",
+          sessionUser: feishuSessionUser,
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-main-1", role: "assistant", content: "主会话消息", timestamp: 1 },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-main-1", role: "assistant", content: "主会话消息", timestamp: 1 },
+        ],
+        "agent:main::feishu": [],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        [conversationKey]: {
+          key: conversationKey,
+          startedAt: 100,
+          pendingTimestamp: 101,
+          userMessage: {
+            id: "msg-user-im-image-2",
+            role: "user",
+            content: "帮我看看这张图",
+            timestamp: 100,
+            attachments: [
+              {
+                id: "attachment-image-pending-2",
+                kind: "image",
+                name: "im-tab-switch.png",
+                mimeType: "image/png",
+                dataUrl: "data:image/png;base64,CCCC",
+                previewUrl: "data:image/png;base64,CCCC",
+              },
+            ],
+          },
+          agentId: "main",
+          sessionUser: feishuSessionUser,
+        },
+      }),
+    );
+
+    const fetchMock = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center";
+        if (sessionUser === feishuSessionUser) {
+          return mockJsonResponse(
+            createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                agentId: "main",
+                selectedAgentId: "main",
+                sessionUser: feishuSessionUser,
+                sessionKey: `agent:main:openai-user:${feishuSessionUser}`,
+                status: "空闲",
+              },
+              conversation: [
+                {
+                  id: "msg-user-im-image-2",
+                  role: "user",
+                  content: "帮我看看这张图",
+                  timestamp: 100,
+                  attachments: [
+                    {
+                      id: "attachment-image-pending-2",
+                      kind: "image",
+                      name: "im-tab-switch.png",
+                      mimeType: "image/png",
+                      dataUrl: "data:image/png;base64,CCCC",
+                      previewUrl: "data:image/png;base64,CCCC",
+                    },
+                  ],
+                },
+              ],
+            }),
+          );
+        }
+
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              agentId: "main",
+              selectedAgentId: "main",
+              sessionUser: "command-center",
+              sessionKey: "agent:main:openai-user:command-center",
+              status: "空闲",
+            },
+            conversation: [
+              { id: "msg-main-1", role: "assistant", content: "主会话消息", timestamp: 1 },
+            ],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+    const user = userEvent.setup();
+
+    await screen.findByText("主会话消息");
+    expect(screen.queryByAltText("im-tab-switch.png")).not.toBeInTheDocument();
+
+    const feishuTab = await screen.findByRole("button", { name: /飞书/ });
+    expect(feishuTab.querySelector(".cc-chat-tab-busy-dot")).toBeTruthy();
+
+    await user.click(feishuTab);
+
+    await waitFor(() => {
+      expect(screen.getByText("帮我看看这张图")).toBeInTheDocument();
+      expect(screen.getByAltText("im-tab-switch.png")).toBeInTheDocument();
+      expect(screen.getByText("正在思考…")).toBeInTheDocument();
+      expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: "停止" })).toBeEnabled();
+  });
+
   it("restores the pending assistant bubble after refresh while a request is still running", async () => {
     window.localStorage.setItem(
       pendingChatStorageKey,
@@ -3043,7 +3985,7 @@ describe("App", () => {
     expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
   });
 
-  it("clears a stored pending turn after refresh once authoritative history has already advanced to a later user turn", async () => {
+  it("does not rehydrate a stale pending turn from local storage when stored messages have already advanced to a later user turn", async () => {
     const persistedState = {
       _persistedAt: Date.now(),
       activeChatTabId: "agent:main",
@@ -3069,12 +4011,16 @@ describe("App", () => {
       },
       messages: [
         { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
-        { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101 },
+        { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+        { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
       ],
       messagesByTabId: {
         "agent:main": [
           { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
-          { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101 },
+          { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+          { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
         ],
       },
     };
@@ -3099,29 +4045,18 @@ describe("App", () => {
       }),
     );
 
-    const fetchMock = vi.fn((input) => {
-      const url = String(input);
-      if (url.startsWith("/api/runtime")) {
-        return mockJsonResponse(
-          createSnapshot({
-            session: {
-              ...createSnapshot().session,
-              status: "待命",
-            },
-            conversation: [
-              { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
-              { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101 },
-              { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
-              { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
-            ],
-          }),
-        );
-      }
+    const runtimeDeferred = createDeferred();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return runtimeDeferred.promise;
+        }
 
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-
-    stubFetchWithAccessState(fetchMock);
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
 
     const { container } = render(<App />);
 
@@ -3135,14 +4070,9 @@ describe("App", () => {
     expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
-    });
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
 
-    await waitFor(() => {
-      const nextPending = JSON.parse(window.localStorage.getItem(pendingChatStorageKey) || "{}");
-      expect(nextPending["command-center:main"]).toBeUndefined();
-    });
+    runtimeDeferred.resolve(mockJsonResponse(createSnapshot()));
   });
 
   it("keeps the restored refresh-in-progress turn marked busy when stored messages already contain a partial assistant reply", async () => {
@@ -3239,6 +4169,363 @@ describe("App", () => {
     expect(container.querySelector('[data-streaming-tail-dots="true"]')).toBeTruthy();
   });
 
+  it("does not stay busy after refresh when only a stale pending flag remains in stored messages", async () => {
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-user-1", role: "user", content: "刷新后别再误报忙碌", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101, pending: true },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "刷新后别再误报忙碌", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101, pending: true },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.removeItem(pendingChatStorageKey);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                status: "空闲",
+              },
+              conversation: [
+                { id: "msg-user-1", role: "user", content: "刷新后别再误报忙碌", timestamp: 100 },
+                { id: "msg-assistant-1", role: "assistant", content: "已经完成", timestamp: 101 },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("待命")).toBeInTheDocument();
+      expect(screen.getByText("刷新后别再误报忙碌")).toBeInTheDocument();
+      expect(screen.getByText("已经完成")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("消化 Token 中")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
+  });
+
+  it("keeps stale streamed assistant text visible without restoring busy state before runtime resolves", async () => {
+    const runtimeDeferred = createDeferred();
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-user-1", role: "user", content: "继续写", timestamp: 100 },
+        { id: "msg-assistant-stream-1", role: "assistant", content: "第一段", timestamp: 101, streaming: true },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "继续写", timestamp: 100 },
+          { id: "msg-assistant-stream-1", role: "assistant", content: "第一段", timestamp: 101, streaming: true },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.removeItem(pendingChatStorageKey);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return runtimeDeferred.promise;
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("待命")).toBeInTheDocument();
+      expect(screen.getByText("继续写")).toBeInTheDocument();
+      expect(screen.getByText("第一段")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("消化 Token 中")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+    expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
+
+    runtimeDeferred.resolve(
+      mockJsonResponse(
+        createSnapshot({
+          session: {
+            ...createSnapshot().session,
+            status: "空闲",
+          },
+          conversation: [
+            { id: "msg-user-1", role: "user", content: "继续写", timestamp: 100 },
+            { id: "msg-assistant-1", role: "assistant", content: "第一段", timestamp: 101 },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("第一段")).toBeInTheDocument();
+    });
+  });
+
+  it("clears a stored pending turn after refresh once authoritative history has already advanced to a later user turn", async () => {
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "旧问题",
+            timestamp: 100,
+          },
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                status: "空闲",
+              },
+              conversation: [
+                { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+                { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101 },
+                { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+                { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("待命")).toBeInTheDocument();
+      expect(screen.getByText("旧问题")).toBeInTheDocument();
+      expect(screen.getByText("已经完成")).toBeInTheDocument();
+      expect(screen.getByText("继续说")).toBeInTheDocument();
+      expect(screen.getByText("后续回复")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
+    });
+
+    await waitFor(() => {
+      const nextPending = JSON.parse(window.localStorage.getItem(pendingChatStorageKey) || "{}");
+      expect(nextPending["command-center:main"]).toBeUndefined();
+    });
+  });
+
+  it("does not keep rendering a stored pending turn once the same turn already has an authoritative assistant reply", async () => {
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-user-1", role: "user", content: "把这张图改成黑色背景", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "把这张图改成黑色背景", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "把这张图改成黑色背景",
+            timestamp: 100,
+          },
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                status: "空闲",
+              },
+              conversation: [
+                { id: "msg-user-1", role: "user", content: "把这张图改成黑色背景", timestamp: 100 },
+                { id: "msg-assistant-pending-1", role: "assistant", content: "已经改好了。", timestamp: 120 },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      const bodyText = getNormalizedBodyText();
+      const occurrences = bodyText.split("把这张图改成黑色背景").length - 1;
+      expect(occurrences).toBe(1);
+      expect(screen.getByText("已经改好了。")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+  });
+
   it("does not duplicate the latest user message when restoring a pending turn", async () => {
     window.localStorage.setItem(
       pendingChatStorageKey,
@@ -3283,6 +4570,63 @@ describe("App", () => {
     await waitFor(() => {
       const bodyText = getNormalizedBodyText();
       const occurrences = bodyText.split("你好好思考，告诉我宇宙的答案是什么？").length - 1;
+      expect(occurrences).toBe(1);
+    });
+    expect(await screen.findByText("正在思考…")).toBeInTheDocument();
+  });
+
+  it("does not duplicate the latest user message when runtime briefly echoes the same in-flight turn twice", async () => {
+    const promptText = "我刚才执行的是 openclaw plugins install brave";
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 48000,
+          pendingTimestamp: 48001,
+          userMessage: {
+            role: "user",
+            content: promptText,
+            timestamp: 48000,
+          },
+        },
+      }),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.startsWith("/api/runtime")) {
+          return mockJsonResponse(
+            createSnapshot({
+              conversation: [
+                {
+                  id: "runtime-user-echo-1",
+                  role: "user",
+                  content: promptText,
+                  timestamp: 48001,
+                },
+                {
+                  id: "runtime-user-echo-2",
+                  role: "user",
+                  content: promptText,
+                  timestamp: 48002,
+                },
+              ],
+            }),
+          );
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      const bodyText = getNormalizedBodyText();
+      const occurrences = bodyText.split(promptText.replace(/\s+/g, "")).length - 1;
       expect(occurrences).toBe(1);
     });
     expect(await screen.findByText("正在思考…")).toBeInTheDocument();
@@ -4167,9 +5511,11 @@ describe("App", () => {
   it("shows -- summary placeholders while a reset session is still loading its runtime overview", async () => {
     const resetRuntimeDeferred = createDeferred();
     let runtimeRequestCount = 0;
+    const runtimeSessionUsers = [];
     const fetchMock = vi.fn((input, init) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
+        runtimeSessionUsers.push(new URL(url, "http://localhost").searchParams.get("sessionUser") || "");
         runtimeRequestCount += 1;
         if (runtimeRequestCount === 1) {
           return mockJsonResponse(createSnapshot({
@@ -4221,6 +5567,7 @@ describe("App", () => {
       expect(screen.queryByText("WS / 在线")).not.toBeInTheDocument();
       expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(5);
     });
+    expect(runtimeSessionUsers[1]).toMatch(/^command-center-reset-main-\d+$/);
   });
 
   it("applies model, fast mode, and think mode changes before sending the next turn", async () => {
@@ -4632,7 +5979,7 @@ describe("App", () => {
     expect(await screen.findByText("package.json")).toBeInTheDocument();
   });
 
-  it("opens IM tabs under the agent configured by OpenClaw bindings even when the current tab is a different agent", async () => {
+  it("opens IM tabs under the agent configured by OpenClaw bindings even when the current tab is a different agent", { timeout: 10000 }, async () => {
     const harness = createInteractiveFetchMock({
       availableAgents: ["main", "paint"],
       availableModels: ["openai-codex/gpt-5.4"],
@@ -4653,11 +6000,16 @@ describe("App", () => {
     await user.click(screen.getByLabelText("切换 Agent"));
     await user.click(screen.getByRole("menuitem", { name: "paint" }));
     await screen.findByText("paint - 当前会话");
+    await waitFor(() => {
+      expect(screen.queryByRole("menuitem", { name: "paint" })).not.toBeInTheDocument();
+    });
 
     await user.click(screen.getByLabelText("切换 Agent"));
-    await user.click(screen.getByRole("menuitem", { name: "钉钉" }));
+    await user.click(await screen.findByRole("menuitem", { name: "钉钉" }));
 
-    expect(await screen.findByRole("button", { name: "钉钉" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "钉钉" })).toBeInTheDocument();
+    });
     expect(screen.queryByRole("button", { name: "钉钉 paint" })).not.toBeInTheDocument();
   });
 
@@ -4732,6 +6084,98 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(feishuRuntimeRequestCount).toBeGreaterThanOrEqual(2);
+    });
+
+    deferredRuntime.resolve(mockJsonResponse(createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        agentId: "main",
+        selectedAgentId: "main",
+        sessionUser: nativeSessionUser,
+        sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+        status: "空闲",
+      },
+    })));
+
+    await waitFor(() => {
+      expect(chatBodies[0]).toMatchObject({
+        agentId: "main",
+        sessionUser: nativeSessionUser,
+      });
+    });
+  });
+
+  it("resolves a bootstrap Weixin tab before sending the first message", async () => {
+    const chatBodies = [];
+    const deferredRuntime = createDeferred();
+    const nativeSessionUser = "agent:main:openclaw-weixin:direct:o9cq807-naavqdpr-tmdjv3v8bck@im.wechat";
+    let weixinRuntimeRequestCount = 0;
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/runtime")) {
+        const params = new URL(url, "http://localhost").searchParams;
+        const sessionUser = params.get("sessionUser") || "command-center";
+
+        if (sessionUser === "openclaw-weixin:direct:default") {
+          weixinRuntimeRequestCount += 1;
+          if (weixinRuntimeRequestCount === 1) {
+            return mockJsonResponse(createSnapshot({
+              session: {
+                ...createSnapshot().session,
+                agentId: "main",
+                selectedAgentId: "main",
+                sessionUser: "openclaw-weixin:direct:default",
+                sessionKey: "agent:main:openai-user:openclaw-weixin:direct:default",
+                status: "空闲",
+              },
+            }));
+          }
+
+          return deferredRuntime.promise;
+        }
+
+        return mockJsonResponse(createSessionSnapshot(sessionUser));
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        const body = JSON.parse(init.body);
+        chatBodies.push(body);
+        return mockJsonResponse({
+          ok: true,
+          outputText: "收到",
+          session: {
+            ...createSnapshot().session,
+            agentId: "main",
+            selectedAgentId: "main",
+            sessionUser: nativeSessionUser,
+            sessionKey: `agent:main:openai-user:${nativeSessionUser}`,
+            status: "空闲",
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    const user = userEvent.setup();
+    await screen.findByText("LalaClaw");
+
+    await user.click(screen.getByLabelText("切换 Agent"));
+    await user.click(screen.getByRole("menuitem", { name: "微信" }));
+    expect(await screen.findByRole("button", { name: "微信" })).toBeInTheDocument();
+
+    const textarea = await findComposer();
+    await user.type(textarea, "苹果");
+    await user.keyboard("{Enter}{Enter}{Enter}");
+    expect(textarea).toHaveValue("");
+
+    await waitFor(() => {
+      expect(weixinRuntimeRequestCount).toBeGreaterThanOrEqual(2);
     });
 
     deferredRuntime.resolve(mockJsonResponse(createSnapshot({
@@ -5071,7 +6515,7 @@ describe("App", () => {
     });
   });
 
-  it("keeps a bottom-pinned conversation at the bottom after a refresh reload", async () => {
+  it("keeps a bottom-pinned conversation at the bottom after a refresh reload", { timeout: 10000 }, async () => {
     const fetchMock = vi.fn((input, init) => {
       const url = String(input);
       if (url.startsWith("/api/runtime")) {
@@ -5155,6 +6599,6 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(secondViewport.scrollTop).toBe(1300);
-    });
+    }, { timeout: 5000 });
   });
 });
