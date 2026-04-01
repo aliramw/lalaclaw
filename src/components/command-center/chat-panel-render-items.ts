@@ -87,6 +87,10 @@ function findMatchingUserTurnIndex(userTurns: UserTurn[], timestamp: number) {
   return -1;
 }
 
+function hasVisibleAssistantContent(message: ChatPanelRenderMessage | undefined) {
+  return Boolean(String(message?.content || "").trim());
+}
+
 function findTurnActivityInsertionIndex(messages: ChatPanelRenderMessage[], userTurns: UserTurn[], turnIndex: number) {
   const turn = userTurns[turnIndex];
   const nextTurn = userTurns[turnIndex + 1];
@@ -94,7 +98,11 @@ function findTurnActivityInsertionIndex(messages: ChatPanelRenderMessage[], user
 
   for (let messageIndex = turn.startIndex + 1; messageIndex < turnEndIndex; messageIndex += 1) {
     const message = messages[messageIndex];
-    if (message?.role === "assistant" && !message.pending) {
+    if (
+      message?.role === "assistant"
+      && !message.pending
+      && (!message.streaming || hasVisibleAssistantContent(message))
+    ) {
       return messageIndex;
     }
   }
