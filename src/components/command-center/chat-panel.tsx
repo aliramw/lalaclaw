@@ -4202,7 +4202,7 @@ export function ChatPanel({
 
     return renderItems.map((item) => {
       if (item.kind === "turn-activity") {
-        if (!item.anchorMessageId || item.anchorMessage?.pending) {
+        if (!item.anchorMessageId) {
           return null;
         }
 

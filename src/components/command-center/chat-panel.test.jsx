@@ -2766,6 +2766,75 @@ describe("ChatPanel", () => {
     expect(gatewayTool.compareDocumentPosition(updatedAssistantBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("shows tool activity and the pending assistant bubble before final prose arrives", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { id: "msg-user-pending-tools", role: "user", content: "继续处理", timestamp: 1000 },
+            { id: "msg-assistant-pending-tools", role: "assistant", content: "正在思考…", timestamp: 2000, pending: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          taskTimeline={[
+            {
+              id: "run-pending-tools",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-read-file-pending", name: "read_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const toolActivity = screen.getByRole("button", { name: "read_file 收起详情" });
+    const pendingBubble = screen.getByText("正在思考…");
+
+    expect(toolActivity).toBeInTheDocument();
+    expect(pendingBubble).toBeInTheDocument();
+    expect(toolActivity.compareDocumentPosition(pendingBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps assistant-only turns unchanged when no timeline tools match the turn", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { id: "msg-user-no-tools", role: "user", content: "总结一下", timestamp: 1000 },
+            { id: "msg-assistant-no-tools", role: "assistant", content: "这是结论。", timestamp: 2000 },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          taskTimeline={[]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("总结一下")).toBeInTheDocument();
+    expect(screen.getByText("这是结论。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /收起详情$/ })).not.toBeInTheDocument();
+  });
+
   it("only renders tool activity for turns that already have an assistant reply", () => {
     render(
       <TooltipProvider>
