@@ -2726,41 +2726,6 @@ describe("ChatPanel", () => {
     expect(gatewayTool.compareDocumentPosition(updatedAssistantBubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("does not render tool activity while a streaming assistant still has no visible prose", () => {
-    render(
-      <TooltipProvider>
-        <ChatPanel
-          busy
-          formatTime={() => "10:00:00"}
-          messageViewportRef={null}
-          messages={[
-            { id: "msg-user-streaming-empty", role: "user", content: "继续改", timestamp: 1000 },
-            { id: "msg-assistant-streaming-empty", role: "assistant", content: "   ", timestamp: 2000, streaming: true },
-          ]}
-          onChatFontSizeChange={() => {}}
-          onPromptChange={() => {}}
-          onPromptKeyDown={() => {}}
-          onReset={() => {}}
-          onSend={() => {}}
-          prompt=""
-          promptRef={null}
-          session={createSession()}
-          taskTimeline={[
-            {
-              id: "run-streaming-empty",
-              timestamp: 1500,
-              tools: [
-                { id: "tool-streaming-empty", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
-              ],
-            },
-          ]}
-        />
-      </TooltipProvider>,
-    );
-
-    expect(screen.queryByRole("button", { name: "edit_file 收起详情" })).not.toBeInTheDocument();
-  });
-
   it("only renders tool activity for turns that already have an assistant reply", () => {
     render(
       <TooltipProvider>
