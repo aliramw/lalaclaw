@@ -18,7 +18,7 @@
   --text: oklch(0.238 0.014 253.1);
   --text-muted: #715f4c;
   --text-subtle: #958166;
-  --focus-ring: rgba(234, 120, 32, 0.28);
+  --focus-ring: #ea7800;
   --foreground: var(--text);
   --card: var(--surface);
   --card-foreground: var(--text);
@@ -65,7 +65,7 @@
   --text: oklch(0.95 0.01 255);
   --text-muted: #9cb8cb;
   --text-subtle: #7392a8;
-  --focus-ring: rgba(14, 165, 233, 0.34);
+  --focus-ring: #0ea5e9;
   --foreground: var(--text);
   --card: var(--surface);
   --card-foreground: var(--text);
