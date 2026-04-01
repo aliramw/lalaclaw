@@ -607,6 +607,64 @@ describe("isChatTabBusy", () => {
       }),
     ).toBe(true);
   });
+
+  it("does not keep a tab busy once the tracked assistant reply is present with the pending id", () => {
+    expect(
+      isChatTabBusy({
+        tabId: "agent:main",
+        sessionUser: "command-center-main",
+        activeChatTabId: "agent:main",
+        sessionStatus: "待命",
+        busyByTabId: {},
+        messagesByTabId: {
+          "agent:main": [
+            { id: "msg-user-1", role: "user", content: "测试", timestamp: 1 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "收到。", timestamp: 2 },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center-main:main": {
+            key: "command-center-main:main",
+            tabId: "agent:main",
+            startedAt: 1,
+            pendingTimestamp: 2,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "测试", timestamp: 1 },
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("does not keep a tab busy when its tracked pending turn has already been overtaken by a later user turn", () => {
+    expect(
+      isChatTabBusy({
+        tabId: "agent:main",
+        sessionUser: "command-center-main",
+        activeChatTabId: "agent:main",
+        sessionStatus: "待命",
+        busyByTabId: {},
+        messagesByTabId: {
+          "agent:main": [
+            { id: "msg-user-1", role: "user", content: "测试", timestamp: 1 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "已完成", timestamp: 2 },
+            { id: "msg-user-2", role: "user", content: "下一轮", timestamp: 3 },
+            { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 4 },
+          ],
+        },
+        pendingChatTurns: {
+          "command-center-main:main": {
+            key: "command-center-main:main",
+            tabId: "agent:main",
+            startedAt: 1,
+            pendingTimestamp: 2,
+            assistantMessageId: "msg-assistant-pending-1",
+            userMessage: { id: "msg-user-1", role: "user", content: "测试", timestamp: 1 },
+          },
+        },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("hasActiveAssistantReply", () => {

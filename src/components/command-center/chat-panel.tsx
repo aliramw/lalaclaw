@@ -713,6 +713,61 @@ function findLatestAssistantMessageId(messages: MessageLike[] = []) {
   return "";
 }
 
+function normalizeConversationMessageFingerprintPart(value = "") {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+function hashConversationMessageFingerprint(value = "") {
+  const source = String(value || "");
+  if (!source) {
+    return "";
+  }
+
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
+  }
+
+  return Math.abs(hash).toString(36);
+}
+
+function buildConversationMessageFingerprint(message: MessageLike = {}) {
+  return [
+    normalizeConversationMessageFingerprintPart(message?.role || ""),
+    normalizeConversationMessageFingerprintPart(message?.content || ""),
+    Number.isFinite(Number(message?.timestamp)) ? Number(message.timestamp) : "",
+    normalizeConversationMessageFingerprintPart(message?.tokenBadge || ""),
+    ...(Array.isArray(message?.attachments)
+      ? message.attachments.map((attachment) => [
+          normalizeConversationMessageFingerprintPart(attachment?.id || ""),
+          normalizeConversationMessageFingerprintPart(attachment?.name || ""),
+          normalizeConversationMessageFingerprintPart(attachment?.path || attachment?.fullPath || ""),
+        ].join("|"))
+      : []),
+  ].join("||");
+}
+
+function buildConversationMessageRenderKey(message: MessageLike = {}, index = 0) {
+  const explicitId = String(message?.id || "").trim();
+  if (explicitId) {
+    return explicitId;
+  }
+
+  if (message?.role === "assistant" && (message?.pending || message?.streaming)) {
+    const contentSeed = String(message?.content || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean) || "";
+    const normalizedSeed = normalizeConversationMessageFingerprintPart(contentSeed);
+    if (normalizedSeed) {
+      return `assistant-live-${hashConversationMessageFingerprint(normalizedSeed)}`;
+    }
+    return `assistant-live-${index}`;
+  }
+
+  return `message-${hashConversationMessageFingerprint(buildConversationMessageFingerprint(message)) || index}`;
+}
+
 function getConversationMessageId(message: MessageLike = {}, index = 0) {
   const explicitId = String(message?.id || "").trim();
   if (explicitId) {
@@ -4196,6 +4251,7 @@ export function ChatPanel({
 
     const renderItems = deriveChatPanelRenderItems({
       getMessageKey: getConversationMessageId,
+      getMessageRenderKey: buildConversationMessageRenderKey,
       messages,
       taskTimeline: taskTimeline as ChatPanelTaskTimelineEntry[],
     });
@@ -4215,7 +4271,7 @@ export function ChatPanel({
         );
       }
 
-      const { message, messageId, previousMessageId, separated } = item;
+      const { key: messageRenderKey, message, messageId, previousMessageId, separated } = item;
       const isLatestAssistant = latestAssistantMessageId === messageId;
       const isStreamingAssistant = Boolean(
         isLatestAssistant
@@ -4246,7 +4302,7 @@ export function ChatPanel({
           isStreamingAssistant={isStreamingAssistant}
           showStreamingTail={showStreamingTail}
           markUserScrollTakeover={markUserScrollTakeover}
-          key={messageId}
+          key={messageRenderKey}
           message={message}
           messageId={messageId}
           formatTime={formatTime}

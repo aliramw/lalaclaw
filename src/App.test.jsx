@@ -3043,6 +3043,108 @@ describe("App", () => {
     expect(screen.getByText("消化 Token 中")).toBeInTheDocument();
   });
 
+  it("clears a stored pending turn after refresh once authoritative history has already advanced to a later user turn", async () => {
+    const persistedState = {
+      _persistedAt: Date.now(),
+      activeChatTabId: "agent:main",
+      activeTab: "timeline",
+      chatTabs: [{ id: "agent:main", agentId: "main", sessionUser: "command-center" }],
+      chatFontSize: "small",
+      composerSendMode: "enter-send",
+      dismissedTaskRelationshipIdsByConversation: {},
+      fastMode: false,
+      inspectorPanelWidth: 380,
+      thinkMode: "off",
+      model: "openclaw",
+      agentId: "main",
+      sessionUser: "command-center",
+      tabMetaById: {
+        "agent:main": {
+          agentId: "main",
+          sessionUser: "command-center",
+          model: "openclaw",
+          fastMode: false,
+          thinkMode: "off",
+        },
+      },
+      messages: [
+        { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+        { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+      ],
+      messagesByTabId: {
+        "agent:main": [
+          { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "半截回复", timestamp: 101 },
+        ],
+      },
+    };
+
+    window.localStorage.setItem(currentStorageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(storageKey, JSON.stringify(persistedState));
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 101,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "旧问题",
+            timestamp: 100,
+          },
+        },
+      }),
+    );
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              status: "待命",
+            },
+            conversation: [
+              { id: "msg-user-1", role: "user", content: "旧问题", timestamp: 100 },
+              { id: "msg-assistant-pending-1", role: "assistant", content: "已经完成", timestamp: 101 },
+              { id: "msg-user-2", role: "user", content: "继续说", timestamp: 102 },
+              { id: "msg-assistant-2", role: "assistant", content: "后续回复", timestamp: 103 },
+            ],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    const { container } = render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("旧问题")).toBeInTheDocument();
+      expect(screen.getByText("已经完成")).toBeInTheDocument();
+      expect(screen.getByText("继续说")).toBeInTheDocument();
+      expect(screen.getByText("后续回复")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".cc-chat-tab-busy-dot")).toBeNull();
+    });
+
+    await waitFor(() => {
+      const nextPending = JSON.parse(window.localStorage.getItem(pendingChatStorageKey) || "{}");
+      expect(nextPending["command-center:main"]).toBeUndefined();
+    });
+  });
+
   it("keeps the restored refresh-in-progress turn marked busy when stored messages already contain a partial assistant reply", async () => {
     const persistedState = {
       _persistedAt: Date.now(),

@@ -1402,6 +1402,7 @@ export function mergeConversationIdentity(
   });
 
   if (pendingEntry) {
+    const snapshotHasAdvancedPastPending = hasSnapshotAdvancedPastPendingTurn(nextMessages, pendingEntry);
     const localPendingUser = localMessages.find((message) => {
       if (message?.role !== "user") {
         return false;
@@ -1432,7 +1433,9 @@ export function mergeConversationIdentity(
     const localPendingAssistant = assistantMessageId
       ? localMessages.find((message) => message?.role === "assistant" && String(message?.id || "").trim() === assistantMessageId)
       : null;
-    const snapshotPendingAssistantIndex = findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
+    const snapshotPendingAssistantIndex = snapshotHasAdvancedPastPending
+      ? -1
+      : findSnapshotPendingAssistantIndex(nextMessages, pendingEntry);
     if (localPendingAssistant && snapshotPendingAssistantIndex >= 0) {
       const snapshotPendingAssistant = nextMessages[snapshotPendingAssistantIndex];
       if (!snapshotPendingAssistant) {
@@ -1654,6 +1657,18 @@ function findPendingUserIndex(snapshotMessages: ChatMessage[] = [], pendingEntry
   }
 
   return -1;
+}
+
+export function hasSnapshotAdvancedPastPendingTurn(
+  snapshotMessages: ChatMessage[] = [],
+  pendingEntry: PendingChatTurn | null = null,
+): boolean {
+  const pendingUserIndex = findPendingUserIndex(snapshotMessages, pendingEntry);
+  if (pendingUserIndex < 0) {
+    return false;
+  }
+
+  return snapshotMessages.some((message, index) => index > pendingUserIndex && message?.role === "user");
 }
 
 function findLocalStreamingAssistant(

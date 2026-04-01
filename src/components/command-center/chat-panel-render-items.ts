@@ -59,6 +59,7 @@ export type ChatPanelRenderItem = MessageRenderItem | TurnActivityRenderItem;
 
 type DeriveChatPanelRenderItemsOptions = {
   getMessageKey: (message: ChatPanelRenderMessage, index: number) => string;
+  getMessageRenderKey?: (message: ChatPanelRenderMessage, index: number) => string;
   messages?: ChatPanelRenderMessage[];
   taskTimeline?: ChatPanelTaskTimelineEntry[];
 };
@@ -107,6 +108,7 @@ function findTurnActivityAnchorIndex(messages: ChatPanelRenderMessage[], userTur
 
 export function deriveChatPanelRenderItems({
   getMessageKey,
+  getMessageRenderKey = getMessageKey,
   messages = [],
   taskTimeline = [],
 }: DeriveChatPanelRenderItemsOptions): ChatPanelRenderItem[] {
@@ -117,10 +119,11 @@ export function deriveChatPanelRenderItems({
 
   messages.forEach((message, index) => {
     const messageId = getMessageKey(message, index);
+    const messageRenderKey = getMessageRenderKey(message, index);
 
     renderItems.push({
       kind: "message",
-      key: messageId,
+      key: messageRenderKey,
       message,
       messageId,
       previousMessageId: message.role === "assistant" ? lastAssistantMessageId : lastUserMessageId,
@@ -131,7 +134,7 @@ export function deriveChatPanelRenderItems({
       const startTimestamp = toFiniteTimestamp(message.timestamp);
       if (startTimestamp !== null) {
         userTurns.push({
-          messageKey: messageId,
+          messageKey: messageRenderKey,
           nextUserTimestamp: null,
           startIndex: index,
           startTimestamp,

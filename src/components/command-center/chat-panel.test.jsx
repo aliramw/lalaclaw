@@ -3308,6 +3308,86 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "gateway 收起详情" }).closest('[data-message-anchor="latest-assistant"]')).toBeNull();
   });
 
+  it("keeps the live user and assistant DOM nodes stable when an earlier history message is inserted ahead of id-less live messages", () => {
+    const { rerender, container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1000 },
+            { role: "assistant", content: "第一段", timestamp: 2000, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+          taskTimeline={[
+            {
+              id: "run-live-stability-history-insert",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-edit-file-history-insert", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const initialUserBubble = screen.getByText("继续").closest('[data-message-role="user"]');
+    const initialAssistantBubble = container.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(initialUserBubble).toBeTruthy();
+    expect(initialAssistantBubble).toBeTruthy();
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy
+          formatTime={() => "10:00:01"}
+          messageViewportRef={null}
+          messages={[
+            { role: "assistant", content: "更早的一条历史回复", timestamp: 500 },
+            { role: "user", content: "继续", timestamp: 1000 },
+            { role: "assistant", content: "第一段\n第二段", timestamp: 3000, streaming: true },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "news" })}
+          taskTimeline={[
+            {
+              id: "run-live-stability-history-insert",
+              timestamp: 1500,
+              tools: [
+                { id: "tool-edit-file-history-insert", name: "edit_file", status: "完成", input: "{}", output: "ok", timestamp: 1510 },
+                { id: "tool-gateway-history-insert", name: "gateway", status: "完成", input: "{}", output: "ok", timestamp: 1520 },
+              ],
+            },
+          ]}
+        />
+      </TooltipProvider>,
+    );
+
+    const updatedUserBubble = screen.getByText("继续").closest('[data-message-role="user"]');
+    const updatedAssistantBubble = container.querySelector('[data-message-anchor="latest-assistant"]');
+
+    expect(updatedUserBubble).toBe(initialUserBubble);
+    expect(updatedAssistantBubble).toBe(initialAssistantBubble);
+    expect(updatedAssistantBubble?.textContent || "").toContain("第一段");
+    expect(updatedAssistantBubble?.textContent || "").toContain("第二段");
+    expect(screen.getAllByRole("button", { name: /收起详情$/ })).toHaveLength(2);
+  });
+
   it("does not keep the breathing class once the assistant message is no longer streaming", () => {
     render(
       <TooltipProvider>

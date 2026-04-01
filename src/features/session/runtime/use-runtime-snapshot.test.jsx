@@ -1971,6 +1971,93 @@ describe("useRuntimeSnapshot", () => {
     expect(setPendingChatTurns).toHaveBeenCalled();
   });
 
+  it("clears a recovered pending turn once the authoritative snapshot has already advanced to a later user turn", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "待命",
+        },
+        conversation: [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "收到。", timestamp: 220 },
+          { role: "user", content: "继续", timestamp: 260 },
+          { role: "assistant", content: "后续回复", timestamp: 280 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pendingChatTurns = {
+      "command-center:main": {
+        startedAt: 200,
+        pendingTimestamp: 220,
+        assistantMessageId: "msg-assistant-pending-1",
+        userMessage: {
+          role: "user",
+          content: "新问题",
+          timestamp: 200,
+        },
+      },
+    };
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: pendingChatTurns["command-center:main"],
+        busy: true,
+        recoveringPendingReply: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { role: "user", content: "旧问题", timestamp: 100 },
+            { role: "assistant", content: "旧回复", timestamp: 120 },
+            { role: "user", content: "新问题", timestamp: 200 },
+            { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 220, pending: true },
+          ],
+        },
+        pendingChatTurns,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalledWith([
+        { role: "user", content: "旧问题", timestamp: 100 },
+        { role: "assistant", content: "旧回复", timestamp: 120 },
+        { role: "user", content: "新问题", timestamp: 200 },
+        { role: "assistant", content: "收到。", timestamp: 220 },
+        { role: "user", content: "继续", timestamp: 260 },
+        { role: "assistant", content: "后续回复", timestamp: 280 },
+      ]);
+    });
+
+    expect(setBusy).toHaveBeenCalledWith(false);
+    expect(setSession).toHaveBeenCalledWith(expect.objectContaining({ status: "待命" }));
+    expect(setPendingChatTurns).toHaveBeenCalled();
+  });
+
   it("does not let an older runtime snapshot erase the latest local turn after a stream error", async () => {
     const setBusy = vi.fn();
     const setFastMode = vi.fn();

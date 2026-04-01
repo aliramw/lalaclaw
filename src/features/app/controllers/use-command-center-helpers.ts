@@ -10,6 +10,7 @@ import type {
 import {
   createAgentTabId,
   defaultSessionUser,
+  hasSnapshotAdvancedPastPendingTurn,
 } from "@/features/app/storage";
 import { createBaseSession } from "@/features/app/state";
 import {
@@ -360,9 +361,15 @@ export function isChatTabBusy({
   pendingChatTurns?: ConversationPendingMap;
 } = {}) {
   const normalizedTabId = String(tabId || "").trim();
-  const hasPendingTurn = Object.values(pendingChatTurns || {}).some((entry) => String(entry?.tabId || "").trim() === normalizedTabId);
-  if (hasPendingTurn) {
-    return true;
+  const trackedPendingEntry = Object.values(pendingChatTurns || {}).find((entry) => String(entry?.tabId || "").trim() === normalizedTabId) || null;
+  if (trackedPendingEntry) {
+    const currentMessages = messagesByTabId?.[tabId] || [];
+    const hasAdvancedPastPending = hasSnapshotAdvancedPastPendingTurn(currentMessages, trackedPendingEntry);
+    const hasSettledTrackedReply = !hasActiveAssistantReply(currentMessages)
+      && hasTrackedPendingAssistantReply(currentMessages, trackedPendingEntry);
+    if (!hasAdvancedPastPending && !hasSettledTrackedReply) {
+      return true;
+    }
   }
 
   if (hasActiveAssistantReply(messagesByTabId?.[tabId] || [])) {
@@ -382,6 +389,26 @@ export function isChatTabBusy({
 
 function normalizeRuntimeIdentityValue(value = "") {
   return String(value || "").trim();
+}
+
+function hasTrackedPendingAssistantReply(messages: ChatMessage[] = [], pendingEntry: ConversationPendingMap[string] | null = null) {
+  if (pendingEntry?.stopped) {
+    return false;
+  }
+
+  const assistantMessageId = String(pendingEntry?.assistantMessageId || "").trim();
+  if (!assistantMessageId) {
+    return false;
+  }
+
+  return (messages || []).some(
+    (message) =>
+      message?.role === "assistant"
+      && !message?.pending
+      && !message?.streaming
+      && String(message?.id || "").trim() === assistantMessageId
+      && Boolean(String(message?.content || "").trim()),
+  );
 }
 
 export function hasActiveAssistantReply(messages: ChatMessage[] = []) {

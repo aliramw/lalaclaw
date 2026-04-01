@@ -4,6 +4,7 @@ import {
   createConversationKey,
   extractUserPromptHistory,
   hasAuthoritativePendingAssistantReply,
+  hasSnapshotAdvancedPastPendingTurn,
   mergeConversationAttachments,
   mergeConversationIdentity,
   mergePendingConversation,
@@ -226,16 +227,22 @@ function shouldClearRecoveredPendingTurn({
   recoveringPendingReply = false,
   snapshotHasPendingUserMessage = false,
   snapshotHasAssistantReply = false,
+  snapshotHasAdvancedPastPending = false,
   status = "",
 }: {
   pendingEntry?: PendingChatTurn | null;
   recoveringPendingReply?: boolean;
   snapshotHasPendingUserMessage?: boolean;
   snapshotHasAssistantReply?: boolean;
+  snapshotHasAdvancedPastPending?: boolean;
   status?: string;
 } = {}) {
   if (!recoveringPendingReply || !pendingEntry || pendingEntry?.stopped || snapshotHasAssistantReply) {
     return false;
+  }
+
+  if (snapshotHasAdvancedPastPending) {
+    return true;
   }
 
   const normalizedStatus = normalizeStatusKey(status);
@@ -335,6 +342,20 @@ function resolveRecoveredPendingProgress({
   const localAssistantContent = normalizeAssistantProgressContent(localAssistant?.content);
   if (!localAssistant || localAssistant?.pending || !localAssistantContent) {
     const progressKey = String(pendingEntry?.key || "").trim();
+    if (progressKey && progressRef.current[progressKey]) {
+      const nextProgress = { ...progressRef.current };
+      delete nextProgress[progressKey];
+      progressRef.current = nextProgress;
+    }
+    return {
+      keepRecoveredPendingAlive: false,
+      canSettleRecoveredPending: false,
+      contentChanged: false,
+    };
+  }
+
+  if (hasSnapshotAdvancedPastPendingTurn(snapshotMessages, pendingEntry)) {
+    const progressKey = String(pendingEntry?.key || pendingEntry?.assistantMessageId || pendingEntry?.pendingTimestamp || "").trim();
     if (progressKey && progressRef.current[progressKey]) {
       const nextProgress = { ...progressRef.current };
       delete nextProgress[progressKey];
@@ -631,6 +652,9 @@ export function useRuntimeSnapshot({
       sessionStatus: snapshot.session?.status || nextSession.status,
       sessionUser: snapshot.session?.sessionUser || nextSession.sessionUser,
     });
+    const snapshotHasAdvancedPastPending = pendingEntry
+      ? hasSnapshotAdvancedPastPendingTurn(baseMergedConversation, pendingEntry)
+      : false;
     const snapshotPromptHistory = extractUserPromptHistory(snapshot.conversation);
     const shouldDeferConversationSync = Boolean(pendingEntry) && options.syncConversation === false;
     pushCcDebugEvent("runtime.snapshot.apply", {
@@ -649,7 +673,7 @@ export function useRuntimeSnapshot({
     setFastMode(nextFastMode);
 
     if (options.syncConversation !== false && Array.isArray(snapshot.conversation)) {
-      const mergedConversation = pendingEntry
+      const mergedConversation = pendingEntry && !snapshotHasAdvancedPastPending
         ? mergeConversationIdentity(
             snapshotConversationWithAttachments,
             localMessages,
@@ -661,7 +685,7 @@ export function useRuntimeSnapshot({
         ? hasAuthoritativePendingAssistantReply(mergedConversation, pendingEntry)
         : false;
       const localHasSettledAssistantReply = pendingEntry?.assistantMessageId
-        ? hasAuthoritativePendingAssistantReply(localMessagesWithoutPending, pendingEntry)
+        ? (!snapshotHasAdvancedPastPending && hasAuthoritativePendingAssistantReply(localMessagesWithoutPending, pendingEntry))
         : false;
       const {
         keepRecoveredPendingAlive,
@@ -690,6 +714,7 @@ export function useRuntimeSnapshot({
         recoveringPendingReply,
         snapshotHasPendingUserMessage: snapshotIncludesPendingUserMessage,
         snapshotHasAssistantReply: hasAssistantReply,
+        snapshotHasAdvancedPastPending,
         status: snapshot.session?.status || nextSession.status,
       });
       const effectiveLocalMessages = pendingEntry && (!snapshotHasAssistantReply || localHasLivePendingAssistant)
@@ -728,6 +753,7 @@ export function useRuntimeSnapshot({
       pushCcDebugEvent("runtime.snapshot.merge", {
         conversationKey: nextConversationKey,
         snapshotHasAssistantReply,
+        snapshotHasAdvancedPastPending,
         snapshotIncludesPendingUserMessage,
         snapshotCanSettlePending,
         localHasLivePendingAssistant,

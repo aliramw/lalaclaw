@@ -1084,6 +1084,45 @@ describe("mergeConversationIdentity", () => {
       { id: "msg-assistant-pending-1", role: "assistant", content: "收", timestamp: 1_100 },
     ]);
   });
+
+  it("does not reuse a stale pending assistant identity after the snapshot has already advanced to a later user turn", () => {
+    expect(
+      mergeConversationIdentity(
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { role: "user", content: "新问题", timestamp: 200 },
+          { role: "assistant", content: "收到。", timestamp: 220 },
+          { role: "user", content: "继续", timestamp: 260 },
+          { role: "assistant", content: "后续回复", timestamp: 280 },
+        ],
+        [
+          { role: "user", content: "旧问题", timestamp: 100 },
+          { role: "assistant", content: "旧回复", timestamp: 120 },
+          { id: "msg-user-1", role: "user", content: "新问题", timestamp: 200 },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "正在思考…", timestamp: 220, pending: true },
+        ],
+        {
+          startedAt: 200,
+          pendingTimestamp: 220,
+          assistantMessageId: "msg-assistant-pending-1",
+          userMessage: {
+            id: "msg-user-1",
+            role: "user",
+            content: "新问题",
+            timestamp: 200,
+          },
+        },
+      ),
+    ).toEqual([
+      { role: "user", content: "旧问题", timestamp: 100 },
+      { role: "assistant", content: "旧回复", timestamp: 120 },
+      { id: "msg-user-1", role: "user", content: "新问题", timestamp: 200 },
+      { role: "assistant", content: "收到。", timestamp: 220 },
+      { role: "user", content: "继续", timestamp: 260 },
+      { role: "assistant", content: "后续回复", timestamp: 280 },
+    ]);
+  });
 });
 
 describe("sanitizeMessagesForStorage", () => {
