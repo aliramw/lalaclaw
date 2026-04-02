@@ -2,6 +2,7 @@
 
 export type MessageOutlineItem = {
   id: string;
+  line: number;
   level: number;
   text: string;
 };
@@ -29,7 +30,7 @@ export function extractHeadingOutline(content = ""): MessageOutlineItem[] {
   const seen = new Map();
   return String(content || "")
     .split("\n")
-    .map((line) => {
+    .map((line, index) => {
       const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line.trim());
       if (!match) {
         return null;
@@ -43,6 +44,7 @@ export function extractHeadingOutline(content = ""): MessageOutlineItem[] {
       seen.set(baseSlug, currentCount);
       return {
         id: currentCount === 1 ? baseSlug : `${baseSlug}-${currentCount}`,
+        line: index + 1,
         level: String(match[1] || "").length,
         text,
       };

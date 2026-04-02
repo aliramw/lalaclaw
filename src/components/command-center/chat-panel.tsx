@@ -38,6 +38,7 @@ import { normalizeSkillMention } from "./chat-skill-utils";
 import { EmptyConversation } from "./chat-empty-conversation";
 import { StreamingTailDots } from "./chat-streaming-indicator";
 import { BubbleTopJumpButton } from "./chat-navigation-buttons";
+import { findScrollableContainer, scrollElementIntoNearestContainer } from "./markdown-scroll-utils";
 import { AgentLabel } from "./chat-agent-label";
 import { ResetConversationDialog } from "./chat-reset-dialog";
 import { ImTabLogo } from "./chat-im-tab-logo";
@@ -800,6 +801,8 @@ const MessageBubble = memo(function MessageBubble({
   const bubbleRef = useRef<HTMLElement | null>(null);
   const bubbleSurfaceRef = useRef<HTMLElement | null>(null);
   const bubbleTopSentinelRef = useRef<HTMLDivElement | null>(null);
+  const highlightedHeadingRef = useRef<HTMLElement | null>(null);
+  const headingHighlightTimeoutRef = useRef(0);
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
@@ -845,12 +848,39 @@ const MessageBubble = memo(function MessageBubble({
     if (!element) {
       return;
     }
-    markUserScrollTakeover?.();
-    element.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-      inline: "nearest",
-    });
+    if (highlightedHeadingRef.current && highlightedHeadingRef.current !== element) {
+      highlightedHeadingRef.current.classList.remove("cc-focus-highlight");
+      highlightedHeadingRef.current.removeAttribute("data-heading-highlighted");
+    }
+    if (element instanceof HTMLElement) {
+      window.clearTimeout(headingHighlightTimeoutRef.current);
+      highlightedHeadingRef.current = element;
+      element.classList.add("cc-focus-highlight");
+      element.setAttribute("data-heading-highlighted", "true");
+      headingHighlightTimeoutRef.current = window.setTimeout(() => {
+        if (highlightedHeadingRef.current === element) {
+          highlightedHeadingRef.current = null;
+        }
+        element.classList.remove("cc-focus-highlight");
+        element.removeAttribute("data-heading-highlighted");
+      }, focusHighlightDurationMs);
+    }
+    const viewport = getRefCurrent(messageViewportRef);
+    const scrollContainer = element instanceof HTMLElement ? findScrollableContainer(element) : null;
+    markUserScrollTakeover?.({ force: true, lockAutoFollow: true });
+    if (
+      viewport
+      && element instanceof HTMLElement
+      && scrollContainer === viewport
+      && typeof animateViewportScroll === "function"
+    ) {
+      const elementRect = element.getBoundingClientRect();
+      const viewportRect = viewport.getBoundingClientRect();
+      const targetTop = viewport.scrollTop + (elementRect.top - viewportRect.top) - Math.max(12, viewport.clientHeight * 0.22);
+      animateViewportScroll(viewport, Math.max(targetTop, 0), artifactFocusScrollDurationMs);
+      return;
+    }
+    scrollElementIntoNearestContainer(element, { behavior: "smooth", topOffset: 12 });
   };
 
   const setBubbleNode = (node) => {
@@ -898,6 +928,16 @@ const MessageBubble = memo(function MessageBubble({
   const bubbleTopJumpButton = supportsBubbleTopJump && showBubbleTopJump
     ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} />
     : null;
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(headingHighlightTimeoutRef.current);
+      if (highlightedHeadingRef.current) {
+        highlightedHeadingRef.current.classList.remove("cc-focus-highlight");
+        highlightedHeadingRef.current.removeAttribute("data-heading-highlighted");
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const eligibleForBubbleTopJump = supportsBubbleTopJump && isAssistant && !isPending && !useCompactAssistantBubble;

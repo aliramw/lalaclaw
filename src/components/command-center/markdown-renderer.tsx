@@ -5,6 +5,8 @@ import "katex/dist/katex.min.css";
 import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
+import { extractHeadingOutline, slugifyHeading } from "@/components/command-center/chat-message-utils";
+import { scrollElementIntoNearestContainer } from "@/components/command-center/markdown-scroll-utils";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 
@@ -35,12 +37,6 @@ type MarkdownRenderProps = {
   children?: ReactNode;
   className?: string;
 } & Record<string, unknown>;
-
-type MarkdownHeadingOutlineItem = {
-  id: string;
-  level: number;
-  text: string;
-};
 
 type MarkdownImageRendererProps = {
   alt?: string;
@@ -237,50 +233,6 @@ function resolveTrackedFile(token = "", files: TrackedFile[] = []) {
   return basenameMatches.length === 1 ? basenameMatches[0] : null;
 }
 
-function slugifyHeading(value = "") {
-  return String(value || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[`*_~[\]()]/g, "")
-    .replace(/[^\p{Letter}\p{Number}\s-]/gu, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "") || "section";
-}
-
-function stripInlineMarkdown(value = "") {
-  return String(value || "")
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[`*_~]/g, "")
-    .trim();
-}
-
-function extractHeadingOutline(content = ""): MarkdownHeadingOutlineItem[] {
-  const seen = new Map<string, number>();
-  return String(content || "")
-    .split("\n")
-    .map((line) => {
-      const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line.trim());
-      if (!match) {
-        return null;
-      }
-      const text = stripInlineMarkdown(String(match[2] || "").replace(/\s+#+\s*$/, ""));
-      if (!text) {
-        return null;
-      }
-      const baseSlug = slugifyHeading(text);
-      const currentCount = (seen.get(baseSlug) || 0) + 1;
-      seen.set(baseSlug, currentCount);
-      return {
-        id: currentCount === 1 ? baseSlug : `${baseSlug}-${currentCount}`,
-        level: String(match[1] || "").length,
-        text,
-      };
-    })
-    .filter((item): item is MarkdownHeadingOutlineItem => Boolean(item));
-}
-
 function promoteStandaloneImageLinks(content = "") {
   return String(content || "")
     .split("\n")
@@ -444,29 +396,6 @@ function resolveScopedHashTarget(href = "", headingScopeId = "message") {
   return slug ? `${headingScopeId}-${slug}` : "";
 }
 
-function findScrollableContainer(element) {
-  let current = element?.parentElement || null;
-
-  while (current) {
-    if (current.hasAttribute("data-radix-scroll-area-viewport")) {
-      return current;
-    }
-
-    if (typeof window !== "undefined") {
-      const computedStyle = window.getComputedStyle(current);
-      const canScrollY = /(auto|scroll)/.test(computedStyle.overflowY || "")
-        && current.scrollHeight > current.clientHeight;
-      if (canScrollY) {
-        return current;
-      }
-    }
-
-    current = current.parentElement;
-  }
-
-  return null;
-}
-
 function flattenChildrenText(children: ReactNode) {
   return Children.toArray(children)
     .map((child) => {
@@ -522,22 +451,7 @@ function LinkRenderer({ href, children, files, headingScopeId, onOpenFilePreview
           return;
         }
         event.preventDefault();
-        const scrollContainer = findScrollableContainer(element);
-        if (scrollContainer && typeof scrollContainer.scrollTo === "function") {
-          const elementRect = element.getBoundingClientRect();
-          const containerRect = scrollContainer.getBoundingClientRect();
-          const targetTop = scrollContainer.scrollTop + (elementRect.top - containerRect.top) - 12;
-          scrollContainer.scrollTo({
-            top: Math.max(targetTop, 0),
-            behavior: "smooth",
-          });
-          return;
-        }
-        element.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-          inline: "nearest",
-        });
+        scrollElementIntoNearestContainer(element, { behavior: "smooth", topOffset: 12 });
       }}
       {...props}
     >
@@ -960,10 +874,10 @@ export default function MarkdownRenderer({
     () => extractHeadingOutline(normalizedContent),
     [normalizedContent],
   );
-  const headingRenderIndexRef = useRef(0);
   const blockRenderIndexRef = useRef(0);
-  headingRenderIndexRef.current = 0;
   blockRenderIndexRef.current = 0;
+  const headingOccurrencesRef = useRef(new Map<string, number>());
+  headingOccurrencesRef.current = new Map<string, number>();
 
   useEffect(() => {
     let cancelled = false;
@@ -1081,8 +995,22 @@ export default function MarkdownRenderer({
     );
   }, [nextScrollAnchorId]);
 
-  const renderHeading = useCallback((Tag: MarkdownHeadingTag) => ({ children, ...props }: MarkdownRenderProps) => {
-    const current = outlineItems[headingRenderIndexRef.current++];
+  const renderHeading = useCallback((Tag: MarkdownHeadingTag) => ({ children, node, ...props }: MarkdownRenderProps & {
+    node?: { position?: { start?: { line?: number } } };
+  }) => {
+    const line = Number(node?.position?.start?.line) || 0;
+    const headingText = flattenChildrenText(children);
+    const currentByLine = line > 0 ? outlineItems.find((item) => item.line === line) : null;
+    let current = currentByLine || null;
+
+    if (!current && headingText) {
+      const baseSlug = slugifyHeading(headingText);
+      const nextOccurrence = (headingOccurrencesRef.current.get(baseSlug) || 0) + 1;
+      headingOccurrencesRef.current.set(baseSlug, nextOccurrence);
+      const candidateId = nextOccurrence === 1 ? baseSlug : `${baseSlug}-${nextOccurrence}`;
+      current = outlineItems.find((item) => item.id === candidateId) || null;
+    }
+
     const anchorId = current?.id ? `${headingScopeId}-${current.id}` : undefined;
     return (
       <Tag id={anchorId} data-heading-anchor={anchorId} data-scroll-anchor-id={nextScrollAnchorId()} className="scroll-mt-3" {...props}>

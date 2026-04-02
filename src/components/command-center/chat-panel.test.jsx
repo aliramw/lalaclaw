@@ -2603,6 +2603,196 @@ describe("ChatPanel", () => {
     expect(aside.style.maxHeight).toBe("388px");
   });
 
+  it("scrolls the chat viewport with a stable top offset when selecting an outline heading", async () => {
+    const user = userEvent.setup();
+    const messageViewportRef = { current: null };
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={messageViewportRef}
+          messages={[
+            {
+              id: "msg-outline-scroll",
+              role: "assistant",
+              content: `# 开场\n\n${Array.from({ length: 8 }, (_, index) => `段落 ${index + 1}`).join("\n\n")}\n\n## 目标段落\n\n这里是正文。`,
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = messageViewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 320 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+    });
+    viewport.getBoundingClientRect = () => ({
+      top: 100,
+      bottom: 420,
+      left: 0,
+      right: 900,
+      width: 900,
+      height: 320,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+
+    const targetHeading = await screen.findByRole("heading", { name: "目标段落" });
+    targetHeading.scrollIntoView = vi.fn();
+    targetHeading.getBoundingClientRect = () => ({
+      top: 560,
+      bottom: 600,
+      left: 0,
+      right: 600,
+      width: 600,
+      height: 40,
+      x: 0,
+      y: 560,
+      toJSON: () => ({}),
+    });
+
+    await user.click(screen.getByRole("button", { name: "目标段落" }));
+
+    expect(viewport.scrollTo).toHaveBeenCalledWith({
+      top: 389.6,
+      behavior: "smooth",
+    });
+    expect(targetHeading).toHaveAttribute("data-heading-highlighted", "true");
+    expect(targetHeading).toHaveClass("cc-focus-highlight");
+    expect(targetHeading.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("keeps an outline jump stable even when the latest assistant card rerenders near the viewport bottom", async () => {
+    const user = userEvent.setup();
+    const messageViewportRef = { current: null };
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={messageViewportRef}
+          messages={[
+            {
+              id: "msg-outline-sticky",
+              role: "assistant",
+              content: "# 开场\n\n导语\n\n## 目标段落\n\n这里是正文。\n\n## 收尾\n\n补充说明。",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = messageViewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 660 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 320 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 0 });
+    viewport.scrollTo = vi.fn(({ top }) => {
+      viewport.scrollTop = top;
+    });
+    viewport.getBoundingClientRect = () => ({
+      top: 100,
+      bottom: 420,
+      left: 0,
+      right: 900,
+      width: 900,
+      height: 320,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+
+    const latestBubble = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestBubble).toBeTruthy();
+    latestBubble.getBoundingClientRect = () => ({
+      top: 120 - viewport.scrollTop,
+      bottom: 760 - viewport.scrollTop,
+      left: 0,
+      right: 700,
+      width: 700,
+      height: 640,
+      x: 0,
+      y: 120 - viewport.scrollTop,
+      toJSON: () => ({}),
+    });
+
+    const targetHeading = await screen.findByRole("heading", { name: "目标段落" });
+    targetHeading.getBoundingClientRect = () => ({
+      top: 420 - viewport.scrollTop,
+      bottom: 460 - viewport.scrollTop,
+      left: 0,
+      right: 600,
+      width: 600,
+      height: 40,
+      x: 0,
+      y: 420 - viewport.scrollTop,
+      toJSON: () => ({}),
+    });
+
+    await user.click(screen.getByRole("button", { name: "目标段落" }));
+    expect(viewport.scrollTop).toBeCloseTo(249.6, 1);
+
+    act(() => {
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={messageViewportRef}
+          messages={[
+            {
+              id: "msg-outline-sticky",
+              role: "assistant",
+              content: "# 开场\n\n导语\n\n## 目标段落\n\n这里是正文。\n\n## 收尾\n\n补充说明。\n\n继续补一行。",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(viewport.scrollTop).toBeCloseTo(249.6, 1);
+  });
+
   it("renders system notes as their own neutral cards instead of merging them into user bubbles", () => {
     render(
       <TooltipProvider>

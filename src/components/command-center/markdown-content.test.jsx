@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -423,5 +423,22 @@ describe("MarkdownContent", () => {
 
     expect(await screen.findByRole("heading", { name: "标题" })).toBeInTheDocument();
     expect(container.querySelectorAll("[data-scroll-anchor-id]").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps heading ids aligned with the rendered headings under StrictMode", async () => {
+    render(
+      <StrictMode>
+        <MarkdownContent
+          headingScopeId="message-1"
+          content={`# 我怎么判断的：看 3 件事\n\n## 1. 规划能力\n\n## 2. 完成任务能力\n\n# 我给你的优先级建议\n\n## A档：最值得优先试`}
+        />
+      </StrictMode>,
+    );
+
+    expect((await screen.findByRole("heading", { name: "我怎么判断的：看 3 件事" })).id).toBe("message-1-我怎么判断的看-3-件事");
+    expect((await screen.findByRole("heading", { name: "1. 规划能力" })).id).toBe("message-1-1-规划能力");
+    expect((await screen.findByRole("heading", { name: "2. 完成任务能力" })).id).toBe("message-1-2-完成任务能力");
+    expect((await screen.findByRole("heading", { name: "我给你的优先级建议" })).id).toBe("message-1-我给你的优先级建议");
+    expect((await screen.findByRole("heading", { name: "A档：最值得优先试" })).id).toBe("message-1-a档最值得优先试");
   });
 });
