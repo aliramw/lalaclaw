@@ -18,6 +18,7 @@ type RuntimeSocketMessage = {
 
 type UseRuntimeSocketInput = {
   agentId?: string;
+  disconnectErrorLabel?: string;
   enabled?: boolean;
   sessionUser?: string;
 };
@@ -40,7 +41,7 @@ function buildWsUrl(sessionUser = "", agentId = "") {
  * The parent hook (useRuntimeSnapshot) decides how to apply incoming
  * events to React state.
  */
-export function useRuntimeSocket({ sessionUser = "", agentId = "", enabled = true }: UseRuntimeSocketInput) {
+export function useRuntimeSocket({ sessionUser = "", agentId = "", disconnectErrorLabel = "WebSocket error", enabled = true }: UseRuntimeSocketInput) {
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<RuntimeSocketState>(
     enabled ? RUNTIME_SOCKET_STATES.CONNECTING : RUNTIME_SOCKET_STATES.DISCONNECTED,
@@ -131,11 +132,11 @@ export function useRuntimeSocket({ sessionUser = "", agentId = "", enabled = tru
         clearTimeout(pingTimerRef.current);
       }
       if (enabledRef.current && ws.readyState !== WebSocket.OPEN) {
-        setLastDisconnectReason((current) => current || "WebSocket error");
+        setLastDisconnectReason((current) => current || disconnectErrorLabel);
         setStatus(RUNTIME_SOCKET_STATES.RECONNECTING);
       }
     };
-  }, [sessionUser, agentId]);
+  }, [sessionUser, agentId, disconnectErrorLabel]);
 
   const disconnect = useCallback(() => {
     if (connectTimerRef.current != null) {

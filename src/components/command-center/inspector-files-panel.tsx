@@ -1174,8 +1174,8 @@ export function InspectorFilesPanel({
     if (!response.ok || !payload.ok) {
       throw new Error(
         typeof messages.inspector.workspaceTree.renameFailed === "function"
-          ? messages.inspector.workspaceTree.renameFailed(item.name || getPathName(currentPath), payload.error || "Rename failed")
-          : (payload.error || "Rename failed"),
+          ? messages.inspector.workspaceTree.renameFailed(item.name || getPathName(currentPath), payload.error || messages.common.requestFailed)
+          : (payload.error || messages.common.requestFailed),
       );
     }
 

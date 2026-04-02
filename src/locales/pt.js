@@ -1,6 +1,7 @@
 import en from "@/locales/en";
+import mergeLocale from "@/locales/merge";
 
-const pt = {
+const pt = mergeLocale(en, {
   app: {
     title: "🦞 LalaClaw",
     subtitle: "Central de Comando OpenClaw",
@@ -113,6 +114,9 @@ const pt = {
     modelSwitchSucceeded: (model) => `Modelo alterado com sucesso: ${model}`,
     modelSwitchFailed: (model, reason = "") => reason ? `Falha ao alterar o modelo: ${model} (${reason})` : `Falha ao alterar o modelo: ${model}`,
     requestFailed: "Falha na solicitação.",
+    runtimeSnapshotFailed: "A captura do runtime falhou.",
+    runtimeSocketError: "Erro de WebSocket.",
+    sessionUpdateFailed: "A atualização da sessão falhou.",
     logOut: "Sair",
     loggingOut: "Saindo…",
     logOutTooltip: "Sair",
@@ -227,6 +231,7 @@ const pt = {
     openMentionMenu: "Inserir @",
     openMentionMenuTooltip: "Insira rapidamente o nome de um Agent ou Skill no campo",
     uploadAttachment: "Enviar imagens ou arquivos",
+    sentAttachmentCount: (count) => `${count} anexo${count === 1 ? "" : "s"} enviado${count === 1 ? "" : "s"}`,
     queuedCount: (count) => `Na fila ${count}`,
     queuedHint: "Estas mensagens serão enviadas em ordem após a resposta atual terminar",
     outline: "Estrutura",
@@ -743,6 +748,6 @@ const pt = {
       markdown: "Markdown",
     },
   },
-};
+});
 
 export default pt;

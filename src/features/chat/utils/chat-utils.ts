@@ -33,20 +33,20 @@ export function isTextAttachmentFile(file: { name?: string; type?: string } | nu
   return textAttachmentMimePattern.test(file?.type || "") || textAttachmentExtensions.test(file?.name || "");
 }
 
-export function readFileAsDataUrl(file: Blob) {
+export function readFileAsDataUrl(file: Blob, fallbackErrorMessage = "Failed to read file as data URL") {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("Failed to read file as data URL"));
+    reader.onerror = () => reject(reader.error || new Error(fallbackErrorMessage));
     reader.readAsDataURL(file);
   });
 }
 
-export function readFileAsText(file: Blob) {
+export function readFileAsText(file: Blob, fallbackErrorMessage = "Failed to read file as text") {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("Failed to read file as text"));
+    reader.onerror = () => reject(reader.error || new Error(fallbackErrorMessage));
     reader.readAsText(file);
   });
 }

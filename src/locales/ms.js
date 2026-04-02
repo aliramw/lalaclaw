@@ -1,6 +1,7 @@
 import en from "@/locales/en";
+import mergeLocale from "@/locales/merge";
 
-const ms = {
+const ms = mergeLocale(en, {
   ...en,
   app: {
     ...en.app,
@@ -98,6 +99,9 @@ const ms = {
     modelSwitchSucceeded: (model) => `Model berjaya ditukar: ${model}`,
     modelSwitchFailed: (model, reason = "") => reason ? `Penukaran model gagal: ${model} (${reason})` : `Penukaran model gagal: ${model}`,
     requestFailed: "Permintaan gagal.",
+    runtimeSnapshotFailed: "Snapshot runtime gagal.",
+    runtimeSocketError: "Ralat WebSocket.",
+    sessionUpdateFailed: "Kemas kini sesi gagal.",
     logOut: "Log keluar",
     loggingOut: "Sedang log keluar…",
     logOutTooltip: "Log keluar",
@@ -212,6 +216,7 @@ const ms = {
     openMentionMenu: "Sisip @",
     openMentionMenuTooltip: "Sisip nama ejen atau skill dengan cepat ke dalam input",
     uploadAttachment: "Muat naik imej atau fail",
+    sentAttachmentCount: (count) => `${count} lampiran dihantar`,
     queuedCount: (count) => `${count} dalam giliran`,
     queuedHint: "Mesej ini akan dihantar mengikut turutan selepas balasan semasa selesai",
     outline: "Rangka",
@@ -733,6 +738,6 @@ const ms = {
       markdown: "Markdown",
     },
   },
-};
+});
 
 export default ms;

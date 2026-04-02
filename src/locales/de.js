@@ -1,6 +1,7 @@
 import en from "@/locales/en";
+import mergeLocale from "@/locales/merge";
 
-const de = {
+const de = mergeLocale(en, {
   ...en,
   app: {
     ...en.app,
@@ -98,6 +99,9 @@ const de = {
     modelSwitchSucceeded: (model) => `Modell erfolgreich gewechselt: ${model}`,
     modelSwitchFailed: (model, reason = "") => reason ? `Modellwechsel fehlgeschlagen: ${model} (${reason})` : `Modellwechsel fehlgeschlagen: ${model}`,
     requestFailed: "Anfrage fehlgeschlagen.",
+    runtimeSnapshotFailed: "Laufzeit-Snapshot fehlgeschlagen.",
+    runtimeSocketError: "WebSocket-Fehler.",
+    sessionUpdateFailed: "Sitzungsaktualisierung fehlgeschlagen.",
     logOut: "Abmelden",
     loggingOut: "Abmeldung läuft…",
     logOutTooltip: "Abmelden",
@@ -212,6 +216,7 @@ const de = {
     openMentionMenu: "@ einfügen",
     openMentionMenuTooltip: "Schnell einen Agent- oder Skill-Namen in die Eingabe einfügen",
     uploadAttachment: "Bilder oder Dateien hochladen",
+    sentAttachmentCount: (count) => `${count} Anhang${count === 1 ? "" : "e"} gesendet`,
     queuedCount: (count) => `${count} in Warteschlange`,
     queuedHint: "Diese Nachrichten werden der Reihe nach gesendet, sobald die aktuelle Antwort fertig ist",
     outline: "Gliederung",
@@ -733,6 +738,6 @@ const de = {
       markdown: "Markdown",
     },
   },
-};
+});
 
 export default de;

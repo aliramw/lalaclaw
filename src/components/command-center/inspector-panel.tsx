@@ -552,6 +552,7 @@ function FilesTab({
       loadFailedMessage: messages.inspector.workspaceTree.loadFailed,
       nextName,
       onTrackSessionFiles,
+      renameDefaultErrorMessage: messages.common.requestFailed,
       renameFailedMessage: (name, error) => typeof messages.inspector.workspaceTree.renameFailed === "function"
         ? messages.inspector.workspaceTree.renameFailed(name, error)
         : error,

@@ -1324,6 +1324,7 @@ export function useRuntimeSnapshot({
   } = useRuntimeSocket({
     sessionUser: requestedRuntimeSessionUser,
     agentId: session.agentId,
+    disconnectErrorLabel: i18n.common.runtimeSocketError || i18n.common.requestFailed,
     enabled: wsEnabled,
   });
   const runtimeTransport = wsEnabled && wsConnected ? "ws" : "polling";
@@ -1606,7 +1607,7 @@ export function useRuntimeSnapshot({
       const response = await apiFetch(`/api/runtime?${requestKey}`);
       const payload = await response.json() as RuntimeSnapshot;
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Runtime snapshot failed");
+        throw new Error(payload.error || i18n.common.runtimeSnapshotFailed || i18n.common.requestFailed);
       }
       if (requestId !== runtimeRequestRef.current) {
         return payload;
@@ -1703,7 +1704,7 @@ export function useRuntimeSnapshot({
     });
     const data = await response.json() as RuntimeSnapshot;
     if (!response.ok || !data.ok) {
-      throw new Error(data.error || "Session update failed");
+      throw new Error(data.error || i18n.common.sessionUpdateFailed || i18n.common.requestFailed);
     }
     applySnapshot(data);
     return data;

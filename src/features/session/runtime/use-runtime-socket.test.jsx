@@ -145,6 +145,25 @@ describe("useRuntimeSocket", () => {
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({ type: "runtime.snapshot" }));
   });
 
+  it("uses the provided localized fallback when a websocket error has no close reason", () => {
+    const { result } = renderHook(() =>
+      useRuntimeSocket({
+        sessionUser: "command-center",
+        agentId: "main",
+        enabled: true,
+        disconnectErrorLabel: "Localized socket error",
+      }),
+    );
+    flushInitialConnect();
+
+    act(() => {
+      MockWebSocket.instances[0].simulateError();
+    });
+
+    expect(result.current.lastDisconnectReason).toBe("Localized socket error");
+    expect(result.current.status).toBe(RUNTIME_SOCKET_STATES.RECONNECTING);
+  });
+
   it("responds to ping with pong", () => {
     renderHook(() => useRuntimeSocket({ sessionUser: "command-center", agentId: "main", enabled: true }));
     flushInitialConnect();

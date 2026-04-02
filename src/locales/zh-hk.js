@@ -1,6 +1,7 @@
 import zh from "@/locales/zh";
+import mergeLocale from "@/locales/merge";
 
-const zhHk = {
+const zhHk = mergeLocale(zh, {
   ...zh,
   app: {
     ...zh.app,
@@ -128,6 +129,9 @@ const zhHk = {
     modelSwitchSucceeded: (model) => `模型切換成功：${model}`,
     modelSwitchFailed: (model, reason = "") => reason ? `模型切換失敗：${model}（${reason}）` : `模型切換失敗：${model}`,
     requestFailed: "請求失敗。",
+    runtimeSnapshotFailed: "Runtime 快照請求失敗。",
+    runtimeSocketError: "WebSocket 連線異常。",
+    sessionUpdateFailed: "工作階段更新失敗。",
     logOut: "登出",
     loggingOut: "正在登出…",
     logOutTooltip: "登出",
@@ -246,6 +250,7 @@ const zhHk = {
     openMentionMenu: "插入 @",
     openMentionMenuTooltip: "快速插入 Agent 或 Skill 名稱到輸入框",
     uploadAttachment: "上傳圖片或檔案",
+    sentAttachmentCount: (count) => `已傳送 ${count} 個附件`,
     queuedCount: (count) => `排隊中 ${count}`,
     queuedHint: "目前回覆完成後，這些訊息會按順序送出",
     queuedAttachmentOnly: "只有附件",
@@ -897,6 +902,6 @@ const zhHk = {
       markdown: "Markdown",
     },
   },
-};
+});
 
 export default zhHk;

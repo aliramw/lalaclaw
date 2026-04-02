@@ -1,6 +1,7 @@
 import en from "@/locales/en";
+import mergeLocale from "@/locales/merge";
 
-const ja = {
+const ja = mergeLocale(en, {
   app: {
     title: "🦞 LalaClaw",
     subtitle: "OpenClaw コマンドセンター",
@@ -113,6 +114,9 @@ const ja = {
     modelSwitchSucceeded: (model) => `モデルの切り替えに成功しました: ${model}`,
     modelSwitchFailed: (model, reason = "") => reason ? `モデルの切り替えに失敗しました: ${model}（${reason}）` : `モデルの切り替えに失敗しました: ${model}`,
     requestFailed: "リクエストに失敗しました。",
+    runtimeSnapshotFailed: "ランタイムのスナップショット取得に失敗しました。",
+    runtimeSocketError: "WebSocket エラーです。",
+    sessionUpdateFailed: "セッション更新に失敗しました。",
     logOut: "ログアウト",
     loggingOut: "ログアウト中…",
     logOutTooltip: "ログアウト",
@@ -308,6 +312,7 @@ const ja = {
     openMentionMenu: "@ を挿入",
     openMentionMenuTooltip: "入力欄に Agent または Skill 名をすばやく挿入",
     uploadAttachment: "画像またはファイルをアップロード",
+    sentAttachmentCount: (count) => `${count} 件の添付ファイルを送信しました`,
     queuedCount: (count) => `送信待ち ${count}`,
     queuedHint: "現在の返答が終わった後、順番に送信されます",
     outline: "アウトライン",
@@ -834,6 +839,6 @@ const ja = {
       markdown: "Markdown",
     },
   },
-};
+});
 
 export default ja;

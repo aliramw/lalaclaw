@@ -1,6 +1,7 @@
 import en from "@/locales/en";
+import mergeLocale from "@/locales/merge";
 
-const ta = {
+const ta = mergeLocale(en, {
   ...en,
   app: {
     ...en.app,
@@ -98,6 +99,9 @@ const ta = {
     modelSwitchSucceeded: (model) => `மாதிரி வெற்றிகரமாக மாற்றப்பட்டது: ${model}`,
     modelSwitchFailed: (model, reason = "") => reason ? `மாதிரி மாற்றம் தோல்வியடைந்தது: ${model} (${reason})` : `மாதிரி மாற்றம் தோல்வியடைந்தது: ${model}`,
     requestFailed: "கோரிக்கை தோல்வியடைந்தது.",
+    runtimeSnapshotFailed: "Runtime snapshot கோரிக்கை தோல்வியடைந்தது.",
+    runtimeSocketError: "WebSocket பிழை.",
+    sessionUpdateFailed: "அமர்வு புதுப்பிப்பு தோல்வியடைந்தது.",
     logOut: "வெளியேறு",
     loggingOut: "வெளியேறுகிறது…",
     logOutTooltip: "வெளியேறு",
@@ -212,6 +216,7 @@ const ta = {
     openMentionMenu: "@ ஐச் சேர்",
     openMentionMenuTooltip: "உள்ளீட்டில் ஏஜென்ட் அல்லது skill பெயரை விரைவாகச் சேர்க்கவும்",
     uploadAttachment: "படங்கள் அல்லது கோப்புகளை பதிவேற்று",
+    sentAttachmentCount: (count) => `${count} இணைப்புகள் அனுப்பப்பட்டன`,
     queuedCount: (count) => `${count} வரிசையில்`,
     queuedHint: "தற்போதைய பதில் முடிந்த பின் இந்த செய்திகள் வரிசைப்படி அனுப்பப்படும்",
     outline: "வரைவு",
@@ -733,6 +738,6 @@ const ta = {
       markdown: "Markdown",
     },
   },
-};
+});
 
 export default ta;

@@ -12,11 +12,13 @@ function areEquivalentRequestMessages(
 export function buildChatRequestBody({
   entry,
   assistantMessageId,
+  attachmentSummary,
   messages,
   userLabel = "",
 }: {
   entry: ChatControllerEntry;
   assistantMessageId: string;
+  attachmentSummary?: (count: number) => string;
   messages: ChatMessage[];
   userLabel?: string;
 }): ChatRequestBody {
@@ -29,7 +31,15 @@ export function buildChatRequestBody({
     }));
   const nextUserMessage = {
     role: "user",
-    content: entry.content || (entry.attachments?.length ? `已发送 ${entry.attachments.length} 个附件` : ""),
+    content:
+      entry.content
+      || (
+        entry.attachments?.length
+          ? (typeof attachmentSummary === "function"
+            ? attachmentSummary(entry.attachments.length)
+            : `已发送 ${entry.attachments.length} 个附件`)
+          : ""
+      ),
     ...(entry.attachments?.length ? { attachments: entry.attachments } : {}),
   };
   const requestMessages = settledMessages.length && areEquivalentRequestMessages(settledMessages[settledMessages.length - 1], nextUserMessage)

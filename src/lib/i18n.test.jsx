@@ -2,6 +2,33 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { I18nProvider, localeStorageKey, useI18n } from "@/lib/i18n";
+import de from "@/locales/de";
+import en from "@/locales/en";
+import es from "@/locales/es";
+import fr from "@/locales/fr";
+import ja from "@/locales/ja";
+import ko from "@/locales/ko";
+import ms from "@/locales/ms";
+import pt from "@/locales/pt";
+import ta from "@/locales/ta";
+import zh from "@/locales/zh";
+import zhHk from "@/locales/zh-hk";
+
+function flattenKeys(value, prefix = "", output = new Set()) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return output;
+  }
+
+  Object.entries(value).forEach(([key, nestedValue]) => {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    output.add(nextKey);
+    if (nestedValue && typeof nestedValue === "object" && !Array.isArray(nestedValue)) {
+      flattenKeys(nestedValue, nextKey, output);
+    }
+  });
+
+  return output;
+}
 
 function LocaleProbe() {
   const { locale, setLocale } = useI18n();
@@ -215,5 +242,39 @@ describe("I18nProvider", () => {
     await user.click(screen.getByRole("button", { name: "Tamil" }));
 
     await expectLocaleMetadata("LalaClaw | OpenClaw கட்டளை மையம்", "ta-IN");
+  });
+
+  it("keeps the newly added shared i18n keys available in every locale dictionary", () => {
+    const dictionaries = [en, zh, zhHk, es, pt, de, ko, ms, ta, fr, ja];
+
+    dictionaries.forEach((dictionary) => {
+      expect(dictionary.common.runtimeSnapshotFailed).toBeTruthy();
+      expect(dictionary.common.runtimeSocketError).toBeTruthy();
+      expect(dictionary.common.sessionUpdateFailed).toBeTruthy();
+      expect(typeof dictionary.chat.sentAttachmentCount).toBe("function");
+      expect(dictionary.chat.sentAttachmentCount(2)).toBeTruthy();
+    });
+  });
+
+  it("keeps every locale dictionary structurally aligned with the English base", () => {
+    const baseKeys = flattenKeys(en);
+    const dictionaries = {
+      zh,
+      "zh-hk": zhHk,
+      es,
+      pt,
+      de,
+      ko,
+      ms,
+      ta,
+      fr,
+      ja,
+    };
+
+    Object.entries(dictionaries).forEach(([locale, dictionary]) => {
+      const localeKeys = flattenKeys(dictionary);
+      const missingKeys = [...baseKeys].filter((key) => !localeKeys.has(key));
+      expect(missingKeys, `Locale ${locale} is missing keys from en`).toEqual([]);
+    });
   });
 });

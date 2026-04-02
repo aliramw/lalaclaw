@@ -370,6 +370,7 @@ export async function commitRenameChange({
   loadFailedMessage,
   nextName,
   onTrackSessionFiles,
+  renameDefaultErrorMessage,
   renameFailedMessage,
   setLocalSessionItems,
   setSelectedDirectoryPath,
@@ -386,6 +387,7 @@ export async function commitRenameChange({
   loadFailedMessage: string;
   nextName: string;
   onTrackSessionFiles?: (payload: { files: any[]; rewrites?: InspectorRewrite[] }) => void;
+  renameDefaultErrorMessage?: string;
   renameFailedMessage: (name: string, error: string) => string;
   setLocalSessionItems: (value: any[] | ((current: any[]) => any[])) => void;
   setSelectedDirectoryPath: (value: string | ((current: string) => string)) => void;
@@ -406,7 +408,10 @@ export async function commitRenameChange({
   });
   const payload = await response.json();
   if (!response.ok || !payload.ok) {
-    throw new Error(renameFailedMessage(item.name || getPathName(currentPath), payload.error || "Rename failed"));
+    throw new Error(renameFailedMessage(
+      item.name || getPathName(currentPath),
+      payload.error || renameDefaultErrorMessage || "Rename failed",
+    ));
   }
 
   const nextPath = String(payload.nextPath || "").trim() || replacePathPrefix(currentPath, currentPath, currentPath);

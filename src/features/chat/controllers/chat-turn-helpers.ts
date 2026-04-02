@@ -90,11 +90,19 @@ export function withOptimisticTurnIds(entry: ChatControllerEntry = {}) {
   };
 }
 
-export function createUserMessage(entry: ChatControllerEntry = {}): ChatMessage {
+export function createUserMessage(entry: ChatControllerEntry = {}, attachmentSummary?: (count: number) => string): ChatMessage {
   return {
     id: String(entry.userMessageId || `msg-user-${entry.timestamp || Date.now()}`),
     role: "user",
-    content: entry.content || (entry.attachments?.length ? `已发送 ${entry.attachments.length} 个附件` : ""),
+    content:
+      entry.content
+      || (
+        entry.attachments?.length
+          ? (typeof attachmentSummary === "function"
+            ? attachmentSummary(entry.attachments.length)
+            : `已发送 ${entry.attachments.length} 个附件`)
+          : ""
+      ),
     timestamp: entry.timestamp,
     ...(entry.attachments?.length ? { attachments: entry.attachments } : {}),
   };
@@ -124,10 +132,10 @@ export function ensureOptimisticTurnMessages(
   current: ChatMessage[] = [],
   entry: ChatControllerEntry = {},
   thinkingPlaceholder = "",
-  { includePendingPlaceholder = true, includeUserMessage = true } = {},
+  { includePendingPlaceholder = true, includeUserMessage = true, attachmentSummary } = {},
 ) {
   const next = Array.isArray(current) ? [...current] : [];
-  const userMessage = createUserMessage(entry);
+  const userMessage = createUserMessage(entry, attachmentSummary);
   const pendingMessage = createPendingAssistantMessage(entry, thinkingPlaceholder);
 
   if (includeUserMessage && !hasMessageId(next, userMessage.id) && !hasEquivalentUserMessage(next, userMessage)) {
@@ -227,8 +235,9 @@ export function replaceAssistantPreservingTurn(
   tokenBadge = "",
   streaming = false,
   messageId = "",
+  attachmentSummary?: (count: number) => string,
 ) {
-  const userMessage = createUserMessage(entry);
+  const userMessage = createUserMessage(entry, attachmentSummary);
   const currentMessages = Array.isArray(current) ? [...current] : [];
   const hasUserMessage = hasMessageId(currentMessages, userMessage.id) || hasEquivalentUserMessage(currentMessages, userMessage);
   let withUserTurn = currentMessages;
@@ -243,7 +252,7 @@ export function replaceAssistantPreservingTurn(
         currentMessages,
         entry,
         thinkingPlaceholder,
-        { includePendingPlaceholder: false, includeUserMessage: true },
+        { includePendingPlaceholder: false, includeUserMessage: true, attachmentSummary },
       );
     }
   }

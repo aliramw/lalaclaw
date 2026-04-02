@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { consumeChatStream } from "@/features/chat/controllers/chat-stream-helpers";
 import { useChatController } from "@/features/chat/controllers";
 
 function mockJsonResponse(payload, ok = true, status = ok ? 200 : 500) {
@@ -33,11 +34,12 @@ function mockStreamResponse(events, ok = true, status = ok ? 200 : 500) {
   });
 }
 
-function createI18n() {
+function createI18n(overrides = {}) {
   return {
     chat: {
       thinkingPlaceholder: "正在思考…",
       stoppedResponse: "已停止",
+      sentAttachmentCount: (count) => `已发送 ${count} 个附件`,
     },
     common: {
       failed: "失败",
@@ -50,6 +52,7 @@ function createI18n() {
         on: "已开启",
       },
     },
+    ...overrides,
   };
 }
 
@@ -262,6 +265,141 @@ describe("useChatController", () => {
     expect(appliedMessageSnapshots.some((snapshot) => snapshot.some((message) => message?.pending))).toBe(false);
     expect(setPendingChatTurns).not.toHaveBeenCalled();
     expect(result.current.activeQueuedMessages).toHaveLength(2);
+  });
+
+  it("localizes attachment-only optimistic messages and request payloads", async () => {
+    const setBusy = vi.fn();
+    const appliedMessageSnapshots = [];
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = { current: [] };
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        assistantMessageId: "msg-assistant-attachment-1",
+        outputText: "Done",
+        metadata: { status: "Done" },
+        sessionPatch: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const entry = {
+      id: "entry-attachment-1",
+      key: "command-center:main",
+      content: "",
+      attachments: [{ id: "attachment-1", name: "notes.md" }],
+      timestamp: 100,
+      userMessageId: "msg-user-attachment-1",
+      agentId: "main",
+      sessionUser: "command-center",
+      model: "gpt-5",
+      fastMode: false,
+    };
+
+    let currentMessagesState = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      currentMessagesState = typeof value === "function" ? value(currentMessagesState) : value;
+      messagesRef.current = currentMessagesState;
+      appliedMessageSnapshots.push(currentMessagesState);
+    });
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        activeTargetRef: {
+          current: {
+            sessionUser: "command-center",
+            agentId: "main",
+          },
+        },
+        applySnapshot,
+        busy: false,
+        i18n: createI18n({
+          chat: {
+            thinkingPlaceholder: "Thinking…",
+            stoppedResponse: "Stopped",
+            sentAttachmentCount: (count) => `Sent ${count} attachment${count === 1 ? "" : "s"}`,
+          },
+          common: {
+            failed: "Failed",
+            idle: "Idle",
+            requestFailed: "Request failed.",
+            running: "Running",
+          },
+          sessionOverview: {
+            fastMode: {
+              on: "On",
+            },
+          },
+        }),
+        getMessagesForTab: () => messagesRef.current,
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry(entry);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"content":"Sent 1 attachment"'),
+      }),
+    );
+    expect(appliedMessageSnapshots[0]).toEqual([
+      {
+        id: "msg-user-attachment-1",
+        role: "user",
+        content: "Sent 1 attachment",
+        timestamp: 100,
+        attachments: [{ id: "attachment-1", name: "notes.md" }],
+      },
+      {
+        id: expect.any(String),
+        role: "assistant",
+        content: "Thinking…",
+        timestamp: expect.any(Number),
+        pending: true,
+      },
+    ]);
+  });
+
+  it("uses the localized fallback when a stream error omits its message", async () => {
+    const response = await mockStreamResponse([{ type: "error" }]);
+
+    await expect(consumeChatStream(response, {
+      entry: {
+        id: "entry-stream-error-1",
+        key: "command-center:main",
+        content: "hello",
+        attachments: [],
+        timestamp: 100,
+        userMessageId: "msg-user-stream-error-1",
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-5",
+        fastMode: false,
+      },
+      pendingTimestamp: 100,
+      errorMessage: "Localized request failed",
+    })).rejects.toThrow("Localized request failed");
   });
 
   it("writes the optimistic user turn into the local tab messages immediately when a non-busy send starts", async () => {

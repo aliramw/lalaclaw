@@ -373,7 +373,7 @@ export function useChatController({
     const currentMessages = getMessagesForTab(targetTabId);
     const suppressPendingPlaceholder = shouldSuppressPendingPlaceholder(resolvedEntry);
     const pendingMessage = createPendingAssistantMessage(resolvedEntry, i18n.chat.thinkingPlaceholder);
-    const userMessage = createUserMessage(resolvedEntry);
+    const userMessage = createUserMessage(resolvedEntry, i18n.chat.sentAttachmentCount);
     const resolvedEntryKey = String(
       resolvedEntry.key || resolvedEntry.id || pendingMessage.id || pendingMessage.timestamp || Date.now(),
     ).trim();
@@ -408,6 +408,7 @@ export function useChatController({
       resolvedEntry,
       i18n.chat.thinkingPlaceholder,
       {
+        attachmentSummary: i18n.chat.sentAttachmentCount,
         includePendingPlaceholder: !suppressPendingPlaceholder,
         includeUserMessage: true,
       },
@@ -452,6 +453,7 @@ export function useChatController({
         body: JSON.stringify(buildChatRequestBody({
           entry: resolvedEntry,
           assistantMessageId: resolvedPendingAssistantMessageId,
+          attachmentSummary: i18n.chat.sentAttachmentCount,
           messages: nextMessages,
           userLabel,
         })),
@@ -459,6 +461,7 @@ export function useChatController({
       const streamEntry = { ...resolvedEntry, tabId: targetTabId };
       const payload = isNdjsonStreamResponse(response)
         ? await consumeChatStream(response, {
+            errorMessage: i18n.common.requestFailed,
             entry: streamEntry,
             onProgress: ({ assistantMessageId, lastDeltaAt, streamText, tokenBadge }) => {
               latestPartialOutputText = streamText;
@@ -489,7 +492,7 @@ export function useChatController({
       latestAssistantMessageId = String(payload.assistantMessageId || latestAssistantMessageId || resolvedPendingAssistantMessageId);
       latestTokenBadge = String(payload.tokenBadge || latestTokenBadge || "");
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Request failed");
+        throw new Error(payload.error || i18n.common.requestFailed);
       }
       pushCcDebugEvent("chat.run.response", {
         tabId: targetTabId,
@@ -566,6 +569,7 @@ export function useChatController({
           String(payload.tokenBadge || ""),
           false,
           payload.assistantMessageId || resolvedPendingAssistantMessageId,
+          i18n.chat.sentAttachmentCount,
         );
         pushCcDebugEvent("chat.messages.replace-assistant", {
           tabId: targetTabId,
@@ -639,6 +643,7 @@ export function useChatController({
             latestTokenBadge,
             false,
             latestAssistantMessageId,
+            i18n.chat.sentAttachmentCount,
           ),
         );
         updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.idle }));
@@ -659,6 +664,7 @@ export function useChatController({
           latestTokenBadge,
           false,
           latestAssistantMessageId,
+          i18n.chat.sentAttachmentCount,
         ),
       );
       updateTabSession(targetTabId, (current) => ({ ...current, status: i18n.common.failed }));
@@ -815,7 +821,7 @@ export function useChatController({
         };
 
         if (isImageAttachmentFile(file)) {
-          const dataUrl = await readFileAsDataUrl(file);
+          const dataUrl = await readFileAsDataUrl(file, i18n.common.requestFailed);
           return {
             ...baseAttachment,
             kind: "image",
@@ -825,7 +831,7 @@ export function useChatController({
         }
 
         if (isTextAttachmentFile(file)) {
-          const textContent = await readFileAsText(file);
+          const textContent = await readFileAsText(file, i18n.common.requestFailed);
           return {
             ...baseAttachment,
             kind: "text",

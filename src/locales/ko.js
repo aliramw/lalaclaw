@@ -1,6 +1,7 @@
 import en from "@/locales/en";
+import mergeLocale from "@/locales/merge";
 
-const ko = {
+const ko = mergeLocale(en, {
   ...en,
   app: {
     ...en.app,
@@ -95,6 +96,9 @@ const ko = {
     modelSwitchSucceeded: (model) => `모델 전환 완료: ${model}`,
     modelSwitchFailed: (model, reason = "") => reason ? `모델 전환 실패: ${model} (${reason})` : `모델 전환 실패: ${model}`,
     requestFailed: "요청에 실패했습니다.",
+    runtimeSnapshotFailed: "런타임 스냅샷 요청에 실패했습니다.",
+    runtimeSocketError: "WebSocket 오류입니다.",
+    sessionUpdateFailed: "세션 업데이트에 실패했습니다.",
     logOut: "로그아웃",
     loggingOut: "로그아웃하는 중…",
     logOutTooltip: "로그아웃",
@@ -209,6 +213,7 @@ const ko = {
     openMentionMenu: "@ 삽입",
     openMentionMenuTooltip: "입력창에 에이전트 또는 스킬 이름을 빠르게 삽입합니다",
     uploadAttachment: "이미지 또는 파일 업로드",
+    sentAttachmentCount: (count) => `첨부 파일 ${count}개를 보냈습니다`,
     queuedCount: (count) => `${count}개 대기 중`,
     queuedHint: "현재 응답이 끝나면 이 메시지들이 순서대로 전송됩니다",
     outline: "개요",
@@ -730,6 +735,6 @@ const ko = {
       markdown: "Markdown",
     },
   },
-};
+});
 
 export default ko;

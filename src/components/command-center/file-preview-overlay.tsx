@@ -562,7 +562,7 @@ function DocxPreviewContent({ preview, resolvedTheme = "light" }: { preview: Pre
         ]);
 
         if (!response.ok) {
-          throw new Error("DOCX content request failed");
+          throw new Error(messages.inspector.previewErrors.docxFailed);
         }
 
         const arrayBuffer = await response.arrayBuffer();

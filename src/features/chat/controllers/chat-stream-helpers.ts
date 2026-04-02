@@ -68,10 +68,12 @@ export function conversationIncludesUserTurn(conversation: ChatMessage[] = [], e
 export async function consumeChatStream(
   response: Response,
   {
+    errorMessage = "",
     entry: _entry,
     onProgress = () => {},
     pendingTimestamp: _pendingTimestamp,
   }: {
+    errorMessage?: string;
     entry: ChatControllerEntry;
     onProgress?: (value: {
       assistantMessageId?: string;
@@ -185,7 +187,7 @@ export async function consumeChatStream(
     }
 
     if (event.type === "message.error" || event.type === "error") {
-      const streamError = new Error(event.error || "Request failed") as Error & {
+      const streamError = new Error(event.error || errorMessage || "Request failed") as Error & {
         partialOutputText?: string;
         tokenBadge?: string;
         assistantMessageId?: string;
