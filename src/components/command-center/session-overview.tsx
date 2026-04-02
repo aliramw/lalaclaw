@@ -968,6 +968,12 @@ function TransportTooltipContent({
   );
 }
 
+const shellUtilityButtonClassName =
+  "cc-shell-utility-button inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border/70 bg-[var(--surface)] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] transition hover:border-[var(--border-strong)] hover:bg-accent/28 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-55";
+
+const shellUtilityPillClassName =
+  "cc-shell-utility-pill inline-flex h-10 items-center rounded-full border border-border/70 bg-[var(--surface)] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+
 function ThemeToggle({ onChange, resolvedTheme, value }: { onChange?: (theme: string) => void; resolvedTheme?: string; value?: string }) {
   const { messages } = useI18n();
   const options = [
@@ -997,10 +1003,8 @@ function ThemeToggle({ onChange, resolvedTheme, value }: { onChange?: (theme: st
   return (
     <div
       className={cn(
-        "inline-flex h-9 items-center self-stretch rounded-full border p-0.5",
-        resolvedTheme === "light"
-          ? "border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
-          : "border-border/70 bg-background/90",
+        shellUtilityPillClassName,
+        "gap-0.5 px-0.5",
       )}
     >
       {options.map((option) => {
@@ -1014,14 +1018,10 @@ function ThemeToggle({ onChange, resolvedTheme, value }: { onChange?: (theme: st
                 onClick={() => onChange?.(option.id)}
                 aria-label={option.label}
                 className={cn(
-                  "inline-flex h-8 min-w-[2.5rem] items-center justify-center self-center rounded-full border px-2 transition-[background-color,color,box-shadow,border-color] duration-200",
+                  "inline-flex h-8 min-w-[2.25rem] items-center justify-center self-center rounded-full border px-2 transition-[background-color,color,box-shadow,border-color] duration-200",
                   active
-                    ? resolvedTheme === "light"
-                      ? "border-transparent bg-slate-200 text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]"
-                      : "border-transparent bg-slate-700 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                    : resolvedTheme === "light"
-                      ? "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-                      : "border-transparent bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    ? "border-transparent bg-accent text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+                    : "border-transparent bg-transparent text-muted-foreground hover:bg-accent/45 hover:text-foreground",
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -1240,7 +1240,7 @@ function ShortcutHelpButton({ composerSendMode = "enter-send" }: { composerSendM
             type="button"
             aria-label={messages.shortcuts.tooltipTitle}
             onClick={() => setOpen(true)}
-            className="inline-flex h-9 w-9 items-center justify-center self-stretch rounded-full border border-border/70 bg-background/90 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
+            className={shellUtilityButtonClassName}
           >
             <Keyboard className="h-4 w-4" />
           </button>
@@ -1350,7 +1350,10 @@ function LanguageToggle() {
               aria-label={messages.locale.switchLabel}
               onPointerDown={dismissTooltip}
               onPointerLeave={handlePointerLeave}
-              className="inline-flex h-9 items-center self-stretch gap-2 rounded-full border border-border/70 bg-background/90 px-3 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
+              className={cn(
+                shellUtilityPillClassName,
+                "gap-2 px-3 hover:border-[var(--border-strong)] hover:bg-accent/28 hover:text-foreground",
+              )}
             >
               <Languages className="h-4 w-4" />
               <span className="text-xs font-medium text-foreground">{activeLocale?.label || locale.toUpperCase()}</span>
@@ -1396,7 +1399,7 @@ function AccessLogoutButton({ loggingOut = false, onLogout }: { loggingOut?: boo
           aria-label={loggingOut ? messages.common.loggingOut : messages.common.logOut}
           onClick={handleClick}
           disabled={loggingOut}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground transition hover:bg-muted/70 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-55"
+          className={shellUtilityButtonClassName}
         >
           <LogOut className="h-4 w-4" />
         </button>

@@ -32,7 +32,7 @@ export function AppSplitLayout({
       className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden"
       style={splitLayoutStyle}
     >
-      <div className="min-h-0 min-w-0 pr-1.5 xl:pr-0.5">
+      <div className="cc-workspace-stage min-h-0 min-w-0 rounded-[30px] border border-border/60 bg-[var(--surface-elevated)] p-2 shadow-[0_22px_48px_rgba(15,23,42,0.08)]">
         {chatPanel}
       </div>
 
@@ -42,7 +42,7 @@ export function AppSplitLayout({
             type="button"
             aria-label={resizeLabel}
             onPointerDown={onResizeStart}
-            className="group relative h-full w-full cursor-col-resize touch-none select-none"
+            className="cc-split-resize-handle group relative h-full w-full cursor-col-resize touch-none select-none"
           >
             <span
               aria-hidden="true"
@@ -67,7 +67,7 @@ export function AppSplitLayout({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden pl-1.5 xl:min-w-[300px] xl:pl-0.5">
+      <div className="cc-inspector-stage flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-[28px] border border-border/55 bg-[var(--panel)] p-2 xl:min-w-[300px]">
         {taskRelationshipsPanel}
         <div className="min-h-0 min-w-0 flex-1">
           {inspectorPanel}

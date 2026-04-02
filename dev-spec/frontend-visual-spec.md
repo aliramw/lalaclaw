@@ -1,6 +1,6 @@
 # Frontend Visual Spec
 
-Last updated: 2026-03-28
+Last updated: 2026-04-01
 
 ## Purpose
 
@@ -13,6 +13,22 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Avoid duplicate labels or sections that describe the same concept at different levels with the same name.
 - Summary areas and detail areas should feel related, but not visually repetitive.
 
+## Global Shell And Themes
+
+- The global shell should preserve a tool-first command-center feel while presenting a more polished product surface. Do not drift into marketing-page composition or decorative hero patterns.
+- The default light theme should use a warm, paper-like `Signal Desk` direction: soft cream backgrounds, warmer neutral surfaces, and amber-brown primary actions.
+- The dark theme should use a cooler `Precision Ops` direction: deep navy backgrounds, blue-steel surfaces, and cyan-blue primary emphasis with sharper contrast.
+- Light and dark mode must behave as one paired visual system. Keep layout, hierarchy, and semantic token meanings aligned across themes instead of treating dark mode as a separate visual product.
+- Overall density for the main shell should stay balanced: denser than a showcase UI, looser and more legible than a raw internal tool. Preserve inspector scanability while giving shell-level grouping more breathing room.
+- The chat workspace is the primary stage of the app and should read as the most important surface in the layout. The inspector is secondary and should remain quieter even when information-dense.
+- The top app chrome should form one stable shell band that clearly separates current context on the left from utility actions on the right. It should not read like a floating generic card detached from the rest of the workspace.
+- Shell utility controls in the top-right chrome must feel like one family. Language, theme, shortcuts, logout, and personal-settings controls should share one height, one border treatment, and one surface token even when some are pills and others are circular icon buttons.
+- Primary filled actions across the shell should share the same visual language as the composer send action. Do not introduce unrelated filled-button treatments for top-level update, confirm, or send-style actions.
+- Shared shell surfaces should be expressed through semantic tokens such as background, surface, elevated surface, panel, primary, accent, and strong border instead of one-off per-component color mixes.
+- Empty states and loading states in the main shell must inherit the active theme language and feel intentional, not like neutral placeholders.
+- Assistant reply bubbles must stay inside the active shell palette. In light mode, avoid cool gray or blue-gray fills that break the `Signal Desk` warmth; use a warm surface mix instead. In dark mode, keep assistant bubbles on the cooler control-plane palette, but derive them from the same semantic surface tokens rather than hardcoded one-off fills.
+- Assistant reply bubbles must remain readable as independent cards against the chat stage. If a warmer theme fill reduces separation too much, restore the boundary with a subtle semantic border before reintroducing colder background color.
+
 ## Spacing And Rhythm
 
 - Use a compact vertical rhythm built on `8px` steps for dense inspector-style panels.
@@ -20,6 +36,9 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - Collapsible section headers should not inherit oversized default card paddings; they should feel compact enough to scan in a list.
 - Avoid large blank space above the first row of useful content in side panels.
 - Dense inspector sections should prefer the tighter density tier once grouping is introduced; avoid tall headers or overly generous content padding for purely diagnostic lists.
+- Do not wrap the chat header summary row in an extra framed card when the surrounding chat stage and the summary pills already provide grouping. Prefer a lighter divider or spacing rhythm over a second large rounded container.
+- When removing a redundant chat-header container, also reclaim the horizontal padding that only existed to support that container. Do not leave card-style side gutters behind after the frame itself is gone.
+- Composer-adjacent shells inside the chat stage should avoid large exterior drop shadows in light mode. If a surface needs separation, prefer border contrast or a very light inset highlight so rounded shells do not leak square shadow corners into nearby gutters.
 - In stacked inspector sections, the gap between a section title and its own card should be tighter than the gap to the previous sibling section. Never let a title visually read as attached to the card above it.
 - Form controls inside inspector cards should not rely on browser-default select arrows. Use a consistent custom arrow placement so dropdown affordances align with the input shell and right padding.
 - Checkbox controls inside inspector forms should align to the vertical center of their text label. Do not use ad-hoc top margins to visually fake alignment.

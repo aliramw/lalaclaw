@@ -3912,78 +3912,80 @@ export function ChatPanel({
             trailingControl={agentSwitcher}
           />
         ) : null}
-        <Card className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
-          <div className="relative border-b border-border/70 bg-card/80 px-3 pt-2 pb-2 backdrop-blur">
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant={isStaleRunning ? "outline" : stableShowBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
-                      {isStaleRunning ? i18n.chat.agentStaleRunning : stableShowBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>{isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : stableShowBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
-                </Tooltip>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-1.5 self-start">
-                <div className="flex items-center gap-0.5 rounded-md border border-border/70 bg-background/70 px-1 py-0.5">
-                  {chatFontSizeOptions.map((item) => {
-                    const active = item.value === chatFontSize;
-                    return (
-                      <Tooltip key={item.value}>
-                        <TooltipTrigger asChild>
-                          <button
-                          type="button"
-                          className={cn(
-                              "inline-flex h-[1.375rem] w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                              active && "bg-muted text-foreground",
-                            )}
-                            aria-label={i18n.chat.fontSizeOptionTooltip(item.label)}
-                            disabled={interactionLocked}
-                            onClick={() => onChatFontSizeChange?.(item.value)}
-                          >
-                            <span className={cn("font-semibold leading-none", item.glyphClassName)}>A</span>
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>{i18n.chat.fontSizeOptionTooltip(item.label)}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
+        <div className="cc-chat-stage flex h-full min-h-0 flex-col rounded-[24px] bg-transparent">
+          <div className="cc-chat-stage-header shrink-0 pb-2">
+            <div className="relative pt-2 pb-1">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge variant={isStaleRunning ? "outline" : stableShowBusyBadge ? "success" : "default"} className="h-6 shrink-0 px-2 py-0 text-[10px]">
+                        {isStaleRunning ? i18n.chat.agentStaleRunning : stableShowBusyBadge ? i18n.chat.agentBusy : i18n.chat.agentIdle}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>{isStaleRunning ? i18n.chat.staleRunningWarning(staleSeconds) : stableShowBusyBadge ? i18n.chat.agentBusyTooltip : i18n.chat.agentIdleTooltip}</TooltipContent>
+                  </Tooltip>
                 </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleResetWithConfirm}
-                      className="h-6 w-6 rounded-md text-muted-foreground/70 hover:text-foreground"
-                      aria-label={i18n.chat.resetConversation}
-                      disabled={interactionLocked || !openClawConnected}
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent className="px-2.5 py-2 text-left">
-                    <div className="text-xs font-medium leading-4">{formatShortcutForPlatform(i18n.chat.resetConversationHotkey)}</div>
-                    <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{i18n.chat.resetConversationTooltipHint}</div>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
 
-            {sessionOverview ? <div className="mt-2">{sessionOverview}</div> : null}
+                <div className="flex shrink-0 items-center gap-1.5 self-start">
+                  <div className="flex items-center gap-0.5 rounded-md border border-border/70 bg-background/70 px-1 py-0.5">
+                    {chatFontSizeOptions.map((item) => {
+                      const active = item.value === chatFontSize;
+                      return (
+                        <Tooltip key={item.value}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className={cn(
+                                "inline-flex h-[1.375rem] w-6 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                                active && "bg-muted text-foreground",
+                              )}
+                              aria-label={i18n.chat.fontSizeOptionTooltip(item.label)}
+                              disabled={interactionLocked}
+                              onClick={() => onChatFontSizeChange?.(item.value)}
+                            >
+                              <span className={cn("font-semibold leading-none", item.glyphClassName)}>A</span>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{i18n.chat.fontSizeOptionTooltip(item.label)}</TooltipContent>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleResetWithConfirm}
+                        className="h-6 w-6 rounded-md text-muted-foreground/70 hover:text-foreground"
+                        aria-label={i18n.chat.resetConversation}
+                        disabled={interactionLocked || !openClawConnected}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="px-2.5 py-2 text-left">
+                      <div className="text-xs font-medium leading-4">{formatShortcutForPlatform(i18n.chat.resetConversationHotkey)}</div>
+                      <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{i18n.chat.resetConversationTooltipHint}</div>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+
+              {sessionOverview ? <div className="mt-2 border-t border-border/45 pt-2">{sessionOverview}</div> : null}
+            </div>
           </div>
-          <CardContent className="grid min-h-0 grid-rows-[minmax(0,1fr)] p-0">
-            <div className="relative min-h-0">
+          <div className="cc-chat-stage-body min-h-0 flex-1 overflow-hidden rounded-[24px] border border-border/55 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]">
+            <div className="relative h-full min-h-0">
               <ScrollArea
                 className="h-full"
                 viewportRef={handleMessageViewportRef}
                 onWheelCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
                 onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
               >
-                <div className="grid gap-2 px-3 pt-2 pb-6">
+                <div className="grid gap-2 px-4 pt-3 pb-7">
                   {renderedMessageBubbles}
                   <div ref={bottomSentinelRef} aria-hidden="true" data-message-bottom-sentinel className="h-px w-full" />
                 </div>
@@ -4008,9 +4010,9 @@ export function ChatPanel({
                 </div>
               ) : null}
             </div>
-          </CardContent>
+          </div>
 
-          <CardContent className="space-y-2 border-t border-border/70 bg-muted/20 px-4 py-3">
+          <div className="cc-chat-composer-shell mt-3 shrink-0 rounded-[24px] border border-border/70 bg-[var(--surface-elevated)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.26)]">
             <input
               ref={attachmentInputRef}
               type="file"
@@ -4021,220 +4023,26 @@ export function ChatPanel({
                 event.target.value = "";
               }}
             />
-            <QueuedMessages
-              items={queuedMessages || []}
-              onClearAll={onClearQueuedMessages}
-              onEditItem={handleEditQueuedMessage}
-              onRemoveItem={onRemoveQueuedMessage}
-              textClassName={fontSizeStyles.queued}
-            />
-            <div ref={composerMentionLayerRef} className="relative">
-              {activeMention && mentionOptions.length && mentionAnchor === "composer" ? (
-                <div
-                  ref={mentionMenuRef}
-                  data-testid="mention-menu-composer"
-                  className="absolute z-20 w-[min(28rem,calc(100vw-4rem))]"
-                  style={{
-                    left: mentionComposerPosition?.left ?? 12,
-                    top: mentionComposerPosition?.top ?? 8,
-                    transform: "translateY(calc(-100% - 8px))",
-                  }}
-                >
-                  <div className="max-h-[31rem] overflow-y-auto rounded-xl border border-border/70 bg-background/95 p-2 pr-3 shadow-lg backdrop-blur cc-scroll-region">
-                    {filteredMentionAgents.length ? (
-                      <>
-                        <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-muted-foreground">{i18n.chat.mentionAgents}</div>
-                        <div className="grid gap-0.5">
-                          {filteredMentionAgents.map((agent) => {
-                            const optionIndex = mentionOptions.findIndex((option) => option.id === `agent:${agent}`);
-                            return (
-                              <button
-                                key={agent}
-                                type="button"
-                                className={cn(
-                                  "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
-                                  optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
-                                )}
-                                onMouseDown={(event) => handleMentionPointerSelect(event, agent)}
-                                onClick={(event) => handleMentionClick(event, agent)}
-                              >
-                                <span className="font-medium">{agent}</span>
-                                <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionAgentType}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </>
-                    ) : null}
-                    {filteredMentionSkills.length ? (
-                      <>
-                        <div className={cn("px-1 text-[10px] font-semibold uppercase text-muted-foreground", filteredMentionAgents.length ? "mb-1 mt-2" : "mb-1")}>
-                          {i18n.chat.mentionSkills}
-                        </div>
-                        <div className="grid gap-0.5">
-                          {filteredMentionSkills.map((skill) => {
-                            const optionIndex = mentionOptions.findIndex((option) => option.id === `skill:${skill.name}`);
-                            return (
-                              <button
-                                key={skill.name}
-                                type="button"
-                                className={cn(
-                                  "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
-                                  optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
-                                )}
-                                onMouseDown={(event) => handleMentionPointerSelect(event, skill.name)}
-                                onClick={(event) => handleMentionClick(event, skill.name)}
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate font-medium">{skill.name}</div>
-                                  {skill.ownerAgentId ? <div className="truncate text-[11px] text-muted-foreground">{skill.ownerAgentId}</div> : null}
-                                </div>
-                                <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionSkillType}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              <div
-                className={cn(
-                  "overflow-hidden rounded-md border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
-                  resolvedTheme === "dark"
-                    ? "border-[#4d88c7] ring-2 ring-[#4d88c7]/20 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
-                    : "border-[#1677eb] ring-2 ring-[#1677eb]/35 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
-                )}
-              >
-              {composerAttachments?.length ? (
-                <>
-                  <ComposerAttachments
-                    attachments={composerAttachments}
-                    onPreviewImage={openImagePreview}
-                    onRemoveAttachment={onRemoveAttachment}
-                  />
-                  <div className="border-t border-border/60" />
-                </>
-              ) : null}
-              <div className="relative">
-                {openClawConnected && !composerPrompt ? (
-                  <div
-                    aria-hidden="true"
-                    data-testid="composer-placeholder-overlay"
-                    className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-1 px-3 py-2 text-muted-foreground/75"
-                  >
-                    <div className="text-sm">
-                      <span>{promptPlaceholderSegments.before}</span>
-                      {promptPlaceholderSegments.agent ? (
-                        <span className="font-medium text-muted-foreground/75">
-                          {promptPlaceholderSegments.agent}
-                        </span>
-                      ) : null}
-                      <span>{promptPlaceholderSegments.after}</span>
-                      <span className="ml-1 text-inherit">💡</span>
-                    </div>
-                    {i18n.chat.composerFocusHint ? (
-                      <div className="text-xs leading-4 text-[#6b7280] dark:text-[#9ca3af]">
-                        {i18n.chat.composerFocusHint}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                <Textarea
-                  ref={setComposerTextareaNode}
-                  rows={2}
-                  value={composerPrompt}
-                  onChange={(event) => {
-                    const nextPrompt = event.target.value;
-                    if (shouldIgnoreComposerCompositionReplay(event, nextPrompt)) {
-                      disarmComposerCompositionGuard();
-                      clearComposerInput();
-                      return;
-                    }
-                    syncVoiceInputManualBaseline(nextPrompt);
-                    setComposerPrompt(nextPrompt);
-                    onPromptChange(nextPrompt);
-                    syncAgentMention(nextPrompt, event.target.selectionStart ?? nextPrompt.length);
-                  }}
-                  onCompositionStart={() => {
-                    composerCompositionActiveRef.current = true;
-                    composerLastCompositionAtRef.current = Date.now();
-                  }}
-                  onCompositionEnd={(event) => {
-                    composerCompositionActiveRef.current = false;
-                    composerLastCompositionAtRef.current = Date.now();
-                    const nextPrompt = event.currentTarget.value;
-                    if (shouldIgnoreComposerCompositionReplay(event, nextPrompt)) {
-                      disarmComposerCompositionGuard();
-                      clearComposerInput();
-                      return;
-                    }
-                    syncAgentMention(nextPrompt, event.currentTarget.selectionStart ?? nextPrompt.length);
-                  }}
-                  onClick={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-                  onKeyUp={(event) => {
-                    if (shouldIgnoreMentionKeyUp(event.key)) {
-                      return;
-                    }
-                    syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length);
-                  }}
-                  onKeyDown={(event) => {
-                    if (activeMention && mentionOptions.length) {
-                      if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        setHighlightedAgentIndex((current) => (current + 1) % mentionOptions.length);
-                        return;
-                      }
-                      if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        setHighlightedAgentIndex((current) => (current - 1 + mentionOptions.length) % mentionOptions.length);
-                        return;
-                      }
-                      if (event.key === "Enter" || event.key === "Tab") {
-                        event.preventDefault();
-                        applyMention(mentionOptions[highlightedAgentIndex]?.value || mentionOptions[0]?.value);
-                        return;
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setAgentMention(null);
-                        setManualMention(null);
-                        setHighlightedAgentIndex(0);
-                        return;
-                      }
-                    }
-                    onPromptKeyDown(event);
-                  }}
-                  onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-                  placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
-                  disabled={composerLocked}
-                  className={cn(
-                    "min-h-[4.6rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0",
-                    openClawConnected ? "placeholder:text-transparent" : "",
-                  )}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <ConnectionStatus
-                composerSendMode={composerSendMode}
-                onToggleComposerSendMode={onComposerSendModeToggle}
-                resolvedTheme={resolvedTheme}
-                session={session}
+            <div className="space-y-2.5">
+              <QueuedMessages
+                items={queuedMessages || []}
+                onClearAll={onClearQueuedMessages}
+                onEditItem={handleEditQueuedMessage}
+                onRemoveItem={onRemoveQueuedMessage}
+                textClassName={fontSizeStyles.queued}
               />
-              {voiceInputStatusText ? (
-                <span aria-live="polite" className="text-[11px] text-muted-foreground">
-                  {voiceInputStatusText}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex items-center justify-end gap-1.5">
-              <div className="relative flex items-center gap-px">
-                {activeMention && mentionOptions.length && mentionAnchor === "actions" ? (
-                  <div ref={mentionMenuRef} data-testid="mention-menu-actions" className="absolute bottom-full right-0 z-20 mb-2 w-[min(28rem,calc(100vw-4rem))]">
+              <div ref={composerMentionLayerRef} className="relative">
+                {activeMention && mentionOptions.length && mentionAnchor === "composer" ? (
+                  <div
+                    ref={mentionMenuRef}
+                    data-testid="mention-menu-composer"
+                    className="absolute z-20 w-[min(28rem,calc(100vw-4rem))]"
+                    style={{
+                      left: mentionComposerPosition?.left ?? 12,
+                      top: mentionComposerPosition?.top ?? 8,
+                      transform: "translateY(calc(-100% - 8px))",
+                    }}
+                  >
                     <div className="max-h-[31rem] overflow-y-auto rounded-xl border border-border/70 bg-background/95 p-2 pr-3 shadow-lg backdrop-blur cc-scroll-region">
                       {filteredMentionAgents.length ? (
                         <>
@@ -4294,83 +4102,279 @@ export function ChatPanel({
                     </div>
                   </div>
                 ) : null}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 w-9 rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground"
-                      disabled={composerLocked || (!mentionableAgents.length && !mentionableSkills.length)}
-                      aria-label={i18n.chat.openMentionMenu}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={openMentionMenu}
-                    >
-                      <span className="text-[1.05rem] font-semibold leading-none">@</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{i18n.chat.openMentionMenuTooltip || i18n.chat.openMentionMenu}</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 w-9 rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground"
-                      disabled={interactionLocked}
-                      onClick={() => attachmentInputRef.current?.click()}
-                    >
-                      <Paperclip className="h-4.5 w-4.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{i18n.chat.uploadAttachment}</TooltipContent>
-                </Tooltip>
-              </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={cn(
-                      "h-9 w-9 rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground",
-                      voiceInputState === "listening" ? "bg-red-500/12 text-red-600 hover:bg-red-500/15 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300" : "",
-                    )}
-                    disabled={composerLocked}
-                    aria-label={voiceInputButtonLabel}
-                    aria-keyshortcuts={voiceInputShortcut}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={handleVoiceInputToggle}
-                  >
-                    <Mic className={cn("h-4.5 w-4.5", voiceInputState === "listening" ? "animate-pulse" : "")} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <div className="space-y-0.5">
-                    <div>{speechRecognitionSupported ? voiceInputButtonLabel : i18n.chat.voiceInputUnavailable}</div>
-                    {speechRecognitionSupported ? (
-                      <div className="text-[11px] text-muted-foreground">{i18n.theme.shortcutHint(voiceInputShortcut)}</div>
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-[20px] border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
+                    resolvedTheme === "dark"
+                      ? "border-[#4d88c7] ring-2 ring-[#4d88c7]/20 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
+                      : "border-[#1677eb] ring-2 ring-[#1677eb]/35 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
+                  )}
+                >
+                  {composerAttachments?.length ? (
+                    <>
+                      <ComposerAttachments
+                        attachments={composerAttachments}
+                        onPreviewImage={openImagePreview}
+                        onRemoveAttachment={onRemoveAttachment}
+                      />
+                      <div className="border-t border-border/60" />
+                    </>
+                  ) : null}
+                  <div className="relative">
+                    {openClawConnected && !composerPrompt ? (
+                      <div
+                        aria-hidden="true"
+                        data-testid="composer-placeholder-overlay"
+                        className="pointer-events-none absolute inset-x-0 top-0 flex flex-col gap-1 px-3 py-2 text-muted-foreground/75"
+                      >
+                        <div className="text-sm">
+                          <span>{promptPlaceholderSegments.before}</span>
+                          {promptPlaceholderSegments.agent ? (
+                            <span className="font-medium text-muted-foreground/75">
+                              {promptPlaceholderSegments.agent}
+                            </span>
+                          ) : null}
+                          <span>{promptPlaceholderSegments.after}</span>
+                          <span className="ml-1 text-inherit">💡</span>
+                        </div>
+                        {i18n.chat.composerFocusHint ? (
+                          <div className="text-xs leading-4 text-[#6b7280] dark:text-[#9ca3af]">
+                            {i18n.chat.composerFocusHint}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
+                    <Textarea
+                      ref={setComposerTextareaNode}
+                      rows={2}
+                      value={composerPrompt}
+                      onChange={(event) => {
+                        const nextPrompt = event.target.value;
+                        if (shouldIgnoreComposerCompositionReplay(event, nextPrompt)) {
+                          disarmComposerCompositionGuard();
+                          clearComposerInput();
+                          return;
+                        }
+                        syncVoiceInputManualBaseline(nextPrompt);
+                        setComposerPrompt(nextPrompt);
+                        onPromptChange(nextPrompt);
+                        syncAgentMention(nextPrompt, event.target.selectionStart ?? nextPrompt.length);
+                      }}
+                      onCompositionStart={() => {
+                        composerCompositionActiveRef.current = true;
+                        composerLastCompositionAtRef.current = Date.now();
+                      }}
+                      onCompositionEnd={(event) => {
+                        composerCompositionActiveRef.current = false;
+                        composerLastCompositionAtRef.current = Date.now();
+                        const nextPrompt = event.currentTarget.value;
+                        if (shouldIgnoreComposerCompositionReplay(event, nextPrompt)) {
+                          disarmComposerCompositionGuard();
+                          clearComposerInput();
+                          return;
+                        }
+                        syncAgentMention(nextPrompt, event.currentTarget.selectionStart ?? nextPrompt.length);
+                      }}
+                      onClick={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+                      onKeyUp={(event) => {
+                        if (shouldIgnoreMentionKeyUp(event.key)) {
+                          return;
+                        }
+                        syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length);
+                      }}
+                      onKeyDown={(event) => {
+                        if (activeMention && mentionOptions.length) {
+                          if (event.key === "ArrowDown") {
+                            event.preventDefault();
+                            setHighlightedAgentIndex((current) => (current + 1) % mentionOptions.length);
+                            return;
+                          }
+                          if (event.key === "ArrowUp") {
+                            event.preventDefault();
+                            setHighlightedAgentIndex((current) => (current - 1 + mentionOptions.length) % mentionOptions.length);
+                            return;
+                          }
+                          if (event.key === "Enter" || event.key === "Tab") {
+                            event.preventDefault();
+                            applyMention(mentionOptions[highlightedAgentIndex]?.value || mentionOptions[0]?.value);
+                            return;
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setAgentMention(null);
+                            setManualMention(null);
+                            setHighlightedAgentIndex(0);
+                            return;
+                          }
+                        }
+                        onPromptKeyDown(event);
+                      }}
+                      onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+                      placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
+                      disabled={composerLocked}
+                      className={cn(
+                        "min-h-[4.6rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0",
+                        openClawConnected ? "placeholder:text-transparent" : "",
+                      )}
+                    />
                   </div>
-                </TooltipContent>
-              </Tooltip>
-              <Button
-                onMouseDown={(event) => {
-                  if (!showStopButton) {
-                    event.preventDefault();
-                  }
-                }}
-                onClick={showStopButton ? onStop : handleComposerSend}
-                disabled={showStopButton ? interactionLocked : composerLocked}
-                className="cc-send-button h-9 min-w-[6.25rem] rounded-md px-3 text-sm font-medium"
-              >
-                <span className="inline-flex w-full -translate-x-[3px] items-center justify-center gap-2 leading-none">
-                  {showStopButton ? <Square className="h-3.5 w-3.5 shrink-0 fill-current" /> : <Send className="h-3.5 w-3.5 shrink-0" />}
-                  <span className="text-center leading-none">{showStopButton ? i18n.chat.stop : i18n.chat.send}</span>
-                </span>
-              </Button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <ConnectionStatus
+                    composerSendMode={composerSendMode}
+                    onToggleComposerSendMode={onComposerSendModeToggle}
+                    resolvedTheme={resolvedTheme}
+                    session={session}
+                  />
+                  {voiceInputStatusText ? (
+                    <span aria-live="polite" className="text-[11px] text-muted-foreground">
+                      {voiceInputStatusText}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex items-center justify-end gap-1.5">
+                  <div className="relative flex items-center gap-px">
+                    {activeMention && mentionOptions.length && mentionAnchor === "actions" ? (
+                      <div ref={mentionMenuRef} data-testid="mention-menu-actions" className="absolute bottom-full right-0 z-20 mb-2 w-[min(28rem,calc(100vw-4rem))]">
+                        <div className="max-h-[31rem] overflow-y-auto rounded-xl border border-border/70 bg-background/95 p-2 pr-3 shadow-lg backdrop-blur cc-scroll-region">
+                          {filteredMentionAgents.length ? (
+                            <>
+                              <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-muted-foreground">{i18n.chat.mentionAgents}</div>
+                              <div className="grid gap-0.5">
+                                {filteredMentionAgents.map((agent) => {
+                                  const optionIndex = mentionOptions.findIndex((option) => option.id === `agent:${agent}`);
+                                  return (
+                                    <button
+                                      key={agent}
+                                      type="button"
+                                      className={cn(
+                                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
+                                        optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
+                                      )}
+                                      onMouseDown={(event) => handleMentionPointerSelect(event, agent)}
+                                      onClick={(event) => handleMentionClick(event, agent)}
+                                    >
+                                      <span className="font-medium">{agent}</span>
+                                      <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionAgentType}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          ) : null}
+                          {filteredMentionSkills.length ? (
+                            <>
+                              <div className={cn("px-1 text-[10px] font-semibold uppercase text-muted-foreground", filteredMentionAgents.length ? "mb-1 mt-2" : "mb-1")}>
+                                {i18n.chat.mentionSkills}
+                              </div>
+                              <div className="grid gap-0.5">
+                                {filteredMentionSkills.map((skill) => {
+                                  const optionIndex = mentionOptions.findIndex((option) => option.id === `skill:${skill.name}`);
+                                  return (
+                                    <button
+                                      key={skill.name}
+                                      type="button"
+                                      className={cn(
+                                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition",
+                                        optionIndex === highlightedAgentIndex ? mentionOptionStateClassName : mentionOptionHoverClassName,
+                                      )}
+                                      onMouseDown={(event) => handleMentionPointerSelect(event, skill.name)}
+                                      onClick={(event) => handleMentionClick(event, skill.name)}
+                                    >
+                                      <div className="min-w-0">
+                                        <div className="truncate font-medium">{skill.name}</div>
+                                        {skill.ownerAgentId ? <div className="truncate text-[11px] text-muted-foreground">{skill.ownerAgentId}</div> : null}
+                                      </div>
+                                      <span className="text-[11px] text-muted-foreground">{i18n.chat.mentionSkillType}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 w-9 rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground"
+                          disabled={composerLocked || (!mentionableAgents.length && !mentionableSkills.length)}
+                          aria-label={i18n.chat.openMentionMenu}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={openMentionMenu}
+                        >
+                          <span className="text-[1.05rem] font-semibold leading-none">@</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{i18n.chat.openMentionMenuTooltip || i18n.chat.openMentionMenu}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 w-9 rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground"
+                          disabled={interactionLocked}
+                          onClick={() => attachmentInputRef.current?.click()}
+                        >
+                          <Paperclip className="h-4.5 w-4.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{i18n.chat.uploadAttachment}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className={cn(
+                          "h-9 w-9 rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition hover:bg-muted/60 hover:text-foreground",
+                          voiceInputState === "listening" ? "bg-red-500/12 text-red-600 hover:bg-red-500/15 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300" : "",
+                        )}
+                        disabled={composerLocked}
+                        aria-label={voiceInputButtonLabel}
+                        aria-keyshortcuts={voiceInputShortcut}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={handleVoiceInputToggle}
+                      >
+                        <Mic className={cn("h-4.5 w-4.5", voiceInputState === "listening" ? "animate-pulse" : "")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <div className="space-y-0.5">
+                        <div>{speechRecognitionSupported ? voiceInputButtonLabel : i18n.chat.voiceInputUnavailable}</div>
+                        {speechRecognitionSupported ? (
+                          <div className="text-[11px] text-muted-foreground">{i18n.theme.shortcutHint(voiceInputShortcut)}</div>
+                        ) : null}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Button
+                    onMouseDown={(event) => {
+                      if (!showStopButton) {
+                        event.preventDefault();
+                      }
+                    }}
+                    onClick={showStopButton ? onStop : handleComposerSend}
+                    disabled={showStopButton ? interactionLocked : composerLocked}
+                    className="cc-send-button h-9 min-w-[6.25rem] rounded-md px-3 text-sm font-medium"
+                  >
+                    <span className="inline-flex w-full -translate-x-[3px] items-center justify-center gap-2 leading-none">
+                      {showStopButton ? <Square className="h-3.5 w-3.5 shrink-0 fill-current" /> : <Send className="h-3.5 w-3.5 shrink-0" />}
+                      <span className="text-center leading-none">{showStopButton ? i18n.chat.stop : i18n.chat.send}</span>
+                    </span>
+                  </Button>
+                </div>
+              </div>
             </div>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
       {filePreview ? (
         <Suspense fallback={null}>

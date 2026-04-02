@@ -1456,17 +1456,20 @@ export function InspectorPanel({
 
   return (
     <>
-      <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-        <CardHeader className="flex min-h-12 flex-row items-center justify-start border-b border-border/70 bg-card/80 px-3 py-2 text-left backdrop-blur">
+      <div className="cc-inspector-shell flex h-full min-h-0 min-w-0 flex-col rounded-[24px] bg-transparent">
+        <div className="px-1 pb-3 text-left">
           <div className="flex min-w-0 flex-1 items-center justify-start gap-2 text-left">
-            <CardTitle className="truncate text-sm leading-[1.15]">{messages.inspector.title}</CardTitle>
-            <CardDescription className="truncate text-[11px] leading-5">{messages.inspector.subtitle}</CardDescription>
+            <CardTitle className="truncate text-sm leading-[1.15] text-foreground/90">{messages.inspector.title}</CardTitle>
+            <CardDescription className="truncate text-[11px] leading-5 text-muted-foreground/90">{messages.inspector.subtitle}</CardDescription>
           </div>
-        </CardHeader>
+        </div>
 
-        <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Tabs value={resolvedActiveTab} onValueChange={setActiveTab} className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <TabsList ref={tabsListRef} className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 p-1 md:grid-cols-4">
+            <TabsList
+              ref={tabsListRef}
+              className="cc-inspector-tabs grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-[18px] border border-border/70 bg-[var(--panel-muted)] p-1 md:grid-cols-4"
+            >
               {tabDefinitions.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = resolvedActiveTab === tab.key;
@@ -1537,24 +1540,36 @@ export function InspectorPanel({
               })}
             </TabsList>
 
-            <TabsContent value="files" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent
+              value="files"
+              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+            >
               {filesTabContent}
             </TabsContent>
 
-            <TabsContent value="artifacts" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent
+              value="artifacts"
+              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+            >
               {artifactsTabContent}
             </TabsContent>
 
-            <TabsContent value="timeline" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent
+              value="timeline"
+              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+            >
               {timelineTabContent}
             </TabsContent>
 
-            <TabsContent value="environment" className="mt-1 min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+            <TabsContent
+              value="environment"
+              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+            >
               {environmentTabContent}
             </TabsContent>
           </Tabs>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
       {filePreview ? (
         <Suspense fallback={null}>
           <LazyFilePreviewOverlay

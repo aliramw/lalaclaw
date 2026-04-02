@@ -2,24 +2,38 @@
 
 :root {
   --default-mono-font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --background: #fbfbf6;
-  --foreground: oklch(0.238 0.014 253.1);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.238 0.014 253.1);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.238 0.014 253.1);
-  --primary: oklch(0.286 0.028 255.2);
-  --primary-foreground: oklch(0.985 0.003 95.1);
-  --secondary: oklch(0.96 0.006 247.9);
-  --secondary-foreground: oklch(0.286 0.028 255.2);
-  --muted: oklch(0.964 0.004 248.3);
-  --muted-foreground: oklch(0.54 0.02 257.5);
-  --accent: #e5e5e5;
-  --accent-foreground: oklch(0.286 0.028 255.2);
+  --background: #f6f1e7;
+  --background-muted: #efe7d9;
+  --surface: #fffaf1;
+  --surface-elevated: #fffdf8;
+  --surface-strong: #f3e7d3;
+  --panel: #fbf4e7;
+  --panel-muted: #f1e7d7;
+  --assistant-bubble: color-mix(in oklab, var(--surface-elevated) 72%, var(--panel) 28%);
+  --assistant-bubble-border: color-mix(in oklab, var(--border-strong) 42%, var(--surface-elevated) 58%);
+  --assistant-bubble-streaming: color-mix(in oklab, var(--surface-strong) 78%, var(--surface) 22%);
+  --primary: #b6722f;
+  --primary-foreground: #fff9f1;
+  --accent: #ede1cd;
+  --accent-foreground: #433220;
+  --border: #e4d6bf;
+  --border-strong: #d0b793;
+  --text: oklch(0.238 0.014 253.1);
+  --text-muted: #715f4c;
+  --text-subtle: #958166;
+  --focus-ring: #d06a00;
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface-elevated);
+  --popover-foreground: var(--text);
+  --secondary: var(--panel);
+  --secondary-foreground: var(--text);
+  --muted: var(--background-muted);
+  --muted-foreground: var(--text-muted);
   --destructive: oklch(0.637 0.237 25.3);
-  --border: oklch(0.905 0.008 255.4);
-  --input: oklch(0.905 0.008 255.4);
-  --ring: oklch(0.623 0.03 254.5);
+  --input: var(--border);
+  --ring: var(--focus-ring);
   --radius: 0.72rem;
   --file-link: #0e6cd2;
   --file-link-hover: #1849a9;
@@ -38,24 +52,38 @@
 }
 
 .dark {
-  --background: oklch(0.19 0.01 255);
-  --foreground: oklch(0.95 0.01 255);
-  --card: oklch(0.24 0.01 255);
-  --card-foreground: oklch(0.95 0.01 255);
-  --popover: oklch(0.22 0.01 255);
-  --popover-foreground: oklch(0.95 0.01 255);
-  --primary: oklch(0.63 0.18 255);
-  --primary-foreground: oklch(0.98 0.002 95);
-  --secondary: oklch(0.29 0.01 255);
-  --secondary-foreground: oklch(0.95 0.01 255);
-  --muted: oklch(0.28 0.01 255);
-  --muted-foreground: oklch(0.72 0.015 255);
-  --accent: #373737;
-  --accent-foreground: oklch(0.96 0.01 255);
+  --background: #0b1a28;
+  --background-muted: #102233;
+  --surface: #10202f;
+  --surface-elevated: #13283b;
+  --surface-strong: #18354d;
+  --panel: #0d2233;
+  --panel-muted: #0f2739;
+  --assistant-bubble: color-mix(in oklab, var(--surface-elevated) 82%, black 18%);
+  --assistant-bubble-border: color-mix(in oklab, var(--border-strong) 58%, white 10%);
+  --assistant-bubble-streaming: color-mix(in oklab, var(--surface-strong) 78%, black 22%);
+  --primary: #0ea5e9;
+  --primary-foreground: #041521;
+  --accent: #153149;
+  --accent-foreground: #eaf7ff;
+  --border: #21465d;
+  --border-strong: #2e6483;
+  --text: oklch(0.95 0.01 255);
+  --text-muted: #9cb8cb;
+  --text-subtle: #7392a8;
+  --focus-ring: #0ea5e9;
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface-elevated);
+  --popover-foreground: var(--text);
+  --secondary: var(--panel);
+  --secondary-foreground: var(--text);
+  --muted: var(--background-muted);
+  --muted-foreground: var(--text-muted);
   --destructive: oklch(0.64 0.21 25);
-  --border: oklch(0.34 0.01 255);
-  --input: oklch(0.34 0.01 255);
-  --ring: oklch(0.7 0.13 255);
+  --input: var(--border);
+  --ring: var(--focus-ring);
   --file-link: #83c3ff;
   --file-link-hover: #a7d6ff;
   --badge-success-bg: rgb(52 211 153 / 0.2);
@@ -75,6 +103,10 @@
 @theme inline {
   --font-mono: var(--default-mono-font-family);
   --color-background: var(--background);
+  --color-background-muted: var(--background-muted);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-strong: var(--surface-strong);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -90,8 +122,14 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+  --color-panel: var(--panel);
+  --color-panel-muted: var(--panel-muted);
   --radius-sm: calc(var(--radius) - 0.25rem);
   --radius-md: calc(var(--radius) - 0.125rem);
   --radius-lg: var(--radius);
@@ -395,9 +433,9 @@
 
   html[data-theme="light"] .cc-assistant-bubble,
   html[data-theme="light"] .cc-assistant-bubble[class] {
-    border: 0 !important;
-    background: #f1f2f6 !important;
-    color: #18212b !important;
+    border: 1px solid var(--assistant-bubble-border) !important;
+    background: var(--assistant-bubble) !important;
+    color: var(--foreground) !important;
     box-shadow: none !important;
   }
 
@@ -499,9 +537,9 @@
 
   html[data-theme="dark"] .cc-assistant-bubble,
   html[data-theme="dark"] .cc-assistant-bubble[class] {
-    border: 0 !important;
-    background: #2b3138 !important;
-    color: var(--card-foreground) !important;
+    border: 1px solid var(--assistant-bubble-border) !important;
+    background: var(--assistant-bubble) !important;
+    color: var(--foreground) !important;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
   }
 
@@ -509,7 +547,7 @@
   html[data-theme="light"] .cc-streaming-bubble[class] {
     --cc-streaming-border-rest: rgba(22, 119, 235, 0.18);
     --cc-streaming-border-active: rgba(22, 119, 235, 0.58);
-    background: #e9edf6 !important;
+    background: var(--assistant-bubble-streaming) !important;
     box-shadow: none !important;
   }
 
@@ -517,7 +555,7 @@
   html[data-theme="dark"] .cc-streaming-bubble[class] {
     --cc-streaming-border-rest: rgba(130, 182, 242, 0.2);
     --cc-streaming-border-active: rgba(130, 182, 242, 0.56);
-    background: #333c47 !important;
+    background: var(--assistant-bubble-streaming) !important;
     box-shadow: none !important;
   }
 

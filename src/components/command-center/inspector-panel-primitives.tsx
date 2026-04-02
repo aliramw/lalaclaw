@@ -197,7 +197,7 @@ export function DataList<TItem = any>({
 
 export function TimelineDetailCard({ title, children, emptyText }: TimelineDetailCardProps) {
   return (
-    <section className="space-y-1.5">
+    <section className="cc-inspector-section-card space-y-2 rounded-[20px] border border-border/70 bg-[var(--surface-elevated)] px-3.5 py-3 shadow-none">
       <div className="text-left text-xs font-medium text-muted-foreground">{title}</div>
       {children || <PanelEmpty text={emptyText} compact />}
     </section>
@@ -316,11 +316,11 @@ export function EnvironmentSectionCard({
       </div>
       {!collapsed ? (
         wrapContent ? (
-          <CardSurface className="overflow-hidden rounded-2xl border-border/70 bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="cc-inspector-section-card overflow-hidden rounded-[20px] border border-border/70 bg-[var(--surface-elevated)] shadow-none">
             <CardContentSurface className="space-y-2 px-3.5 py-3">
               {children}
             </CardContentSurface>
-          </CardSurface>
+          </div>
         ) : (
           <div className="space-y-2">{children}</div>
         )

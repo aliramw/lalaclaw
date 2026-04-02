@@ -208,6 +208,14 @@ describe("InspectorPanel", () => {
     expect(getOfficialOpenClawDocUrl("install", "fr")).toBe("https://docs.openclaw.ai/install");
   });
 
+  it("renders the refreshed inspector shell and tab rail", async () => {
+    const { container } = renderWithTooltip(<TestHarness />);
+
+    expect(container.querySelector(".cc-inspector-shell")).toBeInTheDocument();
+    expect(container.querySelector(".cc-inspector-tabs")).toBeInTheDocument();
+    expect(container.querySelector(".cc-inspector-section-card")).toBeInTheDocument();
+  });
+
   it("renders timeline details and switches tabs", async () => {
     renderWithTooltip(<TestHarness />);
     const user = userEvent.setup();
