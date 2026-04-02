@@ -109,6 +109,8 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 - Manual/equivalent validation:
   - reviewed existing shell and theme surfaces in `src/index.css`, `src/App.tsx`, `src/components/app-shell/app-split-layout.tsx`, `src/components/command-center/chat-panel.tsx`, `src/components/command-center/inspector-panel.tsx`, and shared UI primitives before locking the design direction
   - verified that the new visual rules were mirrored into `dev-spec/frontend-visual-spec.md`
+  - follow-up assistant-bubble refinements stayed on semantic theme tokens and added a subtle border rule after manual light-mode review showed the warmer fill blending too far into the chat-stage background
+  - follow-up shell cleanup removed a redundant framed chat-header container and unified the top-right utility controls under one shared shell utility treatment after manual review flagged mismatched heights and background surfaces
 - Reviewer/sign-off:
   - pending human review before implementation begins
 - Follow-up expectation:

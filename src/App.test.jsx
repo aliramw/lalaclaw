@@ -664,6 +664,35 @@ describe("App", () => {
     expect(settingsTrigger).not.toHaveClass("focus-visible:ring-ring/50");
   });
 
+  it("uses one unified shell utility system for the top-right controls", async () => {
+    stubFetchWithAccessState(async (input) => {
+      if (String(input).startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+      return mockJsonResponse({ ok: true });
+    });
+
+    render(
+      <I18nProvider>
+        <App />
+      </I18nProvider>,
+    );
+
+    await findComposer();
+
+    const languageButton = screen.getByRole("button", { name: "切换语言" });
+    const shortcutButton = screen.getByRole("button", { name: "快捷键提示" });
+    const settingsButton = screen.getByRole("button", { name: "打开个人设置" });
+    const themeSystemButton = screen.getByRole("button", { name: "跟随系统" });
+    const themeGroup = themeSystemButton.closest(".cc-shell-utility-pill");
+
+    expect(languageButton).toHaveClass("cc-shell-utility-pill", "h-10", "bg-[var(--surface)]");
+    expect(shortcutButton).toHaveClass("cc-shell-utility-button", "h-10", "w-10", "bg-[var(--surface)]");
+    expect(settingsButton).toHaveClass("cc-shell-utility-button", "h-10", "w-10", "bg-[var(--surface)]");
+    expect(themeGroup).toBeInTheDocument();
+    expect(themeGroup).toHaveClass("cc-shell-utility-pill", "h-10", "bg-[var(--surface)]");
+  });
+
   it("toggles the dev workspace badge between expanded and one-line collapsed states", async () => {
     globalThis.__LALACLAW_DEV_INFO__ = {
       branch: "feat/init-autostart",

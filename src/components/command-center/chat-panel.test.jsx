@@ -217,7 +217,41 @@ describe("ChatPanel", () => {
 
     expect(container.querySelector(".cc-chat-stage")).toBeInTheDocument();
     expect(container.querySelector(".cc-chat-empty-state")).toBeInTheDocument();
-    expect(container.querySelector(".cc-chat-composer-shell")).toBeInTheDocument();
+    const composerShell = container.querySelector(".cc-chat-composer-shell");
+    expect(composerShell).toBeInTheDocument();
+    expect(composerShell).not.toHaveClass("shadow-[0_18px_36px_rgba(15,23,42,0.08)]");
+  });
+
+  it("keeps the chat header lightweight when the session overview is present", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+          sessionOverview={<div data-testid="session-overview-stub">overview</div>}
+        />
+      </TooltipProvider>,
+    );
+
+    const header = container.querySelector(".cc-chat-stage-header");
+    const headerShell = container.querySelector(".cc-chat-stage-header > div");
+    expect(screen.getByTestId("session-overview-stub")).toBeInTheDocument();
+    expect(header).toBeInTheDocument();
+    expect(headerShell).toBeInTheDocument();
+    expect(header).not.toHaveClass("px-2");
+    expect(headerShell).not.toHaveClass("px-2");
+    expect(headerShell).not.toHaveClass("rounded-[24px]");
+    expect(headerShell).not.toHaveClass("border");
+    expect(headerShell).not.toHaveClass("bg-[var(--surface-elevated)]");
   });
 
   it("renders scroll buttons for overflowing tabs and scrolls the tab rail", async () => {

@@ -68,6 +68,9 @@ describe("surface primitives", () => {
     };
     const rootBlock = readRuleBlock(":root");
     const darkBlock = readRuleBlock(".dark");
+    const lightAssistantBubbleRule = css.match(/html\[data-theme="light"\]\s+\.cc-assistant-bubble[\s\S]*?border:\s*([^;]+);[\s\S]*?background:\s*([^;]+);[\s\S]*?color:\s*([^;]+);/m);
+    const darkAssistantBubbleRule = css.match(/html\[data-theme="dark"\]\s+\.cc-assistant-bubble[\s\S]*?border:\s*([^;]+);[\s\S]*?background:\s*([^;]+);[\s\S]*?color:\s*([^;]+);/m);
+    const lightStreamingBubbleRule = css.match(/html\[data-theme="light"\]\s+\.cc-streaming-bubble[\s\S]*?background:\s*([^;]+);/m);
 
     const lightButton = light.getByRole("button", { name: "Send" });
     const darkButton = dark.getByRole("button", { name: "Send" });
@@ -88,6 +91,9 @@ describe("surface primitives", () => {
     expect(rootBlock).toMatch(/--surface:\s*#fffaf1;/);
     expect(rootBlock).toMatch(/--surface-elevated:\s*#fffdf8;/);
     expect(rootBlock).toMatch(/--panel-muted:\s*#f1e7d7;/);
+    expect(rootBlock).toMatch(/--assistant-bubble:\s*color-mix\(in oklab, var\(--surface-elevated\) 72%, var\(--panel\) 28%\);/);
+    expect(rootBlock).toMatch(/--assistant-bubble-border:\s*color-mix\(in oklab, var\(--border-strong\) 42%, var\(--surface-elevated\) 58%\);/);
+    expect(rootBlock).toMatch(/--assistant-bubble-streaming:\s*color-mix\(in oklab, var\(--surface-strong\) 78%, var\(--surface\) 22%\);/);
     expect(rootBlock).toMatch(/--card:\s*var\(--surface\);/);
     expect(rootBlock).toMatch(/--popover:\s*var\(--surface-elevated\);/);
     expect(rootBlock).toMatch(/--secondary:\s*var\(--panel\);/);
@@ -98,6 +104,16 @@ describe("surface primitives", () => {
     expect(darkBlock).toMatch(/--surface-elevated:\s*#13283b;/);
     expect(darkBlock).toMatch(/--panel-muted:\s*#0f2739;/);
     expect(darkBlock).toMatch(/--focus-ring:\s*#0ea5e9;/);
+    expect(darkBlock).toMatch(/--assistant-bubble:\s*color-mix\(in oklab, var\(--surface-elevated\) 82%, black 18%\);/);
+    expect(darkBlock).toMatch(/--assistant-bubble-border:\s*color-mix\(in oklab, var\(--border-strong\) 58%, white 10%\);/);
+    expect(darkBlock).toMatch(/--assistant-bubble-streaming:\s*color-mix\(in oklab, var\(--surface-strong\) 78%, black 22%\);/);
+    expect(lightAssistantBubbleRule?.[1]?.trim()).toBe("1px solid var(--assistant-bubble-border) !important");
+    expect(lightAssistantBubbleRule?.[2]?.trim()).toBe("var(--assistant-bubble) !important");
+    expect(lightAssistantBubbleRule?.[3]?.trim()).toBe("var(--foreground) !important");
+    expect(darkAssistantBubbleRule?.[1]?.trim()).toBe("1px solid var(--assistant-bubble-border) !important");
+    expect(darkAssistantBubbleRule?.[2]?.trim()).toBe("var(--assistant-bubble) !important");
+    expect(darkAssistantBubbleRule?.[3]?.trim()).toBe("var(--foreground) !important");
+    expect(lightStreamingBubbleRule?.[1]?.trim()).toBe("var(--assistant-bubble-streaming) !important");
 
     expect(lightButton).toHaveClass("rounded-lg", "bg-primary", "text-primary-foreground", "focus-visible:ring-ring", "focus-visible:ring-offset-2", "focus-visible:ring-offset-background");
     expect(darkButton).toHaveClass("rounded-lg", "bg-primary", "text-primary-foreground", "focus-visible:ring-ring", "focus-visible:ring-offset-2", "focus-visible:ring-offset-background");

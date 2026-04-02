@@ -3869,8 +3869,8 @@ export function ChatPanel({
           />
         ) : null}
         <div className="cc-chat-stage flex h-full min-h-0 flex-col rounded-[24px] bg-transparent">
-          <div className="cc-chat-stage-header shrink-0 px-2 pb-2">
-            <div className="relative rounded-[24px] border border-border/60 bg-[var(--surface-elevated)] px-4 pt-3 pb-3 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+          <div className="cc-chat-stage-header shrink-0 pb-2">
+            <div className="relative pt-2 pb-1">
               <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
@@ -3930,7 +3930,7 @@ export function ChatPanel({
                 </div>
               </div>
 
-              {sessionOverview ? <div className="mt-2">{sessionOverview}</div> : null}
+              {sessionOverview ? <div className="mt-2 border-t border-border/45 pt-2">{sessionOverview}</div> : null}
             </div>
           </div>
           <div className="cc-chat-stage-body min-h-0 flex-1 overflow-hidden rounded-[24px] border border-border/55 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]">
@@ -3968,7 +3968,7 @@ export function ChatPanel({
             </div>
           </div>
 
-          <div className="cc-chat-composer-shell mt-3 shrink-0 rounded-[24px] border border-border/70 bg-[var(--surface-elevated)] p-3 shadow-[0_18px_36px_rgba(15,23,42,0.08)]">
+          <div className="cc-chat-composer-shell mt-3 shrink-0 rounded-[24px] border border-border/70 bg-[var(--surface-elevated)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.26)]">
             <input
               ref={attachmentInputRef}
               type="file"

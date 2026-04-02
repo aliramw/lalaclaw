@@ -9,6 +9,9 @@
   --surface-strong: #f3e7d3;
   --panel: #fbf4e7;
   --panel-muted: #f1e7d7;
+  --assistant-bubble: color-mix(in oklab, var(--surface-elevated) 72%, var(--panel) 28%);
+  --assistant-bubble-border: color-mix(in oklab, var(--border-strong) 42%, var(--surface-elevated) 58%);
+  --assistant-bubble-streaming: color-mix(in oklab, var(--surface-strong) 78%, var(--surface) 22%);
   --primary: #b6722f;
   --primary-foreground: #fff9f1;
   --accent: #ede1cd;
@@ -56,6 +59,9 @@
   --surface-strong: #18354d;
   --panel: #0d2233;
   --panel-muted: #0f2739;
+  --assistant-bubble: color-mix(in oklab, var(--surface-elevated) 82%, black 18%);
+  --assistant-bubble-border: color-mix(in oklab, var(--border-strong) 58%, white 10%);
+  --assistant-bubble-streaming: color-mix(in oklab, var(--surface-strong) 78%, black 22%);
   --primary: #0ea5e9;
   --primary-foreground: #041521;
   --accent: #153149;
@@ -427,9 +433,9 @@
 
   html[data-theme="light"] .cc-assistant-bubble,
   html[data-theme="light"] .cc-assistant-bubble[class] {
-    border: 0 !important;
-    background: #f1f2f6 !important;
-    color: #18212b !important;
+    border: 1px solid var(--assistant-bubble-border) !important;
+    background: var(--assistant-bubble) !important;
+    color: var(--foreground) !important;
     box-shadow: none !important;
   }
 
@@ -531,9 +537,9 @@
 
   html[data-theme="dark"] .cc-assistant-bubble,
   html[data-theme="dark"] .cc-assistant-bubble[class] {
-    border: 0 !important;
-    background: #2b3138 !important;
-    color: var(--card-foreground) !important;
+    border: 1px solid var(--assistant-bubble-border) !important;
+    background: var(--assistant-bubble) !important;
+    color: var(--foreground) !important;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
   }
 
@@ -541,7 +547,7 @@
   html[data-theme="light"] .cc-streaming-bubble[class] {
     --cc-streaming-border-rest: rgba(22, 119, 235, 0.18);
     --cc-streaming-border-active: rgba(22, 119, 235, 0.58);
-    background: #e9edf6 !important;
+    background: var(--assistant-bubble-streaming) !important;
     box-shadow: none !important;
   }
 
@@ -549,7 +555,7 @@
   html[data-theme="dark"] .cc-streaming-bubble[class] {
     --cc-streaming-border-rest: rgba(130, 182, 242, 0.2);
     --cc-streaming-border-active: rgba(130, 182, 242, 0.56);
-    background: #333c47 !important;
+    background: var(--assistant-bubble-streaming) !important;
     box-shadow: none !important;
   }
 
