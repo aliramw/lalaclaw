@@ -126,10 +126,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.24-1`：
+如果你想切换到某个指定发布版本，比如 `2026.4.2`：
 
 ```bash
-npm install -g lalaclaw@2026.3.24-1
+npm install -g lalaclaw@2026.4.2
 lalaclaw init
 ```
 
@@ -143,12 +143,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切换到某个指定发布版本，比如 `2026.3.24-1`：
+如果你想切换到某个指定发布版本，比如 `2026.4.2`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.24-1
+git checkout 2026.4.2
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -194,7 +194,7 @@ npm run dev:all
 curl http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
 curl -X POST http://127.0.0.1:3000/api/dev/lalaclaw/update-mock \
   -H 'Content-Type: application/json' \
-  -d '{"enabled":true,"stableVersion":"2026.3.24-1"}'
+  -d '{"enabled":true,"stableVersion":"2026.4.2"}'
 curl -X DELETE http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
 ```
 

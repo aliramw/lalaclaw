@@ -568,6 +568,7 @@ function FilesTab({
     currentSessionUser,
     currentWorkspaceRoot,
     hasWorkspaceFilter,
+    messages.common.requestFailed,
     messages.inspector.workspaceTree,
     onTrackSessionFiles,
     workspaceFilter,

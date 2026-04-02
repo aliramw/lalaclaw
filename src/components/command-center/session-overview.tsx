@@ -974,7 +974,7 @@ const shellUtilityButtonClassName =
 const shellUtilityPillClassName =
   "cc-shell-utility-pill inline-flex h-10 items-center rounded-full border border-border/70 bg-[var(--surface)] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
-function ThemeToggle({ onChange, resolvedTheme, value }: { onChange?: (theme: string) => void; resolvedTheme?: string; value?: string }) {
+function ThemeToggle({ onChange, value }: { onChange?: (theme: string) => void; value?: string }) {
   const { messages } = useI18n();
   const options = [
     {
@@ -2114,7 +2114,7 @@ export function SessionOverview({
     <div className="flex h-9 shrink-0 items-center">
       <div className="flex h-9 items-center gap-2">
         <LanguageToggle />
-        <ThemeToggle value={theme} resolvedTheme={resolvedTheme} onChange={onThemeChange} />
+        <ThemeToggle value={theme} onChange={onThemeChange} />
         <ShortcutHelpButton composerSendMode={composerSendMode} />
         {accessMode === "token" && onAccessLogout ? <AccessLogoutButton loggingOut={accessLoggingOut} onLogout={onAccessLogout} /> : null}
         {extraControls}

@@ -9,6 +9,16 @@ const { buildCanonicalImSessionUser, getImSessionType, isImBootstrapSessionUser:
 const DUPLICATE_CONVERSATION_TURN_WINDOW_MS = 90 * 1000;
 const DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS = 5 * 1000;
 const DUPLICATE_CONVERSATION_LONG_TURN_WINDOW_MS = 10 * 60 * 1000;
+const UNTRUSTED_METADATA_SENTINELS = [
+    /^Conversation info \(untrusted metadata\):/i,
+    /^Sender \(untrusted metadata\):/i,
+    /^Thread starter \(untrusted, for context\):/i,
+    /^Replied message \(untrusted, for context\):/i,
+    /^Forwarded message context \(untrusted metadata\):/i,
+    /^Chat history since last reply \(untrusted, for context\):/i,
+];
+const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
+const ABORTED_RUN_NOTE_LINE = /^Note:\s*The previous agent run was aborted by the user\b/i;
 const DEFAULT_WORKSPACE_FILE_LIMIT = 200;
 const DEFAULT_FRONTEND_URL = 'http://127.0.0.1:5173';
 const LIVE_CONFIG_TIMEOUT_MS = 1500;
@@ -22,8 +32,106 @@ const LALACLAW_VERSION = (() => {
         return '';
     }
 })();
-function normalizeConversationContent(content = '') {
+function cleanWrappedUserConversationContent(text = '') {
+    let lines = String(text || '').trim().split('\n');
+    const stripLeadingBlankLines = () => {
+        while (lines.length && !String(lines[0] || '').trim()) {
+            lines.shift();
+        }
+    };
+    const isMetadataSentinelLine = (value = '') => {
+        const trimmed = String(value || '').trim();
+        return UNTRUSTED_METADATA_SENTINELS.some((pattern) => pattern.test(trimmed));
+    };
+    const stripLeadingSystemWrapperBlock = () => {
+        if (!/^System:/i.test(String(lines[0] || '').trim())) {
+            return false;
+        }
+        let index = 0;
+        while (index < lines.length) {
+            const trimmed = String(lines[index] || '').trim();
+            if (!trimmed || /^System:/i.test(trimmed)) {
+                index += 1;
+                continue;
+            }
+            break;
+        }
+        let nextIndex = index;
+        while (nextIndex < lines.length && !String(lines[nextIndex] || '').trim()) {
+            nextIndex += 1;
+        }
+        if (!isMetadataSentinelLine(lines[nextIndex])) {
+            return false;
+        }
+        lines.splice(0, nextIndex);
+        return true;
+    };
+    const stripLeadingMetadataBlock = () => {
+        const firstLine = String(lines[0] || '').trim();
+        if (!isMetadataSentinelLine(firstLine)) {
+            return false;
+        }
+        lines.shift();
+        stripLeadingBlankLines();
+        if (/^```(?:json)?\s*$/i.test(String(lines[0] || '').trim())) {
+            lines.shift();
+            while (lines.length && !/^```\s*$/.test(String(lines[0] || '').trim())) {
+                lines.shift();
+            }
+            if (lines.length && /^```\s*$/.test(String(lines[0] || '').trim())) {
+                lines.shift();
+            }
+        }
+        stripLeadingBlankLines();
+        return true;
+    };
+    stripLeadingBlankLines();
+    while (lines.length
+        && /^System:\s*\[[^\]]+\]\s*Exec (?:completed|failed)\s*\([^)]+\)\s*::/i.test(String(lines[0] || '').trim())) {
+        lines.shift();
+        stripLeadingBlankLines();
+    }
+    while (stripLeadingSystemWrapperBlock()) {
+        stripLeadingBlankLines();
+    }
+    while (lines.length && ABORTED_RUN_NOTE_LINE.test(String(lines[0] || '').trim())) {
+        lines.shift();
+        stripLeadingBlankLines();
+    }
+    while (stripLeadingMetadataBlock()) {
+        // Strip stacked metadata blocks at the head of wrapped user messages.
+    }
+    while (lines.length && MESSAGE_ID_LINE.test(String(lines[0] || '').trim())) {
+        lines.shift();
+        stripLeadingBlankLines();
+    }
+    return lines
+        .join('\n')
+        .trim()
+        .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+[^\]]*?GMT[+-]\d+\]\s*/i, '')
+        .replace(/^(?:ou_[a-z0-9_-]+|on_[a-z0-9_-]+|oc_[a-z0-9_-]+)\s*:\s*/i, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+function looksLikeWrappedUserMessage(content = '') {
     return String(content || '')
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .some((line) => {
+        const trimmed = String(line || '').trim();
+        return trimmed && (ABORTED_RUN_NOTE_LINE.test(trimmed)
+            || MESSAGE_ID_LINE.test(trimmed)
+            || UNTRUSTED_METADATA_SENTINELS.some((pattern) => pattern.test(trimmed))
+            || /^\[Queued messages while agent was busy\]\s*$/i.test(trimmed)
+            || /^System:/i.test(trimmed));
+    });
+}
+function normalizeConversationContent(content = '', role = '') {
+    const normalizedRole = String(role || '').trim().toLowerCase();
+    const text = normalizedRole === 'user'
+        ? cleanWrappedUserConversationContent(content)
+        : String(content || '');
+    return text
         .replace(/\s+/g, ' ')
         .trim();
 }
@@ -112,7 +220,7 @@ function getConversationAttachmentNames(entry) {
 }
 function getConversationComparableText(entry) {
     const syntheticPrompt = extractSyntheticAttachmentPrompt(entry?.content);
-    return normalizeConversationContent(syntheticPrompt.baseContent || entry?.content || '');
+    return normalizeConversationContent(syntheticPrompt.baseContent || entry?.content || '', entry?.role || '');
 }
 function shouldCollapseSyntheticAttachmentDuplicate(previous, next) {
     if (previous?.role !== 'user' || next?.role !== 'user') {
@@ -148,6 +256,18 @@ function choosePreferredSyntheticAttachmentTurn(previous, next) {
     return next;
 }
 function choosePreferredReplayTurn(previous, next) {
+    const previousComparableText = getConversationComparableText(previous);
+    const nextComparableText = getConversationComparableText(next);
+    if (previous.role === 'user'
+        && next.role === 'user'
+        && previousComparableText
+        && previousComparableText === nextComparableText) {
+        const previousWrapped = looksLikeWrappedUserMessage(previous.content);
+        const nextWrapped = looksLikeWrappedUserMessage(next.content);
+        if (previousWrapped !== nextWrapped) {
+            return nextWrapped ? previous : next;
+        }
+    }
     const previousHasAttachments = Boolean(previous.attachments?.length);
     const nextHasAttachments = Boolean(next.attachments?.length);
     if (previousHasAttachments !== nextHasAttachments) {

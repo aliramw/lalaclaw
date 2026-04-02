@@ -1208,6 +1208,7 @@ export function InspectorFilesPanel({
     currentSessionUser,
     currentWorkspaceRoot,
     hasWorkspaceFilter,
+    messages.common.requestFailed,
     messages.inspector.workspaceTree,
     workspaceFilter,
   ]);

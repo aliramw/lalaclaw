@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.4.2]
+
+### Added
+
+- Added a broader chat-state foundation that preserves settled dashboard transcripts, runtime pending state, prompt history, session identity, and storage/UI slices more explicitly across controller and persistence boundaries.
+- Added historical tool activity cards in chat and a shared timeline surface in the inspector, with localized timeline labels and stronger regressions for streaming tool activity anchors.
+- Added new Inspector environment surfaces for OpenClaw onboarding, operations, config, updates, and richer file actions, along with backend attachment materialization and transcript coverage to support those flows.
+- Added a command-center visual refresh baseline and implementation work that introduced a staged shell token system, refined workspace surfaces, and clearer inspector hierarchy.
+- Added broader regression coverage across App-level chat/session flows, runtime snapshot recovery, dashboard/openclaw client services, release-sensitive Vite/build behavior, and an end-to-end chat session stability spec.
+
+### Changed
+
+- Refactored the command center and app persistence architecture into smaller controller, state, storage, and component modules so chat/session behavior is easier to reason about without changing the main development entrypoints.
+- Reworked chat and dashboard session handling so background IM tabs, delivery-backed sessions, media attachments, and recovered conversations stay more consistent with OpenClaw dashboard/runtime data.
+- Expanded project governance and planning docs, including the AI-assisted quality plan, visual refresh specs, chat/tool-card design plans, and architecture-contract tooling.
+- Updated README and localized quick-start version examples to `2026.4.2`.
+
+### Fixed
+
+- Fixed several chat correctness regressions around wrapped system-note deduplication, OpenClaw turn finalization, pending-user restoration after snapshot advances, and recovery/render-state stability across session switches.
+- Fixed streaming and UI polish issues affecting tool activity rendering, shell focus rings, token assertions, settings-trigger accessibility polish, and fallback localization for chat/file preview states.
+- Fixed Node.js 20/22-sensitive test timing issues and restored higher-signal command-center boundaries after the recent refactors.
+
 ## [2026.3.24-1]
 
 ### Added

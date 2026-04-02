@@ -130,6 +130,56 @@ export function mergeTaskRelationships(
   return [...merged.values()].sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0));
 }
 
+function getTaskTimelineEntryId(entry: unknown) {
+  return String(entry && typeof entry === "object" ? (entry as Record<string, unknown>).id || "" : "").trim();
+}
+
+function getTaskTimelineEntryTimestamp(entry: unknown) {
+  if (!entry || typeof entry !== "object") {
+    return 0;
+  }
+
+  const value = Number((entry as Record<string, unknown>).timestamp || 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+export function mergeTaskTimeline(previousTimeline: unknown[] = [], nextTimeline: unknown[] = []) {
+  const previousById = new Map(
+    (previousTimeline || [])
+      .filter((entry) => getTaskTimelineEntryId(entry))
+      .map((entry) => [getTaskTimelineEntryId(entry), entry]),
+  );
+
+  return [...(nextTimeline || [])]
+    .map((entry) => {
+      const entryId = getTaskTimelineEntryId(entry);
+      if (!entryId || !entry || typeof entry !== "object") {
+        return entry;
+      }
+
+      const previousEntry = previousById.get(entryId);
+      if (!previousEntry || typeof previousEntry !== "object") {
+        return entry;
+      }
+
+      const nextRecord = entry as Record<string, unknown>;
+      const previousRecord = previousEntry as Record<string, unknown>;
+      const nextTools = Array.isArray(nextRecord.tools) ? nextRecord.tools : [];
+      const previousTools = Array.isArray(previousRecord.tools) ? previousRecord.tools : [];
+      const nextToolsSummary = String(nextRecord.toolsSummary || "").trim();
+      const previousToolsSummary = String(previousRecord.toolsSummary || "").trim();
+
+      return {
+        ...previousRecord,
+        ...nextRecord,
+        tools: nextTools.length ? nextTools : previousTools,
+        toolsSummary: nextToolsSummary || previousToolsSummary,
+        timestamp: getTaskTimelineEntryTimestamp(entry) || getTaskTimelineEntryTimestamp(previousEntry),
+      };
+    })
+    .sort((left, right) => getTaskTimelineEntryTimestamp(left) - getTaskTimelineEntryTimestamp(right));
+}
+
 function setIfChanged<T>(setter: Dispatch<SetStateAction<T>>, nextValue: T) {
   setter((current) => (areJsonEqual(current, nextValue) ? current : nextValue));
 }
@@ -1089,7 +1139,10 @@ export function useRuntimeSnapshot({
     setIfChanged(setAvailableModels, nextState.availableModels || []);
     setIfChanged(setAvailableAgents, nextState.availableAgents || []);
     setIfChanged(setTaskRelationships, nextState.taskRelationships || []);
-    setIfChanged(setTaskTimeline, nextState.taskTimeline || []);
+    setTaskTimeline((current) => {
+      const merged = mergeTaskTimeline(current, nextState.taskTimeline || []);
+      return areJsonEqual(current, merged) ? current : merged;
+    });
     setIfChanged(setFiles, nextState.files || []);
     setIfChanged(setArtifacts, nextState.artifacts || []);
     setIfChanged(setSnapshots, nextState.snapshots || []);
@@ -1275,7 +1328,10 @@ export function useRuntimeSnapshot({
     } else if (nextConversationKey !== currentConversationKey) {
       setIfChanged(setTaskRelationships, []);
     }
-    setIfChanged(setTaskTimeline, snapshot.taskTimeline || []);
+    setTaskTimeline((current) => {
+      const merged = mergeTaskTimeline(current, snapshot.taskTimeline || []);
+      return areJsonEqual(current, merged) ? current : merged;
+    });
     setFilesFromSnapshot(snapshot.files || []);
     setIfChanged(setArtifacts, snapshot.artifacts || []);
     setIfChanged(setSnapshots, snapshot.snapshots || []);
@@ -1541,7 +1597,10 @@ export function useRuntimeSnapshot({
     }
 
     if (payload.type === 'taskTimeline.sync') {
-      setIfChanged(setTaskTimeline, payload.taskTimeline || []);
+      setTaskTimeline((current) => {
+        const merged = mergeTaskTimeline(current, payload.taskTimeline || []);
+        return areJsonEqual(current, merged) ? current : merged;
+      });
       return;
     }
 
@@ -1639,7 +1698,7 @@ export function useRuntimeSnapshot({
         inflightRuntimeRequestRef.current = null;
       }
     }
-  }, [applySnapshot]);
+  }, [applySnapshot, i18n.common.requestFailed, i18n.common.runtimeSnapshotFailed]);
 
   useEffect(() => {
     if (wsConnected) {

@@ -117,10 +117,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-`2026.3.24-1` のような特定の公開版を使いたい場合:
+`2026.4.2` のような特定の公開版を使いたい場合:
 
 ```bash
-npm install -g lalaclaw@2026.3.24-1
+npm install -g lalaclaw@2026.4.2
 lalaclaw init
 ```
 
@@ -139,7 +139,7 @@ npm run lalaclaw:start
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.3.24-1
+git checkout 2026.4.2
 npm ci
 npm run build
 npm run lalaclaw:start

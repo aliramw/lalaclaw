@@ -109,8 +109,13 @@ function restoreMissingUserBeforeMatchingAssistant(
 
   const localAssistant = localMessages.at(-1);
   const localUser = localMessages.at(-2);
+  const localAssistantId = String(localAssistant?.id || "").trim();
   const matchingAssistantIndex = snapshotMessages.findIndex((message) =>
-    message?.role === "assistant" && areEquivalentConversationMessages(message, localAssistant),
+    message?.role === "assistant" && (
+      (localAssistantId && String(message?.id || "").trim() === localAssistantId)
+      || areEquivalentConversationMessages(message, localAssistant)
+      || shouldCollapseAssistantPrefixReplay(message, localAssistant)
+    ),
   );
 
   if (
@@ -125,6 +130,12 @@ function restoreMissingUserBeforeMatchingAssistant(
   const localUserTimestamp = getConversationTimestamp(localUser);
   const localAssistantTimestamp = getConversationTimestamp(localAssistant);
   const snapshotAssistantTimestamp = getConversationTimestamp(snapshotMessages[matchingAssistantIndex]);
+  const snapshotAssistantId = String(snapshotMessages[matchingAssistantIndex]?.id || "").trim();
+  const sameAssistantMessageId = Boolean(
+    localAssistantId
+    && snapshotAssistantId
+    && localAssistantId === snapshotAssistantId,
+  );
   const hasTightLocalAdjacency = Boolean(
     localUserTimestamp
       && localAssistantTimestamp
@@ -137,6 +148,8 @@ function restoreMissingUserBeforeMatchingAssistant(
   }
 
   if (
+    !sameAssistantMessageId
+    &&
     snapshotAssistantTimestamp
     && localAssistantTimestamp
     && Math.abs(snapshotAssistantTimestamp - localAssistantTimestamp) > DUPLICATE_CONVERSATION_ASSISTANT_REPLAY_GAP_MS

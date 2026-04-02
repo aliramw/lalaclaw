@@ -4,6 +4,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createLalaClawUpdateService } from './lalaclaw-update.ts';
 
+const workspacePackageVersion = JSON.parse(
+  fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'),
+).version;
+
 describe('createLalaClawUpdateService', () => {
   const tempDirs = [];
 
@@ -53,7 +57,7 @@ describe('createLalaClawUpdateService', () => {
       hasRegistryUpdate: true,
       latestVersion: '2026.3.21-1',
     });
-    expect(result.workspaceVersion).toBe('2026.3.24-1');
+    expect(result.workspaceVersion).toBe(workspacePackageVersion);
     expect(result.updateAvailable).toBe(true);
     expect(result.stableTag).toBe('stable');
   });

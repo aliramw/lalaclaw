@@ -602,7 +602,7 @@ function DocxPreviewContent({ preview, resolvedTheme = "light" }: { preview: Pre
         container.innerHTML = "";
       }
     };
-  }, [preview?.contentUrl]);
+  }, [messages.inspector.previewErrors.docxFailed, preview?.contentUrl]);
 
   if (status === "error") {
     return (

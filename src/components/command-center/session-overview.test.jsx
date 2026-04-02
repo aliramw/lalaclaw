@@ -710,11 +710,11 @@ describe("SessionOverview", () => {
       </I18nProvider>,
     );
 
-    expect(await screen.findByRole("button", { name: "Switch language" })).toHaveClass("h-9");
-    expect(screen.getByRole("button", { name: "Follow system" }).parentElement).toHaveClass("h-9");
-    expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-8", "min-w-[2.5rem]");
-    expect(screen.getByRole("button", { name: "Light mode" })).toHaveClass("h-8", "min-w-[2.5rem]");
-    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveClass("h-8", "min-w-[2.5rem]");
+    expect(await screen.findByRole("button", { name: "Switch language" })).toHaveClass("h-10");
+    expect(screen.getByRole("button", { name: "Follow system" }).parentElement).toHaveClass("h-10");
+    expect(screen.getByRole("button", { name: "Follow system" })).toHaveClass("h-8", "min-w-[2.25rem]");
+    expect(screen.getByRole("button", { name: "Light mode" })).toHaveClass("h-8", "min-w-[2.25rem]");
+    expect(screen.getByRole("button", { name: "Dark mode" })).toHaveClass("h-8", "min-w-[2.25rem]");
   });
 
   it("localizes the lobster trigger aria label", () => {
