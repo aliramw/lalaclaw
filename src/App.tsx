@@ -26,9 +26,11 @@ const AppCardContent: any = CardContent;
 
 const desktopBreakpointQuery = "(min-width: 1280px)";
 const dragHandleWidth = 8;
+const minWideSplitLayoutWidth = 1120;
 const minChatPanelWidth = 560;
 const compactInspectorPanelMinWidth = 58;
 const compactInspectorPanelMaxWidth = 72;
+const compactSplitLayoutGap = 12;
 const compactChatPanelMinWidth = 220;
 const shouldBypassAccessGate = Boolean(import.meta.env?.MODE === "test" || import.meta.env?.VITEST);
 const pointerFocusDismissSelector = [
@@ -434,12 +436,13 @@ function AppContent() {
   } = useCommandCenter();
   const splitLayoutRef = useRef<HTMLElement | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
-  const [isWideLayout, setIsWideLayout] = useState(
+  const [viewportAllowsWideLayout, setViewportAllowsWideLayout] = useState(
     () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(desktopBreakpointQuery).matches : false),
   );
   const [isResizingPanels, setIsResizingPanels] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [splitLayoutWidth, setSplitLayoutWidth] = useState(0);
+  const isWideLayout = viewportAllowsWideLayout && (splitLayoutWidth <= 0 || splitLayoutWidth >= minWideSplitLayoutWidth);
 
   useEffect(() => {
     const devWorkspaceInfo = getDevWorkspaceInfo();
@@ -548,7 +551,7 @@ function AppContent() {
 
     const mediaQuery = window.matchMedia(desktopBreakpointQuery);
     const updateMatches = () => {
-      setIsWideLayout(mediaQuery.matches);
+      setViewportAllowsWideLayout(mediaQuery.matches);
     };
 
     updateMatches();
@@ -696,6 +699,7 @@ function AppContent() {
           gridTemplateColumns: `minmax(0, 1fr) ${dragHandleWidth}px ${resolvedInspectorPanelWidth}px`,
         }
         : {
+          columnGap: `${compactSplitLayoutGap}px`,
           gridTemplateColumns: `minmax(0, 1fr) ${compactInspectorPanelWidth}px`,
         }),
     [compactInspectorPanelWidth, isWideLayout, resolvedInspectorPanelWidth],
@@ -807,8 +811,8 @@ function AppContent() {
         className="h-dvh overflow-hidden bg-background text-foreground"
         aria-busy={switchingAgentOverlay || switchingModelOverlay ? "true" : "false"}
       >
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-3 overflow-hidden px-4 py-3">
-          <div className="cc-shell-chrome flex shrink-0 items-center justify-between gap-3 rounded-[28px] border border-border/70 bg-[var(--surface-elevated)] px-3 py-2 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col gap-2 overflow-hidden px-4 pt-2 pb-3">
+          <div className="cc-shell-chrome flex shrink-0 items-center justify-between gap-3 rounded-[20px] bg-transparent px-1 py-0.5">
             <div className="min-w-0 flex-1">
               <ChatTabsStrip
                 activeChatTabId={activeChatTabId}

@@ -29,10 +29,10 @@ export function AppSplitLayout({
   return (
     <main
       ref={splitLayoutRef}
-      className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden"
+      className="cc-workspace-layout-shell grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-[24px] border border-border/55 bg-[var(--surface-elevated)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
       style={splitLayoutStyle}
     >
-      <div className="cc-workspace-stage min-h-0 min-w-0 rounded-[30px] border border-border/60 bg-[var(--surface-elevated)] p-2 shadow-[0_22px_48px_rgba(15,23,42,0.08)]">
+      <div className="cc-workspace-stage min-h-0 min-w-0">
         {chatPanel}
       </div>
 
@@ -67,7 +67,7 @@ export function AppSplitLayout({
         </div>
       ) : null}
 
-      <div className="cc-inspector-stage flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-[28px] border border-border/55 bg-[var(--panel)] p-2 xl:min-w-[300px]">
+      <div className="cc-inspector-stage flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden xl:min-w-[300px] xl:border-l xl:border-border/45 xl:pl-4">
         {taskRelationshipsPanel}
         <div className="min-h-0 min-w-0 flex-1">
           {inspectorPanel}

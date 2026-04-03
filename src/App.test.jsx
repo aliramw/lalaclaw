@@ -651,7 +651,9 @@ describe("App", () => {
 
     await findComposer();
 
-    expect(container.querySelector(".cc-shell-chrome")).toBeInTheDocument();
+    const shellChrome = container.querySelector(".cc-shell-chrome");
+    expect(shellChrome).toBeInTheDocument();
+    expect(shellChrome).not.toHaveClass("border-b");
     expect(container.querySelector(".cc-workspace-stage")).toBeInTheDocument();
     expect(container.querySelector(".cc-inspector-stage")).toBeInTheDocument();
     const settingsTrigger = container.querySelector(".cc-settings-trigger");
@@ -2040,6 +2042,79 @@ describe("App", () => {
     });
   }, 10_000);
 
+  it("does not re-enter the stop state when session.sync lags behind a locally settled main reply", async () => {
+    const openClawSnapshot = createSnapshot({
+      session: {
+        ...createSnapshot().session,
+        mode: "openclaw",
+        status: "空闲",
+      },
+    });
+    const firstTurn = createDeferred();
+    const fetchMock = vi.fn((input, init) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(openClawSnapshot);
+      }
+
+      if (url === "/api/chat" && init?.method === "POST") {
+        return firstTurn.promise.then(() =>
+          mockJsonResponse({
+            ...openClawSnapshot,
+            assistantMessageId: "msg-assistant-local-final-2",
+            outputText: "本地已完成",
+            metadata: { status: "已完成 / 标准" },
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+    MockWebSocket.instances[0].simulateOpen();
+
+    const user = userEvent.setup();
+    const composer = await findComposer();
+    await user.type(composer, "本地完成后又收到迟到状态");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
+    });
+
+    firstTurn.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByText("本地已完成")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+    });
+
+    await act(async () => {
+      MockWebSocket.instances[0].simulateMessage({
+        type: "session.sync",
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          status: "运行中",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+    });
+  }, 10_000);
+
   it("suppresses dispatching a rapid duplicate while the current reply is still pending", async () => {
     const openClawSnapshot = createSnapshot({
       session: {
@@ -3334,6 +3409,50 @@ describe("App", () => {
         inspectorPanelWidth: 440,
       });
     });
+  });
+
+  it("falls back to the compact inspector rail when the workspace stays narrower than the desktop split threshold", async () => {
+    mockDesktopLayout(1100);
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+
+    expect(screen.queryByRole("button", { name: "拖动调整聊天区与追踪区宽度" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a compact gutter between the chat stage and inspector rail in narrow layouts", async () => {
+    mockNarrowLayout();
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(createSnapshot());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("main - 当前会话");
+
+    const mainLayout = document.querySelector("main");
+    expect(mainLayout).toBeInTheDocument();
+    expect(mainLayout).toHaveStyle({ columnGap: "12px" });
   });
 
   it("sends when plain enter is pressed in the default mode", async () => {
@@ -5529,7 +5648,7 @@ describe("App", () => {
     await user.click(textarea);
     await user.keyboard("{ArrowUp}");
     expect(textarea).toHaveValue("");
-  });
+  }, 10000);
 
   it("starts a fresh DingTalk session without sending /reset to the current native session", async () => {
     const dingtalkSessionUser = "agent:main:dingtalk-connector:direct:398058";

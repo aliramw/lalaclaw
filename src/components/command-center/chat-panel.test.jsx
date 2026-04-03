@@ -249,9 +249,97 @@ describe("ChatPanel", () => {
     expect(headerShell).toBeInTheDocument();
     expect(header).not.toHaveClass("px-2");
     expect(headerShell).not.toHaveClass("px-2");
+    expect(headerShell).not.toHaveClass("pt-2");
     expect(headerShell).not.toHaveClass("rounded-[24px]");
     expect(headerShell).not.toHaveClass("border");
     expect(headerShell).not.toHaveClass("bg-[var(--surface-elevated)]");
+  });
+
+  it("lets the composer rely on the input shell instead of wrapping it in a second framed card", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const composerShell = container.querySelector(".cc-chat-composer-shell");
+    expect(composerShell).toBeInTheDocument();
+    expect(composerShell).not.toHaveClass("rounded-[24px]");
+    expect(composerShell).not.toHaveClass("border");
+    expect(composerShell).not.toHaveClass("bg-[var(--surface-elevated)]");
+    expect(composerShell).not.toHaveClass("p-3");
+  });
+
+  it("keeps messages and composer inside one shared workspace shell", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const workspaceShell = container.querySelector(".cc-chat-workspace-shell");
+    const composerShell = container.querySelector(".cc-chat-composer-shell");
+    const bodyShell = container.querySelector(".cc-chat-stage-body");
+
+    expect(workspaceShell).toBeInTheDocument();
+    expect(workspaceShell).toContainElement(bodyShell);
+    expect(workspaceShell).toContainElement(composerShell);
+    expect(workspaceShell).toHaveClass("rounded-[22px]");
+    expect(workspaceShell).toHaveClass("border");
+    expect(bodyShell).not.toHaveClass("border");
+  });
+
+  it("keeps composer actions in a compact bottom toolbar instead of dropping them outside the input surface", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const composerShell = container.querySelector(".cc-chat-composer-shell");
+    const composerToolbar = container.querySelector(".cc-chat-composer-toolbar");
+
+    expect(composerShell).toBeInTheDocument();
+    expect(composerToolbar).toBeInTheDocument();
+    expect(composerShell).toContainElement(composerToolbar);
+    expect(composerToolbar).not.toHaveClass("border-t");
+    expect(composerToolbar).not.toHaveClass("md:justify-between");
   });
 
   it("renders scroll buttons for overflowing tabs and scrolls the tab rail", async () => {
@@ -2538,7 +2626,7 @@ describe("ChatPanel", () => {
     });
   });
 
-  it("keeps the outline height stable while the chat viewport scrolls", async () => {
+  it("recomputes the outline height while the chat viewport scrolls", async () => {
     const messageViewportRef = { current: null };
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       callback(0);
@@ -2600,7 +2688,9 @@ describe("ChatPanel", () => {
       messageViewportRef.current.dispatchEvent(new Event("scroll"));
     });
 
-    expect(aside.style.maxHeight).toBe("388px");
+    await waitFor(() => {
+      expect(aside.style.maxHeight).toBe("456px");
+    });
   });
 
   it("scrolls the chat viewport with a stable top offset when selecting an outline heading", async () => {
@@ -3968,6 +4058,48 @@ describe("ChatPanel", () => {
     expect(screen.getByText(/这是一个稍长一些的回复/).closest("[data-bubble-layout]")).toHaveAttribute("data-bubble-layout", "full");
   });
 
+  it("keeps message bubble widths relative to the chat column instead of the viewport", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              role: "user",
+              content: "这是一个需要在窄聊天列里继续收缩的用户消息。",
+              timestamp: 1,
+            },
+            {
+              role: "assistant",
+              content: "这是一个稍长一些的回复，用来验证当右侧面板存在时，assistant 气泡仍然会跟随聊天列宽度收缩，而不是继续按整个 viewport 计算最大宽度。",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const userBubble = screen.getByText("这是一个需要在窄聊天列里继续收缩的用户消息。").closest('[data-bubble-layout="user"]');
+    const assistantBubble = screen.getByText(/这是一个稍长一些的回复/).closest('[data-bubble-layout="full"]');
+
+    expect(userBubble).toBeInTheDocument();
+    expect(userBubble).toHaveClass("max-w-[min(100%,40rem)]");
+    expect(userBubble?.className).not.toContain("86vw");
+    expect(assistantBubble).toBeInTheDocument();
+    expect(assistantBubble).toHaveClass("w-full", "max-w-[min(100%,700px)]");
+    expect(assistantBubble?.className).not.toContain("100vw");
+  });
+
   it("opens file previews when clicking tracked files in assistant bubbles", async () => {
     vi.stubGlobal(
       "fetch",
@@ -4578,14 +4710,8 @@ describe("ChatPanel", () => {
     fireEvent.scroll(viewport);
 
     const jumpButton = await screen.findByRole("button", { name: "回到这条消息顶部" });
-    expect(jumpButton).toHaveClass(
-      "pointer-events-none",
-      "opacity-0",
-      "group-hover/message:pointer-events-auto",
-      "group-hover/message:opacity-100",
-      "group-focus-within/message:pointer-events-auto",
-      "group-focus-within/message:opacity-100",
-    );
+    expect(jumpButton).not.toHaveClass("pointer-events-none");
+    expect(jumpButton).not.toHaveClass("opacity-0");
     fireEvent.click(jumpButton);
 
     await waitFor(() => {
@@ -4756,7 +4882,7 @@ describe("ChatPanel", () => {
     });
   });
 
-  it("does not show the message-top jump button when the card top is still visible", async () => {
+  it("does not show the message-top jump button while the card top border is still visible", async () => {
     const viewportRef = { current: null };
 
     render(
@@ -4831,6 +4957,143 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "回到这条消息顶部" })).not.toBeInTheDocument();
     });
+  });
+
+  it("recomputes the message-top jump button on scroll even when IntersectionObserver stops emitting", async () => {
+    const viewportRef = { current: null };
+    const observedEntries = [];
+    vi.stubGlobal("requestAnimationFrame", (callback) => {
+      callback(16);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    class IntersectionObserverMock {
+      constructor(callback) {
+        this.callback = callback;
+        this.targets = [];
+        observedEntries.push(this);
+      }
+
+      disconnect() {}
+
+      observe(target) {
+        this.targets.push(target);
+      }
+
+      unobserve() {}
+    }
+
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段\n\n第二段\n第三段\n第四段\n第五段\n第六段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 160 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    const latestAssistantCard = latestAssistantAnchor.querySelector('[data-bubble-layout="full"]');
+    expect(latestAssistantCard).toBeTruthy();
+
+    let cardTop = -32;
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: cardTop - 36,
+      left: 0,
+      right: 560,
+      bottom: cardTop + 284,
+      width: 560,
+      height: 320,
+      x: 0,
+      y: cardTop - 36,
+      toJSON: () => ({}),
+    });
+    latestAssistantCard.getBoundingClientRect = () => ({
+      top: cardTop,
+      left: 0,
+      right: 560,
+      bottom: cardTop + 320,
+      width: 560,
+      height: 320,
+      x: 0,
+      y: cardTop,
+      toJSON: () => ({}),
+    });
+
+    const bubbleObserver = observedEntries.find((entry) =>
+      entry.targets.some((target) => target?.getAttribute?.("data-bubble-layout") === "full"),
+    );
+    const observedBubble = bubbleObserver?.targets.find((target) => target?.getAttribute?.("data-bubble-layout") === "full");
+
+    expect(bubbleObserver?.callback).toBeTypeOf("function");
+    expect(observedBubble).toBeTruthy();
+
+    act(() => {
+      bubbleObserver.callback([
+        {
+          target: observedBubble,
+          boundingClientRect: latestAssistantCard.getBoundingClientRect(),
+          rootBounds: viewport.getBoundingClientRect(),
+        },
+      ]);
+    });
+
+    expect(await screen.findByRole("button", { name: "回到这条消息顶部" })).toBeInTheDocument();
+
+    cardTop = 12;
+    act(() => {
+      bubbleObserver.callback([
+        {
+          target: observedBubble,
+          boundingClientRect: latestAssistantCard.getBoundingClientRect(),
+          rootBounds: viewport.getBoundingClientRect(),
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "回到这条消息顶部" })).not.toBeInTheDocument();
+    });
+
+    cardTop = -24;
+    viewport.scrollTop = 176;
+    fireEvent.scroll(viewport);
+
+    expect(await screen.findByRole("button", { name: "回到这条消息顶部" })).toBeInTheDocument();
   });
 
   it("follows short streaming assistant replies by staying at the bottom", async () => {

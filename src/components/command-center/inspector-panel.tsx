@@ -1469,7 +1469,7 @@ export function InspectorPanel({
           <Tabs value={resolvedActiveTab} onValueChange={setActiveTab} className="flex min-h-0 min-w-0 flex-1 flex-col">
             <TabsList
               ref={tabsListRef}
-              className="cc-inspector-tabs grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-[18px] border border-border/70 bg-[var(--panel-muted)] p-1 md:grid-cols-4"
+              className="cc-inspector-tabs grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-[16px] bg-[var(--panel-muted)]/70 p-1 md:grid-cols-4"
             >
               {tabDefinitions.map((tab) => {
                 const Icon = tab.icon;
@@ -1543,28 +1543,28 @@ export function InspectorPanel({
 
             <TabsContent
               value="files"
-              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+              className="mt-3 min-h-0 flex-1 overflow-hidden px-1 py-1 data-[state=active]:flex data-[state=active]:flex-col"
             >
               {filesTabContent}
             </TabsContent>
 
             <TabsContent
               value="artifacts"
-              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+              className="mt-3 min-h-0 flex-1 overflow-hidden px-1 py-1 data-[state=active]:flex data-[state=active]:flex-col"
             >
               {artifactsTabContent}
             </TabsContent>
 
             <TabsContent
               value="timeline"
-              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+              className="mt-3 min-h-0 flex-1 overflow-hidden px-1 py-1 data-[state=active]:flex data-[state=active]:flex-col"
             >
               {timelineTabContent}
             </TabsContent>
 
             <TabsContent
               value="environment"
-              className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[22px] border border-border/60 bg-[var(--surface)] px-3 py-3 data-[state=active]:flex data-[state=active]:flex-col"
+              className="mt-3 min-h-0 flex-1 overflow-hidden px-1 py-1 data-[state=active]:flex data-[state=active]:flex-col"
             >
               {environmentTabContent}
             </TabsContent>

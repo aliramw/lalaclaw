@@ -21,6 +21,9 @@ const PreviewScrollArea = ScrollArea as any;
 const PreviewTooltip = Tooltip as any;
 const PreviewTooltipContent = TooltipContent as any;
 const PreviewTooltipTrigger = TooltipTrigger as any;
+const previewToolbarSurfaceClassName = "border border-border/70 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]";
+const previewToolbarInteractiveClassName = "text-muted-foreground transition hover:border-[var(--border-strong)] hover:bg-accent/28 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+const previewToolbarGhostActionClassName = "text-muted-foreground transition hover:bg-accent/28 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 const homePrefix = "/Users/marila";
 const filePreviewDarkCodeTheme = themes.dracula;
@@ -1651,10 +1654,9 @@ export function FilePreviewOverlay({
                   <button
                     type="button"
                     className={cn(
-                      "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition",
-                      isDark
-                        ? "border-white/8 text-zinc-400 hover:border-white/14 hover:bg-white/6 hover:text-zinc-200"
-                        : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800",
+                      "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                      previewToolbarSurfaceClassName,
+                      previewToolbarInteractiveClassName,
                     )}
                     aria-label={isFullscreen ? messages.inspector.previewActions.restore : messages.inspector.previewActions.maximize}
                     onClick={() => setIsFullscreen((current) => !current)}
@@ -1676,8 +1678,8 @@ export function FilePreviewOverlay({
                 <>
                   <div
                     className={cn(
-                      "flex h-[34px] items-center gap-0.5 rounded-full border px-0.5",
-                      isDark ? "border-white/8 bg-white/[0.045]" : "border-slate-200 bg-slate-50/90",
+                      "flex h-[34px] items-center gap-0.5 rounded-full px-0.5",
+                      previewToolbarSurfaceClassName,
                     )}
                   >
                     {filePreviewFontSizeOptions.map((option) => {
@@ -1689,8 +1691,9 @@ export function FilePreviewOverlay({
                             <button
                               type="button"
                               className={cn(
-                                "inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                                active && "bg-muted text-foreground",
+                                "inline-flex h-7 w-7 items-center justify-center rounded-full",
+                                previewToolbarGhostActionClassName,
+                                active && "bg-muted/80 text-foreground",
                               )}
                               aria-label={messages.inspector.previewActions.previewFontSizeOptionTooltip(label)}
                               onClick={() => setFilePreviewFontSize(option.value)}
@@ -1739,9 +1742,8 @@ export function FilePreviewOverlay({
                         size="sm"
                         className={cn(
                           "h-8 gap-1.5 px-3 text-xs",
-                          isDark
-                            ? "border-white/8 bg-white/[0.045] text-zinc-300 hover:border-white/12 hover:bg-white/8 hover:text-white"
-                            : "border-slate-200 bg-slate-50/90 text-slate-700 hover:border-slate-300 hover:bg-white hover:text-slate-950",
+                          previewToolbarSurfaceClassName,
+                          previewToolbarInteractiveClassName,
                         )}
                         onClick={handleStartEditing}
                       >
@@ -1755,8 +1757,8 @@ export function FilePreviewOverlay({
               ) : null}
               <div
                 className={cn(
-                  "flex h-[34px] items-center overflow-hidden rounded-full border",
-                  isDark ? "border-white/8 bg-white/[0.045]" : "border-slate-200 bg-slate-50/90",
+                  "flex h-[34px] items-center overflow-hidden rounded-full",
+                  previewToolbarSurfaceClassName,
                 )}
               >
                 <PreviewTooltip>
@@ -1767,9 +1769,7 @@ export function FilePreviewOverlay({
                       size="sm"
                       className={cn(
                         "h-8 rounded-none gap-1.5 px-3 text-xs font-medium shadow-none",
-                        isDark
-                          ? "text-zinc-300 hover:bg-white/8 hover:text-white"
-                          : "text-slate-700 hover:bg-white hover:text-slate-950",
+                        previewToolbarGhostActionClassName,
                       )}
                       aria-label={messages.inspector.previewActions.revealInFileManager(fileManagerLabel)}
                       onClick={handleRevealInFileManager}
@@ -1790,9 +1790,7 @@ export function FilePreviewOverlay({
                           href={vscodeHref}
                           className={cn(
                             "inline-flex h-8 items-center gap-1.5 px-3 text-xs font-medium transition",
-                            isDark
-                              ? "text-zinc-300 hover:bg-white/8 hover:text-white"
-                              : "text-slate-700 hover:bg-white hover:text-slate-950",
+                            previewToolbarGhostActionClassName,
                           )}
                           aria-label={messages.inspector.previewActions.openInCodeEditor}
                         >
@@ -1808,10 +1806,9 @@ export function FilePreviewOverlay({
               <button
                 type="button"
                 className={cn(
-                  "inline-flex h-8 w-8 items-center justify-center rounded-full transition",
-                  isDark
-                    ? "text-zinc-400 hover:bg-white/8 hover:text-white"
-                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                  "inline-flex h-8 w-8 items-center justify-center rounded-full",
+                  previewToolbarSurfaceClassName,
+                  previewToolbarInteractiveClassName,
                 )}
                 aria-label={messages.common.closePreview}
                 onClick={handleRequestClose}

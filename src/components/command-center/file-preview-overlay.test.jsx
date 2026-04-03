@@ -260,6 +260,25 @@ describe("FilePreviewOverlay", () => {
     expect(container).toBeTruthy();
   });
 
+  it("uses shell-consistent toolbar controls for file previews in light mode", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "notes.txt",
+          path: "/Users/marila/projects/lalaclaw/notes.txt",
+          content: "plain preview",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Expand preview|铺满预览窗/ })).toHaveClass("border-border/70", "bg-[var(--surface)]");
+    expect(screen.getByRole("button", { name: /Close preview|关闭预览/ })).toHaveClass("border-border/70", "bg-[var(--surface)]");
+  });
+
   it("renders markdown front matter as a separate yaml block", () => {
     renderPreview(
       <FilePreviewOverlay

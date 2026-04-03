@@ -429,6 +429,38 @@ function normalizeAssistantProgressContent(content = "") {
     .trim();
 }
 
+function hasLocallySettledCommandCenterReply(messages: ChatMessage[] = []) {
+  if (!Array.isArray(messages) || !messages.length) {
+    return false;
+  }
+
+  let sawUserTurn = false;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user") {
+      sawUserTurn = true;
+      return false;
+    }
+
+    if (message?.role !== "assistant") {
+      continue;
+    }
+
+    if (message?.pending || message?.streaming) {
+      return false;
+    }
+
+    if (!normalizeAssistantProgressContent(message?.content).length) {
+      continue;
+    }
+
+    return sawUserTurn || index > 0;
+  }
+
+  return false;
+}
+
 function findPendingAssistantMessage(messages: ChatMessage[] = [], pendingEntry: PendingChatTurn | null = null) {
   if (!Array.isArray(messages) || !pendingEntry) {
     return null;
@@ -1565,12 +1597,19 @@ export function useRuntimeSnapshot({
         payload.session.fastMode === true;
       setFastMode(nextFastMode);
       const statusKey = normalizeStatusKey(payload.session.status);
+      const shouldSuppressLateRunningBusy =
+        statusKey === "running"
+        && !localPendingEntry
+        && !isImSessionUser(currentSession.sessionUser)
+        && hasLocallySettledCommandCenterReply(localMessages);
       if (wsStopOverrideActive || statusKey === 'idle' || statusKey === 'completed') {
         setBusy(shouldHoldBusyForLocalTurn ? true : false);
-      } else if (statusKey === "running") {
+      } else if (statusKey === "running" && !shouldSuppressLateRunningBusy) {
         setBusy(true);
       } else if (shouldHoldBusyForLocalTurn) {
         setBusy(true);
+      } else if (shouldSuppressLateRunningBusy) {
+        setBusy(false);
       }
 
       if (

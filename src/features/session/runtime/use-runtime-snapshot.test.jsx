@@ -704,6 +704,79 @@ describe("useRuntimeSnapshot", () => {
     expect(setBusy).toHaveBeenLastCalledWith(false);
   });
 
+  it("does not re-enter busy on session.sync running after a local command-center turn already settled", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "空闲",
+        },
+        conversation: [
+          { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+          { id: "msg-assistant-1", role: "assistant", content: "已经完成", timestamp: 1050 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-1", role: "user", content: "继续", timestamp: 1000 },
+            { id: "msg-assistant-1", role: "assistant", content: "已经完成", timestamp: 1050 },
+          ],
+        },
+        pendingChatTurns: {},
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket.simulateOpen();
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: "session.sync",
+          session: {
+            sessionUser: "command-center",
+            agentId: "main",
+            status: "运行中",
+          },
+        }),
+      });
+    });
+
+    expect(setBusy).toHaveBeenLastCalledWith(false);
+  });
+
   it("does not settle a local streaming assistant when conversation.sync only carries a partial assistant snapshot", async () => {
     const setBusy = vi.fn();
     const setFastMode = vi.fn();

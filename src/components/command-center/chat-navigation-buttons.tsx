@@ -37,7 +37,7 @@ export const BubbleTopJumpButton = memo(function BubbleTopJumpButton({ onClick }
           <button
             type="button"
             onClick={onClick || undefined}
-            className="pointer-events-none inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-background/92 text-muted-foreground opacity-0 backdrop-blur transition hover:bg-background hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100"
+            className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-background/92 text-muted-foreground opacity-100 backdrop-blur transition hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             aria-label={messages.chat.jumpToMessageTop}
           >
             <ArrowUpToLine className="h-3.5 w-3.5" />

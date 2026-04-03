@@ -622,8 +622,11 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }:
     let resizeObserver: ResizeObserver | null = null;
     let attachRetryTimeoutId = 0;
     let attachRetryCount = 0;
+    let observedViewport: HTMLElement | null = null;
 
     const cleanupListeners = () => {
+      observedViewport?.removeEventListener("scroll", scheduleOutlineMaxHeightUpdate);
+      observedViewport = null;
       window.removeEventListener("resize", scheduleOutlineMaxHeightUpdate);
       resizeObserver?.disconnect?.();
       resizeObserver = null;
@@ -665,6 +668,8 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }:
       }
 
       updateOutlineMaxHeight();
+      observedViewport = latestViewport;
+      observedViewport.addEventListener("scroll", scheduleOutlineMaxHeightUpdate, { passive: true });
       window.addEventListener("resize", scheduleOutlineMaxHeightUpdate);
 
       if (ResizeObserverCtor) {
@@ -672,8 +677,8 @@ function MessageOutline({ headingScopeId, items, onSelect, messageViewportRef }:
           scheduleOutlineMaxHeightUpdate();
         });
 
-        // The outline height only depends on the viewport bounds and the meta stack's top position.
-        // Observing the whole scroll content tree makes this update fire too often during message growth.
+        // The outline height depends on the viewport bounds and the sticky meta stack position.
+        // We still avoid observing the whole scroll content tree because message growth would fire too often.
         [latestViewport, latestOutline.parentElement].forEach((node) => {
           if (node) {
             resizeObserver?.observe(node);
@@ -830,9 +835,9 @@ const MessageBubble = memo(function MessageBubble({
   const shouldShowOutline = outlineItems.length >= 2;
   const headingScopeId = `message-${messageId}`;
   const fontSizeStyles = resolveChatFontSizeStyles(chatFontSize);
-  const userBubbleWidthClassName = "w-fit min-w-[3.75rem] max-w-[min(86vw,40rem)]";
-  const compactAssistantWidthClassName = "inline-block max-w-[min(80vw,42rem)] shrink-0";
-  const longAssistantWidthClassName = "w-[700px] max-w-[calc(100vw-12rem)] shrink-0";
+  const userBubbleWidthClassName = "w-fit min-w-[3.75rem] max-w-[min(100%,40rem)]";
+  const compactAssistantWidthClassName = "inline-block min-w-0 max-w-[min(100%,42rem)]";
+  const longAssistantWidthClassName = "w-full min-w-0 max-w-[min(100%,700px)]";
   const streamingAssistantBubbleClassName = assistantTurnInProgress ? "cc-streaming-bubble transition-none motion-reduce:animate-none" : "";
   const focusBubbleClassName = isHighlighted ? "cc-focus-highlight" : "";
   const messageBubbleAttributes = {
@@ -948,7 +953,6 @@ const MessageBubble = memo(function MessageBubble({
 
     const viewport = getRefCurrent(messageViewportRef);
     const bubble = bubbleSurfaceRef.current || bubbleRef.current;
-    const bubbleTopSentinel = bubbleTopSentinelRef.current;
     if (!viewport || !bubble) {
       setShowBubbleTopJump(false);
       return undefined;
@@ -964,14 +968,29 @@ const MessageBubble = memo(function MessageBubble({
       );
     };
 
+    const measureBubbleTopJump = () => {
+      updateBubbleTopJump(
+        viewport.getBoundingClientRect(),
+        bubble.getBoundingClientRect(),
+        viewport.clientHeight,
+      );
+    };
+
     const IntersectionObserverCtor = window.IntersectionObserver || globalThis.IntersectionObserver;
-    if (IntersectionObserverCtor && bubbleTopSentinel) {
-      const observer = new IntersectionObserverCtor(
+    let observer: IntersectionObserver | null = null;
+    let frameId = 0;
+    const handleViewportScroll = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(measureBubbleTopJump);
+    };
+
+    if (IntersectionObserverCtor) {
+      observer = new IntersectionObserverCtor(
         (entries) => {
           const entry = entries[0];
           const rootBounds = entry?.rootBounds;
           if (!entry || !rootBounds) {
-            setShowBubbleTopJump(false);
+            measureBubbleTopJump();
             return;
           }
 
@@ -979,8 +998,8 @@ const MessageBubble = memo(function MessageBubble({
             rootBounds,
             {
               top: entry.boundingClientRect.top,
-              bottom: bubble.getBoundingClientRect().bottom,
-              height: bubble.getBoundingClientRect().height,
+              bottom: entry.boundingClientRect.bottom,
+              height: entry.boundingClientRect.height,
             },
             rootBounds.height || viewport.clientHeight,
           );
@@ -991,24 +1010,14 @@ const MessageBubble = memo(function MessageBubble({
         },
       );
 
-      observer.observe(bubbleTopSentinel);
-      return () => observer.disconnect();
+      observer.observe(bubble);
     }
 
     const ResizeObserverCtor = window.ResizeObserver || globalThis.ResizeObserver;
     let resizeObserver: ResizeObserver | null = null;
-    let frameId = 0;
-
-    const measureBubbleTopJump = () => {
-      updateBubbleTopJump(
-        viewport.getBoundingClientRect(),
-        bubble.getBoundingClientRect(),
-        viewport.clientHeight,
-      );
-    };
 
     measureBubbleTopJump();
-    viewport.addEventListener("scroll", measureBubbleTopJump, { passive: true });
+    viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
     window.addEventListener("resize", measureBubbleTopJump);
 
     if (ResizeObserverCtor) {
@@ -1025,9 +1034,10 @@ const MessageBubble = memo(function MessageBubble({
     }
 
     return () => {
-      viewport.removeEventListener("scroll", measureBubbleTopJump);
+      viewport.removeEventListener("scroll", handleViewportScroll);
       window.removeEventListener("resize", measureBubbleTopJump);
       window.cancelAnimationFrame(frameId);
+      observer?.disconnect?.();
       resizeObserver?.disconnect?.();
     };
   }, [assistantVisualState, isAssistant, isPending, messageViewportRef, message.timestamp, renderedContent, supportsBubbleTopJump, useCompactAssistantBubble]);
@@ -1141,20 +1151,20 @@ const MessageBubble = memo(function MessageBubble({
       <div
         ref={setBubbleNode}
         {...messageBubbleAttributes}
-        className="group/message flex w-fit max-w-full"
+        className="group/message flex w-full max-w-full"
       >
-        <div className="flex max-w-full flex-col items-start">
+        <div className="flex w-full max-w-full flex-col items-start">
           <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-start gap-1.5">
-          <div className="inline-flex min-w-0 max-w-full items-start gap-3">
-              <div className="min-w-0 shrink-0">
+          <div className="flex min-w-0 max-w-full items-start gap-3">
+              <div className="flex min-w-0 flex-1 max-w-[700px] items-start">
                 {bubbleTopJumpButton}
               <Card
                 ref={setBubbleSurfaceNode}
                 data-bubble-layout="full"
               className={cn(
                 bubbleBaseClassName,
-                "w-[700px] max-w-[calc(100vw-20rem)] shrink-0",
+                longAssistantWidthClassName,
                 "relative overflow-hidden",
                 "cc-assistant-bubble",
                 streamingAssistantBubbleClassName,
@@ -1224,12 +1234,12 @@ const MessageBubble = memo(function MessageBubble({
       <div
         ref={setBubbleNode}
         {...messageBubbleAttributes}
-        className="group/message flex w-fit max-w-full"
+        className="group/message flex w-full max-w-full"
       >
-        <div className="flex max-w-full flex-col items-start">
+        <div className="flex w-full max-w-full flex-col items-start">
           <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-center gap-2">
-            <div className="min-w-0 shrink-0">
+            <div className="min-w-0">
               {bubbleTopJumpButton}
             <Card
               ref={setBubbleSurfaceNode}
@@ -1280,12 +1290,12 @@ const MessageBubble = memo(function MessageBubble({
     <div
       ref={setBubbleNode}
       {...messageBubbleAttributes}
-      className="group/message flex w-fit max-w-full"
+      className="group/message flex w-full max-w-full"
     >
-      <div className="flex max-w-full flex-col items-start">
+      <div className="flex w-full max-w-full flex-col items-start">
         <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
-        <div className="inline-flex max-w-full items-start gap-2">
-          <div className="min-w-0 shrink-0">
+        <div className="flex min-w-0 max-w-full items-start gap-2">
+          <div className="flex min-w-0 flex-1 max-w-[700px] items-start">
             {bubbleTopJumpButton}
           <Card
             ref={setBubbleSurfaceNode}
@@ -3953,8 +3963,8 @@ export function ChatPanel({
           />
         ) : null}
         <div className="cc-chat-stage flex h-full min-h-0 flex-col rounded-[24px] bg-transparent">
-          <div className="cc-chat-stage-header shrink-0 pb-2">
-            <div className="relative pt-2 pb-1">
+          <div className="cc-chat-stage-header shrink-0 pb-1">
+            <div className="relative pt-0.5 pb-0.5">
               <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <div className="truncate text-sm font-semibold leading-none tracking-tight">{currentConversationTitle}</div>
@@ -4014,45 +4024,46 @@ export function ChatPanel({
                 </div>
               </div>
 
-              {sessionOverview ? <div className="mt-2 border-t border-border/45 pt-2">{sessionOverview}</div> : null}
+              {sessionOverview ? <div className="mt-1.5 border-t border-border/45 pt-1.5">{sessionOverview}</div> : null}
             </div>
           </div>
-          <div className="cc-chat-stage-body min-h-0 flex-1 overflow-hidden rounded-[24px] border border-border/55 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]">
-            <div className="relative h-full min-h-0">
-              <ScrollArea
-                className="h-full"
-                viewportRef={handleMessageViewportRef}
-                onWheelCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
-                onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
-              >
-                <div className="grid gap-2 px-4 pt-3 pb-7">
-                  {renderedMessageBubbles}
-                  <div ref={bottomSentinelRef} aria-hidden="true" data-message-bottom-sentinel className="h-px w-full" />
-                </div>
-              </ScrollArea>
-              {showLatestReplyButton ? (
-                <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        aria-label={i18n.chat.jumpToLatestReply}
-                        className="pointer-events-auto h-10 w-10 rounded-full border-border/70 bg-background/96 shadow-lg backdrop-blur hover:bg-background"
-                        onClick={handleJumpToLatestReply}
-                      >
-                        <ArrowDown className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">{i18n.chat.jumpToLatestReply}</TooltipContent>
-                  </Tooltip>
-                </div>
-              ) : null}
+          <div className="cc-chat-workspace-shell flex min-h-0 flex-1 flex-col rounded-[22px] border border-border/45 bg-[color-mix(in_srgb,var(--surface)_88%,var(--surface-elevated))] p-2">
+            <div className="cc-chat-stage-body min-h-0 flex-1 overflow-hidden rounded-[18px] bg-[var(--surface)]">
+              <div className="relative h-full min-h-0">
+                <ScrollArea
+                  className="h-full"
+                  viewportRef={handleMessageViewportRef}
+                  onWheelCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
+                  onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
+                >
+                  <div className="grid gap-2 px-4 pt-3 pb-7">
+                    {renderedMessageBubbles}
+                    <div ref={bottomSentinelRef} aria-hidden="true" data-message-bottom-sentinel className="h-px w-full" />
+                  </div>
+                </ScrollArea>
+                {showLatestReplyButton ? (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-3">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          aria-label={i18n.chat.jumpToLatestReply}
+                          className="pointer-events-auto h-10 w-10 rounded-full border-border/70 bg-background/96 shadow-lg backdrop-blur hover:bg-background"
+                          onClick={handleJumpToLatestReply}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">{i18n.chat.jumpToLatestReply}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
 
-          <div className="cc-chat-composer-shell mt-3 shrink-0 rounded-[24px] border border-border/70 bg-[var(--surface-elevated)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.26)]">
+            <div className="cc-chat-composer-shell mt-2 shrink-0 pt-2">
             <input
               ref={attachmentInputRef}
               type="file"
@@ -4257,11 +4268,12 @@ export function ChatPanel({
                         openClawConnected ? "placeholder:text-transparent" : "",
                       )}
                     />
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            </div>
+          </div>
+        </div>
+      </div>
+              <div className="cc-chat-composer-toolbar flex min-w-0 flex-wrap items-center gap-3 px-1 pt-2">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <ConnectionStatus
                     composerSendMode={composerSendMode}
                     onToggleComposerSendMode={onComposerSendModeToggle}
@@ -4274,7 +4286,7 @@ export function ChatPanel({
                     </span>
                   ) : null}
                 </div>
-                <div className="flex items-center justify-end gap-1.5">
+                <div className="flex shrink-0 items-center justify-end gap-1.5">
                   <div className="relative flex items-center gap-px">
                     {activeMention && mentionOptions.length && mentionAnchor === "actions" ? (
                       <div ref={mentionMenuRef} data-testid="mention-menu-actions" className="absolute bottom-full right-0 z-20 mb-2 w-[min(28rem,calc(100vw-4rem))]">
