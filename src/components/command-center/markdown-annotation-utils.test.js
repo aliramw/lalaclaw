@@ -52,17 +52,28 @@ describe("createReplaceAnnotation", () => {
         content: "第一行\n有限公司在这里\n第三行",
         replacementText: "科技有限公司",
         selectedText: "有限公司",
-        selectionRange: { start: 6, end: 10 },
+        selectionRange: { start: 4, end: 8 },
       }),
     ).toEqual({
-      anchorRange: { start: 6, end: 10 },
+      anchorRange: { start: 4, end: 8 },
       id: expect.any(String),
       kind: "replace",
       lineNumber: 2,
-      matchRanges: [{ start: 6, end: 10 }],
+      matchRanges: [{ start: 4, end: 8 }],
       replacementText: "科技有限公司",
       selectedText: "有限公司",
     });
+  });
+
+  it("fails closed when the selection drifts from the source content", () => {
+    expect(
+      createReplaceAnnotation({
+        content: "abcXYZdef",
+        replacementText: "nope",
+        selectedText: "ABC",
+        selectionRange: { start: 3, end: 6 },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -89,6 +100,17 @@ describe("createReplaceAllAnnotation", () => {
       selectedText: "陈航",
     });
   });
+
+  it("fails closed when the exact match is missing from the source content", () => {
+    expect(
+      createReplaceAllAnnotation({
+        content: "abc abc",
+        replacementText: "无招",
+        selectedText: "abd",
+        selectionRange: { start: 0, end: 3 },
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("buildDefaultAnnotationLines", () => {
@@ -99,7 +121,7 @@ describe("buildDefaultAnnotationLines", () => {
           content: "第一行\n有限公司在这里\n第三行",
           replacementText: "",
           selectedText: "有限公司",
-          selectionRange: { start: 6, end: 10 },
+          selectionRange: { start: 4, end: 8 },
         }),
         createReplaceAllAnnotation({
           content: "陈航\nhello 陈航\n陈航",
@@ -109,6 +131,22 @@ describe("buildDefaultAnnotationLines", () => {
         }),
       ]),
     ).toEqual(["第 2 行：有限公司 → ", "所有 陈航 → 无招"]);
+  });
+
+  it("drops replace annotations that cannot resolve to a valid source line", () => {
+    expect(
+      buildDefaultAnnotationLines([
+        {
+          anchorRange: { start: 0, end: 1 },
+          id: "bad",
+          kind: "replace",
+          lineNumber: 0,
+          matchRanges: [{ start: 0, end: 1 }],
+          replacementText: "科技有限公司",
+          selectedText: "有",
+        },
+      ]),
+    ).toEqual([]);
   });
 });
 
@@ -120,6 +158,24 @@ describe("buildAnnotationPrompt", () => {
         filePath: "docs/spec.md",
       }),
     ).toBe("修改 docs/spec.md 文件：\n第 2 行：有限公司 → 科技有限公司\n所有 陈航 → 无招");
+  });
+
+  it("fails closed when the prompt has no valid annotation lines", () => {
+    expect(
+      buildAnnotationPrompt({
+        annotationLines: ["  ", "", null],
+        filePath: "docs/spec.md",
+      }),
+    ).toBe("");
+  });
+
+  it("fails closed when the prompt file path is invalid", () => {
+    expect(
+      buildAnnotationPrompt({
+        annotationLines: ["第 2 行：有限公司 → 科技有限公司"],
+        filePath: "   ",
+      }),
+    ).toBe("");
   });
 
   it("filters blank lines before serializing", () => {

@@ -25,9 +25,7 @@ type MarkdownAnnotationSource = {
 
 type MarkdownAnnotationBuildPromptOptions = {
   annotationLines?: unknown[];
-  annotations?: MarkdownAnnotation[];
   filePath?: unknown;
-  instructionLines?: unknown[];
 };
 
 const markdownAnnotationKindLabels: Record<MarkdownAnnotationKind, string> = {
@@ -85,6 +83,17 @@ function normalizeMarkdownAnnotationRange(range: unknown): MarkdownAnnotationRan
     : start;
 
   return { start, end };
+}
+
+function resolveMarkdownAnnotationRange(content: unknown, selectionRange: unknown): MarkdownAnnotationRange | null {
+  const sourceText = toMarkdownAnnotationText(content);
+  const range = normalizeMarkdownAnnotationRange(selectionRange);
+
+  if (!sourceText || range.end <= range.start || range.start < 0 || range.end > sourceText.length) {
+    return null;
+  }
+
+  return range;
 }
 
 function normalizeMarkdownAnnotationKindValue(kind: unknown): MarkdownAnnotationKind | null {
@@ -155,7 +164,11 @@ export function resolveMarkdownAnnotationLineNumber(content: unknown, selectionR
     return null;
   }
 
-  const offset = Math.min(sourceText.length, resolveMarkdownAnnotationSelectionStart(selectionRangeOrOffset));
+  const offset = resolveMarkdownAnnotationSelectionStart(selectionRangeOrOffset);
+  if (offset < 0 || offset > sourceText.length) {
+    return null;
+  }
+
   let lineNumber = 1;
 
   for (let index = 0; index < offset; index += 1) {
@@ -179,15 +192,34 @@ function createMarkdownAnnotation({
   replacementText?: unknown;
   selectionRange?: unknown;
   selectedText?: unknown;
-}): MarkdownAnnotation {
+}): MarkdownAnnotation | null {
+  const sourceText = toMarkdownAnnotationText(content);
   const normalizedSelectedText = toMarkdownAnnotationText(selectedText);
-  const anchorRange = normalizeMarkdownAnnotationRange(selectionRange);
-  const lineNumber = resolveMarkdownAnnotationLineNumber(content, anchorRange);
+  const anchorRange = resolveMarkdownAnnotationRange(sourceText, selectionRange);
+
+  if (!sourceText || !normalizedSelectedText || !anchorRange) {
+    return null;
+  }
+
+  if (sourceText.slice(anchorRange.start, anchorRange.end) !== normalizedSelectedText) {
+    return null;
+  }
+
+  const lineNumber = resolveMarkdownAnnotationLineNumber(sourceText, anchorRange);
+
+  if ((kind === "replace" || kind === "delete") && (!lineNumber || lineNumber < 1)) {
+    return null;
+  }
+
   const replacement = toMarkdownAnnotationText(replacementText);
   const matchRanges =
     kind === "replaceAll" || kind === "deleteAll"
-      ? collectMarkdownAnnotationMatchRanges(content, normalizedSelectedText)
+      ? collectMarkdownAnnotationMatchRanges(sourceText, normalizedSelectedText)
       : [anchorRange];
+
+  if ((kind === "replaceAll" || kind === "deleteAll") && matchRanges.length === 0) {
+    return null;
+  }
 
   return {
     anchorRange,
@@ -205,7 +237,7 @@ export function createReplaceAnnotation({
   replacementText,
   selectionRange,
   selectedText,
-}: MarkdownAnnotationSource): MarkdownAnnotation {
+}: MarkdownAnnotationSource): MarkdownAnnotation | null {
   return createMarkdownAnnotation({
     content,
     kind: "replace",
@@ -220,7 +252,7 @@ export function createReplaceAllAnnotation({
   replacementText,
   selectionRange,
   selectedText,
-}: MarkdownAnnotationSource): MarkdownAnnotation {
+}: MarkdownAnnotationSource): MarkdownAnnotation | null {
   return createMarkdownAnnotation({
     content,
     kind: "replaceAll",
@@ -247,7 +279,11 @@ export function buildDefaultAnnotationLine(annotation: MarkdownAnnotation | null
     return `所有 ${selectedText} → ${replacementText}`;
   }
 
-  const lineNumber = Number.isFinite(annotation.lineNumber ?? NaN) ? Math.max(1, Math.floor(Number(annotation.lineNumber))) : 0;
+  const lineNumber = Number.isFinite(annotation.lineNumber ?? NaN) ? Math.floor(Number(annotation.lineNumber)) : 0;
+  if (lineNumber < 1) {
+    return "";
+  }
+
   return `第 ${lineNumber} 行：${selectedText} → ${replacementText}`;
 }
 
@@ -255,26 +291,15 @@ export function buildDefaultAnnotationLines(annotations: Array<MarkdownAnnotatio
   return annotations.map((annotation) => buildDefaultAnnotationLine(annotation)).filter((line) => !isBlankLine(line));
 }
 
-export function buildAnnotationPrompt({
-  annotationLines,
-  annotations = [],
-  filePath,
-  instructionLines,
-}: MarkdownAnnotationBuildPromptOptions = {}): string {
-  const resolvedLines = Array.isArray(annotationLines)
-    ? annotationLines
-    : Array.isArray(instructionLines)
-      ? instructionLines
-      : buildDefaultAnnotationLines(annotations);
+export function buildAnnotationPrompt({ annotationLines, filePath }: MarkdownAnnotationBuildPromptOptions = {}): string {
+  const resolvedLines = Array.isArray(annotationLines) ? annotationLines : [];
   const normalizedFilePath = normalizeMarkdownAnnotationText(filePath);
-  const normalizedLines = resolvedLines.map((line) => normalizeMarkdownAnnotationText(line)).filter((line) => !isBlankLine(line));
+  const normalizedLines = resolvedLines
+    .map((line) => (typeof line === "string" ? line.trim() : ""))
+    .filter((line) => !isBlankLine(line));
 
-  if (!normalizedFilePath) {
-    return normalizedLines.join("\n");
-  }
-
-  if (!normalizedLines.length) {
-    return `修改 ${normalizedFilePath} 文件：`;
+  if (!normalizedFilePath || !normalizedLines.length) {
+    return "";
   }
 
   return `修改 ${normalizedFilePath} 文件：\n${normalizedLines.join("\n")}`;
