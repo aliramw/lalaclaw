@@ -117,10 +117,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-如果你想切換到某個指定發佈版本，例如 `2026.4.2`：
+如果你想切換到某個指定發佈版本，例如 `2026.4.3`：
 
 ```bash
-npm install -g lalaclaw@2026.4.2
+npm install -g lalaclaw@2026.4.3
 lalaclaw init
 ```
 
@@ -134,12 +134,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-如果你想切換到某個指定發佈版本，例如 `2026.4.2`：
+如果你想切換到某個指定發佈版本，例如 `2026.4.3`：
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.4.2
+git checkout 2026.4.3
 npm ci
 npm run build
 npm run lalaclaw:start

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.4.3]
+
+### Changed
+
+- Updated README and localized quick-start version examples to `2026.4.3`.
+
+### Fixed
+
+- Fixed narrow workspace split-layout behavior so the command center now falls back to the compact inspector rail based on actual workspace width instead of only the viewport breakpoint.
+- Fixed chat transcript bubble sizing and message outline anchoring in tighter layouts so chat content no longer collides with the inspector pane while long-message navigation stays aligned.
+
 ## [2026.4.2]
 
 ### Added
