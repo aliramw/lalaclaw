@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type {
   ChatMessage,
   ChatScrollState,
@@ -109,6 +110,109 @@ function appendPromptHistory(historyMap: Record<string, string[]>, key: string, 
     ...historyMap,
     [key]: [...currentHistory, normalizedPrompt].slice(-promptHistoryLimit),
   };
+}
+
+type CommandCenterPreparedPromptSessionState = {
+  agentId?: string;
+  fastMode?: boolean;
+  model?: string;
+  sessionUser?: string;
+  thinkMode?: string;
+};
+
+type SendCommandCenterPreparedPromptOptions = {
+  activeChatTab: ChatTab | undefined;
+  activeChatTabId: string;
+  activeChatTabIdRef: MutableRefObject<string>;
+  attachments?: unknown[];
+  chatTabsRef: MutableRefObject<ChatTab[]>;
+  content: string;
+  enqueueOrRunEntry: (entry: Record<string, unknown>) => Promise<unknown>;
+  fastMode: boolean;
+  model: string;
+  resolveImSessionUserForSend: (value: { agentId?: string; sessionUser?: string; tabId?: string }) => Promise<string>;
+  session: AppSession;
+  sessionByTabIdRef: MutableRefObject<Record<string, AppSession>>;
+  sessionStateRef: MutableRefObject<CommandCenterPreparedPromptSessionState>;
+  setPromptHistoryByConversation: Dispatch<SetStateAction<Record<string, string[]>>>;
+  shouldAutoScrollRef: MutableRefObject<boolean>;
+  suppressPendingPlaceholder?: boolean;
+  tabMetaByIdRef: MutableRefObject<Record<string, ChatTabMeta>>;
+};
+
+export async function sendCommandCenterPreparedPrompt({
+  activeChatTab,
+  activeChatTabId,
+  activeChatTabIdRef,
+  attachments = [],
+  chatTabsRef,
+  content,
+  enqueueOrRunEntry,
+  fastMode,
+  model,
+  resolveImSessionUserForSend,
+  session,
+  sessionByTabIdRef,
+  sessionStateRef,
+  setPromptHistoryByConversation,
+  shouldAutoScrollRef,
+  suppressPendingPlaceholder = false,
+  tabMetaByIdRef,
+}: SendCommandCenterPreparedPromptOptions) {
+  const normalizedContent = String(content || "").trim();
+  const normalizedAttachments = Array.isArray(attachments) ? attachments : [];
+  if (!normalizedContent && !normalizedAttachments.length) {
+    return null;
+  }
+
+  shouldAutoScrollRef.current = true;
+  const {
+    targetAgentId,
+    targetFastMode,
+    targetModel,
+    targetSessionUser,
+    targetTabId,
+    targetThinkMode,
+  } = resolveCommandCenterSendTarget({
+    activeChatTab: activeChatTab || undefined,
+    activeChatTabId,
+    activeChatTabIdRef,
+    chatTabsRef,
+    fastMode,
+    model,
+    session,
+    sessionByTabIdRef,
+    sessionStateRef,
+    tabMetaByIdRef,
+  });
+  const resolvedTargetSessionUser = await resolveImSessionUserForSend({
+    agentId: targetAgentId,
+    sessionUser: targetSessionUser,
+    tabId: targetTabId,
+  });
+
+  const entryTimestamp = Date.now();
+  const entryId = `${entryTimestamp}-${Math.random().toString(36).slice(2, 8)}`;
+  const entry = {
+    id: entryId,
+    tabId: targetTabId,
+    key: `${resolvedTargetSessionUser}:${targetAgentId}`,
+    content: normalizedContent,
+    attachments: normalizedAttachments,
+    timestamp: entryTimestamp,
+    userMessageId: `msg-user-${entryId}`,
+    agentId: targetAgentId,
+    sessionUser: resolvedTargetSessionUser,
+    model: targetModel,
+    fastMode: targetFastMode,
+    thinkMode: targetThinkMode,
+    ...(suppressPendingPlaceholder ? { suppressPendingPlaceholder: true } : {}),
+  };
+
+  setPromptHistoryByConversation((current) => appendPromptHistory(current, entry.key, normalizedContent));
+
+  await enqueueOrRunEntry(entry);
+  return entry;
 }
 
 export function resolveTrackedPendingEntry({
@@ -1228,59 +1332,40 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     updateTabSession,
   });
 
-  const dispatchSessionCommand = async (content, {
-    attachments = [],
-    suppressPendingPlaceholder = false,
-  } = {}) => {
-    const normalizedContent = String(content || "").trim();
-    if (!normalizedContent && !(attachments || []).length) {
-      return;
-    }
-
-    shouldAutoScrollRef.current = true;
-    const {
-      targetAgentId,
-      targetFastMode,
-      targetModel,
-      targetSessionUser,
-      targetTabId,
-      targetThinkMode,
-    } = resolveCommandCenterSendTarget({
-      activeChatTab: activeChatTab || undefined,
-      activeChatTabId,
-      activeChatTabIdRef,
-      chatTabsRef,
-      fastMode,
-      model,
-      session,
-      sessionByTabIdRef,
-      sessionStateRef,
-      tabMetaByIdRef,
-    });
-    const resolvedTargetSessionUser = await resolveImSessionUserForSend({
-      agentId: targetAgentId,
-      sessionUser: targetSessionUser,
-      tabId: targetTabId,
-    });
-
-    const entryTimestamp = Date.now();
-    const entryId = `${entryTimestamp}-${Math.random().toString(36).slice(2, 8)}`;
-    await enqueueOrRunEntry({
-      id: entryId,
-      tabId: targetTabId,
-      key: `${resolvedTargetSessionUser}:${targetAgentId}`,
-      content: normalizedContent,
-      attachments,
-      timestamp: entryTimestamp,
-      userMessageId: `msg-user-${entryId}`,
-      agentId: targetAgentId,
-      sessionUser: resolvedTargetSessionUser,
-      model: targetModel,
-      fastMode: targetFastMode,
-      thinkMode: targetThinkMode,
-      ...(suppressPendingPlaceholder ? { suppressPendingPlaceholder: true } : {}),
-    });
-  };
+  const handleSendPreparedPrompt = useCallback((content, options = {}) => sendCommandCenterPreparedPrompt({
+    activeChatTab: activeChatTab || undefined,
+    activeChatTabId,
+    activeChatTabIdRef,
+    attachments: options?.attachments,
+    chatTabsRef,
+    content,
+    enqueueOrRunEntry,
+    fastMode,
+    model,
+    resolveImSessionUserForSend,
+    session,
+    sessionByTabIdRef,
+    sessionStateRef,
+    setPromptHistoryByConversation,
+    shouldAutoScrollRef,
+    suppressPendingPlaceholder: options?.suppressPendingPlaceholder,
+    tabMetaByIdRef,
+  }), [
+    activeChatTab,
+    activeChatTabId,
+    activeChatTabIdRef,
+    chatTabsRef,
+    enqueueOrRunEntry,
+    fastMode,
+    model,
+    resolveImSessionUserForSend,
+    session,
+    sessionByTabIdRef,
+    sessionStateRef,
+    setPromptHistoryByConversation,
+    shouldAutoScrollRef,
+    tabMetaByIdRef,
+  ]);
 
   const sendCurrentPrompt = async () => {
     const content = String(promptRef.current?.value || promptValueRef.current || "").trim();
@@ -1288,12 +1373,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     if (!content && !attachments.length) return;
     shouldAutoScrollRef.current = true;
     const {
-      targetAgentId,
-      targetFastMode,
-      targetModel,
-      targetSessionUser,
       targetTabId,
-      targetThinkMode,
     } = resolveCommandCenterSendTarget({
       activeChatTab: activeChatTab || undefined,
       activeChatTabId,
@@ -1324,13 +1404,8 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     setPromptHistoryNavigation(null);
     resetRapidEnterState();
 
-    let resolvedTargetSessionUser = targetSessionUser;
     try {
-      resolvedTargetSessionUser = await resolveImSessionUserForSend({
-        agentId: targetAgentId,
-        sessionUser: targetSessionUser,
-        tabId: targetTabId,
-      });
+      await handleSendPreparedPrompt(content, { attachments });
     } finally {
       if (normalizedTargetTabId && pendingSendPreparationByTabRef.current[normalizedTargetTabId]) {
         const nextPendingPreparation = { ...pendingSendPreparationByTabRef.current };
@@ -1338,27 +1413,6 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         pendingSendPreparationByTabRef.current = nextPendingPreparation;
       }
     }
-
-    const entryTimestamp = Date.now();
-    const entryId = `${entryTimestamp}-${Math.random().toString(36).slice(2, 8)}`;
-    const entry = {
-      id: entryId,
-      tabId: targetTabId,
-      key: `${resolvedTargetSessionUser}:${targetAgentId}`,
-      content,
-      attachments,
-      timestamp: entryTimestamp,
-      userMessageId: `msg-user-${entryId}`,
-      agentId: targetAgentId,
-      sessionUser: resolvedTargetSessionUser,
-      model: targetModel,
-      fastMode: targetFastMode,
-      thinkMode: targetThinkMode,
-    };
-
-    setPromptHistoryByConversation((current) => appendPromptHistory(current, entry.key, content));
-
-    await enqueueOrRunEntry(entry);
   };
 
   const {
@@ -1796,6 +1850,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     handleRemoveQueuedMessage,
     handleReset,
     handleSend,
+    handleSendPreparedPrompt,
     handleSelectSearchedSession,
     handleStop,
     handleTrackSessionFiles,
