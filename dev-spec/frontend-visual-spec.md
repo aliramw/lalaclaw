@@ -185,6 +185,8 @@ This document records the baseline visual rules for the LalaClaw frontend so UI 
 - When a preview includes the files sidebar, prefer an explicit two-column grid such as `minmax(0, 1fr) + fixed sidebar width` over loose flex sizing. The sidebar may never be visually overlapped or pushed out by markdown, code, front matter, or table content.
 - Code-like previews in light mode should use a true light syntax surface and token palette; avoid embedding a dark code block inside an otherwise light preview shell unless the user explicitly asks for it.
 - Long diagnostic or transcript-style content inside dialogs must scroll within the dialog body instead of forcing the surface to grow past its height budget. Keep an internal scroll container with a visible scrollbar affordance so operators can tell the content is scrollable.
+- Markdown preview annotation mode must keep a visible safe gutter from the overlay edge. Do not let the preview surface, annotation chips, textarea, submit action, or generated prompt sit flush against the dialog boundary.
+- In markdown preview annotation mode, the right-hand tool column should read as one grouped workbench surface with distinct spacing tiers: tighter spacing inside the annotation list itself, and wider separation between the list, editor, primary submit action, and generated prompt preview.
 
 ## Feedback Loop
 

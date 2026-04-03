@@ -1593,14 +1593,14 @@ export function FilePreviewOverlay({
     const { frontMatter, body: markdownBody } = splitMarkdownFrontMatter(effectivePreviewContent);
     const markdownBodyLineOffset = frontMatter ? frontMatter.split(/\r?\n/).length + 2 : 0;
     body = isMarkdownAnnotationMode ? (
-      <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,96rem)] flex-col gap-5">
         {markdownAnnotationSubmitError ? (
           <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-200">
             {markdownAnnotationSubmitError}
           </div>
         ) : null}
         {frontMatter ? (
-          <div className="space-y-2">
+          <div className="rounded-2xl border border-border/70 bg-[var(--surface)]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] sm:p-5">
             <div className={cn("text-[11px] font-medium uppercase tracking-[0.08em]", isDark ? "text-zinc-400" : "text-slate-500")}>
               {messages.inspector.previewActions.frontMatter}
             </div>
@@ -1713,10 +1713,12 @@ export function FilePreviewOverlay({
     || preview.kind === "json"
     || (preview.kind === "text" && isCodeLikePreviewTarget(title, preview.kind));
   const directBodyPaddingClassName = isFullscreen
-    ? (isPdfPreview ? "h-full p-0" : "h-full px-6 py-5")
-    : isEditing || isMarkdownAnnotationMode
+    ? (isPdfPreview ? "h-full p-0" : isMarkdownAnnotationMode ? "h-full px-4 py-4 sm:px-6 sm:py-5" : "h-full px-6 py-5")
+    : isEditing
       ? "h-full p-0"
-      : "px-6 py-5";
+      : isMarkdownAnnotationMode
+        ? "h-full px-4 py-4 sm:px-5 sm:py-5"
+        : "px-6 py-5";
   const mainBody = useDirectBodyLayout ? (
     <div
       className={cn(

@@ -350,21 +350,29 @@ export function MarkdownPreviewAnnotationWorkbench({
   }
 
   return (
-    <form className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.85fr)]" onSubmit={handleSubmit}>
-      <div className="relative min-h-0 overflow-hidden rounded-xl border border-border/70 bg-background">
+    <form className="grid h-full min-h-0 gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.95fr)]" onSubmit={handleSubmit}>
+      <div className="relative min-h-0 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]">
         {labels.title ? (
-          <div className="border-b border-border/70 px-4 py-3 text-sm font-semibold text-foreground">{labels.title}</div>
+          <div className="border-b border-border/70 px-5 py-4 text-sm font-semibold text-foreground sm:px-6">{labels.title}</div>
         ) : null}
-        <div className="relative min-h-[16rem] max-h-full overflow-auto px-4 py-3">
+        <div className="relative min-h-[16rem] max-h-full overflow-auto px-5 py-4 sm:px-6 sm:py-5">
           {pendingSelection ? (
             <div
-              className="absolute right-3 top-3 z-10 inline-flex gap-2 rounded-lg border border-border/80 bg-background/95 p-2 shadow-sm"
+              className="absolute right-5 top-4 z-10 inline-flex gap-2 rounded-xl border border-border/80 bg-background/95 p-2.5 shadow-lg shadow-black/5 backdrop-blur-sm sm:right-6 sm:top-5"
               data-testid="markdown-preview-annotation-actions"
             >
-              <button type="button" className="rounded-md border border-border px-2 py-1 text-xs" onClick={() => createAnnotation("replace")}>
+              <button
+                type="button"
+                className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-[var(--border-strong)] hover:bg-accent/28"
+                onClick={() => createAnnotation("replace")}
+              >
                 {labels.replace}
               </button>
-              <button type="button" className="rounded-md border border-border px-2 py-1 text-xs" onClick={() => createAnnotation("replaceAll")}>
+              <button
+                type="button"
+                className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:border-[var(--border-strong)] hover:bg-accent/28"
+                onClick={() => createAnnotation("replaceAll")}
+              >
                 {labels.replaceAll}
               </button>
             </div>
@@ -390,26 +398,29 @@ export function MarkdownPreviewAnnotationWorkbench({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-col gap-3">
+      <div
+        className="flex min-h-0 flex-col gap-4 rounded-2xl border border-border/70 bg-[var(--surface)]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] sm:p-5"
+        data-testid="markdown-preview-annotation-sidebar"
+      >
         {!annotations.length && labels.empty ? (
-          <p className="rounded-md border border-dashed border-border/80 px-3 py-2 text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border/80 bg-background/55 px-4 py-3 text-sm leading-6 text-muted-foreground">
             {labels.empty}
           </p>
         ) : null}
         {annotations.length ? (
-          <div className="space-y-2" data-testid="markdown-preview-annotation-list">
+          <div className="space-y-2.5" data-testid="markdown-preview-annotation-list">
             {annotations.map((annotation) => {
               const line = buildMarkdownAnnotationInstructionLine(annotation);
 
               return (
                 <div
                   key={annotation.id}
-                  className="flex items-start justify-between gap-3 rounded-md border border-border/70 bg-muted/30 px-3 py-2"
+                  className="flex items-start justify-between gap-3 rounded-xl border border-border/70 bg-background/78 px-4 py-3"
                 >
-                  <div className="min-w-0 flex-1 text-sm text-foreground">{line}</div>
+                  <div className="min-w-0 flex-1 text-sm leading-6 text-foreground">{line}</div>
                   <button
                     type="button"
-                    className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent/28 hover:text-foreground"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-sm text-muted-foreground transition hover:border-[var(--border-strong)] hover:bg-accent/28 hover:text-foreground"
                     aria-label={resolveRemoveAnnotationLabel(labels, annotation)}
                     onClick={() => handleRemoveAnnotation(annotation.id)}
                   >
@@ -420,25 +431,32 @@ export function MarkdownPreviewAnnotationWorkbench({
             })}
           </div>
         ) : null}
-        <textarea
-          aria-label={labels.instructions}
-          className="min-h-40 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
-          value={editorValue}
-          onChange={(event) => handleEditorChange(event.target.value)}
-        />
-        <button
-          className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!canSubmit}
-          type="submit"
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <textarea
+            aria-label={labels.instructions}
+            className="min-h-[18rem] flex-1 rounded-xl border border-border/80 bg-background px-4 py-3 text-sm leading-6 text-foreground shadow-sm"
+            value={editorValue}
+            onChange={(event) => handleEditorChange(event.target.value)}
+          />
+          <button
+            className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canSubmit}
+            type="submit"
+          >
+            {labels.submit}
+          </button>
+        </div>
+        <div
+          className="rounded-xl border border-border/80 bg-background/62 p-3"
+          data-testid="markdown-preview-annotation-prompt-panel"
         >
-          {labels.submit}
-        </button>
-        <pre
-          className="min-h-16 whitespace-pre-wrap rounded-md border border-border/80 bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-          data-testid="markdown-preview-annotation-prompt"
-        >
-          {prompt}
-        </pre>
+          <pre
+            className="min-h-[6.5rem] max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/35 px-4 py-3 text-xs leading-6 text-muted-foreground"
+            data-testid="markdown-preview-annotation-prompt"
+          >
+            {prompt}
+          </pre>
+        </div>
       </div>
     </form>
   );

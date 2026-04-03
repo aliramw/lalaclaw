@@ -193,3 +193,30 @@ This plan captures how we treat AI-generated code (including prompts, model vers
   - pending human review before implementation begins
 - Follow-up expectation:
   - implementation PRs derived from this design should log their concrete prompts, touched files, and validation runs separately once code changes begin
+
+### 2026-04-03 — Markdown Annotation Workbench Spacing and Draft Removal
+
+- Prompt/workstream: fix the markdown preview annotation mode so controls no longer sit flush against the overlay edge, add a per-annotation remove affordance for draft instructions, and sync the resulting spacing rules back into the visual spec.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-03 Asia/Shanghai.
+- Files touched:
+  - annotation workbench and preview overlay surfaces such as `src/components/command-center/markdown-preview-annotation-workbench.tsx` and `src/components/command-center/file-preview-overlay.tsx`
+  - regression coverage such as `src/components/command-center/markdown-preview-annotation-workbench.test.jsx`
+  - locale wiring such as `src/locales/en.js` and `src/locales/zh.js`
+  - visual/spec governance such as `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- src/components/command-center/file-preview-overlay.test.jsx src/components/command-center/markdown-preview-annotation-workbench.test.jsx`
+  - `npm run lint`
+- Manual/equivalent validation:
+  - compared the user-supplied screenshot against the annotation-mode layout to confirm the regression was spacing hierarchy rather than missing functionality
+  - reworked the annotation mode into padded grouped surfaces so the preview column and instruction column both preserve safe margins inside the overlay
+  - synced the new safe-gutter and right-column spacing-tier rules into `dev-spec/frontend-visual-spec.md` in the same workstream
+- Reviewer/sign-off:
+  - pending human review
+  - low-to-medium risk surface because the change is confined to file-preview UI layout and draft-instruction controls without touching runtime/session transport
+- Reviewer checklist:
+  - confirm annotation mode no longer looks flush to the overlay edges in both light and dark themes
+  - confirm a single draft annotation can be removed without clearing the rest of the workbench state
+  - confirm the generated prompt, submit action, and preview highlights remain aligned after removing one draft rule
+- Visual spec linkage:
+  - added markdown annotation overlay safe-gutter and spacing-tier rules to `dev-spec/frontend-visual-spec.md` in the same workstream per repository policy

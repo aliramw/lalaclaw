@@ -39,6 +39,9 @@ describe("MarkdownPreviewAnnotationWorkbench", () => {
       />,
     );
 
+    expect(screen.getByTestId("markdown-preview-annotation-sidebar")).toBeInTheDocument();
+    expect(screen.getByTestId("markdown-preview-annotation-prompt-panel")).toBeInTheDocument();
+
     const preview = screen.getByTestId("markdown-preview-annotation-preview");
     const previewText = preview.querySelector(".whitespace-pre-wrap.break-words")?.firstChild;
     expect(previewText?.nodeType).toBe(Node.TEXT_NODE);
