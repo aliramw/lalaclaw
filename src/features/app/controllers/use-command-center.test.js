@@ -132,7 +132,7 @@ describe("sendCommandCenterPreparedPrompt", () => {
     const resolveImSessionUserForSend = vi.fn().mockResolvedValue("command-center");
     const shouldAutoScrollRef = { current: false };
 
-    await sendCommandCenterPreparedPrompt({
+    const entry = await sendCommandCenterPreparedPrompt({
       activeChatTab: { id: "agent:main", sessionUser: "command-center", agentId: "main" },
       activeChatTabId: "agent:main",
       activeChatTabIdRef: { current: "agent:main" },
@@ -170,6 +170,12 @@ describe("sendCommandCenterPreparedPrompt", () => {
       setPromptHistoryByConversation,
     });
 
+    expect(entry).toMatchObject({
+      content: "修改 docs/notes.md 文件：\n第 1 行：旧内容 → 新内容",
+      key: "command-center:main",
+      agentId: "main",
+      sessionUser: "command-center",
+    });
     expect(shouldAutoScrollRef.current).toBe(true);
     expect(resolveImSessionUserForSend).toHaveBeenCalledWith({
       agentId: "main",
@@ -229,7 +235,7 @@ describe("sendCommandCenterPreparedPrompt", () => {
       },
     };
 
-    await sendCommandCenterPreparedPrompt({
+    const appendedEntry = await sendCommandCenterPreparedPrompt({
       ...sharedOptions,
       content: "annotation prompt",
       resolveImSessionUserForSend,
@@ -238,7 +244,7 @@ describe("sendCommandCenterPreparedPrompt", () => {
       setPromptHistoryByConversation,
     });
 
-    await sendCommandCenterPreparedPrompt({
+    const skippedEntry = await sendCommandCenterPreparedPrompt({
       ...sharedOptions,
       content: "/reset",
       resolveImSessionUserForSend,
@@ -248,6 +254,8 @@ describe("sendCommandCenterPreparedPrompt", () => {
       shouldAppendPromptHistory: false,
     });
 
+    expect(appendedEntry).toBeTruthy();
+    expect(skippedEntry).toBeTruthy();
     expect(setPromptHistoryByConversation).toHaveBeenCalledTimes(1);
     expect(enqueueOrRunEntry).toHaveBeenCalledTimes(2);
   });
