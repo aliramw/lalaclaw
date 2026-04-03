@@ -1411,6 +1411,7 @@ const en = {
       markdownAnnotationWorkbench: {
         title: "Annotation instructions",
         instructions: "Annotation instruction text",
+        removeAnnotation: (line) => `Remove annotation: ${line}`,
         replace: "Replace",
         replaceAll: "Replace all",
         submit: "Submit annotation",

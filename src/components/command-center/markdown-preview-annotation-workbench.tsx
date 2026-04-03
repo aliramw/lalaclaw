@@ -14,6 +14,7 @@ import {
 type MarkdownPreviewAnnotationWorkbenchLabels = {
   empty?: string;
   instructions?: string;
+  removeAnnotation?: string | ((line: string) => string);
   replace?: string;
   replaceAll?: string;
   submit?: string;
@@ -209,6 +210,19 @@ function buildHighlightRanges(
   return [...annotationRanges, pendingSelection.selectionRange];
 }
 
+function resolveRemoveAnnotationLabel(
+  labels: MarkdownPreviewAnnotationWorkbenchLabels,
+  annotation: MarkdownAnnotation,
+) {
+  const line = buildMarkdownAnnotationInstructionLine(annotation);
+
+  if (typeof labels.removeAnnotation === "function") {
+    return labels.removeAnnotation(line);
+  }
+
+  return String(labels.removeAnnotation || "");
+}
+
 export function MarkdownPreviewAnnotationWorkbench({
   content = "",
   filePath = "",
@@ -312,6 +326,14 @@ export function MarkdownPreviewAnnotationWorkbench({
     setAnnotations((currentAnnotations) => syncAnnotationsFromEditor(currentAnnotations, nextValue));
   }
 
+  function handleRemoveAnnotation(annotationId: string) {
+    setAnnotations((currentAnnotations) => {
+      const nextAnnotations = currentAnnotations.filter((annotation) => annotation.id !== annotationId);
+      syncEditorFromAnnotations(nextAnnotations);
+      return nextAnnotations;
+    });
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -373,6 +395,30 @@ export function MarkdownPreviewAnnotationWorkbench({
           <p className="rounded-md border border-dashed border-border/80 px-3 py-2 text-sm text-muted-foreground">
             {labels.empty}
           </p>
+        ) : null}
+        {annotations.length ? (
+          <div className="space-y-2" data-testid="markdown-preview-annotation-list">
+            {annotations.map((annotation) => {
+              const line = buildMarkdownAnnotationInstructionLine(annotation);
+
+              return (
+                <div
+                  key={annotation.id}
+                  className="flex items-start justify-between gap-3 rounded-md border border-border/70 bg-muted/30 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1 text-sm text-foreground">{line}</div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent/28 hover:text-foreground"
+                    aria-label={resolveRemoveAnnotationLabel(labels, annotation)}
+                    onClick={() => handleRemoveAnnotation(annotation.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         ) : null}
         <textarea
           aria-label={labels.instructions}

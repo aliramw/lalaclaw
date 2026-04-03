@@ -1411,6 +1411,7 @@ const zh = {
       markdownAnnotationWorkbench: {
         title: "批注指令",
         instructions: "批注指令文本",
+        removeAnnotation: (line) => `删除批注：${line}`,
         replace: "替换",
         replaceAll: "批量替换",
         submit: "提交批注",

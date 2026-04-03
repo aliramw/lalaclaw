@@ -6,6 +6,7 @@ import { MarkdownPreviewAnnotationWorkbench } from "@/components/command-center/
 const labels = {
   empty: "No annotations yet",
   instructions: "Annotation instructions",
+  removeAnnotation: (line) => `Remove annotation: ${line}`,
   replace: "Replace selection",
   replaceAll: "Replace all matches",
   submit: "Send instructions",
@@ -173,5 +174,42 @@ describe("MarkdownPreviewAnnotationWorkbench", () => {
         prompt: "修改 docs/spec.md 文件：\n第 2 行：有限公司 → 科技有限公司",
       }),
     );
+  });
+
+  it("removes a single annotation without clearing the rest of the draft set", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MarkdownPreviewAnnotationWorkbench
+        content={"有限公司\n陈航 hello 陈航"}
+        filePath="docs/spec.md"
+        labels={labels}
+      />,
+    );
+
+    const preview = screen.getByTestId("markdown-preview-annotation-preview");
+    const previewText = preview.querySelector(".whitespace-pre-wrap.break-words")?.firstChild;
+    expect(previewText?.nodeType).toBe(Node.TEXT_NODE);
+
+    setPreviewSelection(previewText, 0, 4);
+    fireEvent.mouseUp(preview);
+    await user.click(screen.getByRole("button", { name: labels.replace }));
+
+    const plainTextNode = Array.from(preview.querySelector("[data-source-text='true']")?.childNodes || []).find(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes("陈航 hello 陈航"),
+    );
+    expect(plainTextNode?.nodeType).toBe(Node.TEXT_NODE);
+
+    setPreviewSelection(plainTextNode, 1, 3);
+    fireEvent.mouseUp(preview);
+    await user.click(screen.getByRole("button", { name: labels.replaceAll }));
+
+    expect(screen.getByRole("textbox", { name: labels.instructions })).toHaveValue("第 1 行：有限公司 → \n所有 陈航 → ");
+    expect(preview.querySelectorAll("mark[data-markdown-annotation-highlight='true']")).toHaveLength(3);
+
+    await user.click(screen.getByRole("button", { name: /Remove annotation: 所有 陈航/ }));
+
+    expect(screen.getByRole("textbox", { name: labels.instructions })).toHaveValue("第 1 行：有限公司 → ");
+    expect(preview.querySelectorAll("mark[data-markdown-annotation-highlight='true']")).toHaveLength(1);
   });
 });
