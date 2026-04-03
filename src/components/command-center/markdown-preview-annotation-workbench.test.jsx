@@ -53,6 +53,7 @@ describe("MarkdownPreviewAnnotationWorkbench", () => {
 
     const textarea = screen.getByRole("textbox", { name: labels.instructions });
     expect(textarea).toHaveValue("第 2 行：有限公司 → ");
+    expect(screen.getAllByTestId("markdown-preview-annotation-preview")[0].querySelectorAll("mark[data-markdown-annotation-highlight='true']")).toHaveLength(1);
     expect(screen.getByRole("button", { name: labels.submit })).toBeDisabled();
 
     await user.type(textarea, "科技有限公司");
@@ -103,6 +104,7 @@ describe("MarkdownPreviewAnnotationWorkbench", () => {
 
     const textarea = screen.getByRole("textbox", { name: labels.instructions });
     expect(textarea).toHaveValue("所有 陈航 → ");
+    expect(preview.querySelectorAll("mark[data-markdown-annotation-highlight='true']")).toHaveLength(3);
     expect(screen.getByRole("button", { name: labels.submit })).toBeDisabled();
 
     await user.type(textarea, "无招");
@@ -130,5 +132,46 @@ describe("MarkdownPreviewAnnotationWorkbench", () => {
       editorValue: "所有 陈航 → 无招",
       prompt: "修改 docs/spec.md 文件：\n所有 陈航 → 无招",
     });
+  });
+
+  it("maps formatted markdown selections back to the correct source line and preserves highlight", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <MarkdownPreviewAnnotationWorkbench
+        content={"第一行\n**有限公司** 在这里"}
+        filePath="docs/spec.md"
+        labels={labels}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const preview = screen.getByTestId("markdown-preview-annotation-preview");
+    await waitFor(() => {
+      expect(preview.querySelector("[data-source-text='true']")).toBeTruthy();
+    });
+
+    const annotatedText = Array.from(preview.querySelectorAll("[data-source-text='true']")).find((node) => node.textContent === "有限公司");
+    const previewText = annotatedText?.firstChild;
+    expect(previewText?.nodeType).toBe(Node.TEXT_NODE);
+
+    setPreviewSelection(previewText, 0, 4);
+    fireEvent.mouseUp(preview);
+    await user.click(screen.getByRole("button", { name: labels.replace }));
+
+    const textarea = screen.getByRole("textbox", { name: labels.instructions });
+    expect(textarea).toHaveValue("第 2 行：有限公司 → ");
+    expect(preview.querySelectorAll("mark[data-markdown-annotation-highlight='true']")).toHaveLength(1);
+
+    await user.type(textarea, "科技有限公司");
+    await user.click(screen.getByRole("button", { name: labels.submit }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        annotationLines: ["第 2 行：有限公司 → 科技有限公司"],
+        prompt: "修改 docs/spec.md 文件：\n第 2 行：有限公司 → 科技有限公司",
+      }),
+    );
   });
 });

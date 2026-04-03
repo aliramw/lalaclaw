@@ -5,7 +5,6 @@ import {
   buildMarkdownAnnotationInstructionLine,
   buildMarkdownAnnotationInstructionLines,
   buildMarkdownAnnotationPrompt,
-  collectMarkdownAnnotationMatchRanges,
   createReplaceAllAnnotation,
   createReplaceAnnotation,
   type MarkdownAnnotation,
@@ -67,30 +66,57 @@ function clearDomSelection() {
   window.getSelection?.()?.removeAllRanges();
 }
 
-function resolveTextOffset(root: Node, targetNode: Node, targetOffset: number) {
-  const documentRef = root.ownerDocument || document;
-  const walker = documentRef.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let offset = 0;
-  let currentNode = walker.nextNode();
+function normalizeSourceOffset(value: string | null | undefined): number | null {
+  const nextValue = Number(value);
 
-  while (currentNode) {
-    if (currentNode === targetNode) {
-      return offset + targetOffset;
-    }
-
-    offset += currentNode.textContent?.length || 0;
-    currentNode = walker.nextNode();
+  if (!Number.isFinite(nextValue)) {
+    return null;
   }
 
-  return -1;
+  return Math.max(0, Math.floor(nextValue));
 }
 
-function resolveSelectedOccurrenceIndex(renderedText: string, selectedText: string, selectionStart: number) {
-  if (!renderedText || !selectedText) {
-    return 0;
+function resolveSourceAnchor(node: Node | null, root: HTMLElement) {
+  let currentNode: Node | null = node;
+
+  while (currentNode && currentNode !== root) {
+    if (
+      currentNode instanceof HTMLElement
+      && currentNode.dataset.sourceText === "true"
+      && currentNode.dataset.sourceStart
+      && currentNode.dataset.sourceEnd
+    ) {
+      return currentNode;
+    }
+
+    currentNode = currentNode.parentNode;
   }
 
-  return collectMarkdownAnnotationMatchRanges(renderedText.slice(0, selectionStart), selectedText).length;
+  return null;
+}
+
+function resolveSourceOffsetWithinAnchor(anchor: HTMLElement, targetNode: Node, targetOffset: number) {
+  const sourceStart = normalizeSourceOffset(anchor.dataset.sourceStart);
+
+  if (sourceStart === null) {
+    return null;
+  }
+
+  const range = anchor.ownerDocument.createRange();
+  range.setStart(anchor, 0);
+  range.setEnd(targetNode, targetOffset);
+
+  return sourceStart + range.toString().length;
+}
+
+function resolveSelectionBoundaryOffset(root: HTMLElement, targetNode: Node, targetOffset: number) {
+  const anchor = resolveSourceAnchor(targetNode, root);
+
+  if (!anchor) {
+    return null;
+  }
+
+  return resolveSourceOffsetWithinAnchor(anchor, targetNode, targetOffset);
 }
 
 function resolvePendingSelection(root: HTMLElement | null, content: string): PendingSelection | null {
@@ -110,20 +136,17 @@ function resolvePendingSelection(root: HTMLElement | null, content: string): Pen
     return null;
   }
 
-  const start = resolveTextOffset(root, range.startContainer, range.startOffset);
-  const end = resolveTextOffset(root, range.endContainer, range.endOffset);
-  if (start < 0 || end <= start) {
+  const start = resolveSelectionBoundaryOffset(root, range.startContainer, range.startOffset);
+  const end = resolveSelectionBoundaryOffset(root, range.endContainer, range.endOffset);
+  if (start === null || end === null || end <= start) {
     return null;
   }
+  const selectionRange = { start, end };
+  const selectedSourceText = content.slice(start, end);
 
-  const renderedText = root.textContent || "";
-  const sourceMatchRanges = collectMarkdownAnnotationMatchRanges(content, selectedText);
-  if (!sourceMatchRanges.length) {
+  if (selectedSourceText !== selectedText) {
     return null;
   }
-
-  const occurrenceIndex = resolveSelectedOccurrenceIndex(renderedText, selectedText, start);
-  const selectionRange = sourceMatchRanges[Math.min(occurrenceIndex, sourceMatchRanges.length - 1)];
 
   return {
     selectedText,
@@ -165,6 +188,19 @@ function syncAnnotationsFromEditor(
   }));
 }
 
+function buildHighlightRanges(
+  annotations: MarkdownAnnotation[],
+  pendingSelection: PendingSelection | null,
+) {
+  const annotationRanges = annotations.flatMap((annotation) => annotation.matchRanges || []);
+
+  if (!pendingSelection) {
+    return annotationRanges;
+  }
+
+  return [...annotationRanges, pendingSelection.selectionRange];
+}
+
 export function MarkdownPreviewAnnotationWorkbench({
   content = "",
   filePath = "",
@@ -195,6 +231,10 @@ export function MarkdownPreviewAnnotationWorkbench({
         filePath,
       }),
     [annotationLines, filePath],
+  );
+  const highlightRanges = useMemo(
+    () => buildHighlightRanges(annotations, pendingSelection),
+    [annotations, pendingSelection],
   );
   const canSubmit =
     annotations.length > 0 &&
@@ -296,7 +336,9 @@ export function MarkdownPreviewAnnotationWorkbench({
               content={content}
               files={files}
               headingScopeId={headingScopeId}
+              highlightRanges={highlightRanges}
               resolvedTheme={resolvedTheme}
+              sourceTextMapping
               className="min-w-0 max-w-full"
             />
           </div>
