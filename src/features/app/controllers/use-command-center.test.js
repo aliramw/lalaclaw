@@ -190,6 +190,67 @@ describe("sendCommandCenterPreparedPrompt", () => {
       }),
     );
   });
+
+  it("can skip prompt history for legacy internal dispatches", async () => {
+    const setPromptHistoryByConversation = vi.fn();
+    const enqueueOrRunEntry = vi.fn().mockResolvedValue(undefined);
+    const resolveImSessionUserForSend = vi.fn().mockResolvedValue("command-center");
+    const shouldAutoScrollRef = { current: false };
+    const sharedOptions = {
+      activeChatTab: { id: "agent:main", sessionUser: "command-center", agentId: "main" },
+      activeChatTabId: "agent:main",
+      activeChatTabIdRef: { current: "agent:main" },
+      chatTabsRef: { current: [{ id: "agent:main", sessionUser: "command-center", agentId: "main" }] },
+      fastMode: false,
+      model: "gpt-4.1",
+      session: {
+        agentId: "main",
+        selectedAgentId: "main",
+        sessionUser: "command-center",
+        thinkMode: "off",
+      },
+      sessionByTabIdRef: { current: {} },
+      sessionStateRef: {
+        current: {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-4.1",
+          sessionUser: "command-center",
+          thinkMode: "off",
+        },
+      },
+      tabMetaByIdRef: {
+        current: {
+          "agent:main": {
+            agentId: "main",
+            sessionUser: "command-center",
+          },
+        },
+      },
+    };
+
+    await sendCommandCenterPreparedPrompt({
+      ...sharedOptions,
+      content: "annotation prompt",
+      resolveImSessionUserForSend,
+      enqueueOrRunEntry,
+      shouldAutoScrollRef,
+      setPromptHistoryByConversation,
+    });
+
+    await sendCommandCenterPreparedPrompt({
+      ...sharedOptions,
+      content: "/reset",
+      resolveImSessionUserForSend,
+      enqueueOrRunEntry,
+      shouldAutoScrollRef: { current: false },
+      setPromptHistoryByConversation,
+      shouldAppendPromptHistory: false,
+    });
+
+    expect(setPromptHistoryByConversation).toHaveBeenCalledTimes(1);
+    expect(enqueueOrRunEntry).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("areEquivalentChatScrollState", () => {

@@ -136,6 +136,7 @@ type SendCommandCenterPreparedPromptOptions = {
   sessionStateRef: MutableRefObject<CommandCenterPreparedPromptSessionState>;
   setPromptHistoryByConversation: Dispatch<SetStateAction<Record<string, string[]>>>;
   shouldAutoScrollRef: MutableRefObject<boolean>;
+  shouldAppendPromptHistory?: boolean;
   suppressPendingPlaceholder?: boolean;
   tabMetaByIdRef: MutableRefObject<Record<string, ChatTabMeta>>;
 };
@@ -161,6 +162,7 @@ export async function sendCommandCenterPreparedPrompt({
   sessionStateRef,
   setPromptHistoryByConversation,
   shouldAutoScrollRef,
+  shouldAppendPromptHistory = true,
   suppressPendingPlaceholder = false,
   tabMetaByIdRef,
 }: SendCommandCenterPreparedPromptOptions) {
@@ -214,7 +216,9 @@ export async function sendCommandCenterPreparedPrompt({
     ...(suppressPendingPlaceholder ? { suppressPendingPlaceholder: true } : {}),
   };
 
-  setPromptHistoryByConversation((current) => appendPromptHistory(current, entry.key, normalizedContent));
+  if (shouldAppendPromptHistory) {
+    setPromptHistoryByConversation((current) => appendPromptHistory(current, entry.key, normalizedContent));
+  }
 
   await enqueueOrRunEntry(entry);
   return entry;
@@ -1354,6 +1358,7 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
       sessionStateRef,
       setPromptHistoryByConversation,
       shouldAutoScrollRef,
+      shouldAppendPromptHistory: true,
       suppressPendingPlaceholder: options.suppressPendingPlaceholder,
       tabMetaByIdRef,
     });
@@ -1375,8 +1380,42 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
   ]);
 
   const dispatchSessionCommand = useCallback(async (content: string, options: CommandCenterPreparedPromptSendOptions = {}) => {
-    await handleSendPreparedPrompt(content, options);
-  }, [handleSendPreparedPrompt]);
+    await sendCommandCenterPreparedPrompt({
+      activeChatTab: activeChatTab || undefined,
+      activeChatTabId,
+      activeChatTabIdRef,
+      attachments: options.attachments,
+      chatTabsRef,
+      content,
+      enqueueOrRunEntry,
+      fastMode,
+      model,
+      resolveImSessionUserForSend,
+      session,
+      sessionByTabIdRef,
+      sessionStateRef,
+      setPromptHistoryByConversation,
+      shouldAutoScrollRef,
+      shouldAppendPromptHistory: false,
+      suppressPendingPlaceholder: options.suppressPendingPlaceholder,
+      tabMetaByIdRef,
+    });
+  }, [
+    activeChatTab,
+    activeChatTabId,
+    activeChatTabIdRef,
+    chatTabsRef,
+    enqueueOrRunEntry,
+    fastMode,
+    model,
+    resolveImSessionUserForSend,
+    session,
+    sessionByTabIdRef,
+    sessionStateRef,
+    setPromptHistoryByConversation,
+    shouldAutoScrollRef,
+    tabMetaByIdRef,
+  ]);
 
   const sendCurrentPrompt = async () => {
     const content = String(promptRef.current?.value || promptValueRef.current || "").trim();
