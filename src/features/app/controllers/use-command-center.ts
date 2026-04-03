@@ -140,6 +140,11 @@ type SendCommandCenterPreparedPromptOptions = {
   tabMetaByIdRef: MutableRefObject<Record<string, ChatTabMeta>>;
 };
 
+type CommandCenterPreparedPromptSendOptions = {
+  attachments?: unknown[];
+  suppressPendingPlaceholder?: boolean;
+};
+
 export async function sendCommandCenterPreparedPrompt({
   activeChatTab,
   activeChatTabId,
@@ -1332,25 +1337,27 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     updateTabSession,
   });
 
-  const handleSendPreparedPrompt = useCallback((content, options = {}) => sendCommandCenterPreparedPrompt({
-    activeChatTab: activeChatTab || undefined,
-    activeChatTabId,
-    activeChatTabIdRef,
-    attachments: options?.attachments,
-    chatTabsRef,
-    content,
-    enqueueOrRunEntry,
-    fastMode,
-    model,
-    resolveImSessionUserForSend,
-    session,
-    sessionByTabIdRef,
-    sessionStateRef,
-    setPromptHistoryByConversation,
-    shouldAutoScrollRef,
-    suppressPendingPlaceholder: options?.suppressPendingPlaceholder,
-    tabMetaByIdRef,
-  }), [
+  const handleSendPreparedPrompt = useCallback(async (content: string, options: CommandCenterPreparedPromptSendOptions = {}) => {
+    await sendCommandCenterPreparedPrompt({
+      activeChatTab: activeChatTab || undefined,
+      activeChatTabId,
+      activeChatTabIdRef,
+      attachments: options.attachments,
+      chatTabsRef,
+      content,
+      enqueueOrRunEntry,
+      fastMode,
+      model,
+      resolveImSessionUserForSend,
+      session,
+      sessionByTabIdRef,
+      sessionStateRef,
+      setPromptHistoryByConversation,
+      shouldAutoScrollRef,
+      suppressPendingPlaceholder: options.suppressPendingPlaceholder,
+      tabMetaByIdRef,
+    });
+  }, [
     activeChatTab,
     activeChatTabId,
     activeChatTabIdRef,
@@ -1366,6 +1373,10 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     shouldAutoScrollRef,
     tabMetaByIdRef,
   ]);
+
+  const dispatchSessionCommand = useCallback(async (content: string, options: CommandCenterPreparedPromptSendOptions = {}) => {
+    await handleSendPreparedPrompt(content, options);
+  }, [handleSendPreparedPrompt]);
 
   const sendCurrentPrompt = async () => {
     const content = String(promptRef.current?.value || promptValueRef.current || "").trim();
