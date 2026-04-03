@@ -11,6 +11,43 @@ vi.mock("docx-preview", () => ({
   renderAsync: renderAsyncMock,
 }));
 
+vi.mock("@/components/command-center/markdown-preview-annotation-workbench", () => ({
+  MarkdownPreviewAnnotationWorkbench: function MockMarkdownPreviewAnnotationWorkbench({ onStateChange, onSubmit }) {
+    return (
+      <div data-testid="markdown-preview-annotation-workbench">
+        <button
+          type="button"
+          data-testid="markdown-annotation-mark-draft"
+          onClick={() => onStateChange?.({ annotationCount: 1, hasDraftAnnotations: true })}
+        >
+          mark draft
+        </button>
+        <button
+          type="button"
+          data-testid="markdown-annotation-clear-draft"
+          onClick={() => onStateChange?.({ annotationCount: 0, hasDraftAnnotations: false })}
+        >
+          clear draft
+        </button>
+        <button
+          type="button"
+          data-testid="markdown-annotation-submit"
+          onClick={() =>
+            onSubmit?.({
+              annotationLines: ["第 2 行：有限公司 → 科技有限公司"],
+              annotations: [],
+              editorValue: "第 2 行：有限公司 → 科技有限公司",
+              prompt: "修改 /Users/marila/projects/lalaclaw/annotate.md 文件：\n第 2 行：有限公司 → 科技有限公司",
+            })
+          }
+        >
+          submit
+        </button>
+      </div>
+    );
+  },
+}));
+
 vi.mock("@monaco-editor/react", () => ({
   default: function MockMonacoEditor({ language, onChange, onMount, value }) {
     return (
@@ -338,6 +375,94 @@ describe("FilePreviewOverlay", () => {
     );
 
     expect(screen.getByTestId("markdown-preview-content").firstChild).toHaveClass("text-[16px]", "leading-7", "[&_p]:!leading-7", "[&_ul]:!my-2.5");
+  });
+
+  it("shows a markdown annotation toolbar button and enters annotation mode", async () => {
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "annotate.md",
+          path: "/Users/marila/projects/lalaclaw/annotate.md",
+          content: "# Title\n\nBody text",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+        onSendPreparedPrompt={vi.fn()}
+      />,
+    );
+
+    await user.hover(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/对内容进行批注|Annotate the content/);
+
+    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+
+    expect(screen.getByTestId("markdown-preview-annotation-workbench")).toBeInTheDocument();
+  });
+
+  it("asks for confirmation before discarding pending markdown annotations", async () => {
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "annotate.md",
+          path: "/Users/marila/projects/lalaclaw/annotate.md",
+          content: "# Title\n\nBody text",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+        onSendPreparedPrompt={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+    await user.click(screen.getByTestId("markdown-annotation-mark-draft"));
+    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(/放弃当前批注|Discard current annotations/);
+
+    await user.click(screen.getByRole("button", { name: /放弃批注|Discard annotations/ }));
+
+    expect(screen.queryByTestId("markdown-preview-annotation-workbench")).not.toBeInTheDocument();
+    expect(screen.getByText("Title")).toBeInTheDocument();
+  });
+
+  it("sends the annotation prompt directly and closes the preview on success", async () => {
+    const onClose = vi.fn();
+    const onSendPreparedPrompt = vi.fn(async () => {});
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "annotate.md",
+          path: "/Users/marila/projects/lalaclaw/annotate.md",
+          content: "# Title\n\nBody text",
+        }}
+        onClose={onClose}
+        onOpenFilePreview={() => {}}
+        onSendPreparedPrompt={onSendPreparedPrompt}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+    await user.click(screen.getByTestId("markdown-annotation-submit"));
+
+    await waitFor(() => {
+      expect(onSendPreparedPrompt).toHaveBeenCalledWith(
+        "修改 /Users/marila/projects/lalaclaw/annotate.md 文件：\n第 2 行：有限公司 → 科技有限公司",
+        { shouldAppendPromptHistory: true },
+      );
+    });
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("keeps markdown preview content constrained inside the main panel", () => {

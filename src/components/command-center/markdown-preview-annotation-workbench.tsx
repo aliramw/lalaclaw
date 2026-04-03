@@ -27,12 +27,20 @@ type MarkdownPreviewAnnotationWorkbenchSubmitPayload = {
   prompt: string;
 };
 
+type MarkdownPreviewAnnotationWorkbenchState = {
+  annotationCount: number;
+  hasDraftAnnotations: boolean;
+};
+
 type MarkdownPreviewAnnotationWorkbenchProps = {
   content?: string;
   filePath?: string;
   files?: SessionFile[];
   headingScopeId?: string;
   labels?: MarkdownPreviewAnnotationWorkbenchLabels;
+  lineNumberOffset?: number;
+  onOpenFilePreview?: (item: SessionFile) => void;
+  onStateChange?: (state: MarkdownPreviewAnnotationWorkbenchState) => void;
   onSubmit?: (payload: MarkdownPreviewAnnotationWorkbenchSubmitPayload) => void | Promise<void>;
   resolvedTheme?: string;
   submitPending?: boolean;
@@ -207,6 +215,9 @@ export function MarkdownPreviewAnnotationWorkbench({
   files = [],
   headingScopeId,
   labels = {},
+  lineNumberOffset = 0,
+  onOpenFilePreview,
+  onStateChange,
   onSubmit,
   resolvedTheme = "light",
   submitPending = false,
@@ -222,6 +233,13 @@ export function MarkdownPreviewAnnotationWorkbench({
     setPendingSelection(null);
     clearDomSelection();
   }, [content, filePath]);
+
+  useEffect(() => {
+    onStateChange?.({
+      annotationCount: annotations.length,
+      hasDraftAnnotations: annotations.length > 0,
+    });
+  }, [annotations, onStateChange]);
 
   const annotationLines = useMemo(() => normalizeAnnotationLines(editorValue), [editorValue]);
   const prompt = useMemo(
@@ -274,6 +292,10 @@ export function MarkdownPreviewAnnotationWorkbench({
       setPendingSelection(null);
       clearDomSelection();
       return;
+    }
+
+    if (Number.isFinite(lineNumberOffset) && Number(lineNumberOffset) > 0 && Number.isFinite(annotation.lineNumber ?? NaN)) {
+      annotation.lineNumber = Number(annotation.lineNumber) + Math.max(0, Math.floor(Number(lineNumberOffset)));
     }
 
     setAnnotations((currentAnnotations) => {
@@ -337,6 +359,7 @@ export function MarkdownPreviewAnnotationWorkbench({
               files={files}
               headingScopeId={headingScopeId}
               highlightRanges={highlightRanges}
+              onOpenFilePreview={onOpenFilePreview}
               resolvedTheme={resolvedTheme}
               sourceTextMapping
               className="min-w-0 max-w-full"

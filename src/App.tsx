@@ -401,6 +401,7 @@ function AppContent() {
     handleThinkModeChange,
     handleUserLabelChange,
     handleWorkspaceFilesOpenChange,
+    handleSendPreparedPrompt,
     dismissTaskRelationship,
     localizedFormatTime,
     messageViewportRef,
@@ -863,6 +864,7 @@ function AppContent() {
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onReset={() => handleReset().catch(() => {})}
                 onSend={handleSend}
+                onSendPreparedPrompt={handleSendPreparedPrompt}
                 onStop={() => handleStop().catch(() => {})}
                 prompt={prompt}
                 promptSyncVersion={promptSyncVersion}

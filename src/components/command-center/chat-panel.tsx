@@ -225,6 +225,7 @@ type ChatPanelProps = {
   onRemoveQueuedMessage?: (messageId: string) => void;
   onReset?: () => void;
   onSend?: () => void;
+  onSendPreparedPrompt?: (content: string, options?: { attachments?: unknown[]; shouldAppendPromptHistory?: boolean; suppressPendingPlaceholder?: boolean; }) => Promise<unknown> | unknown;
   onStop?: () => void;
   prompt?: string;
   promptSyncVersion?: number;
@@ -2300,6 +2301,7 @@ export function ChatPanel({
   onRemoveQueuedMessage = () => {},
   onReset = () => {},
   onSend = () => {},
+  onSendPreparedPrompt,
   onStop = () => {},
   prompt = "",
   promptSyncVersion = 0,
@@ -4440,6 +4442,7 @@ export function ChatPanel({
             sessionFiles={files}
             onClose={closeFilePreview}
             onOpenFilePreview={handleOpenPreview}
+            onSendPreparedPrompt={onSendPreparedPrompt}
             workspaceCount={workspaceCount}
             workspaceFiles={workspaceFiles}
             workspaceLoaded={workspaceLoaded}
