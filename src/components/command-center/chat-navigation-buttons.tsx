@@ -31,7 +31,7 @@ export const BubbleTopJumpButton = memo(function BubbleTopJumpButton({ onClick }
   const { messages } = useI18n();
 
   return (
-    <div className="pointer-events-none sticky top-2 z-10 -mb-7 flex justify-end px-2">
+    <div className="pointer-events-none sticky top-2 z-10 -mb-7 ml-auto flex w-fit justify-end pr-2">
       <Tooltip>
         <TooltipTrigger asChild>
           <button

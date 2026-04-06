@@ -855,6 +855,98 @@ describe("createOpenClawClient", () => {
     }
   });
 
+  it("does not block delivery-routed stream completion when assistant mirroring hangs", async () => {
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(() => new Promise(() => {}));
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("agent");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "钉钉最终输出" }],
+              },
+            },
+          });
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn(async (_cmd, args) => {
+      if (args.includes("chat.history")) {
+        return {
+          stdout: JSON.stringify({
+            messages: [
+              {
+                role: "assistant",
+                timestamp: 125,
+                content: [{ type: "text", text: "钉钉最终输出" }],
+                usage: { output_tokens: 6 },
+              },
+            ],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected gateway call: ${args.join(" ")}`);
+    });
+
+    const client = createClient({
+      execFileAsync,
+      getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    try {
+      const result = await Promise.race([
+        client.dispatchOpenClawStream(
+          [{ role: "user", content: "继续" }],
+          false,
+          rawSessionUser,
+          { onDelta: () => {} },
+        ),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("dispatch timed out waiting for mirror")), 50)),
+      ]);
+
+      expect(result).toEqual({
+        outputText: "钉钉最终输出",
+        usage: { output_tokens: 6 },
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("fills in silent stream gaps by polling the session history before the final event arrives", async () => {
     vi.useFakeTimers();
     const deltas = [];

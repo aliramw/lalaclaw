@@ -73,11 +73,11 @@ export const UserMessageBubble = memo(function UserMessageBubble({
     <div
       ref={setBubbleNode}
       {...messageBubbleAttributes}
-      className="group/message flex w-full max-w-full"
+      className="group/message flex w-full max-w-full justify-end"
     >
       <div className="flex w-full min-w-0 max-w-full flex-col items-end">
         <MessageLabel align="right" value={userLabel} textClassName={fontSizeStyles.label} />
-        <div className="flex w-full min-w-0 max-w-full flex-col items-end">
+        <div className="flex w-full min-w-0 max-w-full flex-col items-end gap-1">
           <div className="flex w-full min-w-0 max-w-full justify-end">
             <div className="flex min-w-0 flex-1 justify-end">
               <Card ref={setBubbleSurfaceNode} data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "min-w-0 self-end overflow-hidden", "cc-user-bubble", userBubbleClassName, focusBubbleClassName)}>
@@ -105,18 +105,20 @@ export const UserMessageBubble = memo(function UserMessageBubble({
               </Card>
             </div>
           </div>
-          <MessageMeta
-            align="right"
-            content={message.content}
-            copyFirst
-            formatTime={formatTime}
-            onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
-            pending={false}
-            streaming={false}
-            compact
-            textClassName={fontSizeStyles.meta}
-            timestamp={message.timestamp}
-          />
+          <div className="flex w-full justify-end">
+            <MessageMeta
+              align="right"
+              content={message.content}
+              copyFirst
+              formatTime={formatTime}
+              onJumpPreviousUserMessage={previousMessageId ? handleJumpPreviousMessage : undefined}
+              pending={false}
+              streaming={false}
+              compact
+              textClassName={fontSizeStyles.meta}
+              timestamp={message.timestamp}
+            />
+          </div>
         </div>
       </div>
     </div>

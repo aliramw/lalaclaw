@@ -1159,7 +1159,6 @@ const MessageBubble = memo(function MessageBubble({
           <div className="inline-flex max-w-full items-start gap-1.5">
           <div className="flex min-w-0 max-w-full items-start gap-3">
               <div className="flex min-w-0 flex-1 max-w-[700px] items-start">
-                {bubbleTopJumpButton}
               <Card
                 ref={setBubbleSurfaceNode}
                 data-bubble-layout="full"
@@ -1173,6 +1172,7 @@ const MessageBubble = memo(function MessageBubble({
                 focusBubbleClassName,
                 )}
               >
+                {bubbleTopJumpButton}
                 <CardContent className={bubbleContentClassName}>
                 <span
                   ref={setBubbleTopSentinelNode}
@@ -1241,7 +1241,6 @@ const MessageBubble = memo(function MessageBubble({
           <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-center gap-2">
             <div className="min-w-0">
-              {bubbleTopJumpButton}
             <Card
               ref={setBubbleSurfaceNode}
               data-bubble-layout="compact"
@@ -1255,6 +1254,7 @@ const MessageBubble = memo(function MessageBubble({
                 focusBubbleClassName,
               )}
             >
+              {bubbleTopJumpButton}
               <CardContent className={bubbleContentClassName}>
                 <MarkdownContent
                   content={renderedContent}
@@ -1297,7 +1297,6 @@ const MessageBubble = memo(function MessageBubble({
         <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
         <div className="flex min-w-0 max-w-full items-start gap-2">
           <div className="flex min-w-0 flex-1 max-w-[700px] items-start">
-            {bubbleTopJumpButton}
           <Card
             ref={setBubbleSurfaceNode}
             data-bubble-layout="full"
@@ -1311,6 +1310,7 @@ const MessageBubble = memo(function MessageBubble({
               focusBubbleClassName,
             )}
           >
+            {bubbleTopJumpButton}
             <CardContent className={bubbleContentClassName}>
               <span
                 ref={setBubbleTopSentinelNode}

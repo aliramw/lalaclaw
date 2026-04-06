@@ -43,6 +43,31 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 
 - After each AI-involved PR, append a short summary: prompt used, files touched, tests rerun, reviewer, and whether any manual validation (UI, smoke, environment) was required. Keep at least the last three summaries in this file for traceability.
 
+### 2026-04-06 — Chat Bubble Alignment and In-Card Jump Control
+
+- Prompt/workstream: investigate why the user bubble looked left-shifted and why the `Back to message top` control rendered outside the assistant card, then make the smallest chat-panel layout fix that restores right-edge alignment and keeps the jump control inside the card.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-06 Asia/Shanghai.
+- Files touched:
+  - chat render surfaces such as `src/components/command-center/chat-user-bubble.tsx` and `src/components/command-center/chat-panel.tsx`
+  - regression coverage in `src/components/command-center/chat-panel.test.jsx`
+  - visual/spec governance in `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- --run src/components/command-center/chat-panel.test.jsx -t "keeps user message metadata below the bubble so the bubble stays right-aligned|keeps the message-top jump button inside the assistant card corner instead of rendering it beside the card"`
+  - `npm test -- --run src/components/command-center/chat-panel.test.jsx`
+- Manual/equivalent validation:
+  - compared the supplied screenshots against the current chat bubble DOM structure to confirm the user bubble was visually shifted by side metadata and the jump control was mounted as a card sibling instead of inside the assistant bubble
+  - mirrored both chat-layout rules into `dev-spec/frontend-visual-spec.md` in the same workstream
+- Reviewer/sign-off:
+  - pending human review
+  - low-to-medium risk surface because the patch is scoped to transcript presentation in `command-center` and does not alter runtime/session transport or persistence
+- Reviewer checklist:
+  - confirm user bubbles now visually hug the right edge of the chat column
+  - confirm the message-top jump button sits inside the assistant card's top-right corner in compact/full/outline variants
+  - confirm assistant meta, outlines, and pending cards still render in the expected order
+- Visual spec linkage:
+  - added explicit rules for right-aligned user bubbles and in-card message-top controls to `dev-spec/frontend-visual-spec.md`
+
 ### 2026-04-01 — Chat Tool Activity Card Ordering and Collapse Behavior
 
 - Prompt/workstream: make chat transcript tool activity render as separate cards, keep each chat tool card collapsed by default, and place tool cards in chronological order instead of merging them into one block above the assistant reply.

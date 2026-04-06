@@ -2952,7 +2952,7 @@ describe("ChatPanel", () => {
     expect(userBubble).not.toContainElement(systemMessage);
   });
 
-  it("renders user-message meta below the bubble instead of floating detached on the left side", () => {
+  it("keeps user message metadata below the bubble so the bubble stays right-aligned", () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -2962,8 +2962,8 @@ describe("ChatPanel", () => {
           messages={[
             {
               role: "user",
-              content: "好了吗",
-              timestamp: 2,
+              content: "用户消息应该继续贴着聊天列右边缘。",
+              timestamp: 1,
             },
           ]}
           onChatFontSizeChange={() => {}}
@@ -2978,14 +2978,21 @@ describe("ChatPanel", () => {
       </TooltipProvider>,
     );
 
-    const userBubble = screen.getByText("好了吗").closest('[data-message-role="user"]');
-    const bubbleSurface = userBubble?.querySelector('[data-bubble-layout="user"]');
-    const meta = userBubble?.querySelector('[data-message-meta="true"]');
+    const userMessage = screen.getByText("用户消息应该继续贴着聊天列右边缘。");
+    const userBubbleContainer = userMessage.closest('[data-message-role="user"]');
+    const bubbleSurface = userBubbleContainer?.querySelector('[data-bubble-layout="user"]');
+    const meta = userBubbleContainer?.querySelector('[data-message-meta="true"]');
+    const userBubble = userMessage.closest('[data-bubble-layout="user"]');
+    const metaRow = meta?.parentElement;
+    const time = screen.getByText("10:00:00");
 
+    expect(userBubbleContainer).toBeTruthy();
     expect(bubbleSurface).toBeTruthy();
     expect(meta).toBeTruthy();
     expect(meta).toHaveAttribute("data-message-meta-align", "right");
     expect(Boolean(bubbleSurface.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(metaRow).toHaveClass("justify-end");
+    expect(userBubble?.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("does not render the outline card while the latest assistant message is still streaming", () => {
@@ -4844,6 +4851,88 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(viewport.scrollTop).toBe(64);
     });
+  });
+
+  it("keeps the message-top jump button inside the assistant card corner instead of rendering it beside the card", async () => {
+    const viewportRef = { current: null };
+    vi.stubGlobal("requestAnimationFrame", (callback) => {
+      callback(16);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={viewportRef}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段\n\n第二段\n第三段\n第四段\n第五段\n第六段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const viewport = viewportRef.current;
+    expect(viewport).toBeTruthy();
+
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 240 });
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, writable: true, value: 160 });
+    viewport.getBoundingClientRect = () => ({
+      top: 0,
+      left: 0,
+      right: 600,
+      bottom: 240,
+      width: 600,
+      height: 240,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const latestAssistantAnchor = document.querySelector('[data-message-anchor="latest-assistant"]');
+    expect(latestAssistantAnchor).toBeTruthy();
+    const latestAssistantCard = latestAssistantAnchor.querySelector('[data-bubble-layout="full"]');
+    expect(latestAssistantCard).toBeTruthy();
+
+    latestAssistantAnchor.getBoundingClientRect = () => ({
+      top: -24,
+      left: 0,
+      right: 560,
+      bottom: 316,
+      width: 560,
+      height: 340,
+      x: 0,
+      y: -24,
+      toJSON: () => ({}),
+    });
+    latestAssistantCard.getBoundingClientRect = () => ({
+      top: -12,
+      left: 0,
+      right: 560,
+      bottom: 308,
+      width: 560,
+      height: 320,
+      x: 0,
+      y: -12,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.scroll(viewport);
+
+    const jumpButton = await screen.findByRole("button", { name: "回到这条消息顶部" });
+    expect(latestAssistantCard).toContainElement(jumpButton);
+    expect(jumpButton.parentElement).toHaveClass("sticky", "top-2", "ml-auto", "w-fit");
   });
 
   it("does not show the message-top jump button for assistant messages with images", async () => {
