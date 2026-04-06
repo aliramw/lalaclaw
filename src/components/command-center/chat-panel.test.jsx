@@ -342,6 +342,31 @@ describe("ChatPanel", () => {
     expect(composerToolbar).not.toHaveClass("md:justify-between");
   });
 
+  it("keeps the composer shell quiet until focus instead of showing a permanent thick focus ring", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const composerInputShell = container.querySelector(".cc-chat-composer-shell .rounded-\\[20px\\]");
+    expect(composerInputShell).toBeInTheDocument();
+    expect(composerInputShell).not.toHaveClass("ring-2");
+    expect(composerInputShell).toHaveClass("focus-within:ring-2");
+  });
+
   it("renders scroll buttons for overflowing tabs and scrolls the tab rail", async () => {
     const { container } = render(
       <TooltipProvider>
@@ -1082,7 +1107,7 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
-  it("keeps the composer frame in its active focus styling even before focus", () => {
+  it("keeps the composer frame quiet at rest and reserves the stronger ring for focus", () => {
     render(
       <TooltipProvider>
         <ChatPanel
@@ -1104,7 +1129,8 @@ describe("ChatPanel", () => {
     );
 
     const composerFrame = screen.getByPlaceholderText(defaultPromptPlaceholder).parentElement?.parentElement;
-    expect(composerFrame).toHaveClass("border-[#4d88c7]", "ring-2", "ring-[#4d88c7]/20");
+    expect(composerFrame).toHaveClass("border-[#4d88c7]/50", "focus-within:border-[#4d88c7]", "focus-within:ring-2", "focus-within:ring-[#4d88c7]/20");
+    expect(composerFrame).not.toHaveClass("ring-2");
   });
 
   it("uses the dramatic connected label in chinese while keeping the tooltip detail standard", async () => {
@@ -2926,6 +2952,42 @@ describe("ChatPanel", () => {
     expect(userBubble).not.toContainElement(systemMessage);
   });
 
+  it("renders user-message meta below the bubble instead of floating detached on the left side", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              role: "user",
+              content: "好了吗",
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const userBubble = screen.getByText("好了吗").closest('[data-message-role="user"]');
+    const bubbleSurface = userBubble?.querySelector('[data-bubble-layout="user"]');
+    const meta = userBubble?.querySelector('[data-message-meta="true"]');
+
+    expect(bubbleSurface).toBeTruthy();
+    expect(meta).toBeTruthy();
+    expect(meta).toHaveAttribute("data-message-meta-align", "right");
+    expect(Boolean(bubbleSurface.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
   it("does not render the outline card while the latest assistant message is still streaming", () => {
     const { container } = render(
       <TooltipProvider>
@@ -4098,6 +4160,44 @@ describe("ChatPanel", () => {
     expect(assistantBubble).toBeInTheDocument();
     expect(assistantBubble).toHaveClass("w-full", "max-w-[min(100%,700px)]");
     expect(assistantBubble?.className).not.toContain("100vw");
+  });
+
+  it("lets a user bubble shrink around a long unbroken token instead of forcing the main layout wider", () => {
+    const longToken = `修改 /Users/marila/.openclaw/workspace/nemoClaw.md 文件：${"1234567890abcdefghijklmnopqrstuvwxyz".repeat(10)}`;
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            {
+              role: "user",
+              content: longToken,
+              timestamp: 1,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const userBubble = screen.getByText(longToken).closest('[data-bubble-layout="user"]');
+    const bubbleTrack = userBubble?.parentElement;
+    const bubbleColumn = bubbleTrack?.parentElement;
+
+    expect(userBubble).toBeInTheDocument();
+    expect(userBubble).toHaveClass("w-fit", "min-w-0", "max-w-[min(100%,40rem)]", "overflow-hidden");
+    expect(bubbleTrack).toHaveClass("min-w-0", "flex-1", "justify-end");
+    expect(bubbleColumn).toHaveClass("w-full", "min-w-0", "max-w-full", "justify-end");
   });
 
   it("opens file previews when clicking tracked files in assistant bubbles", async () => {

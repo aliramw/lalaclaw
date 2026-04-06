@@ -32,10 +32,23 @@ describe("MarkdownContent", () => {
   it("renders plain chat text without markdown transforms", () => {
     const { container } = render(<MarkdownContent content={"第一行\n第二行"} />);
 
-    const text = container.querySelector(".whitespace-pre-wrap.break-words");
+    const text = container.querySelector(".whitespace-pre-wrap.break-all");
     expect(text?.textContent).toBe("第一行\n第二行");
-    expect(text).toHaveClass("whitespace-pre-wrap", "break-words");
+    expect(text).toHaveClass("min-w-0", "max-w-full", "whitespace-pre-wrap", "break-all");
     expect(document.querySelector("h1, h2, h3, pre, code, a")).toBeNull();
+  });
+
+  it("does not add horizontal padding to annotation highlights, so highlighted text does not shift sideways", () => {
+    const { container } = render(
+      <MarkdownContent
+        content={"第一行\n第二行"}
+        highlightRanges={[{ start: 4, end: 7, tone: "selection" }]}
+      />,
+    );
+
+    const highlight = container.querySelector("mark[data-markdown-annotation-highlight='true']");
+    expect(highlight).toBeTruthy();
+    expect(highlight).not.toHaveClass("px-px");
   });
 
   it("scales markdown shell line height with the selected chat font size", () => {
@@ -46,6 +59,13 @@ describe("MarkdownContent", () => {
     rerender(<MarkdownContent fontSize="large" content={"第一行\n第二行"} />);
 
     expect(container.firstChild).toHaveClass("text-[14px]", "leading-6", "[&_li]:leading-6");
+  });
+
+  it("allows long markdown tokens to wrap anywhere instead of forcing the shell wider", () => {
+    const { container } = render(<MarkdownContent content={"- 1234567890abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz"} />);
+
+    expect(container.firstChild).toHaveClass("min-w-0", "max-w-full", "break-words");
+    expect(container.firstChild.className).toContain("overflow-wrap:anywhere");
   });
 
   it("renders headings, links, and inline code", async () => {
@@ -347,6 +367,7 @@ describe("MarkdownContent", () => {
 
     const fileButton = await screen.findByRole("button", { name: "sample.py" });
     expect(fileButton).toHaveClass("file-link", "appearance-none", "border-0", "bg-transparent", "p-0", "leading-inherit");
+    expect(fileButton).toHaveClass("min-w-0", "max-w-full", "break-all");
   });
 
   it("renders unordered lists and task lists with dedicated list styling", async () => {

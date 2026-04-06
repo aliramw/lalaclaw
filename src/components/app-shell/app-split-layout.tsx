@@ -32,7 +32,7 @@ export function AppSplitLayout({
       className="cc-workspace-layout-shell grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-[24px] border border-border/55 bg-[var(--surface-elevated)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
       style={splitLayoutStyle}
     >
-      <div className="cc-workspace-stage min-h-0 min-w-0">
+      <div className="cc-workspace-stage min-h-0 min-w-0 overflow-hidden">
         {chatPanel}
       </div>
 
@@ -69,7 +69,7 @@ export function AppSplitLayout({
 
       <div className="cc-inspector-stage flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden xl:min-w-[300px] xl:border-l xl:border-border/45 xl:pl-4">
         {taskRelationshipsPanel}
-        <div className="min-h-0 min-w-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           {inspectorPanel}
         </div>
       </div>

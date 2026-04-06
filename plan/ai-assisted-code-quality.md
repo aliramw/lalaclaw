@@ -193,3 +193,68 @@ This plan captures how we treat AI-generated code (including prompts, model vers
   - pending human review before implementation begins
 - Follow-up expectation:
   - implementation PRs derived from this design should log their concrete prompts, touched files, and validation runs separately once code changes begin
+
+### 2026-04-03 — Markdown Annotation Workbench Spacing and Draft Removal
+
+- Prompt/workstream: fix the markdown preview annotation mode so controls no longer sit flush against the overlay edge, add a per-annotation remove affordance for draft instructions, and sync the resulting spacing rules back into the visual spec.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-03 Asia/Shanghai.
+- Files touched:
+  - annotation workbench and preview overlay surfaces such as `src/components/command-center/markdown-preview-annotation-workbench.tsx` and `src/components/command-center/file-preview-overlay.tsx`
+  - regression coverage such as `src/components/command-center/markdown-preview-annotation-workbench.test.jsx`
+  - locale wiring such as `src/locales/en.js` and `src/locales/zh.js`
+  - visual/spec governance such as `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- src/components/command-center/file-preview-overlay.test.jsx src/components/command-center/markdown-preview-annotation-workbench.test.jsx`
+  - `npm run lint`
+- Manual/equivalent validation:
+  - compared the user-supplied screenshot against the annotation-mode layout to confirm the regression was spacing hierarchy rather than missing functionality
+  - reworked the annotation mode into padded grouped surfaces so the preview column and instruction column both preserve safe margins inside the overlay
+  - refined the selection interaction so the action menu opens next to the selected text, pending selections use a blue temporary highlight, and committed annotations switch to yellow only after an action is chosen
+  - aligned the temporary selection menu with the app's existing context-menu visual language, removed redundant right-column framing/title copy, and strengthened the toolbar toggle so active annotation mode reads as an explicit cancel state rather than another edit-style action
+  - updated the temporary action menu again to match the existing context-menu chrome and icon treatment more strictly, and delayed menu appearance until pointer release so dragging a longer selection cannot hit the menu mid-selection
+  - restored the right-column instructional sentence as plain helper text instead of deleting it, tightened one-line draft annotation rows so they no longer read as oversized cards, and added explicit replacement-input guidance after choosing an annotation action
+  - added the `A` shortcut and matching tooltip disclosure for the annotation-mode toggle, and changed `Esc` behavior so edit/annotation mode exits always confirm before the preview closes
+  - fixed the selection-menu trigger so dragging from inside the preview still resolves into a menu even when the pointer-up lands slightly outside the preview container
+  - added a first-class `Delete` annotation action to the context menu, kept the menu width compact, and removed the textarea resize affordance because the workbench does not support manual textarea resizing
+  - moved the annotation action menu so it prefers the space below the current selection and only flips above when needed, preventing the menu from covering the selected text itself
+  - reordered the annotation menu so destructive `Delete` stays after `Replace` and `Replace all`
+  - removed the redundant aggregate annotation editor and switched the right-hand workbench to per-row editing, where each replace-style draft is edited through a single unified line input and the lower prompt preview becomes the only combined instruction surface
+  - collapsed each editable draft row down to a single visible shell by merging the inline text field into the outer card, reduced the dismiss control to a smaller clearly-secondary button size, added an explicit `替换为` / `Replace with` target prompt on the arrow-right side so empty replacement targets never look like inert blank space, then adjusted long-prefix rows to wrap instead of truncating, and finally moved the replacement input back into the same wrapped text flow after manual review showed a pseudo two-column layout was wasting width
+  - replaced the remaining fixed-width replacement box with a sentence-flow inline editor so `替换为` / `Replace with` now behaves like placeholder copy inside the instruction itself and long replacement text stays visible as part of the full wrapped instruction
+  - after manual UI review of the chat transcript, pulled user-message meta back underneath the user bubble instead of leaving it as a detached side column, and toned the composer shell down so the heavier blue focus ring only appears on focus instead of idling in the resting state
+  - rolled back the earlier horizontal `1px` highlight padding after real interaction review showed it nudged selected text sideways; highlights now keep the visual treatment without changing line width
+  - synced the new safe-gutter and right-column spacing-tier rules into `dev-spec/frontend-visual-spec.md` in the same workstream
+- Reviewer/sign-off:
+  - pending human review
+  - low-to-medium risk surface because the change is confined to file-preview UI layout and draft-instruction controls without touching runtime/session transport
+- Reviewer checklist:
+  - confirm annotation mode no longer looks flush to the overlay edges in both light and dark themes
+  - confirm a fresh text selection shows a blue temporary highlight and nearby action menu, then switches to yellow only after choosing an annotation action
+  - confirm a single draft annotation can be removed without clearing the rest of the workbench state
+  - confirm the generated prompt, submit action, and preview highlights remain aligned after removing one draft rule
+  - confirm the restored helper sentence remains visible without reintroducing the redundant dashed empty-state frame
+  - confirm the `A` shortcut and `Esc` confirmation behavior match the tooltip copy and do not accidentally close the preview without confirmation
+  - confirm a drag selection still opens the action menu even if the pointer is released just outside the preview body
+  - confirm the compact context menu now includes `Delete` and the right-hand textarea no longer shows a misleading resize handle
+  - confirm the action menu no longer sits on top of the highlighted selection and that destructive actions remain ordered after the replace actions
+  - confirm replace-style draft rows can be edited inline without a second large editor box, while delete rows still summarize correctly and the generated prompt preview stays accurate
+  - confirm each editable draft row now reads as one framed control rather than an outer card plus inner textbox, and that the dismiss button remains visible but visually secondary
+- Visual spec linkage:
+  - added markdown annotation overlay compact-menu, non-overlapping menu placement, destructive-action ordering, delete-action, drag-selection, non-resizable-textarea, safe-gutter, compact draft-row, explicit replacement-target prompt, stable in-place highlight rule, shortcut, and `Esc`-confirmation rules to `dev-spec/frontend-visual-spec.md` in the same workstream per repository policy
+- Prompt/workstream: stop a single long pasted user message in `main` from blowing out the chat shell and making the rest of the screen look globally misaligned.
+- Files touched:
+  - `src/components/command-center/chat-user-bubble.tsx`
+  - `src/components/command-center/markdown-content.tsx`
+  - `src/components/command-center/chat-panel.test.jsx`
+  - `src/components/command-center/markdown-content.test.jsx`
+  - `dev-spec/frontend-visual-spec.md`
+- Quality gates rerun:
+  - `npm test -- src/components/command-center/chat-panel.test.jsx src/components/command-center/markdown-content.test.jsx`
+  - `npm run lint -- src/components/command-center/chat-user-bubble.tsx src/components/command-center/markdown-content.tsx src/components/command-center/chat-panel.test.jsx src/components/command-center/markdown-content.test.jsx`
+- Manual/equivalent validation:
+  - traced the reported “only main is broken” symptom back to one long user bubble instead of the global split layout
+  - added shrink constraints on the user-bubble chain and upgraded markdown/text wrapping so long unbroken content stays inside the bubble
+- Reviewer checklist:
+  - confirm a single long user message in `main` no longer pushes the chat column or inspector column out of alignment
+  - confirm the long string wraps inside the bubble instead of truncating or forcing horizontal overflow

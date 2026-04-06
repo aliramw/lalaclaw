@@ -401,6 +401,7 @@ function AppContent() {
     handleThinkModeChange,
     handleUserLabelChange,
     handleWorkspaceFilesOpenChange,
+    handleSendPreparedPrompt,
     dismissTaskRelationship,
     localizedFormatTime,
     messageViewportRef,
@@ -759,6 +760,7 @@ function AppContent() {
       currentWorkspaceRoot={typeof session.workspaceRoot === "string" ? session.workspaceRoot : undefined}
       files={files}
       onSelectArtifact={handleArtifactSelect}
+      onSendPreparedPrompt={handleSendPreparedPrompt}
       onRefreshEnvironment={handleRefreshEnvironment}
       onTrackSessionFiles={handleTrackSessionFiles}
       onSyncCurrentSessionModel={handleSyncCurrentSessionModel}
@@ -781,6 +783,7 @@ function AppContent() {
     artifacts,
     files,
     handleArtifactSelect,
+    handleSendPreparedPrompt,
     handleRefreshEnvironment,
     handleTrackSessionFiles,
     handleSyncCurrentSessionModel,
@@ -863,6 +866,7 @@ function AppContent() {
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onReset={() => handleReset().catch(() => {})}
                 onSend={handleSend}
+                onSendPreparedPrompt={handleSendPreparedPrompt}
                 onStop={() => handleStop().catch(() => {})}
                 prompt={prompt}
                 promptSyncVersion={promptSyncVersion}

@@ -1344,14 +1344,17 @@ describe("App", () => {
     const user = userEvent.setup();
     const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+    });
 
     await user.type(composer, "甲");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    await user.type(composer, "乙");
+    await user.type(await findComposer(), "乙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-    await user.type(composer, "丙");
+    await user.type(await findComposer(), "丙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
     await waitFor(() => {
@@ -1431,14 +1434,17 @@ describe("App", () => {
     const user = userEvent.setup();
     const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+    });
 
     await user.type(composer, "甲");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    await user.type(composer, "乙");
+    await user.type(await findComposer(), "乙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-    await user.type(composer, "丙");
+    await user.type(await findComposer(), "丙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
     await waitFor(() => {
@@ -1523,14 +1529,17 @@ describe("App", () => {
     const user = userEvent.setup();
     const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+    });
 
     await user.type(composer, "甲");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    await user.type(composer, "乙");
+    await user.type(await findComposer(), "乙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-    await user.type(composer, "丙");
+    await user.type(await findComposer(), "丙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
     await waitFor(() => {
@@ -1609,14 +1618,17 @@ describe("App", () => {
     const user = userEvent.setup();
     const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+    });
 
     await user.type(composer, "甲");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    await user.type(composer, "乙");
+    await user.type(await findComposer(), "乙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-    await user.type(composer, "丙");
+    await user.type(await findComposer(), "丙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
     await waitFor(() => {
@@ -1715,14 +1727,17 @@ describe("App", () => {
     const user = userEvent.setup();
     const composer = await findComposer();
     await user.click(screen.getByRole("button", { name: "切换为Shift + 回车发送" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "切换为回车发送" })).toBeInTheDocument();
+    });
 
     await user.type(composer, "甲");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    await user.type(composer, "乙");
+    await user.type(await findComposer(), "乙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-    await user.type(composer, "丙");
+    await user.type(await findComposer(), "丙");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
     await waitFor(() => {

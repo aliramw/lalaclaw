@@ -6,6 +6,7 @@ import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { extractHeadingOutline, slugifyHeading } from "@/components/command-center/chat-message-utils";
+import type { MarkdownAnnotationHighlightRange } from "@/components/command-center/markdown-annotation-utils";
 import { scrollElementIntoNearestContainer } from "@/components/command-center/markdown-scroll-utils";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -26,10 +27,12 @@ type MarkdownRendererProps = {
   content?: string;
   files?: TrackedFile[];
   headingScopeId?: string;
+  highlightRanges?: MarkdownAnnotationHighlightRange[];
   onOpenFilePreview?: (file: TrackedFile) => void;
   onOpenImagePreview?: (image: ImagePreviewValue) => void;
   resolvedTheme?: string;
   shellClassName?: string;
+  sourceTextMapping?: boolean;
   streaming?: boolean;
 };
 
@@ -49,6 +52,12 @@ type MarkdownLinkRendererProps = {
   onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
 } & Record<string, unknown>;
 
+type SourceAwareSpanProps = MarkdownRenderProps & {
+  "data-source-end"?: number | string;
+  "data-source-start"?: number | string;
+  "data-source-text"?: string;
+};
+
 type MarkdownImageProps = {
   alt?: string;
   onOpenInlineImagePreview?: (image: ImagePreviewValue) => void;
@@ -65,7 +74,7 @@ type MarkdownHeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 const codeTheme = themes.dracula;
 const homePrefix = "/Users/marila";
 const trackedFileLinkButtonClassName =
-  "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
+  "file-link inline min-w-0 max-w-full break-all [overflow-wrap:anywhere] appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
 const emptyMarkdownPluginState = Object.freeze({ remarkPlugins: [], rehypePlugins: [] });
 type MarkdownPluginState = {
   rehypePlugins: unknown[];
@@ -244,6 +253,126 @@ function promoteStandaloneImageLinks(content = "") {
       return line;
     })
     .join("\n");
+}
+
+function normalizeSourceOffset(value: unknown): number | null {
+  const nextValue = Number(value);
+
+  if (!Number.isFinite(nextValue)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor(nextValue));
+}
+
+function resolveHighlightTone(
+  highlightRanges: MarkdownAnnotationHighlightRange[] = [],
+  segmentStart: number,
+  segmentEnd: number,
+) {
+  let fallbackTone: "annotation" | "selection" = "annotation";
+
+  for (const range of highlightRanges) {
+    const start = normalizeSourceOffset(range?.start);
+    const end = normalizeSourceOffset(range?.end);
+
+    if (start === null || end === null || end <= start || start >= segmentEnd || end <= segmentStart) {
+      continue;
+    }
+
+    if (range?.tone === "selection") {
+      return "selection";
+    }
+
+    fallbackTone = "annotation";
+  }
+
+  return fallbackTone;
+}
+
+function buildHighlightedSourceSegments(
+  text: string,
+  rangeStart: number,
+  rangeEnd: number,
+  highlightRanges: MarkdownAnnotationHighlightRange[] = [],
+) {
+  if (!text || rangeEnd <= rangeStart) {
+    return [{ highlighted: false, text }];
+  }
+
+  const splitOffsets = new Set([0, text.length]);
+
+  highlightRanges.forEach((range) => {
+    const start = Math.max(rangeStart, normalizeSourceOffset(range?.start) ?? rangeStart);
+    const end = Math.min(rangeEnd, normalizeSourceOffset(range?.end) ?? rangeEnd);
+
+    if (end <= start) {
+      return;
+    }
+
+    splitOffsets.add(start - rangeStart);
+    splitOffsets.add(end - rangeStart);
+  });
+
+  const orderedOffsets = Array.from(splitOffsets).sort((left, right) => left - right);
+
+  return orderedOffsets.slice(0, -1).map((offset, index) => {
+    const nextOffset = orderedOffsets[index + 1];
+    const segmentStart = rangeStart + offset;
+    const segmentEnd = rangeStart + nextOffset;
+    const segmentText = text.slice(offset, nextOffset);
+    const highlighted = highlightRanges.some((range) => {
+      const start = normalizeSourceOffset(range?.start);
+      const end = normalizeSourceOffset(range?.end);
+
+      if (start === null || end === null || end <= start) {
+        return false;
+      }
+
+      return start < segmentEnd && end > segmentStart;
+    });
+
+    return {
+      highlighted,
+      tone: highlighted ? resolveHighlightTone(highlightRanges, segmentStart, segmentEnd) : undefined,
+      text: segmentText,
+    };
+  });
+}
+
+function annotateTextNodesWithSourceOffsets() {
+  return (tree: any) => {
+    function visit(node: any) {
+      if (!node || typeof node !== "object" || !Array.isArray(node.children)) {
+        return;
+      }
+
+      node.children = node.children.flatMap((child: any) => {
+        if (child?.type === "text" && typeof child.value === "string") {
+          const start = normalizeSourceOffset(child?.position?.start?.offset);
+          const end = normalizeSourceOffset(child?.position?.end?.offset);
+
+          if (start !== null && end !== null && end > start) {
+            return [{
+              type: "element",
+              tagName: "span",
+              properties: {
+                "data-source-end": String(end),
+                "data-source-start": String(start),
+                "data-source-text": "true",
+              },
+              children: [child],
+            }];
+          }
+        }
+
+        visit(child);
+        return [child];
+      });
+    }
+
+    visit(tree);
+  };
 }
 
 function normalizeMathDelimiters(content = "") {
@@ -440,8 +569,8 @@ function LinkRenderer({ href, children, files, headingScopeId, onOpenFilePreview
       href={resolvedHref}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noreferrer" : undefined}
-      className="file-link"
-        onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
+      className="file-link min-w-0 max-w-full break-all [overflow-wrap:anywhere]"
+      onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
         onClick?.(event);
         if (event.defaultPrevented || !scopedHashTarget || typeof document === "undefined") {
           return;
@@ -854,7 +983,9 @@ export default function MarkdownRenderer({
   content,
   files,
   headingScopeId = "message",
+  highlightRanges = [],
   resolvedTheme = "light",
+  sourceTextMapping = false,
   streaming = false,
   className,
   shellClassName,
@@ -1070,6 +1201,57 @@ export default function MarkdownRenderer({
       {...props}
     />
   ), []);
+  const spanRenderer = useCallback(({
+    children,
+    className: spanClassName,
+    "data-source-end": dataSourceEnd,
+    "data-source-start": dataSourceStart,
+    "data-source-text": dataSourceText,
+    ...props
+  }: SourceAwareSpanProps) => {
+    const text = flattenChildrenText(children);
+    const start = normalizeSourceOffset(dataSourceStart);
+    const end = normalizeSourceOffset(dataSourceEnd);
+    const isSourceText = dataSourceText === "true" && start !== null && end !== null && end >= start;
+
+    if (!isSourceText || !text) {
+      return (
+        <span className={spanClassName} {...props}>
+          {children}
+        </span>
+      );
+    }
+
+    const segments = buildHighlightedSourceSegments(text, start, end, highlightRanges);
+
+    return (
+      <span
+        className={spanClassName}
+        data-source-end={String(end)}
+        data-source-start={String(start)}
+        data-source-text="true"
+        {...props}
+      >
+        {segments.map((segment, index) => (
+          segment.highlighted ? (
+            <mark
+              key={`${start}-${end}-${index}`}
+              className={cn(
+                "box-decoration-clone rounded-[2px] py-px text-inherit",
+                segment.tone === "selection"
+                  ? "bg-sky-200/88 shadow-[inset_0_0_0_1px_rgba(2,132,199,0.18)]"
+                  : "bg-yellow-200/85 shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]",
+              )}
+              data-markdown-annotation-highlight="true"
+              data-markdown-annotation-highlight-tone={segment.tone || "annotation"}
+            >
+              {segment.text}
+            </mark>
+          ) : segment.text
+        ))}
+      </span>
+    );
+  }, [highlightRanges]);
 
   const markdownComponents = useMemo(() => ({
     a: linkRenderer,
@@ -1087,6 +1269,7 @@ export default function MarkdownRenderer({
     h4: heading4Renderer,
     h5: heading5Renderer,
     h6: heading6Renderer,
+    span: spanRenderer,
     ul: unorderedListRenderer,
   }), [
     blockquoteRenderer,
@@ -1103,16 +1286,20 @@ export default function MarkdownRenderer({
     paragraphRenderer,
     renderImage,
     renderListItem,
+    spanRenderer,
     tableRenderer,
     unorderedListRenderer,
   ]);
+  const rehypePlugins = useMemo(() => (
+    sourceTextMapping ? [...pluginState.rehypePlugins, annotateTextNodesWithSourceOffsets] : pluginState.rehypePlugins
+  ), [pluginState.rehypePlugins, sourceTextMapping]);
 
   return (
     <>
       <div className={cn("min-w-0 max-w-full", shellClassName, className)}>
         <MarkdownReact
           remarkPlugins={pluginState.remarkPlugins}
-          rehypePlugins={pluginState.rehypePlugins}
+          rehypePlugins={rehypePlugins}
           urlTransform={markdownUrlTransform}
           components={markdownComponents}
         >

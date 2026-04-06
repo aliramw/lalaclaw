@@ -10,6 +10,7 @@ import {
   hasActiveAssistantReply,
   isChatTabBusy,
   planSearchedSessionTabTarget,
+  sendCommandCenterPreparedPrompt,
   resolveTrackedPendingEntry,
   resolveRuntimeTabAgentId,
   resolveViewportAnchorCandidate,
@@ -121,6 +122,142 @@ describe("resolveTrackedPendingEntry", () => {
         timestamp: 100,
       },
     });
+  });
+});
+
+describe("sendCommandCenterPreparedPrompt", () => {
+  it("sends explicit content without relying on the composer state", async () => {
+    const setPromptHistoryByConversation = vi.fn();
+    const enqueueOrRunEntry = vi.fn().mockResolvedValue(undefined);
+    const resolveImSessionUserForSend = vi.fn().mockResolvedValue("command-center");
+    const shouldAutoScrollRef = { current: false };
+
+    const entry = await sendCommandCenterPreparedPrompt({
+      activeChatTab: { id: "agent:main", sessionUser: "command-center", agentId: "main" },
+      activeChatTabId: "agent:main",
+      activeChatTabIdRef: { current: "agent:main" },
+      chatTabsRef: { current: [{ id: "agent:main", sessionUser: "command-center", agentId: "main" }] },
+      content: "  修改 docs/notes.md 文件：\n第 1 行：旧内容 → 新内容  ",
+      fastMode: false,
+      model: "gpt-4.1",
+      session: {
+        agentId: "main",
+        selectedAgentId: "main",
+        sessionUser: "command-center",
+        thinkMode: "off",
+      },
+      sessionByTabIdRef: { current: {} },
+      sessionStateRef: {
+        current: {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-4.1",
+          sessionUser: "command-center",
+          thinkMode: "off",
+        },
+      },
+      tabMetaByIdRef: {
+        current: {
+          "agent:main": {
+            agentId: "main",
+            sessionUser: "command-center",
+          },
+        },
+      },
+      resolveImSessionUserForSend,
+      enqueueOrRunEntry,
+      shouldAutoScrollRef,
+      setPromptHistoryByConversation,
+    });
+
+    expect(entry).toMatchObject({
+      content: "修改 docs/notes.md 文件：\n第 1 行：旧内容 → 新内容",
+      key: "command-center:main",
+      agentId: "main",
+      sessionUser: "command-center",
+    });
+    expect(shouldAutoScrollRef.current).toBe(true);
+    expect(resolveImSessionUserForSend).toHaveBeenCalledWith({
+      agentId: "main",
+      sessionUser: "command-center",
+      tabId: "agent:main",
+    });
+    expect(setPromptHistoryByConversation).toHaveBeenCalledTimes(1);
+    expect(enqueueOrRunEntry).toHaveBeenCalledTimes(1);
+    expect(enqueueOrRunEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "修改 docs/notes.md 文件：\n第 1 行：旧内容 → 新内容",
+        attachments: [],
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-4.1",
+        fastMode: false,
+        thinkMode: "off",
+      }),
+    );
+  });
+
+  it("can skip prompt history for legacy internal dispatches", async () => {
+    const setPromptHistoryByConversation = vi.fn();
+    const enqueueOrRunEntry = vi.fn().mockResolvedValue(undefined);
+    const resolveImSessionUserForSend = vi.fn().mockResolvedValue("command-center");
+    const shouldAutoScrollRef = { current: false };
+    const sharedOptions = {
+      activeChatTab: { id: "agent:main", sessionUser: "command-center", agentId: "main" },
+      activeChatTabId: "agent:main",
+      activeChatTabIdRef: { current: "agent:main" },
+      chatTabsRef: { current: [{ id: "agent:main", sessionUser: "command-center", agentId: "main" }] },
+      fastMode: false,
+      model: "gpt-4.1",
+      session: {
+        agentId: "main",
+        selectedAgentId: "main",
+        sessionUser: "command-center",
+        thinkMode: "off",
+      },
+      sessionByTabIdRef: { current: {} },
+      sessionStateRef: {
+        current: {
+          agentId: "main",
+          fastMode: false,
+          model: "gpt-4.1",
+          sessionUser: "command-center",
+          thinkMode: "off",
+        },
+      },
+      tabMetaByIdRef: {
+        current: {
+          "agent:main": {
+            agentId: "main",
+            sessionUser: "command-center",
+          },
+        },
+      },
+    };
+
+    const appendedEntry = await sendCommandCenterPreparedPrompt({
+      ...sharedOptions,
+      content: "annotation prompt",
+      resolveImSessionUserForSend,
+      enqueueOrRunEntry,
+      shouldAutoScrollRef,
+      setPromptHistoryByConversation,
+    });
+
+    const skippedEntry = await sendCommandCenterPreparedPrompt({
+      ...sharedOptions,
+      content: "/reset",
+      resolveImSessionUserForSend,
+      enqueueOrRunEntry,
+      shouldAutoScrollRef: { current: false },
+      setPromptHistoryByConversation,
+      shouldAppendPromptHistory: false,
+    });
+
+    expect(appendedEntry).toBeTruthy();
+    expect(skippedEntry).toBeTruthy();
+    expect(setPromptHistoryByConversation).toHaveBeenCalledTimes(1);
+    expect(enqueueOrRunEntry).toHaveBeenCalledTimes(2);
   });
 });
 

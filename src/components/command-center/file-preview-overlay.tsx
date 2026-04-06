@@ -6,6 +6,7 @@ import { InspectorFilesPanel } from "@/components/command-center/inspector-files
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
+import { MarkdownPreviewAnnotationWorkbench } from "@/components/command-center/markdown-preview-annotation-workbench";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isEditableElement } from "@/features/chat/utils";
@@ -39,6 +40,7 @@ const filePreviewFontSizeOptions = [
 ];
 type FilePreviewFontSize = "small" | "medium" | "large";
 type SaveNotice = { id: number; message: string } | null;
+type MarkdownAnnotationLeaveAction = "" | "cancel-edit" | "close-preview" | "close-preview-confirm" | "discard-markdown-annotations" | "discard-markdown-annotations-and-close";
 type PreviewLike = any;
 const richTextPreviewFontSizeClassNames = {
   small: "text-[12px] leading-5 [&_p]:!leading-5 [&_li]:!leading-5 [&_blockquote]:!leading-5 [&_td]:!leading-5 [&_th]:!leading-5 [&_p]:!mb-1.5 [&_ul]:!my-1.5 [&_ol]:!my-1.5",
@@ -177,6 +179,15 @@ function compactHomePath(filePath = "") {
     return "";
   }
   return filePath.startsWith(homePrefix) ? `~${filePath.slice(homePrefix.length)}` : filePath;
+}
+
+function renderShortcutTooltip(label: string, shortcut: string, hint: (shortcut: string) => string) {
+  return (
+    <div className="space-y-0.5">
+      <div>{label}</div>
+      <div className="text-[11px] text-muted-foreground">{hint(shortcut)}</div>
+    </div>
+  );
 }
 
 function loadStoredFilePreviewFontSize() {
@@ -1149,6 +1160,7 @@ export function FilePreviewOverlay({
   sessionFiles = [],
   onClose,
   onOpenFilePreview,
+  onSendPreparedPrompt,
   workspaceCount,
   workspaceFiles = [],
   workspaceLoaded = false,
@@ -1162,6 +1174,7 @@ export function FilePreviewOverlay({
   sessionFiles?: any[];
   onClose?: () => void;
   onOpenFilePreview?: (item: any, options?: any) => void;
+  onSendPreparedPrompt?: (content: string, options?: { attachments?: unknown[]; shouldAppendPromptHistory?: boolean; suppressPendingPlaceholder?: boolean; }) => Promise<unknown> | unknown;
   workspaceCount?: number;
   workspaceFiles?: any[];
   workspaceLoaded?: boolean;
@@ -1178,7 +1191,11 @@ export function FilePreviewOverlay({
   const [previewContentOverride, setPreviewContentOverride] = useState<string | null>(null);
   const [saveError, setSaveError] = useState("");
   const [saveNotice, setSaveNotice] = useState<SaveNotice>(null);
-  const [pendingLeaveAction, setPendingLeaveAction] = useState("");
+  const [isMarkdownAnnotationMode, setIsMarkdownAnnotationMode] = useState(false);
+  const [markdownAnnotationCount, setMarkdownAnnotationCount] = useState(0);
+  const [pendingLeaveAction, setPendingLeaveAction] = useState<MarkdownAnnotationLeaveAction>("");
+  const [markdownAnnotationSubmitError, setMarkdownAnnotationSubmitError] = useState("");
+  const [isSubmittingMarkdownAnnotationPrompt, setIsSubmittingMarkdownAnnotationPrompt] = useState(false);
   const previewViewportRef = useRef<HTMLElement | null>(null);
   const pendingEditorScrollRatioRef = useRef<number | null>(null);
   const editSessionInitialContentRef = useRef("");
@@ -1206,7 +1223,15 @@ export function FilePreviewOverlay({
         return;
       }
       event.preventDefault();
-      if (isEditing && editSessionDirty) {
+      if (isMarkdownAnnotationMode && markdownAnnotationCount > 0) {
+        setPendingLeaveAction("discard-markdown-annotations-and-close");
+        return;
+      }
+      if (isMarkdownAnnotationMode || isEditing) {
+        setPendingLeaveAction(editSessionDirty ? "close-preview" : "close-preview-confirm");
+        return;
+      }
+      if (editSessionDirty) {
         setPendingLeaveAction("close-preview");
         return;
       }
@@ -1215,7 +1240,7 @@ export function FilePreviewOverlay({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [editSessionDirty, isEditing, onClose, preview]);
+  }, [editSessionDirty, isEditing, isMarkdownAnnotationMode, markdownAnnotationCount, onClose, preview]);
 
   useEffect(() => {
     if (!preview) {
@@ -1241,6 +1266,10 @@ export function FilePreviewOverlay({
     setPreviewContentOverride(null);
     setSaveError("");
     setSaveNotice(null);
+    setIsMarkdownAnnotationMode(false);
+    setMarkdownAnnotationCount(0);
+    setMarkdownAnnotationSubmitError("");
+    setIsSubmittingMarkdownAnnotationPrompt(false);
     setEditSessionDirty(false);
     setPendingLeaveAction("");
     pendingEditorScrollRatioRef.current = null;
@@ -1278,10 +1307,18 @@ export function FilePreviewOverlay({
     ? (previewContentOverride !== null ? previewContentOverride : String(preview?.content || ""))
     : "";
   const canEditPreview = editablePreview && !preview?.loading && !preview?.error && !preview?.truncated && Boolean(title);
-  const showFilesSidebar = Boolean(title);
+  const showFilesSidebar = Boolean(title) && !isMarkdownAnnotationMode;
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
   const showPreviewFontSizeControls = preview?.kind === "markdown" || preview?.kind === "text" || preview?.kind === "json";
+  const annotationShortcutLabel = "A";
   const editShortcutLabel = "E";
+  const markdownAnnotationWorkbenchLabels = messages.inspector.previewActions.markdownAnnotationWorkbench;
+  const markdownAnnotationToggleLabel = isMarkdownAnnotationMode
+    ? messages.inspector.previewActions.annotationUpdateActive
+    : messages.inspector.previewActions.annotationUpdate;
+  const markdownAnnotationToggleTooltip = isMarkdownAnnotationMode
+    ? messages.inspector.previewActions.annotationUpdateActiveTooltip
+    : messages.inspector.previewActions.annotationUpdateTooltip;
 
   const handleRevealInFileManager = async () => {
     if (!title || openingInFileManager) {
@@ -1303,6 +1340,58 @@ export function FilePreviewOverlay({
       setOpeningInFileManager(false);
     }
   };
+
+  const hasMarkdownAnnotationDrafts = markdownAnnotationCount > 0;
+  const showMarkdownAnnotationToggle = preview?.kind === "markdown" && !isEditing && !preview?.loading && !preview?.error && !preview?.truncated;
+
+  const handleMarkdownAnnotationStateChange = useCallback((state: { annotationCount: number; hasDraftAnnotations: boolean }) => {
+    setMarkdownAnnotationCount(Number(state?.annotationCount || 0));
+  }, []);
+
+  const handleStartMarkdownAnnotationMode = useCallback(() => {
+    if (!showMarkdownAnnotationToggle) {
+      return;
+    }
+
+    if (isMarkdownAnnotationMode) {
+      if (hasMarkdownAnnotationDrafts) {
+        setPendingLeaveAction("discard-markdown-annotations");
+        return;
+      }
+
+      setIsMarkdownAnnotationMode(false);
+      setMarkdownAnnotationSubmitError("");
+      return;
+    }
+
+    setIsMarkdownAnnotationMode(true);
+    setMarkdownAnnotationSubmitError("");
+  }, [hasMarkdownAnnotationDrafts, isMarkdownAnnotationMode, showMarkdownAnnotationToggle]);
+
+  const handleMarkdownAnnotationSubmit = useCallback(async ({ prompt }: { prompt: string }) => {
+    if (!onSendPreparedPrompt) {
+      return;
+    }
+
+    try {
+      setIsSubmittingMarkdownAnnotationPrompt(true);
+      setMarkdownAnnotationSubmitError("");
+      const preparedSend = onSendPreparedPrompt(prompt, { shouldAppendPromptHistory: true });
+      setIsMarkdownAnnotationMode(false);
+      setMarkdownAnnotationCount(0);
+      setMarkdownAnnotationSubmitError("");
+      setPendingLeaveAction("");
+      onClose?.();
+      void Promise.resolve(preparedSend).catch((error) => {
+        console.error("Failed to dispatch markdown annotation prompt", error);
+      });
+    } catch (error) {
+      const resolvedError = error as { message?: string } | null;
+      setMarkdownAnnotationSubmitError(resolvedError?.message || messages.inspector.previewActions.annotationUpdateSubmitFailed);
+    } finally {
+      setIsSubmittingMarkdownAnnotationPrompt(false);
+    }
+  }, [messages.inspector.previewActions.annotationUpdateSubmitFailed, onClose, onSendPreparedPrompt]);
 
   const handleStartEditing = useCallback(() => {
     if (!canEditPreview) {
@@ -1335,12 +1424,16 @@ export function FilePreviewOverlay({
   }, [effectivePreviewContent]);
 
   const handleRequestClose = useCallback(() => {
+    if (isMarkdownAnnotationMode && hasMarkdownAnnotationDrafts) {
+      setPendingLeaveAction("discard-markdown-annotations-and-close");
+      return;
+    }
     if (isEditing && editSessionDirty) {
       setPendingLeaveAction("close-preview");
       return;
     }
     onClose?.();
-  }, [editSessionDirty, isEditing, onClose]);
+  }, [editSessionDirty, hasMarkdownAnnotationDrafts, isEditing, isMarkdownAnnotationMode, onClose]);
 
   const handleRequestCancelEditing = useCallback(() => {
     if (editSessionDirty) {
@@ -1355,6 +1448,24 @@ export function FilePreviewOverlay({
       handleCancelEditing();
       return;
     }
+
+    if (pendingLeaveAction === "discard-markdown-annotations") {
+      setIsMarkdownAnnotationMode(false);
+      setMarkdownAnnotationCount(0);
+      setMarkdownAnnotationSubmitError("");
+      setPendingLeaveAction("");
+      return;
+    }
+
+    if (pendingLeaveAction === "discard-markdown-annotations-and-close") {
+      setIsMarkdownAnnotationMode(false);
+      setMarkdownAnnotationCount(0);
+      setMarkdownAnnotationSubmitError("");
+      setPendingLeaveAction("");
+      onClose?.();
+      return;
+    }
+
     setPendingLeaveAction("");
     onClose?.();
   }, [handleCancelEditing, onClose, pendingLeaveAction]);
@@ -1443,6 +1554,14 @@ export function FilePreviewOverlay({
         && !event.repeat
         && !event.isComposing
         && (event.code === "KeyE" || normalizedKey === "e");
+      const isAnnotationShortcut =
+        !event.metaKey
+        && !event.ctrlKey
+        && !event.altKey
+        && !event.shiftKey
+        && !event.repeat
+        && !event.isComposing
+        && (event.code === "KeyA" || normalizedKey === "a");
       const isSaveShortcut = event.code === "KeyS" || normalizedKey === "s";
 
       if (isEditShortcut && !isEditing) {
@@ -1455,6 +1574,16 @@ export function FilePreviewOverlay({
         return;
       }
 
+      if (isAnnotationShortcut && showMarkdownAnnotationToggle) {
+        if (isEditableElement(activeElement) || isEditableElement(eventTarget)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        handleStartMarkdownAnnotationMode();
+        return;
+      }
+
       if (supportsSaveShortcut && isSaveShortcut && isEditing) {
         event.preventDefault();
         event.stopPropagation();
@@ -1464,7 +1593,7 @@ export function FilePreviewOverlay({
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [applePlatform, canEditPreview, handleSaveEditing, handleStartEditing, isEditing, preview]);
+  }, [applePlatform, canEditPreview, handleSaveEditing, handleStartEditing, handleStartMarkdownAnnotationMode, isEditing, preview, showMarkdownAnnotationToggle]);
 
   if (!preview) {
     return null;
@@ -1501,7 +1630,49 @@ export function FilePreviewOverlay({
     );
   } else if (preview.kind === "markdown") {
     const { frontMatter, body: markdownBody } = splitMarkdownFrontMatter(effectivePreviewContent);
-    body = (
+    const markdownBodyLineOffset = frontMatter ? frontMatter.split(/\r?\n/).length + 2 : 0;
+    body = isMarkdownAnnotationMode ? (
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,96rem)] flex-col gap-5">
+        {markdownAnnotationSubmitError ? (
+          <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-4 text-sm text-rose-200">
+            {markdownAnnotationSubmitError}
+          </div>
+        ) : null}
+        {frontMatter ? (
+          <div className="rounded-2xl border border-border/70 bg-[var(--surface)]/92 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] sm:p-5">
+            <div className={cn("text-[11px] font-medium uppercase tracking-[0.08em]", isDark ? "text-zinc-400" : "text-slate-500")}>
+              {messages.inspector.previewActions.frontMatter}
+            </div>
+            <FilePreviewCodeBlock
+              content={frontMatter}
+              language="yaml"
+              resolvedTheme={resolvedTheme}
+              syntaxTheme={resolvedTheme === "dark" ? frontMatterDarkTheme : frontMatterLightTheme}
+              variant="subtle"
+              fontSize={filePreviewFontSize}
+            />
+          </div>
+        ) : null}
+        {markdownBody.trim() ? (
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <MarkdownPreviewAnnotationWorkbench
+              content={markdownBody}
+              filePath={title}
+              files={files || []}
+              fontSize={filePreviewFontSize}
+              headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
+              labels={markdownAnnotationWorkbenchLabels}
+              lineNumberOffset={markdownBodyLineOffset}
+              onOpenFilePreview={onOpenFilePreview}
+              onStateChange={handleMarkdownAnnotationStateChange}
+              onSubmit={handleMarkdownAnnotationSubmit}
+              resolvedTheme={resolvedTheme}
+              submitPending={isSubmittingMarkdownAnnotationPrompt}
+            />
+          </div>
+        ) : null}
+      </div>
+    ) : (
       <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-4">
         {frontMatter ? (
           <div className="space-y-2">
@@ -1577,14 +1748,17 @@ export function FilePreviewOverlay({
   }
 
   const useDirectBodyLayout = isPdfPreview
+    || isMarkdownAnnotationMode
     || isEditing
     || preview.kind === "json"
     || (preview.kind === "text" && isCodeLikePreviewTarget(title, preview.kind));
   const directBodyPaddingClassName = isFullscreen
-    ? (isPdfPreview ? "h-full p-0" : "h-full px-6 py-5")
+    ? (isPdfPreview ? "h-full p-0" : isMarkdownAnnotationMode ? "h-full px-4 py-4 sm:px-6 sm:py-5" : "h-full px-6 py-5")
     : isEditing
       ? "h-full p-0"
-      : "px-6 py-5";
+      : isMarkdownAnnotationMode
+        ? "h-full px-4 py-4 sm:px-5 sm:py-5"
+        : "px-6 py-5";
   const mainBody = useDirectBodyLayout ? (
     <div
       className={cn(
@@ -1612,10 +1786,27 @@ export function FilePreviewOverlay({
 
   const leaveDialogTitle = pendingLeaveAction === "cancel-edit"
     ? messages.inspector.previewActions.unsavedChanges.cancelTitle
-    : messages.inspector.previewActions.unsavedChanges.closeTitle;
+    : pendingLeaveAction === "close-preview-confirm"
+      ? messages.inspector.previewActions.closePreviewConfirm.title
+    : pendingLeaveAction === "discard-markdown-annotations"
+      ? messages.inspector.previewActions.markdownAnnotationDiscard.toggleTitle
+      : pendingLeaveAction === "discard-markdown-annotations-and-close"
+        ? messages.inspector.previewActions.markdownAnnotationDiscard.closeTitle
+        : messages.inspector.previewActions.unsavedChanges.closeTitle;
+  const leaveDialogDescription = pendingLeaveAction === "discard-markdown-annotations" || pendingLeaveAction === "discard-markdown-annotations-and-close"
+    ? messages.inspector.previewActions.markdownAnnotationDiscard.description
+    : pendingLeaveAction === "close-preview-confirm"
+      ? messages.inspector.previewActions.closePreviewConfirm.description
+    : messages.inspector.previewActions.unsavedChanges.description;
   const leaveDialogConfirmLabel = pendingLeaveAction === "cancel-edit"
     ? messages.inspector.previewActions.unsavedChanges.discardAndStopEditing
-    : messages.inspector.previewActions.unsavedChanges.discardAndClose;
+    : pendingLeaveAction === "close-preview-confirm"
+      ? messages.inspector.previewActions.closePreviewConfirm.confirm
+    : pendingLeaveAction === "discard-markdown-annotations"
+      ? messages.inspector.previewActions.markdownAnnotationDiscard.discardAndStay
+      : pendingLeaveAction === "discard-markdown-annotations-and-close"
+        ? messages.inspector.previewActions.markdownAnnotationDiscard.discardAndClose
+        : messages.inspector.previewActions.unsavedChanges.discardAndClose;
 
   return (
     <>
@@ -1751,9 +1942,34 @@ export function FilePreviewOverlay({
                         {messages.inspector.previewActions.editFile}
                       </PreviewButton>
                     </PreviewTooltipTrigger>
-                    <PreviewTooltipContent>{messages.theme.shortcutHint(editShortcutLabel)}</PreviewTooltipContent>
+                    <PreviewTooltipContent>{renderShortcutTooltip(messages.inspector.previewActions.editFile, editShortcutLabel, messages.theme.shortcutHint)}</PreviewTooltipContent>
                   </PreviewTooltip>
                 )
+              ) : null}
+              {showMarkdownAnnotationToggle ? (
+                <PreviewTooltip>
+                  <PreviewTooltipTrigger asChild>
+                    <PreviewButton
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "h-8 gap-1.5 px-3 text-xs",
+                        previewToolbarSurfaceClassName,
+                        isMarkdownAnnotationMode
+                          ? "border-primary/70 bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(150,91,34,0.18)] hover:border-primary/80 hover:bg-primary/92 hover:text-primary-foreground focus-visible:ring-primary/45"
+                          : previewToolbarInteractiveClassName,
+                      )}
+                      aria-pressed={isMarkdownAnnotationMode}
+                      aria-label={markdownAnnotationToggleLabel}
+                      onClick={handleStartMarkdownAnnotationMode}
+                    >
+                      {isMarkdownAnnotationMode ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                      <span>{markdownAnnotationToggleLabel}</span>
+                    </PreviewButton>
+                  </PreviewTooltipTrigger>
+                  <PreviewTooltipContent>{renderShortcutTooltip(markdownAnnotationToggleTooltip, annotationShortcutLabel, messages.theme.shortcutHint)}</PreviewTooltipContent>
+                </PreviewTooltip>
               ) : null}
               <div
                 className={cn(
@@ -1877,7 +2093,7 @@ export function FilePreviewOverlay({
                     {leaveDialogTitle}
                   </div>
                   <div className={cn("text-sm leading-6", isDark ? "text-zinc-300" : "text-slate-600")}>
-                    {messages.inspector.previewActions.unsavedChanges.description}
+                    {leaveDialogDescription}
                   </div>
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
