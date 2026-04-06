@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2026.4.6]
+
+### Added
+
+- Added a markdown preview annotation workbench, shared annotation helpers, and update/remove flows so inline markdown annotations can be created and iterated from the command center with stronger regression coverage.
+- Added AI-assisted quality-plan entries and the corresponding markdown-annotation rollout plan so the new workflow is documented before release.
+
+### Changed
+
+- Updated README and localized quick-start version examples to `2026.4.6`.
+- Refined the frontend visual spec and split-layout shell behavior so narrow workspaces fall back to the compact inspector rail using actual workspace width.
+
+### Fixed
+
+- Fixed chat bubble sizing, attachment layout, and async assistant mirroring so tighter layouts stay readable while markdown preview annotation interactions remain anchored correctly.
+- Fixed prepared-prompt dispatch aliasing and OpenClaw client request handling regressions uncovered while landing the markdown annotation update flow.
+
 ## [2026.4.3]
 
 ### Changed

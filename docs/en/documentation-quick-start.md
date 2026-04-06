@@ -139,10 +139,10 @@ npm install -g lalaclaw@latest
 lalaclaw init
 ```
 
-If you want a specific published version instead, such as `2026.4.3`:
+If you want a specific published version instead, such as `2026.4.6`:
 
 ```bash
-npm install -g lalaclaw@2026.4.3
+npm install -g lalaclaw@2026.4.6
 lalaclaw init
 ```
 
@@ -156,12 +156,12 @@ npm run build
 npm run lalaclaw:start
 ```
 
-If you want a specific released version instead, such as `2026.4.3`:
+If you want a specific released version instead, such as `2026.4.6`:
 
 ```bash
 cd /path/to/lalaclaw
 git fetch --tags
-git checkout 2026.4.3
+git checkout 2026.4.6
 npm ci
 npm run build
 npm run lalaclaw:start
@@ -207,7 +207,7 @@ If you want to demo the in-app LalaClaw self-update flow repeatedly from a sourc
 curl http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
 curl -X POST http://127.0.0.1:3000/api/dev/lalaclaw/update-mock \
   -H 'Content-Type: application/json' \
-  -d '{"enabled":true,"stableVersion":"2026.4.3"}'
+  -d '{"enabled":true,"stableVersion":"2026.4.6"}'
 curl -X DELETE http://127.0.0.1:3000/api/dev/lalaclaw/update-mock
 ```
 
