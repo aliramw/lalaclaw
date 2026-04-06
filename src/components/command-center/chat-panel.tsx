@@ -1158,41 +1158,41 @@ const MessageBubble = memo(function MessageBubble({
           <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
           <div className="inline-flex max-w-full items-start gap-1.5">
           <div className="flex min-w-0 max-w-full items-start gap-3">
-              <div className="flex min-w-0 flex-1 max-w-[700px] items-start">
-              <Card
-                ref={setBubbleSurfaceNode}
-                data-bubble-layout="full"
-              className={cn(
-                bubbleBaseClassName,
-                longAssistantWidthClassName,
-                "relative overflow-hidden",
-                "cc-assistant-bubble",
-                streamingAssistantBubbleClassName,
-                assistantBubbleClassName,
-                focusBubbleClassName,
-                )}
-              >
+              <div data-bubble-top-jump-track="true" className="flex min-w-0 flex-1 max-w-[700px] flex-col">
                 {bubbleTopJumpButton}
-                <CardContent className={bubbleContentClassName}>
-                <span
-                  ref={setBubbleTopSentinelNode}
-                  aria-hidden="true"
-                  className="pointer-events-none absolute top-0 left-0 h-px w-px opacity-0"
-                />
-                <MarkdownContent
-                  content={renderedContent}
-                  files={files as any}
-                  fontSize={chatFontSize as any}
-                  headingScopeId={headingScopeId}
-                  resolvedTheme={resolvedTheme}
-                  streaming={isStreamingAssistant}
-                  onOpenFilePreview={handleOpenFilePreview}
-                  onOpenImagePreview={handleOpenImagePreview}
-                  className={fontSizeStyles.markdown}
-                />
-                {showStreamingTail ? <StreamingTailDots /> : null}
-                </CardContent>
-              </Card>
+                <Card
+                  ref={setBubbleSurfaceNode}
+                  data-bubble-layout="full"
+                  className={cn(
+                    bubbleBaseClassName,
+                    longAssistantWidthClassName,
+                    "relative overflow-hidden",
+                    "cc-assistant-bubble",
+                    streamingAssistantBubbleClassName,
+                    assistantBubbleClassName,
+                    focusBubbleClassName,
+                  )}
+                >
+                  <CardContent className={bubbleContentClassName}>
+                    <span
+                      ref={setBubbleTopSentinelNode}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-0 left-0 h-px w-px opacity-0"
+                    />
+                    <MarkdownContent
+                      content={renderedContent}
+                      files={files as any}
+                      fontSize={chatFontSize as any}
+                      headingScopeId={headingScopeId}
+                      resolvedTheme={resolvedTheme}
+                      streaming={isStreamingAssistant}
+                      onOpenFilePreview={handleOpenFilePreview}
+                      onOpenImagePreview={handleOpenImagePreview}
+                      className={fontSizeStyles.markdown}
+                    />
+                    {showStreamingTail ? <StreamingTailDots /> : null}
+                  </CardContent>
+                </Card>
               </div>
               <div data-message-outline-meta-stack className="sticky top-1 hidden w-40 shrink-0 self-start xl:flex xl:flex-col xl:gap-2">
                 <MessageMeta
@@ -1296,41 +1296,41 @@ const MessageBubble = memo(function MessageBubble({
       <div className="flex w-full max-w-full flex-col items-start">
         <AgentLabel value={agentLabel} tokenBadge={message.tokenBadge} textClassName={fontSizeStyles.label} tokenBadgeClassName={fontSizeStyles.tokenBadge} />
         <div className="flex min-w-0 max-w-full items-start gap-2">
-          <div className="flex min-w-0 flex-1 max-w-[700px] items-start">
-          <Card
-            ref={setBubbleSurfaceNode}
-            data-bubble-layout="full"
-            className={cn(
-              bubbleBaseClassName,
-              longAssistantWidthClassName,
-              "relative overflow-hidden",
-              "cc-assistant-bubble",
-              streamingAssistantBubbleClassName,
-              assistantBubbleClassName,
-              focusBubbleClassName,
-            )}
-          >
+          <div data-bubble-top-jump-track="true" className="flex min-w-0 flex-1 max-w-[700px] flex-col">
             {bubbleTopJumpButton}
-            <CardContent className={bubbleContentClassName}>
-              <span
-                ref={setBubbleTopSentinelNode}
-                aria-hidden="true"
-                className="pointer-events-none absolute top-0 left-0 h-px w-px opacity-0"
-              />
-              <MarkdownContent
-                content={renderedContent}
-                files={files as any}
-                fontSize={chatFontSize as any}
-                headingScopeId={headingScopeId}
-                resolvedTheme={resolvedTheme}
-                streaming={bubbleStreaming}
-                onOpenFilePreview={handleOpenFilePreview}
-                onOpenImagePreview={handleOpenImagePreview}
-                className={fontSizeStyles.markdown}
-              />
-              {showStreamingTail ? <StreamingTailDots /> : null}
-            </CardContent>
-          </Card>
+            <Card
+              ref={setBubbleSurfaceNode}
+              data-bubble-layout="full"
+              className={cn(
+                bubbleBaseClassName,
+                longAssistantWidthClassName,
+                "relative overflow-hidden",
+                "cc-assistant-bubble",
+                streamingAssistantBubbleClassName,
+                assistantBubbleClassName,
+                focusBubbleClassName,
+              )}
+            >
+              <CardContent className={bubbleContentClassName}>
+                <span
+                  ref={setBubbleTopSentinelNode}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-0 left-0 h-px w-px opacity-0"
+                />
+                <MarkdownContent
+                  content={renderedContent}
+                  files={files as any}
+                  fontSize={chatFontSize as any}
+                  headingScopeId={headingScopeId}
+                  resolvedTheme={resolvedTheme}
+                  streaming={bubbleStreaming}
+                  onOpenFilePreview={handleOpenFilePreview}
+                  onOpenImagePreview={handleOpenImagePreview}
+                  className={fontSizeStyles.markdown}
+                />
+                {showStreamingTail ? <StreamingTailDots /> : null}
+              </CardContent>
+            </Card>
           </div>
           <MessageMeta
             align="right"
@@ -4030,7 +4030,14 @@ export function ChatPanel({
             </div>
           </div>
           <div className="cc-chat-workspace-shell flex min-h-0 min-w-0 max-w-full flex-1 flex-col rounded-[22px] border border-border/45 bg-[color-mix(in_srgb,var(--surface)_88%,var(--surface-elevated))] p-2">
-            <div className="cc-chat-stage-body min-h-0 min-w-0 max-w-full flex-1 overflow-hidden rounded-[18px] bg-[var(--surface)]">
+            <div
+              className={cn(
+                "cc-chat-stage-body min-h-0 min-w-0 max-w-full flex-1 overflow-hidden rounded-[18px]",
+                resolvedTheme === "dark"
+                  ? "bg-[var(--surface)]"
+                  : "bg-[color-mix(in_srgb,var(--surface)_72%,var(--background)_28%)]",
+              )}
+            >
               <div className="relative h-full min-h-0 min-w-0 max-w-full">
                 <ScrollArea
                   className="h-full"
@@ -4039,7 +4046,7 @@ export function ChatPanel({
                   onWheelCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
                   onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
                 >
-                  <div className="grid min-w-0 max-w-full gap-2 px-4 pt-3 pb-7 overflow-x-hidden">
+                  <div className="grid min-w-0 max-w-full gap-2 px-4 pt-3 pb-7 overflow-x-clip overflow-y-visible">
                     {renderedMessageBubbles}
                     <div ref={bottomSentinelRef} aria-hidden="true" data-message-bottom-sentinel className="h-px w-full" />
                   </div>
@@ -4158,7 +4165,8 @@ export function ChatPanel({
                 ) : null}
                 <div
                   className={cn(
-                    "overflow-hidden rounded-[20px] border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
+                    "overflow-hidden rounded-[20px] border border-input shadow-xs transition-[border-color,box-shadow]",
+                    resolvedTheme === "dark" ? "bg-background" : "bg-white",
                     resolvedTheme === "dark"
                       ? "border-[#4d88c7]/50 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
                       : "border-[#1677eb]/45 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/22",
@@ -4171,10 +4179,9 @@ export function ChatPanel({
                         onPreviewImage={openImagePreview}
                         onRemoveAttachment={onRemoveAttachment}
                       />
-                      <div className="border-t border-border/60" />
                     </>
                   ) : null}
-                  <div className="relative">
+                  <div className={cn("relative", composerAttachments?.length ? "-mt-px" : "")}>
                     {openClawConnected && !composerPrompt ? (
                       <div
                         aria-hidden="true"
@@ -4267,7 +4274,8 @@ export function ChatPanel({
                       placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
                       disabled={composerLocked}
                       className={cn(
-                        "min-h-[4.6rem] resize-none rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0",
+                        "min-h-[4.6rem] resize-none rounded-none border-0 shadow-none focus:border-0 focus:shadow-none focus:outline-none focus-visible:border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none focus-visible:outline-none",
+                        resolvedTheme === "dark" ? "bg-background" : "bg-transparent",
                         openClawConnected ? "placeholder:text-transparent" : "",
                       )}
                     />

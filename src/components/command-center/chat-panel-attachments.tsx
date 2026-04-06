@@ -221,36 +221,48 @@ export const ComposerAttachments = memo(function ComposerAttachments({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
-      <div className="mr-1 text-[10px] text-muted-foreground">{messages.common.attachment}</div>
-      <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 px-3 pt-1.5 pb-1">
+      <div className="mr-1 flex h-7 items-center text-[10px] leading-none text-muted-foreground">{messages.common.attachment}</div>
+      <div className="flex min-h-7 flex-wrap items-center gap-1.5">
         {attachments.map((attachment) => (
-          <div key={attachment.id} className="group relative">
+          <div key={attachment.id} className="group flex h-7 items-start pt-1">
             {isImageAttachment(attachment) ? (
-              <button
-                type="button"
-                className="overflow-hidden rounded-sm border border-border/60 bg-background"
-                onClick={() => onPreviewImage?.(attachment)}
-              >
-                <img src={getAttachmentImageSource(attachment)} alt={attachment.name} className="h-[22px] w-[22px] object-cover" />
-              </button>
+              <div className="relative w-fit">
+                <button
+                  type="button"
+                  className="overflow-hidden rounded-[3px] border border-border/60 bg-background"
+                  onClick={() => onPreviewImage?.(attachment)}
+                >
+                  <img src={getAttachmentImageSource(attachment)} alt={attachment.name} className="h-[22px] w-[22px] object-cover" />
+                </button>
+                <button
+                  type="button"
+                  className="absolute -right-[7px] -top-[7px] inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground text-background shadow-sm"
+                  aria-label={`${messages.common.removeAttachment} ${attachment.name}`}
+                  onClick={() => attachment.id && onRemoveAttachment?.(attachment.id)}
+                >
+                  <X className="h-2 w-2" />
+                </button>
+              </div>
             ) : (
-              <div className="flex w-20 items-center gap-1 rounded-sm border border-border/60 bg-background px-1.5 py-1 text-[9px] leading-3">
-                <Paperclip className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{attachment.name}</div>
-                  <div className="truncate text-muted-foreground">{formatAttachmentSize(attachment.size)}</div>
+              <div className="relative w-fit pr-2">
+                <div className="flex w-20 items-center gap-1 rounded-sm border border-border/60 bg-background px-1.5 py-1 text-[9px] leading-3">
+                  <Paperclip className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{attachment.name}</div>
+                    <div className="truncate text-muted-foreground">{formatAttachmentSize(attachment.size)}</div>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className="absolute -right-[7px] -top-[7px] inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground text-background shadow-sm"
+                  aria-label={`${messages.common.removeAttachment} ${attachment.name}`}
+                  onClick={() => attachment.id && onRemoveAttachment?.(attachment.id)}
+                >
+                  <X className="h-2 w-2" />
+                </button>
               </div>
             )}
-            <button
-              type="button"
-              className="absolute -right-1 -top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground text-background shadow-sm"
-              aria-label={`${messages.common.removeAttachment} ${attachment.name}`}
-              onClick={() => attachment.id && onRemoveAttachment?.(attachment.id)}
-            >
-              <X className="h-2 w-2" />
-            </button>
           </div>
         ))}
       </div>

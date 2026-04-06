@@ -1295,7 +1295,6 @@ export function InspectorPanel({
     icon: FolderOpen,
     label: messages.inspector.tabs.files,
   };
-
   if (compact) {
     return (
       <>

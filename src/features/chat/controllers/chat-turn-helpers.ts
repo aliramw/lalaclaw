@@ -243,10 +243,29 @@ export function replaceAssistantPreservingTurn(
   let withUserTurn = currentMessages;
 
   if (!hasUserMessage) {
-    const assistantIndex = currentMessages.findIndex((message) => message?.role === "assistant");
-    if (assistantIndex >= 0) {
+    const assistantMessageId = String(entry.assistantMessageId || "").trim();
+    const pendingTimestamp = Number(entry.pendingTimestamp || 0);
+    const assistantIndex = currentMessages.findIndex((message) => {
+      if (message?.role !== "assistant") {
+        return false;
+      }
+
+      const messageId = String(message?.id || "").trim();
+      const messageTimestamp = Number(message?.timestamp || 0);
+      return Boolean(
+        (assistantMessageId && messageId && messageId === assistantMessageId)
+        || (pendingTimestamp && messageTimestamp >= pendingTimestamp),
+      );
+    });
+    const fallbackAssistantIndex = assistantIndex >= 0
+      ? assistantIndex
+      : [...currentMessages]
+        .map((message, index) => ({ message, index }))
+        .reverse()
+        .find(({ message }) => message?.role === "assistant")?.index ?? -1;
+    if (fallbackAssistantIndex >= 0) {
       withUserTurn = [...currentMessages];
-      withUserTurn.splice(assistantIndex, 0, userMessage);
+      withUserTurn.splice(fallbackAssistantIndex, 0, userMessage);
     } else {
       withUserTurn = ensureOptimisticTurnMessages(
         currentMessages,

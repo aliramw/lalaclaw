@@ -180,6 +180,7 @@ describe("ChatPanel", () => {
         viewportClientHeight: 600,
       }),
     ).toBe(false);
+
   });
 
   it("keeps the scrollable tab viewport clipped when the leading control animates", () => {
@@ -194,6 +195,34 @@ describe("ChatPanel", () => {
 
     expect(container.firstChild).toHaveClass("min-w-0");
     expect(container.firstChild).not.toHaveClass("overflow-x-auto");
+  });
+
+  it("keeps sticky message overlays attached to the scroll viewport instead of an inner overflow-x-hidden wrapper", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            { role: "assistant", content: "第一段\\n\\n第二段\\n第三段\\n第四段\\n第五段\\n第六段", timestamp: 2 },
+          ]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const messageList = container.querySelector("[data-message-bottom-sentinel]")?.parentElement;
+    expect(messageList).toBeTruthy();
+    expect(messageList).toHaveClass("overflow-x-clip", "overflow-y-visible");
+    expect(messageList).not.toHaveClass("overflow-x-hidden");
   });
 
   it("renders the refreshed chat stage, empty state, and composer shell", () => {
@@ -217,9 +246,113 @@ describe("ChatPanel", () => {
 
     expect(container.querySelector(".cc-chat-stage")).toBeInTheDocument();
     expect(container.querySelector(".cc-chat-empty-state")).toBeInTheDocument();
+    expect(container.querySelector(".cc-chat-stage-body")).toHaveClass("bg-[color-mix(in_srgb,var(--surface)_72%,var(--background)_28%)]");
     const composerShell = container.querySelector(".cc-chat-composer-shell");
     expect(composerShell).toBeInTheDocument();
     expect(composerShell).not.toHaveClass("shadow-[0_18px_36px_rgba(15,23,42,0.08)]");
+  });
+
+  it("keeps the full light-mode composer input surface white, including the attachment row, without whitening the surrounding workspace", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const composerInput = container.querySelector("textarea");
+    const composerInputShell = composerInput?.parentElement?.parentElement;
+    expect(composerInput).toBeInTheDocument();
+    expect(composerInput).toHaveClass("bg-transparent");
+    expect(composerInputShell).toHaveClass("bg-white");
+    expect(container.querySelector(".cc-chat-stage-body")).toHaveClass("bg-[color-mix(in_srgb,var(--surface)_72%,var(--background)_28%)]");
+  });
+
+  it("keeps the dark-mode composer input surface on the theme background instead of forcing white", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          resolvedTheme="dark"
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const composerInput = container.querySelector("textarea");
+    expect(composerInput).toBeInTheDocument();
+    expect(composerInput).toHaveClass("bg-background");
+    expect(composerInput).not.toHaveClass("bg-white");
+  });
+
+  it("anchors the composer attachment dismiss button over the thumbnail's top-right corner while shifting the row down from the shell edge", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          composerAttachments={[
+            {
+              id: "attachment-image-1",
+              kind: "image",
+              mimeType: "image/png",
+              name: "preview.png",
+              previewUrl: "data:image/png;base64,abc",
+            },
+          ]}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onRemoveAttachment={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession()}
+        />
+      </TooltipProvider>,
+    );
+
+    const composerAttachments = screen.getByText("附件").parentElement;
+    expect(composerAttachments).toBeInTheDocument();
+    expect(composerAttachments).toHaveClass("items-center", "pt-1.5", "pb-1");
+    expect(composerAttachments).not.toHaveClass("items-start");
+    expect(composerAttachments).not.toHaveClass("py-2");
+    expect(screen.getByText("附件")).toHaveClass("h-7", "items-center");
+    const attachmentThumb = screen.getByAltText("preview.png");
+    expect(attachmentThumb.closest(".flex.min-h-7")).toBeTruthy();
+    expect(attachmentThumb.closest(".group")).toHaveClass("h-7", "items-start", "pt-1");
+    expect(attachmentThumb.parentElement?.parentElement).toHaveClass("relative", "w-fit");
+    expect(attachmentThumb.parentElement).toHaveClass("rounded-[3px]");
+    const removeButton = screen.getByRole("button", { name: "移除 preview.png" });
+    expect(removeButton).toHaveClass("-top-[7px]", "-right-[7px]");
+    expect(removeButton).not.toHaveClass("top-1/2", "-translate-y-1/2");
+    expect(removeButton.parentElement).toBe(attachmentThumb.parentElement?.parentElement);
+    expect(container.querySelector(".border-t.border-border\\/60")).toBeNull();
+    const composerTextarea = container.querySelector("textarea");
+    expect(composerTextarea?.parentElement).toHaveClass("-mt-px");
+    expect(composerTextarea).toHaveClass("focus-visible:ring-offset-0", "focus-visible:shadow-none", "focus-visible:outline-none");
   });
 
   it("keeps the chat header lightweight when the session overview is present", () => {
@@ -4853,7 +4986,7 @@ describe("ChatPanel", () => {
     });
   });
 
-  it("keeps the message-top jump button inside the assistant card corner instead of rendering it beside the card", async () => {
+  it("keeps the message-top jump button on a sticky overlay track instead of clipping it inside the assistant card", async () => {
     const viewportRef = { current: null };
     vi.stubGlobal("requestAnimationFrame", (callback) => {
       callback(16);
@@ -4931,8 +5064,12 @@ describe("ChatPanel", () => {
     fireEvent.scroll(viewport);
 
     const jumpButton = await screen.findByRole("button", { name: "回到这条消息顶部" });
-    expect(latestAssistantCard).toContainElement(jumpButton);
     expect(jumpButton.parentElement).toHaveClass("sticky", "top-2", "ml-auto", "w-fit");
+    const jumpTrack = jumpButton.closest('[data-bubble-top-jump-track="true"]');
+    expect(jumpTrack).toBeTruthy();
+    expect(jumpTrack).toContainElement(latestAssistantCard);
+    expect(jumpTrack).toContainElement(jumpButton);
+    expect(latestAssistantCard).not.toContainElement(jumpButton);
   });
 
   it("does not show the message-top jump button for assistant messages with images", async () => {

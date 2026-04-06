@@ -29,10 +29,10 @@ export function AppSplitLayout({
   return (
     <main
       ref={splitLayoutRef}
-      className="cc-workspace-layout-shell grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-[24px] border border-border/55 bg-[var(--surface-elevated)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]"
+      className="cc-workspace-layout-shell grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-[24px] border border-border/55 bg-[var(--panel)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.24)] dark:bg-[var(--surface-elevated)]"
       style={splitLayoutStyle}
     >
-      <div className="cc-workspace-stage min-h-0 min-w-0 overflow-hidden">
+      <div className="cc-workspace-stage min-h-0 min-w-0 overflow-hidden xl:pr-2">
         {chatPanel}
       </div>
 
@@ -47,7 +47,7 @@ export function AppSplitLayout({
             <span
               aria-hidden="true"
               className={cn(
-                "absolute left-1/2 top-1/2 inline-grid h-[22px] w-[6.8px] -translate-x-1/2 -translate-y-1/2 grid-cols-2 grid-rows-6 gap-x-[2px] gap-y-[2px] transition-colors",
+                "absolute left-full top-1/2 inline-grid h-[22px] w-[6.8px] -translate-x-1/2 -translate-y-1/2 grid-cols-2 grid-rows-6 gap-x-[2px] gap-y-[2px] transition-colors",
                 isResizingPanels
                   ? "bg-transparent"
                   : "bg-transparent",
@@ -67,7 +67,7 @@ export function AppSplitLayout({
         </div>
       ) : null}
 
-      <div className="cc-inspector-stage flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden xl:min-w-[300px] xl:border-l xl:border-border/45 xl:pl-4">
+      <div className="cc-inspector-stage flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden xl:min-w-[300px] xl:pl-2">
         {taskRelationshipsPanel}
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           {inspectorPanel}

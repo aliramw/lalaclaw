@@ -1071,7 +1071,7 @@ function ShortcutHelpButton({ composerSendMode = "enter-send" }: { composerSendM
       if (isShortcutToggle && !event.repeat && !event.isComposing) {
         event.preventDefault();
         event.stopPropagation();
-        setOpen(true);
+        setOpen((current) => !current);
         return;
       }
 

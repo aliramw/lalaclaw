@@ -43,6 +43,54 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 
 - After each AI-involved PR, append a short summary: prompt used, files touched, tests rerun, reviewer, and whether any manual validation (UI, smoke, environment) was required. Keep at least the last three summaries in this file for traceability.
 
+### 2026-04-06 — Workspace Shell Contrast and Environment Tab Background Flattening
+
+- Prompt/workstream: respond to visual feedback that the large light-mode workspace container blended too closely into white surfaces, and remove the inspector environment tab body's own background tint so the right column relies on the shared shell plus inner section cards.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-06 Asia/Shanghai.
+- Files touched:
+  - shared shell and inspector layout surfaces such as `src/components/app-shell/app-split-layout.tsx` and `src/components/command-center/inspector-panel.tsx`
+  - regression coverage in `src/components/app-shell/app-split-layout.test.tsx` and `src/components/command-center/inspector-panel.test.jsx`
+  - visual/spec governance in `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- --run src/components/app-shell/app-split-layout.test.tsx src/components/command-center/inspector-panel.test.jsx`
+- Manual/equivalent validation:
+  - mapped the user-supplied screenshot to the shared workspace shell and inspector tab-body layers before changing any tokens
+  - kept the fix scoped to shell/background hierarchy only and mirrored the new light-shell contrast plus inspector-tab-background rules into `dev-spec/frontend-visual-spec.md`
+- Reviewer/sign-off:
+  - pending human review
+  - low risk because the patch only changes presentational shell classes and related regression assertions
+- Reviewer checklist:
+  - confirm the light-mode outer workspace shell now reads distinctly from white chat cards and the white composer input
+  - confirm the environment tab body no longer shows an extra tinted background behind its sections
+  - confirm other inspector tabs still feel structurally grouped without reintroducing nested card framing
+- Visual spec linkage:
+  - added an explicit rule for background-free inspector tab bodies in `dev-spec/frontend-visual-spec.md`; the light-shell contrast rule already exists there and this patch implements it in the shared workspace shell
+
+### 2026-04-06 — Split Gutter Symmetry and Centered Resize Grip
+
+- Prompt/workstream: remove the visible divider line between the chat pane and inspector, make the split gutter visually balanced on both sides, and align the resize grip to the old divider centerline instead of leaving it offset.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-06 Asia/Shanghai.
+- Files touched:
+  - split-layout surfaces such as `src/components/app-shell/app-split-layout.tsx`
+  - regression coverage in `src/components/app-shell/app-split-layout.test.tsx`
+  - visual/spec governance in `dev-spec/frontend-visual-spec.md` and this file
+- Quality gates rerun:
+  - `npm test -- --run src/components/app-shell/app-split-layout.test.tsx`
+- Manual/equivalent validation:
+  - mapped the reported asymmetry to the old `xl:border-l` plus extra right-pane padding before switching the split into a neutral gutter treatment
+  - synced the no-divider and centered-grip rule into `dev-spec/frontend-visual-spec.md` in the same workstream
+- Reviewer/sign-off:
+  - pending human review
+  - low risk because the patch only changes shell spacing and resize-grip presentation
+- Reviewer checklist:
+  - confirm the wide split layout no longer shows a visible vertical divider line
+  - confirm the gutter feels evenly spaced on both sides of the grip
+  - confirm the grip now sits on the visual split centerline
+- Visual spec linkage:
+  - added an explicit wide-split gutter symmetry and centered-resize-grip rule to `dev-spec/frontend-visual-spec.md`
+
 ### 2026-04-06 — Chat Bubble Alignment and In-Card Jump Control
 
 - Prompt/workstream: investigate why the user bubble looked left-shifted and why the `Back to message top` control rendered outside the assistant card, then make the smallest chat-panel layout fix that restores right-edge alignment and keeps the jump control inside the card.

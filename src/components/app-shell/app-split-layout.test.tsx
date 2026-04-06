@@ -21,13 +21,16 @@ describe("AppSplitLayout", () => {
 
     const workspaceStage = container.querySelector(".cc-workspace-stage");
     const inspectorStage = container.querySelector(".cc-inspector-stage");
+    const resizeHandle = screen.getByRole("button", { name: "resize" });
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("inspector-panel")).toBeInTheDocument();
     expect(screen.getByTestId("relationships-panel")).toBeInTheDocument();
     expect(workspaceStage).toBeInTheDocument();
     expect(inspectorStage).toBeInTheDocument();
+    expect(resizeHandle).toBeInTheDocument();
     expect(workspaceStage).toHaveClass("overflow-hidden");
+    expect(workspaceStage).toHaveClass("xl:pr-2");
     expect(inspectorStage?.lastElementChild).toHaveClass("overflow-hidden");
     expect(workspaceStage).not.toHaveClass("rounded-[30px]");
     expect(workspaceStage).not.toHaveClass("border");
@@ -35,8 +38,11 @@ describe("AppSplitLayout", () => {
     expect(workspaceStage).not.toHaveClass("p-2");
     expect(inspectorStage).not.toHaveClass("rounded-[28px]");
     expect(inspectorStage).not.toHaveClass("border");
+    expect(inspectorStage).not.toHaveClass("xl:border-l");
+    expect(inspectorStage).toHaveClass("xl:pl-2");
     expect(inspectorStage).not.toHaveClass("bg-[var(--panel)]");
     expect(inspectorStage).not.toHaveClass("p-2");
+    expect(container.querySelector(".cc-split-resize-handle span")).toHaveClass("left-full", "-translate-x-1/2");
   });
 
   it("uses one shared workspace shell so the split panes still read as a finished editor layout", () => {
@@ -59,6 +65,7 @@ describe("AppSplitLayout", () => {
     expect(workspaceShell).toBeInTheDocument();
     expect(workspaceShell).toHaveClass("rounded-[24px]");
     expect(workspaceShell).toHaveClass("border");
-    expect(workspaceShell).toHaveClass("bg-[var(--surface-elevated)]");
+    expect(workspaceShell).toHaveClass("bg-[var(--panel)]");
+    expect(workspaceShell).toHaveClass("dark:bg-[var(--surface-elevated)]");
   });
 });

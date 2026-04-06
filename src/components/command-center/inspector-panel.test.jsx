@@ -216,15 +216,17 @@ describe("InspectorPanel", () => {
     expect(container.querySelector(".cc-inspector-section-card")).toBeInTheDocument();
   });
 
-  it("keeps the tab workspace flatter instead of wrapping every tab body in another large card", async () => {
+  it("keeps the tab workspace flatter instead of adding its own tab-body background shell", async () => {
     const { container } = renderWithTooltip(<TestHarness />);
 
     const activeTabPanel = container.querySelector('[role="tabpanel"][data-state="active"]');
 
     expect(activeTabPanel).toBeInTheDocument();
     expect(activeTabPanel).not.toHaveClass("rounded-[22px]");
+    expect(activeTabPanel).not.toHaveClass("rounded-[18px]");
     expect(activeTabPanel).not.toHaveClass("border");
     expect(activeTabPanel).not.toHaveClass("bg-[var(--surface)]");
+    expect(activeTabPanel).not.toHaveClass("bg-[color-mix(in_srgb,var(--surface)_72%,var(--background)_28%)]");
   });
 
   it("renders timeline details and switches tabs", async () => {

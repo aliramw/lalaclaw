@@ -933,6 +933,43 @@ describe("SessionOverview", () => {
     });
   });
 
+  it("toggles the shortcut dialog when cmd or ctrl slash is pressed again", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    platformSpy.mockReturnValue("Win32");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            onThemeChange={() => {}}
+            resolvedTheme="dark"
+            session={createSession()}
+            theme="system"
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}/{/Control}");
+
+    expect(screen.getByRole("dialog", { name: "快捷键提示" })).toBeInTheDocument();
+
+    await user.keyboard("{Control>}/{/Control}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "快捷键提示" })).not.toBeInTheDocument();
+    });
+  });
+
   it("shows composer shortcuts for double-enter send mode", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 

@@ -1585,6 +1585,105 @@ describe("useChatController", () => {
     ]);
   });
 
+  it("keeps the restored current user anchored after earlier assistant cards when finalize runs against an assistant-only view", async () => {
+    const setBusy = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = {
+      current: [
+        {
+          id: "msg-assistant-prev",
+          role: "assistant",
+          content: "如果你要，我下一步可以把这份复盘写进 memory / learnings，免得下次再踩一遍。",
+          timestamp: 1000,
+        },
+      ],
+    };
+
+    const appliedMessageSnapshots = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      messagesRef.current = typeof value === "function" ? value(messagesRef.current) : value;
+      appliedMessageSnapshots.push(messagesRef.current);
+
+      if (appliedMessageSnapshots.length === 1) {
+        messagesRef.current = [
+          {
+            id: "msg-assistant-prev",
+            role: "assistant",
+            content: "如果你要，我下一步可以把这份复盘写进 memory / learnings，免得下次再踩一遍。",
+            timestamp: 1000,
+          },
+          { id: "msg-assistant-pending-1", role: "assistant", content: "已写", timestamp: 1050, streaming: true },
+        ];
+      }
+    });
+
+    vi.stubGlobal("fetch", vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        conversation: [
+          { role: "assistant", content: "已写", timestamp: 1100 },
+        ],
+        outputText: "已写",
+        assistantMessageId: "msg-assistant-pending-1",
+        metadata: { status: "已完成 / 标准" },
+        session: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    ));
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        isTabActive: () => true,
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setMessagesSynced,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry({
+        id: "entry-final-restores-user-after-earlier-assistant",
+        key: "command-center:main",
+        content: "写",
+        attachments: [],
+        timestamp: 1010,
+        userMessageId: "msg-user-1",
+        assistantMessageId: "msg-assistant-pending-1",
+        pendingTimestamp: 1050,
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-5",
+        fastMode: false,
+      });
+    });
+
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
+      {
+        id: "msg-assistant-prev",
+        role: "assistant",
+        content: "如果你要，我下一步可以把这份复盘写进 memory / learnings，免得下次再踩一遍。",
+        timestamp: 1000,
+      },
+      { id: "msg-user-1", role: "user", content: "写", timestamp: 1010 },
+      { id: "msg-assistant-pending-1", role: "assistant", content: "已写", timestamp: 1050 },
+    ]);
+  });
+
   it("clears stale streaming state when the final assistant reply falls back to replacing the trailing assistant bubble", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();
