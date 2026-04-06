@@ -6,7 +6,7 @@ import { Highlight, themes } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { Prism, usePrismLanguage } from "@/lib/prism-languages";
 import { extractHeadingOutline, slugifyHeading } from "@/components/command-center/chat-message-utils";
-import type { MarkdownAnnotationRange } from "@/components/command-center/markdown-annotation-utils";
+import type { MarkdownAnnotationHighlightRange } from "@/components/command-center/markdown-annotation-utils";
 import { scrollElementIntoNearestContainer } from "@/components/command-center/markdown-scroll-utils";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -27,7 +27,7 @@ type MarkdownRendererProps = {
   content?: string;
   files?: TrackedFile[];
   headingScopeId?: string;
-  highlightRanges?: MarkdownAnnotationRange[];
+  highlightRanges?: MarkdownAnnotationHighlightRange[];
   onOpenFilePreview?: (file: TrackedFile) => void;
   onOpenImagePreview?: (image: ImagePreviewValue) => void;
   resolvedTheme?: string;
@@ -74,7 +74,7 @@ type MarkdownHeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 const codeTheme = themes.dracula;
 const homePrefix = "/Users/marila";
 const trackedFileLinkButtonClassName =
-  "file-link inline appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
+  "file-link inline min-w-0 max-w-full break-all [overflow-wrap:anywhere] appearance-none border-0 bg-transparent p-0 text-left align-baseline font-inherit text-inherit leading-inherit";
 const emptyMarkdownPluginState = Object.freeze({ remarkPlugins: [], rehypePlugins: [] });
 type MarkdownPluginState = {
   rehypePlugins: unknown[];
@@ -265,11 +265,36 @@ function normalizeSourceOffset(value: unknown): number | null {
   return Math.max(0, Math.floor(nextValue));
 }
 
+function resolveHighlightTone(
+  highlightRanges: MarkdownAnnotationHighlightRange[] = [],
+  segmentStart: number,
+  segmentEnd: number,
+) {
+  let fallbackTone: "annotation" | "selection" = "annotation";
+
+  for (const range of highlightRanges) {
+    const start = normalizeSourceOffset(range?.start);
+    const end = normalizeSourceOffset(range?.end);
+
+    if (start === null || end === null || end <= start || start >= segmentEnd || end <= segmentStart) {
+      continue;
+    }
+
+    if (range?.tone === "selection") {
+      return "selection";
+    }
+
+    fallbackTone = "annotation";
+  }
+
+  return fallbackTone;
+}
+
 function buildHighlightedSourceSegments(
   text: string,
   rangeStart: number,
   rangeEnd: number,
-  highlightRanges: MarkdownAnnotationRange[] = [],
+  highlightRanges: MarkdownAnnotationHighlightRange[] = [],
 ) {
   if (!text || rangeEnd <= rangeStart) {
     return [{ highlighted: false, text }];
@@ -309,6 +334,7 @@ function buildHighlightedSourceSegments(
 
     return {
       highlighted,
+      tone: highlighted ? resolveHighlightTone(highlightRanges, segmentStart, segmentEnd) : undefined,
       text: segmentText,
     };
   });
@@ -543,8 +569,8 @@ function LinkRenderer({ href, children, files, headingScopeId, onOpenFilePreview
       href={resolvedHref}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noreferrer" : undefined}
-      className="file-link"
-        onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
+      className="file-link min-w-0 max-w-full break-all [overflow-wrap:anywhere]"
+      onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
         onClick?.(event);
         if (event.defaultPrevented || !scopedHashTarget || typeof document === "undefined") {
           return;
@@ -1210,8 +1236,14 @@ export default function MarkdownRenderer({
           segment.highlighted ? (
             <mark
               key={`${start}-${end}-${index}`}
-              className="rounded-[2px] bg-yellow-200/85 text-inherit shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]"
+              className={cn(
+                "box-decoration-clone rounded-[2px] py-px text-inherit",
+                segment.tone === "selection"
+                  ? "bg-sky-200/88 shadow-[inset_0_0_0_1px_rgba(2,132,199,0.18)]"
+                  : "bg-yellow-200/85 shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]",
+              )}
               data-markdown-annotation-highlight="true"
+              data-markdown-annotation-highlight-tone={segment.tone || "annotation"}
             >
               {segment.text}
             </mark>

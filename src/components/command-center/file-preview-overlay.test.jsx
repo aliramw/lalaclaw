@@ -12,9 +12,9 @@ vi.mock("docx-preview", () => ({
 }));
 
 vi.mock("@/components/command-center/markdown-preview-annotation-workbench", () => ({
-  MarkdownPreviewAnnotationWorkbench: function MockMarkdownPreviewAnnotationWorkbench({ onStateChange, onSubmit }) {
+  MarkdownPreviewAnnotationWorkbench: function MockMarkdownPreviewAnnotationWorkbench({ fontSize, onStateChange, onSubmit }) {
     return (
-      <div data-testid="markdown-preview-annotation-workbench">
+      <div data-testid="markdown-preview-annotation-workbench" data-font-size={fontSize || "medium"}>
         <button
           type="button"
           data-testid="markdown-annotation-mark-draft"
@@ -397,10 +397,59 @@ describe("FilePreviewOverlay", () => {
 
     await user.hover(screen.getByRole("button", { name: /批注更新|Annotate/ }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent(/对内容进行批注|Annotate the content/);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(/快捷键：A|Shortcut: A/);
 
     await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
 
     expect(screen.getByTestId("markdown-preview-annotation-workbench")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /取消批注|Cancel annotation/ })).toBeInTheDocument();
+  });
+
+  it("passes the selected preview font size into markdown annotation mode", async () => {
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "annotate.md",
+          path: "/Users/marila/projects/lalaclaw/annotate.md",
+          content: "# Title\n\nBody text",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+        onSendPreparedPrompt={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText(/Preview font size: Large|预览字号：大/));
+    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+
+    expect(screen.getByTestId("markdown-preview-annotation-workbench")).toHaveAttribute("data-font-size", "large");
+  });
+
+  it("supports the A shortcut for toggling markdown annotation mode", async () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "annotate.md",
+          path: "/Users/marila/projects/lalaclaw/annotate.md",
+          content: "# Title\n\nBody text",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+        onSendPreparedPrompt={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "a", code: "KeyA" });
+    expect(screen.getByTestId("markdown-preview-annotation-workbench")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "a", code: "KeyA" });
+    expect(screen.queryByTestId("markdown-preview-annotation-workbench")).not.toBeInTheDocument();
   });
 
   it("asks for confirmation before discarding pending markdown annotations", async () => {
@@ -423,7 +472,7 @@ describe("FilePreviewOverlay", () => {
 
     await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
     await user.click(screen.getByTestId("markdown-annotation-mark-draft"));
-    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+    await user.click(screen.getByRole("button", { name: /取消批注|Cancel annotation/ }));
 
     expect(screen.getByRole("alertdialog")).toHaveTextContent(/放弃当前批注|Discard current annotations/);
 
@@ -431,6 +480,36 @@ describe("FilePreviewOverlay", () => {
 
     expect(screen.queryByTestId("markdown-preview-annotation-workbench")).not.toBeInTheDocument();
     expect(screen.getByText("Title")).toBeInTheDocument();
+  });
+
+  it("asks for confirmation before Escape closes a clean annotation session", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "annotate.md",
+          path: "/Users/marila/projects/lalaclaw/annotate.md",
+          content: "# Title\n\nBody text",
+        }}
+        onClose={onClose}
+        onOpenFilePreview={() => {}}
+        onSendPreparedPrompt={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+    await user.keyboard("{Escape}");
+
+    expect(onClose).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("alertdialog", { name: /Close this preview\?|确认关闭预览？/ });
+    expect(dialog).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: /Close preview|关闭预览/ }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("sends the annotation prompt directly and closes the preview on success", async () => {
@@ -463,6 +542,44 @@ describe("FilePreviewOverlay", () => {
       );
     });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("closes the preview immediately after dispatching an annotation prompt without waiting for the full chat turn", async () => {
+    const onClose = vi.fn();
+    let resolveSend;
+    const onSendPreparedPrompt = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "annotate.md",
+          path: "/Users/marila/projects/lalaclaw/annotate.md",
+          content: "# Title\n\nBody text",
+        }}
+        onClose={onClose}
+        onOpenFilePreview={() => {}}
+        onSendPreparedPrompt={onSendPreparedPrompt}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /批注更新|Annotate/ }));
+    await user.click(screen.getByTestId("markdown-annotation-submit"));
+
+    expect(onSendPreparedPrompt).toHaveBeenCalledWith(
+      "修改 /Users/marila/projects/lalaclaw/annotate.md 文件：\n第 2 行：有限公司 → 科技有限公司",
+      { shouldAppendPromptHistory: true },
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    resolveSend?.();
   });
 
   it("keeps markdown preview content constrained inside the main panel", () => {
@@ -1076,6 +1193,36 @@ describe("FilePreviewOverlay", () => {
 
     await user.click(screen.getByRole("button", { name: /Discard and close|放弃并关闭/ }));
 
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for confirmation before Escape closes the preview while editing even without dirty changes", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "server.js",
+          path: "/Users/marila/projects/lalaclaw/server.js",
+          content: "const before = true;\n",
+        }}
+        onClose={onClose}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Edit|编辑/ }));
+    await screen.findByTestId("file-preview-monaco-editor");
+    await user.keyboard("{Escape}");
+
+    expect(onClose).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("alertdialog", { name: /Close this preview\?|确认关闭预览？/ });
+    expect(dialog).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: /Close preview|关闭预览/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

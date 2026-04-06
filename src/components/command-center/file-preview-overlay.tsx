@@ -40,7 +40,7 @@ const filePreviewFontSizeOptions = [
 ];
 type FilePreviewFontSize = "small" | "medium" | "large";
 type SaveNotice = { id: number; message: string } | null;
-type MarkdownAnnotationLeaveAction = "" | "cancel-edit" | "close-preview" | "discard-markdown-annotations" | "discard-markdown-annotations-and-close";
+type MarkdownAnnotationLeaveAction = "" | "cancel-edit" | "close-preview" | "close-preview-confirm" | "discard-markdown-annotations" | "discard-markdown-annotations-and-close";
 type PreviewLike = any;
 const richTextPreviewFontSizeClassNames = {
   small: "text-[12px] leading-5 [&_p]:!leading-5 [&_li]:!leading-5 [&_blockquote]:!leading-5 [&_td]:!leading-5 [&_th]:!leading-5 [&_p]:!mb-1.5 [&_ul]:!my-1.5 [&_ol]:!my-1.5",
@@ -179,6 +179,15 @@ function compactHomePath(filePath = "") {
     return "";
   }
   return filePath.startsWith(homePrefix) ? `~${filePath.slice(homePrefix.length)}` : filePath;
+}
+
+function renderShortcutTooltip(label: string, shortcut: string, hint: (shortcut: string) => string) {
+  return (
+    <div className="space-y-0.5">
+      <div>{label}</div>
+      <div className="text-[11px] text-muted-foreground">{hint(shortcut)}</div>
+    </div>
+  );
 }
 
 function loadStoredFilePreviewFontSize() {
@@ -1218,7 +1227,11 @@ export function FilePreviewOverlay({
         setPendingLeaveAction("discard-markdown-annotations-and-close");
         return;
       }
-      if (isEditing && editSessionDirty) {
+      if (isMarkdownAnnotationMode || isEditing) {
+        setPendingLeaveAction(editSessionDirty ? "close-preview" : "close-preview-confirm");
+        return;
+      }
+      if (editSessionDirty) {
         setPendingLeaveAction("close-preview");
         return;
       }
@@ -1297,10 +1310,15 @@ export function FilePreviewOverlay({
   const showFilesSidebar = Boolean(title) && !isMarkdownAnnotationMode;
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
   const showPreviewFontSizeControls = preview?.kind === "markdown" || preview?.kind === "text" || preview?.kind === "json";
+  const annotationShortcutLabel = "A";
   const editShortcutLabel = "E";
   const markdownAnnotationWorkbenchLabels = messages.inspector.previewActions.markdownAnnotationWorkbench;
-  const markdownAnnotationToggleLabel = messages.inspector.previewActions.annotationUpdate;
-  const markdownAnnotationToggleTooltip = messages.inspector.previewActions.annotationUpdateTooltip;
+  const markdownAnnotationToggleLabel = isMarkdownAnnotationMode
+    ? messages.inspector.previewActions.annotationUpdateActive
+    : messages.inspector.previewActions.annotationUpdate;
+  const markdownAnnotationToggleTooltip = isMarkdownAnnotationMode
+    ? messages.inspector.previewActions.annotationUpdateActiveTooltip
+    : messages.inspector.previewActions.annotationUpdateTooltip;
 
   const handleRevealInFileManager = async () => {
     if (!title || openingInFileManager) {
@@ -1358,12 +1376,15 @@ export function FilePreviewOverlay({
     try {
       setIsSubmittingMarkdownAnnotationPrompt(true);
       setMarkdownAnnotationSubmitError("");
-      await onSendPreparedPrompt(prompt, { shouldAppendPromptHistory: true });
+      const preparedSend = onSendPreparedPrompt(prompt, { shouldAppendPromptHistory: true });
       setIsMarkdownAnnotationMode(false);
       setMarkdownAnnotationCount(0);
       setMarkdownAnnotationSubmitError("");
       setPendingLeaveAction("");
       onClose?.();
+      void Promise.resolve(preparedSend).catch((error) => {
+        console.error("Failed to dispatch markdown annotation prompt", error);
+      });
     } catch (error) {
       const resolvedError = error as { message?: string } | null;
       setMarkdownAnnotationSubmitError(resolvedError?.message || messages.inspector.previewActions.annotationUpdateSubmitFailed);
@@ -1533,6 +1554,14 @@ export function FilePreviewOverlay({
         && !event.repeat
         && !event.isComposing
         && (event.code === "KeyE" || normalizedKey === "e");
+      const isAnnotationShortcut =
+        !event.metaKey
+        && !event.ctrlKey
+        && !event.altKey
+        && !event.shiftKey
+        && !event.repeat
+        && !event.isComposing
+        && (event.code === "KeyA" || normalizedKey === "a");
       const isSaveShortcut = event.code === "KeyS" || normalizedKey === "s";
 
       if (isEditShortcut && !isEditing) {
@@ -1545,6 +1574,16 @@ export function FilePreviewOverlay({
         return;
       }
 
+      if (isAnnotationShortcut && showMarkdownAnnotationToggle) {
+        if (isEditableElement(activeElement) || isEditableElement(eventTarget)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        handleStartMarkdownAnnotationMode();
+        return;
+      }
+
       if (supportsSaveShortcut && isSaveShortcut && isEditing) {
         event.preventDefault();
         event.stopPropagation();
@@ -1554,7 +1593,7 @@ export function FilePreviewOverlay({
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [applePlatform, canEditPreview, handleSaveEditing, handleStartEditing, isEditing, preview]);
+  }, [applePlatform, canEditPreview, handleSaveEditing, handleStartEditing, handleStartMarkdownAnnotationMode, isEditing, preview, showMarkdownAnnotationToggle]);
 
   if (!preview) {
     return null;
@@ -1620,6 +1659,7 @@ export function FilePreviewOverlay({
               content={markdownBody}
               filePath={title}
               files={files || []}
+              fontSize={filePreviewFontSize}
               headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
               labels={markdownAnnotationWorkbenchLabels}
               lineNumberOffset={markdownBodyLineOffset}
@@ -1746,6 +1786,8 @@ export function FilePreviewOverlay({
 
   const leaveDialogTitle = pendingLeaveAction === "cancel-edit"
     ? messages.inspector.previewActions.unsavedChanges.cancelTitle
+    : pendingLeaveAction === "close-preview-confirm"
+      ? messages.inspector.previewActions.closePreviewConfirm.title
     : pendingLeaveAction === "discard-markdown-annotations"
       ? messages.inspector.previewActions.markdownAnnotationDiscard.toggleTitle
       : pendingLeaveAction === "discard-markdown-annotations-and-close"
@@ -1753,9 +1795,13 @@ export function FilePreviewOverlay({
         : messages.inspector.previewActions.unsavedChanges.closeTitle;
   const leaveDialogDescription = pendingLeaveAction === "discard-markdown-annotations" || pendingLeaveAction === "discard-markdown-annotations-and-close"
     ? messages.inspector.previewActions.markdownAnnotationDiscard.description
+    : pendingLeaveAction === "close-preview-confirm"
+      ? messages.inspector.previewActions.closePreviewConfirm.description
     : messages.inspector.previewActions.unsavedChanges.description;
   const leaveDialogConfirmLabel = pendingLeaveAction === "cancel-edit"
     ? messages.inspector.previewActions.unsavedChanges.discardAndStopEditing
+    : pendingLeaveAction === "close-preview-confirm"
+      ? messages.inspector.previewActions.closePreviewConfirm.confirm
     : pendingLeaveAction === "discard-markdown-annotations"
       ? messages.inspector.previewActions.markdownAnnotationDiscard.discardAndStay
       : pendingLeaveAction === "discard-markdown-annotations-and-close"
@@ -1896,7 +1942,7 @@ export function FilePreviewOverlay({
                         {messages.inspector.previewActions.editFile}
                       </PreviewButton>
                     </PreviewTooltipTrigger>
-                    <PreviewTooltipContent>{messages.theme.shortcutHint(editShortcutLabel)}</PreviewTooltipContent>
+                    <PreviewTooltipContent>{renderShortcutTooltip(messages.inspector.previewActions.editFile, editShortcutLabel, messages.theme.shortcutHint)}</PreviewTooltipContent>
                   </PreviewTooltip>
                 )
               ) : null}
@@ -1910,18 +1956,19 @@ export function FilePreviewOverlay({
                       className={cn(
                         "h-8 gap-1.5 px-3 text-xs",
                         previewToolbarSurfaceClassName,
-                        previewToolbarInteractiveClassName,
-                        isMarkdownAnnotationMode && "border-[var(--border-strong)] bg-accent/28 text-foreground",
+                        isMarkdownAnnotationMode
+                          ? "border-primary/70 bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(150,91,34,0.18)] hover:border-primary/80 hover:bg-primary/92 hover:text-primary-foreground focus-visible:ring-primary/45"
+                          : previewToolbarInteractiveClassName,
                       )}
                       aria-pressed={isMarkdownAnnotationMode}
                       aria-label={markdownAnnotationToggleLabel}
                       onClick={handleStartMarkdownAnnotationMode}
                     >
-                      <Pencil className="h-3.5 w-3.5" />
+                      {isMarkdownAnnotationMode ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
                       <span>{markdownAnnotationToggleLabel}</span>
                     </PreviewButton>
                   </PreviewTooltipTrigger>
-                  <PreviewTooltipContent>{markdownAnnotationToggleTooltip}</PreviewTooltipContent>
+                  <PreviewTooltipContent>{renderShortcutTooltip(markdownAnnotationToggleTooltip, annotationShortcutLabel, messages.theme.shortcutHint)}</PreviewTooltipContent>
                 </PreviewTooltip>
               ) : null}
               <div

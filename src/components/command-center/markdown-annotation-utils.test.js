@@ -3,6 +3,7 @@ import {
   buildAnnotationPrompt,
   buildDefaultAnnotationLines,
   collectMarkdownAnnotationMatchRanges,
+  createDeleteAnnotation,
   createReplaceAllAnnotation,
   createReplaceAnnotation,
   normalizeMarkdownAnnotationKind,
@@ -75,6 +76,28 @@ describe("createReplaceAnnotation", () => {
       }),
     ).toBeNull();
   });
+
+  it("accepts rendered markdown text when the raw source slice is provided separately", () => {
+    const content = "**定位**: 面向企业";
+
+    expect(
+      createReplaceAnnotation({
+        content,
+        replacementText: "面向大型企业",
+        selectedText: "定位: 面向企业",
+        selectionRange: { start: 0, end: content.length },
+        sourceSelectedText: content,
+      }),
+    ).toEqual({
+      anchorRange: { start: 0, end: content.length },
+      id: expect.any(String),
+      kind: "replace",
+      lineNumber: 1,
+      matchRanges: [{ start: 0, end: content.length }],
+      replacementText: "面向大型企业",
+      selectedText: "定位: 面向企业",
+    });
+  });
 });
 
 describe("createReplaceAllAnnotation", () => {
@@ -113,6 +136,26 @@ describe("createReplaceAllAnnotation", () => {
   });
 });
 
+describe("createDeleteAnnotation", () => {
+  it("creates a normalized delete annotation from source content", () => {
+    expect(
+      createDeleteAnnotation({
+        content: "第一行\n这段话需要删除\n第三行",
+        selectedText: "这段话需要删除",
+        selectionRange: { start: 4, end: 11 },
+      }),
+    ).toEqual({
+      anchorRange: { start: 4, end: 11 },
+      id: expect.any(String),
+      kind: "delete",
+      lineNumber: 2,
+      matchRanges: [{ start: 4, end: 11 }],
+      replacementText: "",
+      selectedText: "这段话需要删除",
+    });
+  });
+});
+
 describe("buildDefaultAnnotationLines", () => {
   it("builds the default instruction lines from normalized annotations", () => {
     expect(
@@ -129,8 +172,13 @@ describe("buildDefaultAnnotationLines", () => {
           selectedText: "陈航",
           selectionRange: { start: 0, end: 2 },
         }),
+        createDeleteAnnotation({
+          content: "第一行\n这段话需要删除\n第三行",
+          selectedText: "这段话需要删除",
+          selectionRange: { start: 4, end: 11 },
+        }),
       ]),
-    ).toEqual(["第 2 行：有限公司 → ", "所有 陈航 → 无招"]);
+    ).toEqual(["第 2 行：有限公司 → ", "所有 陈航 → 无招", "第 2 行：删除 这段话需要删除"]);
   });
 
   it("drops replace annotations that cannot resolve to a valid source line", () => {

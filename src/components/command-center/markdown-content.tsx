@@ -2,10 +2,11 @@ import { lazy, memo, Suspense } from "react";
 import type { ComponentProps } from "react";
 import type { SessionFile } from "@/types/chat";
 import { contentNeedsMarkdownRenderer } from "@/components/command-center/markdown-content-utils";
-import type { MarkdownAnnotationRange } from "@/components/command-center/markdown-annotation-utils";
+import type { MarkdownAnnotationHighlightRange } from "@/components/command-center/markdown-annotation-utils";
 import { cn } from "@/lib/utils";
 
 const markdownShellBaseClassName =
+  "min-w-0 max-w-full break-words [overflow-wrap:anywhere] " +
   "[&_a]:no-underline " +
   "[&_blockquote]:border-l-2 [&_blockquote]:border-l-primary/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_h1]:mt-[1.95em] [&_h1]:mb-[0.75em] [&_h1]:text-[1.9em] [&_h1]:font-bold [&_h1]:leading-[1.1] [&_h1:first-child]:mt-0 " +
@@ -50,7 +51,32 @@ function normalizeSourceOffset(value: unknown): number | null {
   return Math.max(0, Math.floor(nextValue));
 }
 
-function buildPlainTextHighlightSegments(text = "", highlightRanges: MarkdownAnnotationRange[] = []) {
+function resolveHighlightTone(
+  highlightRanges: MarkdownAnnotationHighlightRange[] = [],
+  segmentStart: number,
+  segmentEnd: number,
+) {
+  let fallbackTone: "annotation" | "selection" = "annotation";
+
+  for (const range of highlightRanges) {
+    const start = normalizeSourceOffset(range?.start);
+    const end = normalizeSourceOffset(range?.end);
+
+    if (start === null || end === null || end <= start || start >= segmentEnd || end <= segmentStart) {
+      continue;
+    }
+
+    if (range?.tone === "selection") {
+      return "selection";
+    }
+
+    fallbackTone = "annotation";
+  }
+
+  return fallbackTone;
+}
+
+function buildPlainTextHighlightSegments(text = "", highlightRanges: MarkdownAnnotationHighlightRange[] = []) {
   if (!text) {
     return [{ highlighted: false, text }];
   }
@@ -87,6 +113,7 @@ function buildPlainTextHighlightSegments(text = "", highlightRanges: MarkdownAnn
 
     return {
       highlighted,
+      tone: highlighted ? resolveHighlightTone(highlightRanges, offset, nextOffset) : undefined,
       text: segmentText,
     };
   });
@@ -118,7 +145,7 @@ type MarkdownContentProps = {
   files?: SessionFile[];
   fontSize?: MarkdownFontSize;
   headingScopeId?: string;
-  highlightRanges?: MarkdownAnnotationRange[];
+  highlightRanges?: MarkdownAnnotationHighlightRange[];
   resolvedTheme?: string;
   sourceTextMapping?: boolean;
   streaming?: boolean;
@@ -148,9 +175,9 @@ export const MarkdownContent = memo(function MarkdownContent({
     const segments = buildPlainTextHighlightSegments(text, highlightRanges || []);
 
     return (
-      <div className={cn(shellClassName, className)}>
+      <div className={cn("max-w-full", shellClassName, className)}>
         <div
-          className="whitespace-pre-wrap break-words"
+          className="min-w-0 max-w-full whitespace-pre-wrap break-all [overflow-wrap:anywhere] [word-break:break-word]"
           data-source-end={sourceTextMapping ? String(text.length) : undefined}
           data-source-start={sourceTextMapping ? "0" : undefined}
           data-source-text={sourceTextMapping ? "true" : undefined}
@@ -159,8 +186,14 @@ export const MarkdownContent = memo(function MarkdownContent({
             segment.highlighted ? (
               <mark
                 key={`plain-highlight-${index}`}
-                className="rounded-[2px] bg-yellow-200/85 text-inherit shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]"
+                className={cn(
+                  "box-decoration-clone rounded-[2px] py-px text-inherit",
+                  segment.tone === "selection"
+                    ? "bg-sky-200/88 shadow-[inset_0_0_0_1px_rgba(2,132,199,0.18)]"
+                    : "bg-yellow-200/85 shadow-[inset_0_0_0_1px_rgba(120,53,15,0.12)]",
+                )}
                 data-markdown-annotation-highlight="true"
+                data-markdown-annotation-highlight-tone={segment.tone || "annotation"}
               >
                 {segment.text}
               </mark>
@@ -174,8 +207,8 @@ export const MarkdownContent = memo(function MarkdownContent({
   return (
     <Suspense
       fallback={
-        <div className={cn(shellClassName, className)}>
-          <div className="whitespace-pre-wrap break-words">{text}</div>
+        <div className={cn("max-w-full", shellClassName, className)}>
+          <div className="min-w-0 max-w-full whitespace-pre-wrap break-all [overflow-wrap:anywhere] [word-break:break-word]">{text}</div>
         </div>
       }
     >

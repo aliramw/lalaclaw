@@ -5,6 +5,10 @@ export type MarkdownAnnotationRange = {
   start: number;
 };
 
+export type MarkdownAnnotationHighlightRange = MarkdownAnnotationRange & {
+  tone?: "annotation" | "selection";
+};
+
 export type MarkdownAnnotation = {
   anchorRange: MarkdownAnnotationRange;
   id: string;
@@ -21,6 +25,7 @@ type MarkdownAnnotationSource = {
   replacementText?: unknown;
   selectionRange?: unknown;
   selectedText?: unknown;
+  sourceSelectedText?: unknown;
 };
 
 type MarkdownAnnotationBuildPromptOptions = {
@@ -186,22 +191,28 @@ function createMarkdownAnnotation({
   replacementText,
   selectionRange,
   selectedText,
+  sourceSelectedText,
 }: {
   content?: unknown;
   kind: MarkdownAnnotationKind;
   replacementText?: unknown;
   selectionRange?: unknown;
   selectedText?: unknown;
+  sourceSelectedText?: unknown;
 }): MarkdownAnnotation | null {
   const sourceText = toMarkdownAnnotationText(content);
   const normalizedSelectedText = toMarkdownAnnotationText(selectedText);
+  const normalizedSourceSelectedText = toMarkdownAnnotationText(sourceSelectedText);
   const anchorRange = resolveMarkdownAnnotationRange(sourceText, selectionRange);
 
   if (!sourceText || !normalizedSelectedText || !anchorRange) {
     return null;
   }
 
-  if (sourceText.slice(anchorRange.start, anchorRange.end) !== normalizedSelectedText) {
+  const anchoredSourceSlice = sourceText.slice(anchorRange.start, anchorRange.end);
+  const selectionSourceText = normalizedSourceSelectedText || normalizedSelectedText;
+
+  if (anchoredSourceSlice !== selectionSourceText) {
     return null;
   }
 
@@ -214,7 +225,7 @@ function createMarkdownAnnotation({
   const replacement = toMarkdownAnnotationText(replacementText);
   const matchRanges =
     kind === "replaceAll" || kind === "deleteAll"
-      ? collectMarkdownAnnotationMatchRanges(sourceText, normalizedSelectedText)
+      ? collectMarkdownAnnotationMatchRanges(sourceText, selectionSourceText)
       : [anchorRange];
 
   if ((kind === "replaceAll" || kind === "deleteAll") && matchRanges.length === 0) {
@@ -237,6 +248,7 @@ export function createReplaceAnnotation({
   replacementText,
   selectionRange,
   selectedText,
+  sourceSelectedText,
 }: MarkdownAnnotationSource): MarkdownAnnotation | null {
   return createMarkdownAnnotation({
     content,
@@ -244,6 +256,7 @@ export function createReplaceAnnotation({
     replacementText,
     selectionRange,
     selectedText,
+    sourceSelectedText,
   });
 }
 
@@ -252,6 +265,7 @@ export function createReplaceAllAnnotation({
   replacementText,
   selectionRange,
   selectedText,
+  sourceSelectedText,
 }: MarkdownAnnotationSource): MarkdownAnnotation | null {
   return createMarkdownAnnotation({
     content,
@@ -259,6 +273,23 @@ export function createReplaceAllAnnotation({
     replacementText,
     selectionRange,
     selectedText,
+    sourceSelectedText,
+  });
+}
+
+export function createDeleteAnnotation({
+  content,
+  selectionRange,
+  selectedText,
+  sourceSelectedText,
+}: MarkdownAnnotationSource): MarkdownAnnotation | null {
+  return createMarkdownAnnotation({
+    content,
+    kind: "delete",
+    replacementText: "",
+    selectionRange,
+    selectedText,
+    sourceSelectedText,
   });
 }
 
@@ -273,6 +304,19 @@ export function buildDefaultAnnotationLine(annotation: MarkdownAnnotation | null
 
   if (!normalizedKind || isBlankLine(selectedText)) {
     return "";
+  }
+
+  if (normalizedKind === "deleteAll") {
+    return `删除所有 ${selectedText}`;
+  }
+
+  if (normalizedKind === "delete") {
+    const lineNumber = Number.isFinite(annotation.lineNumber ?? NaN) ? Math.floor(Number(annotation.lineNumber)) : 0;
+    if (lineNumber < 1) {
+      return "";
+    }
+
+    return `第 ${lineNumber} 行：删除 ${selectedText}`;
   }
 
   if (normalizedKind === "replaceAll" || normalizedKind === "deleteAll") {

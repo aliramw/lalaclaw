@@ -73,13 +73,40 @@ export const UserMessageBubble = memo(function UserMessageBubble({
     <div
       ref={setBubbleNode}
       {...messageBubbleAttributes}
-      className="group/message flex w-full justify-end"
+      className="group/message flex w-full max-w-full"
     >
-      <div className="flex max-w-full flex-col items-end">
+      <div className="flex w-full min-w-0 max-w-full flex-col items-end">
         <MessageLabel align="right" value={userLabel} textClassName={fontSizeStyles.label} />
-        <div className="flex max-w-full items-center gap-2">
+        <div className="flex w-full min-w-0 max-w-full flex-col items-end">
+          <div className="flex w-full min-w-0 max-w-full justify-end">
+            <div className="flex min-w-0 flex-1 justify-end">
+              <Card ref={setBubbleSurfaceNode} data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "min-w-0 self-end overflow-hidden", "cc-user-bubble", userBubbleClassName, focusBubbleClassName)}>
+                {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
+                <CardContent className={cn("min-w-0", bubbleContentClassName, message.attachments?.length && "space-y-2")}>
+                  <MessageAttachments
+                    attachments={message.attachments}
+                    onPreviewImage={handleOpenImagePreview}
+                    scrollAnchorBaseId={`${headingScopeId}-attachment`}
+                  />
+                  {message.content ? (
+                    <MarkdownContent
+                      content={renderedContent}
+                      files={files as any}
+                      fontSize={chatFontSize as any}
+                      headingScopeId={headingScopeId}
+                      resolvedTheme={resolvedTheme}
+                      streaming={false}
+                      onOpenFilePreview={handleOpenFilePreview}
+                      onOpenImagePreview={handleOpenImagePreview}
+                      className={fontSizeStyles.userMarkdown}
+                    />
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
           <MessageMeta
-            align="left"
+            align="right"
             content={message.content}
             copyFirst
             formatTime={formatTime}
@@ -90,29 +117,6 @@ export const UserMessageBubble = memo(function UserMessageBubble({
             textClassName={fontSizeStyles.meta}
             timestamp={message.timestamp}
           />
-          <Card ref={setBubbleSurfaceNode} data-bubble-layout="user" className={cn(bubbleBaseClassName, userBubbleWidthClassName, "cc-user-bubble", userBubbleClassName, focusBubbleClassName)}>
-            {supportsBubbleTopJump && showBubbleTopJump ? <BubbleTopJumpButton onClick={handleJumpBubbleTop} /> : null}
-            <CardContent className={cn(bubbleContentClassName, message.attachments?.length && "space-y-2")}>
-              <MessageAttachments
-                attachments={message.attachments}
-                onPreviewImage={handleOpenImagePreview}
-                scrollAnchorBaseId={`${headingScopeId}-attachment`}
-              />
-              {message.content ? (
-                <MarkdownContent
-                  content={renderedContent}
-                  files={files as any}
-                  fontSize={chatFontSize as any}
-                  headingScopeId={headingScopeId}
-                  resolvedTheme={resolvedTheme}
-                  streaming={false}
-                  onOpenFilePreview={handleOpenFilePreview}
-                  onOpenImagePreview={handleOpenImagePreview}
-                  className={fontSizeStyles.userMarkdown}
-                />
-              ) : null}
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>

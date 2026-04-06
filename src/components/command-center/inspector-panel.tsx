@@ -921,6 +921,7 @@ export function InspectorPanel({
   currentWorkspaceRoot = "",
   files,
   onSelectArtifact,
+  onSendPreparedPrompt,
   onRefreshEnvironment,
   onTrackSessionFiles,
   onSyncCurrentSessionModel,
@@ -1398,6 +1399,7 @@ export function InspectorPanel({
               sessionFiles={files}
               onClose={closeFilePreview}
               onOpenFilePreview={handleOpenPreview}
+              onSendPreparedPrompt={onSendPreparedPrompt}
               workspaceCount={workspaceCount}
               workspaceFiles={workspaceFiles}
               workspaceLoaded={workspaceLoaded}
@@ -1583,6 +1585,7 @@ export function InspectorPanel({
             sessionFiles={files}
             onClose={closeFilePreview}
             onOpenFilePreview={handleOpenPreview}
+            onSendPreparedPrompt={onSendPreparedPrompt}
             workspaceCount={workspaceCount}
             workspaceFiles={workspaceFiles}
             workspaceLoaded={workspaceLoaded}

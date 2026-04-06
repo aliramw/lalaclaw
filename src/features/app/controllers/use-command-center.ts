@@ -1435,8 +1435,9 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
     setPromptHistoryNavigation(null);
     resetRapidEnterState();
 
+    let sendPromise;
     try {
-      await handleSendPreparedPrompt(content, { attachments });
+      sendPromise = handleSendPreparedPrompt(content, { attachments });
     } finally {
       if (normalizedTargetTabId && pendingSendPreparationByTabRef.current[normalizedTargetTabId]) {
         const nextPendingPreparation = { ...pendingSendPreparationByTabRef.current };
@@ -1444,6 +1445,8 @@ export function useCommandCenter({ userLabel: initialUserLabel = defaultUserLabe
         pendingSendPreparationByTabRef.current = nextPendingPreparation;
       }
     }
+
+    await sendPromise;
   };
 
   const {

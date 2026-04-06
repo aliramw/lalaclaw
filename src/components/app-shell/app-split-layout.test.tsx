@@ -27,6 +27,8 @@ describe("AppSplitLayout", () => {
     expect(screen.getByTestId("relationships-panel")).toBeInTheDocument();
     expect(workspaceStage).toBeInTheDocument();
     expect(inspectorStage).toBeInTheDocument();
+    expect(workspaceStage).toHaveClass("overflow-hidden");
+    expect(inspectorStage?.lastElementChild).toHaveClass("overflow-hidden");
     expect(workspaceStage).not.toHaveClass("rounded-[30px]");
     expect(workspaceStage).not.toHaveClass("border");
     expect(workspaceStage).not.toHaveClass("bg-[var(--surface-elevated)]");

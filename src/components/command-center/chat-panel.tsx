@@ -3964,7 +3964,7 @@ export function ChatPanel({
             trailingControl={agentSwitcher}
           />
         ) : null}
-        <div className="cc-chat-stage flex h-full min-h-0 flex-col rounded-[24px] bg-transparent">
+        <div className="cc-chat-stage flex h-full min-h-0 min-w-0 max-w-full flex-col rounded-[24px] bg-transparent">
           <div className="cc-chat-stage-header shrink-0 pb-1">
             <div className="relative pt-0.5 pb-0.5">
               <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
@@ -4029,16 +4029,17 @@ export function ChatPanel({
               {sessionOverview ? <div className="mt-1.5 border-t border-border/45 pt-1.5">{sessionOverview}</div> : null}
             </div>
           </div>
-          <div className="cc-chat-workspace-shell flex min-h-0 flex-1 flex-col rounded-[22px] border border-border/45 bg-[color-mix(in_srgb,var(--surface)_88%,var(--surface-elevated))] p-2">
-            <div className="cc-chat-stage-body min-h-0 flex-1 overflow-hidden rounded-[18px] bg-[var(--surface)]">
-              <div className="relative h-full min-h-0">
+          <div className="cc-chat-workspace-shell flex min-h-0 min-w-0 max-w-full flex-1 flex-col rounded-[22px] border border-border/45 bg-[color-mix(in_srgb,var(--surface)_88%,var(--surface-elevated))] p-2">
+            <div className="cc-chat-stage-body min-h-0 min-w-0 max-w-full flex-1 overflow-hidden rounded-[18px] bg-[var(--surface)]">
+              <div className="relative h-full min-h-0 min-w-0 max-w-full">
                 <ScrollArea
                   className="h-full"
+                  viewportClassName="overflow-x-hidden"
                   viewportRef={handleMessageViewportRef}
                   onWheelCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
                   onTouchMoveCapture={() => markUserScrollTakeover({ lockAutoFollow: true })}
                 >
-                  <div className="grid gap-2 px-4 pt-3 pb-7">
+                  <div className="grid min-w-0 max-w-full gap-2 px-4 pt-3 pb-7 overflow-x-hidden">
                     {renderedMessageBubbles}
                     <div ref={bottomSentinelRef} aria-hidden="true" data-message-bottom-sentinel className="h-px w-full" />
                   </div>
@@ -4159,8 +4160,8 @@ export function ChatPanel({
                   className={cn(
                     "overflow-hidden rounded-[20px] border border-input bg-background shadow-xs transition-[border-color,box-shadow]",
                     resolvedTheme === "dark"
-                      ? "border-[#4d88c7] ring-2 ring-[#4d88c7]/20 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
-                      : "border-[#1677eb] ring-2 ring-[#1677eb]/35 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/35",
+                      ? "border-[#4d88c7]/50 focus-within:border-[#4d88c7] focus-within:ring-2 focus-within:ring-[#4d88c7]/20"
+                      : "border-[#1677eb]/45 focus-within:border-[#1677eb] focus-within:ring-2 focus-within:ring-[#1677eb]/22",
                   )}
                 >
                   {composerAttachments?.length ? (
