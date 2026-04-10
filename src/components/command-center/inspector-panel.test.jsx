@@ -5446,6 +5446,13 @@ describe("InspectorPanel", () => {
       content: "value <- 42\nprint(value)\n",
       expectedSnippet: "value <- 42",
     },
+    {
+      label: "uv.lock",
+      path: "/Users/marila/projects/lalaclaw/uv.lock",
+      language: "toml",
+      content: "version = 1\nrequires-python = \">=3.10\"\n",
+      expectedSnippet: "version = 1",
+    },
   ])("renders $language text previews with syntax highlighting", async ({ path, language, content, expectedSnippet }) => {
     vi.stubGlobal(
       "fetch",

@@ -139,6 +139,8 @@ const previewLanguageByExtension = {
   pm: "perl",
   r: "r",
   sh: "bash",
+  csh: "bash",
+  tcsh: "bash",
   bash: "bash",
   zsh: "bash",
   fish: "bash",
@@ -154,6 +156,7 @@ const previewLanguageByExtension = {
   yaml: "yaml",
   toml: "toml",
   ini: "ini",
+  cfg: "ini",
   conf: "ini",
   env: "bash",
   json: "json",
@@ -161,7 +164,7 @@ const previewLanguageByExtension = {
   markdown: "markdown",
   txt: "text",
   text: "text",
-  log: "text",
+  log: "log",
 };
 
 let monacoEditorComponentPromise: Promise<any> | null = null;
@@ -239,7 +242,52 @@ function formatMediaTimestamp(value: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function isCodeLikePreviewTarget(filePath = "", kind = "") {
+function inferLanguageFromShebang(content = "") {
+  const source = String(content || "");
+  const match = source.match(/^#!([^\r\n]+)/);
+  if (!match) {
+    return "";
+  }
+
+  const tokens = String(match[1] || "").trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return "";
+  }
+
+  let interpreterToken = tokens[0] || "";
+  const firstBaseName = interpreterToken.split("/").pop() || "";
+  if (firstBaseName === "env") {
+    interpreterToken = tokens.slice(1).find((token) => token && !token.startsWith("-")) || "";
+  }
+
+  const interpreter = String(interpreterToken || "").split("/").pop()?.toLowerCase() || "";
+  if (!interpreter) {
+    return "";
+  }
+
+  if (/^python(\d+(\.\d+)*)?$/.test(interpreter)) {
+    return "python";
+  }
+  if (["bash", "sh", "zsh", "fish", "csh", "tcsh"].includes(interpreter)) {
+    return "bash";
+  }
+  if (["node", "nodejs"].includes(interpreter)) {
+    return "javascript";
+  }
+  if (interpreter === "php") {
+    return "php";
+  }
+  if (["perl", "perl5"].includes(interpreter)) {
+    return "perl";
+  }
+  if (interpreter === "ruby") {
+    return "ruby";
+  }
+
+  return "";
+}
+
+function isCodeLikePreviewTarget(filePath = "", kind = "", content = "") {
   const normalizedKind = String(kind || "").toLowerCase();
   if (normalizedKind === "json" || normalizedKind === "markdown") {
     return true;
@@ -254,12 +302,19 @@ function isCodeLikePreviewTarget(filePath = "", kind = "") {
   if (fileName === "dockerfile" || fileName === "makefile") {
     return true;
   }
+  if (fileName === "uv.lock") {
+    return true;
+  }
 
   const extension = fileName.includes(".") ? String(fileName.split(".").pop() || "") : "";
-  return Boolean(extension) && previewLanguageByExtension[extension] && previewLanguageByExtension[extension] !== "text";
+  if (Boolean(extension)) {
+    return Boolean(previewLanguageByExtension[extension] && previewLanguageByExtension[extension] !== "text");
+  }
+
+  return Boolean(inferLanguageFromShebang(content));
 }
 
-function inferPreviewLanguage(filePath = "", kind = "") {
+function inferPreviewLanguage(filePath = "", kind = "", content = "") {
   const normalizedKind = String(kind || "").toLowerCase();
   if (normalizedKind === "json") {
     return "json";
@@ -276,13 +331,19 @@ function inferPreviewLanguage(filePath = "", kind = "") {
   if (fileName === "makefile") {
     return "makefile";
   }
+  if (fileName === "uv.lock") {
+    return "toml";
+  }
 
   const extension = fileName.includes(".") ? String(fileName.split(".").pop() || "") : "";
+  if (!extension) {
+    return inferLanguageFromShebang(content) || "text";
+  }
   return previewLanguageByExtension[extension] || "text";
 }
 
-function resolveMonacoLanguage(filePath = "", kind = "") {
-  const inferred = inferPreviewLanguage(filePath, kind);
+function resolveMonacoLanguage(filePath = "", kind = "", content = "") {
+  const inferred = inferPreviewLanguage(filePath, kind, content);
   if (inferred === "text") {
     return "plaintext";
   }
@@ -405,9 +466,12 @@ function FilePreviewCodeBlock({
               <div
                 key={lineIndex}
                 {...getLineProps({ line })}
-                className={cn("token-line block min-w-max px-4 font-mono", isSubtle && "text-[12.5px]")}
+                className={cn("token-line block min-w-max whitespace-pre px-4 font-mono", isSubtle && "text-[12.5px]")}
               >
-                {line.length ? line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />) : <span>&nbsp;</span>}
+                {line.length ? line.map((token, tokenIndex) => {
+                  const tokenProps = getTokenProps({ token });
+                  return <span key={tokenIndex} {...tokenProps} className={cn(tokenProps.className, "inline")} style={{ ...tokenProps.style, display: "inline" }} />;
+                }) : <span>&nbsp;</span>}
               </div>
             ))}
           </pre>
@@ -485,7 +549,7 @@ function EditableFilePreview({
       {EditorComponent ? (
         <EditorComponent
           path={path || "preview.txt"}
-          language={resolveMonacoLanguage(path, kind)}
+          language={resolveMonacoLanguage(path, kind, value)}
           value={value}
           onChange={(nextValue) => onChange(nextValue || "")}
           theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
@@ -539,7 +603,7 @@ function EditableFilePreview({
             glyphMargin: false,
             fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
             fontSize: editorFontSizeByPreviewSize[fontSize] || editorFontSizeByPreviewSize.medium,
-            lineNumbers: isCodeLikePreviewTarget(path, kind) || kind === "json" ? "on" : "off",
+            lineNumbers: isCodeLikePreviewTarget(path, kind, value) || kind === "json" ? "on" : "off",
             minimap: { enabled: false },
             padding: { top: 16, bottom: 16 },
             scrollBeyondLastLine: false,
@@ -1299,13 +1363,13 @@ export function FilePreviewOverlay({
   const displayPath = compactHomePath(title);
   const isDark = resolvedTheme === "dark";
   const vscodeHref = getVsCodeHref(title);
-  const showVsCodeButton = isCodeLikePreviewTarget(title, preview?.kind);
-  const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || messages.inspector.previewActions.fileManagers.folder);
-  const isPdfPreview = preview?.kind === "pdf" && Boolean(preview.contentUrl);
   const editablePreview = isEditablePreview(preview);
   const effectivePreviewContent = editablePreview
     ? (previewContentOverride !== null ? previewContentOverride : String(preview?.content || ""))
     : "";
+  const showVsCodeButton = isCodeLikePreviewTarget(title, preview?.kind, effectivePreviewContent);
+  const fileManagerLabel = resolveFileManagerLocaleLabel(messages, preview.fileManagerLabel || messages.inspector.previewActions.fileManagers.folder);
+  const isPdfPreview = preview?.kind === "pdf" && Boolean(preview.contentUrl);
   const canEditPreview = editablePreview && !preview?.loading && !preview?.error && !preview?.truncated && Boolean(title);
   const showFilesSidebar = Boolean(title) && !isMarkdownAnnotationMode;
   const richTextPreviewFontSizeClassName = richTextPreviewFontSizeClassNames[filePreviewFontSize] || richTextPreviewFontSizeClassNames.medium;
@@ -1708,8 +1772,8 @@ export function FilePreviewOverlay({
   } else if (preview.kind === "json") {
     body = <FilePreviewCodeBlock content={effectivePreviewContent} language="json" fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />;
   } else if (preview.kind === "text") {
-    body = isCodeLikePreviewTarget(title, preview.kind)
-      ? <FilePreviewCodeBlock content={effectivePreviewContent} language={inferPreviewLanguage(title, preview.kind)} fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />
+    body = isCodeLikePreviewTarget(title, preview.kind, effectivePreviewContent)
+      ? <FilePreviewCodeBlock content={effectivePreviewContent} language={inferPreviewLanguage(title, preview.kind, effectivePreviewContent)} fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />
       : (
         <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-border/70 bg-background/80" : "border-slate-200 bg-white")}>
           <pre className={cn("overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-foreground", richTextPreviewFontSizeClassName)}>{effectivePreviewContent}</pre>
@@ -1751,7 +1815,7 @@ export function FilePreviewOverlay({
     || isMarkdownAnnotationMode
     || isEditing
     || preview.kind === "json"
-    || (preview.kind === "text" && isCodeLikePreviewTarget(title, preview.kind));
+    || (preview.kind === "text" && isCodeLikePreviewTarget(title, preview.kind, effectivePreviewContent));
   const directBodyPaddingClassName = isFullscreen
     ? (isPdfPreview ? "h-full p-0" : isMarkdownAnnotationMode ? "h-full px-4 py-4 sm:px-6 sm:py-5" : "h-full px-6 py-5")
     : isEditing

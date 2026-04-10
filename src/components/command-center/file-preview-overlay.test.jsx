@@ -699,6 +699,89 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByTestId("file-preview-code-scroll")).toHaveClass("text-slate-900");
   });
 
+  it("renders csh files with the code preview pipeline", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "activate.csh",
+          path: "/Users/marila/projects/lalaclaw/activate.csh",
+          content: "setenv VIRTUAL_ENV /tmp/demo\nsource bin/activate.csh\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("file-preview-code-block")).toBeInTheDocument();
+    expect(screen.getByTestId("file-preview-code-header")).toHaveTextContent("bash");
+  });
+
+  it("renders cfg files with the code preview pipeline", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "pyvenv.cfg",
+          path: "/Users/marila/projects/lalaclaw/pyvenv.cfg",
+          content: "home = /opt/homebrew/bin/python3\ninclude-system-site-packages = false\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("file-preview-code-block")).toBeInTheDocument();
+    expect(screen.getByTestId("file-preview-code-header")).toHaveTextContent("ini");
+  });
+
+  it("renders extensionless python shebang files with the code preview pipeline", () => {
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "numpy-config",
+          path: "/Users/marila/projects/lalaclaw/numpy-config",
+          content: "#!/Users/marila/.openclaw/workspace/tmp/asr_work/venv/bin/python3.14\nimport sys\nfrom numpy._configtool import main\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("file-preview-code-block")).toBeInTheDocument();
+    expect(screen.getByTestId("file-preview-code-header")).toHaveTextContent("python");
+  });
+
+  it("keeps toml table tokens inline inside a single preview line", () => {
+    const { container } = renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "text",
+          name: "uv.lock",
+          path: "/Users/marila/projects/lalaclaw/uv.lock",
+          content: "version = 1\n\n[[package]]\nname = \"workspace\"\n",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const tableLine = Array.from(container.querySelectorAll(".token-line")).find((node) => node.textContent === "[[package]]");
+    expect(tableLine).toBeTruthy();
+    expect(tableLine).toHaveClass("whitespace-pre");
+
+    const tokenSpans = tableLine?.querySelectorAll("span") || [];
+    expect(tokenSpans.length).toBeGreaterThan(0);
+    tokenSpans.forEach((token) => {
+      expect(token).toHaveStyle({ display: "inline" });
+    });
+  });
+
   it("returns markdown previews to preview mode after clicking save and shows a success notice", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
