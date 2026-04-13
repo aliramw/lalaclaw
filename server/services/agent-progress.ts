@@ -269,28 +269,44 @@ export function stripHermesProgressLines(stdout = "") {
   }
 
   const leadingProgressIndexes: number[] = [];
-  let replyStartIndex = -1;
+  let blankSeparatorIndex = -1;
+  let answerIndex = -1;
 
   for (const index of contentIndexes) {
     const entry = normalizedLines[index];
     if (entry.progress.progressStage || entry.progress.progressLabel) {
-      if (replyStartIndex >= 0) {
+      if (blankSeparatorIndex >= 0 || answerIndex >= 0) {
         break;
       }
       leadingProgressIndexes.push(index);
       continue;
     }
 
-    replyStartIndex = index;
+    answerIndex = index;
     break;
   }
 
-  if (replyStartIndex < 0 || leadingProgressIndexes.length < 2) {
+  if (!leadingProgressIndexes.length || answerIndex < 0) {
+    return lines.join("\n");
+  }
+
+  for (let index = leadingProgressIndexes[leadingProgressIndexes.length - 1] + 1; index < answerIndex; index += 1) {
+    const entry = normalizedLines[index];
+    if (!entry.trimmed) {
+      blankSeparatorIndex = index;
+      break;
+    }
+    if (!isHermesNoiseLine(entry.trimmed)) {
+      return lines.join("\n");
+    }
+  }
+
+  if (blankSeparatorIndex < 0) {
     return lines.join("\n");
   }
 
   return normalizedLines
-    .filter((_entry, index) => !leadingProgressIndexes.includes(index))
+    .filter((_entry, index) => index > blankSeparatorIndex || !leadingProgressIndexes.includes(index))
     .map((entry) => entry.line)
     .join("\n");
 }

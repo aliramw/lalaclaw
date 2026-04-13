@@ -116,6 +116,7 @@ describe("createHermesClient", () => {
           "╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮",
           "检查工作区…",
           "执行命令…",
+          "",
           "第二轮已收",
           "",
           "session_id: 20260413_151122_ba5e9f",
@@ -180,6 +181,34 @@ describe("createHermesClient", () => {
       client.dispatchHermes([{ role: "user", content: "继续" }], { model: "gpt-5.4" }),
     ).resolves.toEqual({
       outputText: "执行命令…\n下面是结果",
+      sessionId: "20260413_151122_ba5e9f",
+      usage: null,
+      progressStage: "executing",
+      progressLabel: "执行命令…",
+      progressUpdatedAt: expect.any(Number),
+    });
+  });
+
+  it("preserves multi-line replies with progress-like leading lines when no blank separator exists", async () => {
+    const client = createHermesClient({
+      HERMES_BIN: "hermes",
+      PROJECT_ROOT: "/workspace/project",
+      execFileAsync: vi.fn(async () => ({
+        stdout: [
+          "╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮",
+          "检查工作区…",
+          "执行命令…",
+          "下面是结果",
+          "",
+          "session_id: 20260413_151122_ba5e9f",
+        ].join("\n"),
+      })),
+    });
+
+    await expect(
+      client.dispatchHermes([{ role: "user", content: "继续" }], { model: "gpt-5.4" }),
+    ).resolves.toEqual({
+      outputText: "检查工作区…\n执行命令…\n下面是结果",
       sessionId: "20260413_151122_ba5e9f",
       usage: null,
       progressStage: "executing",
