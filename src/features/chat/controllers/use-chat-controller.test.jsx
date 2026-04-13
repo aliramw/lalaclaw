@@ -756,6 +756,13 @@ describe("useChatController", () => {
           body: new ReadableStream({
             start(controller) {
               controller.enqueue(encoder.encode(`${JSON.stringify({
+                type: "message.progress",
+                messageId: "msg-assistant-200",
+                progressStage: "executing",
+                progressLabel: "执行命令…",
+                progressUpdatedAt: 222,
+              })}\n`));
+              controller.enqueue(encoder.encode(`${JSON.stringify({
                 type: "message.patch",
                 messageId: "msg-assistant-200",
                 delta: "第一段",
@@ -830,6 +837,16 @@ describe("useChatController", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/chat/stop", expect.objectContaining({ method: "POST" }));
     expect(setBusy).toHaveBeenCalledWith(true);
     expect(setBusy).toHaveBeenLastCalledWith(false);
+    const pendingSnapshots = collectPendingSnapshots(setPendingChatTurns);
+    expect(pendingSnapshots.at(-1)?.["command-center:main"]).toMatchObject({
+      assistantMessageId: "msg-assistant-200",
+      progressStage: "executing",
+      progressLabel: "执行命令…",
+      progressUpdatedAt: 222,
+      stopped: true,
+      suppressPendingPlaceholder: true,
+      streamText: "第一段",
+    });
     expect(appliedMessageSnapshots.at(-1)).toEqual([
       {
         id: "msg-user-200",
@@ -2311,6 +2328,13 @@ describe("useChatController", () => {
     const fetchMock = vi.fn(() =>
       mockStreamResponse([
         { type: "message.start", message: { id: "msg-assistant-1" } },
+        {
+          type: "message.progress",
+          messageId: "msg-assistant-1",
+          progressStage: "inspecting",
+          progressLabel: "检查上下文…",
+          progressUpdatedAt: 777,
+        },
         { type: "message.patch", messageId: "msg-assistant-1", delta: "第一段" },
         { type: "message.patch", messageId: "msg-assistant-1", delta: "第二段" },
         {
@@ -2388,6 +2412,12 @@ describe("useChatController", () => {
     expect(pendingSnapshots[0]?.["command-center:main"]).toMatchObject({
       userMessage: { role: "user", content: "请流式输出", timestamp: 200 },
     });
+    expect(
+      pendingSnapshots.some((snapshot) =>
+        snapshot?.["command-center:main"]?.progressStage === "inspecting"
+        && snapshot?.["command-center:main"]?.progressLabel === "检查上下文…"
+        && snapshot?.["command-center:main"]?.progressUpdatedAt === 777),
+    ).toBe(true);
     expect(pendingSnapshots.some((snapshot) => snapshot?.["command-center:main"]?.streamText === "第一段")).toBe(true);
     expect(pendingSnapshots.some((snapshot) => snapshot?.["command-center:main"]?.streamText === "第一段第二段")).toBe(true);
     expect(applySnapshot).toHaveBeenCalledWith(
@@ -2562,6 +2592,85 @@ describe("useChatController", () => {
       ],
       clearPendingKey: "command-center:main",
     });
+  });
+
+  it("retains the latest provider progress on the pending turn while waiting for runtime catch-up", async () => {
+    const setBusy = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const persistOptimisticChatState = vi.fn();
+    const messagesRef = { current: [] };
+
+    vi.stubGlobal("fetch", vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        assistantMessageId: "msg-assistant-progress-retained-1",
+        outputText: "",
+        progressStage: "synthesizing",
+        progressLabel: "整理结果…",
+        progressUpdatedAt: 999,
+        session: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+          status: "已完成 / 标准",
+        },
+        metadata: { status: "已完成 / 标准" },
+      }),
+    ));
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        busy: false,
+        i18n: createI18n(),
+        messagesRef,
+        setBusy,
+        setPendingChatTurns,
+        setSession,
+        applySnapshot,
+        persistOptimisticChatState,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry({
+        id: "entry-retained-progress",
+        key: "command-center:main",
+        content: "继续整理",
+        attachments: [],
+        timestamp: 4100,
+        userMessageId: "msg-user-retained-progress-1",
+        assistantMessageId: "msg-assistant-progress-retained-1",
+        pendingTimestamp: 4150,
+        agentId: "main",
+        sessionUser: "command-center",
+        model: "gpt-5",
+        fastMode: false,
+      });
+    });
+
+    const pendingSnapshots = collectPendingSnapshots(setPendingChatTurns);
+    expect(pendingSnapshots.at(-1)?.["command-center:main"]).toMatchObject({
+      assistantMessageId: "msg-assistant-progress-retained-1",
+      progressStage: "synthesizing",
+      progressLabel: "整理结果…",
+      progressUpdatedAt: 999,
+      suppressPendingPlaceholder: true,
+    });
+    expect(persistOptimisticChatState).toHaveBeenLastCalledWith(expect.objectContaining({
+      tabId: "agent:main",
+      pendingEntry: expect.objectContaining({
+        assistantMessageId: "msg-assistant-progress-retained-1",
+        progressStage: "synthesizing",
+        progressLabel: "整理结果…",
+        progressUpdatedAt: 999,
+        suppressPendingPlaceholder: true,
+      }),
+    }));
   });
 
   it("preserves partial streamed output when the ndjson stream ends with an error", async () => {

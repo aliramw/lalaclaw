@@ -14,6 +14,11 @@ function createResponseRecorder() {
 
 function createHandler(overrides = {}) {
   const responseRecorder = createResponseRecorder();
+  const config = {
+    mode: "mock",
+    model: "gpt-5",
+    ...(overrides.config || {}),
+  };
   const dependencies = {
     appendLocalSessionFileEntries: vi.fn(),
     appendLocalSessionConversation: vi.fn(),
@@ -28,11 +33,9 @@ function createHandler(overrides = {}) {
     clearLocalSessionConversation: vi.fn(),
     clearLocalSessionFileEntries: vi.fn(),
     clip: (value, length = 999) => String(value || "").slice(0, length),
-    config: {
-      mode: "mock",
-      model: "gpt-5",
-    },
+    config,
     delay: vi.fn(async () => {}),
+    dispatchHermes: vi.fn(async () => ({ outputText: "Hermes 完成", usage: null })),
     dispatchOpenClaw: vi.fn(async () => ({ outputText: "完成", usage: { input: 1, output: 2 } })),
     formatTokenBadge: vi.fn((usage) => (usage ? "↑1 ↓2" : "")),
     getCommandCenterSessionKey: vi.fn((agentId, sessionUser) => `agent:${agentId}:${sessionUser}`),
@@ -49,6 +52,7 @@ function createHandler(overrides = {}) {
     parseSessionResetCommand: vi.fn(() => null),
     parseSlashCommandState: vi.fn(() => null),
     resolveCanonicalModelId: vi.fn((value) => value),
+    resolveModeForAgent: vi.fn((agentId) => (agentId === "hermes" ? "hermes" : config.mode)),
     resolveSessionAgentId: vi.fn(() => "main"),
     resolveSessionFastMode: vi.fn(() => false),
     resolveSessionModel: vi.fn(() => "gpt-5"),
@@ -216,6 +220,102 @@ describe("createChatHandler", () => {
     expect(harness.responseRecorder.calls[0].payload.error).not.toContain("--token");
     expect(harness.responseRecorder.calls[0].payload.error).not.toContain("/Users/marila");
     expect(harness.responseRecorder.calls[0].payload.error).not.toContain("Command failed:");
+  });
+
+  it("dispatches hermes chats through the hermes provider instead of openclaw", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "openclaw" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center-hermes",
+        agentId: "hermes",
+        model: "gpt-5.4",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "hi" }],
+      })),
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {
+          mode: "hermes",
+          agentId: "hermes",
+          selectedModel: "gpt-5.4",
+          model: "gpt-5.4",
+          sessionUser: "command-center-hermes",
+          availableModels: ["gpt-5.4"],
+          availableAgents: ["main", "hermes"],
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.dispatchHermes).toHaveBeenCalledWith(
+      [{ role: "user", content: "hi" }],
+      expect.objectContaining({
+        model: "gpt-5.4",
+        sessionUser: "command-center-hermes",
+      }),
+    );
+    expect(harness.dispatchOpenClaw).not.toHaveBeenCalled();
+    expect(harness.callOpenClawGateway).not.toHaveBeenCalled();
+    expect(harness.responseRecorder.calls[0]).toMatchObject({
+      statusCode: 200,
+      payload: {
+        ok: true,
+        mode: "hermes",
+        model: "gpt-5.4",
+        outputText: "Hermes 完成",
+      },
+    });
+  });
+
+  it("resumes the same hermes session for later turns and persists the returned session id", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "openclaw" },
+      getSessionPreferences: vi.fn(() => ({ hermesSessionId: "hermes-session-1" })),
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center-hermes",
+        agentId: "hermes",
+        model: "gpt-5.4",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchHermes: vi.fn(async () => ({
+        outputText: "Hermes 继续",
+        usage: null,
+        sessionId: "hermes-session-1",
+      })),
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {
+          mode: "hermes",
+          agentId: "hermes",
+          selectedModel: "gpt-5.4",
+          model: "gpt-5.4",
+          sessionUser: "command-center-hermes",
+          availableModels: ["gpt-5.4"],
+          availableAgents: ["main", "hermes"],
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.dispatchHermes).toHaveBeenCalledWith(
+      [{ role: "user", content: "继续" }],
+      expect.objectContaining({
+        model: "gpt-5.4",
+        sessionUser: "command-center-hermes",
+        sessionId: "hermes-session-1",
+      }),
+    );
+    expect(harness.setSessionPreferences).toHaveBeenCalledWith(
+      "command-center-hermes",
+      expect.objectContaining({
+        hermesSessionId: "hermes-session-1",
+      }),
+    );
   });
 
   it("handles fast commands without dispatching a model request", async () => {
@@ -421,7 +521,7 @@ describe("createChatHandler", () => {
         { role: "assistant", content: "OpenClaw command channel is online in mock mode.\nCurrent intent: hi", timestamp: Date.now() + 1 },
       ],
     );
-    expect(harness.buildDashboardSnapshot).toHaveBeenCalledWith("api-user");
+    expect(harness.buildDashboardSnapshot).toHaveBeenCalledWith("api-user", { agentId: "main" });
   });
 
   it("still completes the stream after the request input closes normally", async () => {
@@ -473,6 +573,96 @@ describe("createChatHandler", () => {
 
     expect(writes.some((chunk) => String(chunk || "").includes("\"message.complete\""))).toBe(true);
     expect(res.end).toHaveBeenCalled();
+  });
+
+  it("emits a message.progress event before message.complete when the streamed reply carries provider progress", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: true,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchOpenClawStream: vi.fn(async (_messages, _fastMode, _sessionUser, options = {}) => {
+        options.onDelta?.("正在处理");
+        return {
+          outputText: "已完成",
+          usage: null,
+          progressStage: "executing",
+          progressLabel: "执行命令…",
+          progressUpdatedAt: 12345,
+        };
+      }),
+    });
+
+    const req = new EventEmitter();
+    req.once = req.once.bind(req);
+    const writes = [];
+    const res = new EventEmitter();
+    res.once = res.once.bind(res);
+    res.headersSent = false;
+    res.destroyed = false;
+    res.writableEnded = false;
+    res.writeHead = vi.fn(() => {
+      res.headersSent = true;
+    });
+    res.write = vi.fn((chunk) => {
+      writes.push(chunk);
+    });
+    res.end = vi.fn(() => {
+      res.writableEnded = true;
+    });
+
+    await harness.handler(req, res);
+
+    const events = writes.map((chunk) => JSON.parse(String(chunk || "").trim()));
+    const progressIndex = events.findIndex((event) => event.type === "message.progress");
+    const completeIndex = events.findIndex((event) => event.type === "message.complete");
+
+    expect(progressIndex).toBeGreaterThanOrEqual(0);
+    expect(completeIndex).toBeGreaterThan(progressIndex);
+    expect(events[progressIndex]).toMatchObject({
+      type: "message.progress",
+      messageId: expect.any(String),
+      progressStage: "executing",
+      progressLabel: "执行命令…",
+      progressUpdatedAt: 12345,
+    });
+  });
+
+  it("includes provider progress fields in non-streaming json responses", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "gpt-5" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "api-user",
+        agentId: "worker",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchOpenClaw: vi.fn(async () => ({
+        outputText: "已完成",
+        usage: null,
+        progressStage: "executing",
+        progressLabel: "执行命令…",
+        progressUpdatedAt: 12345,
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.responseRecorder.calls[0]).toMatchObject({
+      statusCode: 200,
+      payload: {
+        ok: true,
+        outputText: "已完成",
+        progressStage: "executing",
+        progressLabel: "执行命令…",
+        progressUpdatedAt: 12345,
+      },
+    });
   });
 
   it("preserves image attachments for the main session dispatch and local conversation", async () => {
@@ -826,6 +1016,58 @@ describe("createChatHandler", () => {
       metadata: {
         status: "已完成 / 快速",
       },
+    });
+  });
+
+  it("starts a fresh hermes reset session without reusing the previous hermes session id", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "openclaw" },
+      getSessionPreferences: vi.fn((sessionUser) =>
+        sessionUser === "command-center-hermes"
+          ? { fastMode: false, thinkMode: "off", hermesSessionId: "hermes-session-old" }
+          : { fastMode: false, thinkMode: "off" }
+      ),
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center-hermes",
+        agentId: "hermes",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "/new 继续" }],
+      })),
+      parseSessionResetCommand: vi.fn(() => ({ kind: "new", tail: "继续" })),
+      dispatchHermes: vi.fn(async () => ({
+        outputText: "Hermes 新会话",
+        usage: null,
+        sessionId: "hermes-session-new",
+      })),
+      buildDashboardSnapshot: vi.fn(async (sessionUser) => ({
+        session: {
+          mode: "hermes",
+          model: "gpt-5.4",
+          selectedModel: "gpt-5.4",
+          sessionUser,
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.setSessionPreferences).toHaveBeenNthCalledWith(1, "command-center-hermes-1773568800000", {
+      fastMode: false,
+      thinkMode: "off",
+    });
+    expect(harness.dispatchHermes).toHaveBeenCalledWith(
+      [{ role: "user", content: "继续" }],
+      expect.objectContaining({
+        sessionUser: "command-center-hermes-1773568800000",
+      }),
+    );
+    expect(harness.dispatchHermes.mock.calls[0][1]).not.toHaveProperty("sessionId");
+    expect(harness.setSessionPreferences).toHaveBeenNthCalledWith(2, "command-center-hermes-1773568800000", {
+      fastMode: false,
+      thinkMode: "off",
+      hermesSessionId: "hermes-session-new",
     });
   });
 });

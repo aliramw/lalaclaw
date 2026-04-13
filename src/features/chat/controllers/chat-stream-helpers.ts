@@ -5,6 +5,9 @@ type StreamEvent = {
   delta?: string;
   error?: string;
   messageId?: string;
+  progressLabel?: string;
+  progressStage?: string;
+  progressUpdatedAt?: number;
   payload?: ChatStreamPayload | null;
   session?: Record<string, unknown> | null;
   message?: {
@@ -78,6 +81,9 @@ export async function consumeChatStream(
     onProgress?: (value: {
       assistantMessageId?: string;
       lastDeltaAt: number;
+      progressLabel?: string;
+      progressStage?: string;
+      progressUpdatedAt?: number;
       streamText: string;
       tokenBadge?: string;
     }) => void;
@@ -135,6 +141,28 @@ export async function consumeChatStream(
       }
       streamedText += delta;
       pushStreamUpdate();
+      return;
+    }
+
+    if (event.type === "message.progress") {
+      if (typeof event.messageId === "string" && event.messageId) {
+        assistantMessageId = event.messageId;
+      }
+      onProgress({
+        assistantMessageId,
+        lastDeltaAt: Number(event.progressUpdatedAt || 0) || Date.now(),
+        ...(typeof event.progressStage === "string" && event.progressStage
+          ? { progressStage: event.progressStage }
+          : {}),
+        ...(typeof event.progressLabel === "string" && event.progressLabel
+          ? { progressLabel: event.progressLabel }
+          : {}),
+        ...(Number(event.progressUpdatedAt || 0) > 0
+          ? { progressUpdatedAt: Number(event.progressUpdatedAt || 0) }
+          : {}),
+        streamText: streamedText,
+        tokenBadge,
+      });
       return;
     }
 

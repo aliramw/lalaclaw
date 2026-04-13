@@ -428,6 +428,9 @@ export function useChatController({
     let turnStopped = false;
     let latestPartialOutputText = "";
     let latestAssistantMessageId = resolvedPendingAssistantMessageId;
+    let latestProgressLabel = "";
+    let latestProgressStage = "";
+    let latestProgressUpdatedAt = 0;
     let latestTokenBadge = "";
     let retainPendingUntilRuntimeCatchup = false;
     const abortController = new AbortController();
@@ -463,9 +466,13 @@ export function useChatController({
         ? await consumeChatStream(response, {
             errorMessage: i18n.common.requestFailed,
             entry: streamEntry,
-            onProgress: ({ assistantMessageId, lastDeltaAt, streamText, tokenBadge }) => {
+            onProgress: ({ assistantMessageId, lastDeltaAt, progressLabel, progressStage, progressUpdatedAt, streamText, tokenBadge }) => {
               latestPartialOutputText = streamText;
               latestAssistantMessageId = assistantMessageId || latestAssistantMessageId;
+              latestProgressLabel = typeof progressLabel === "string" && progressLabel ? progressLabel : latestProgressLabel;
+              latestProgressStage = typeof progressStage === "string" && progressStage ? progressStage : latestProgressStage;
+              latestProgressUpdatedAt =
+                Number(progressUpdatedAt || 0) > 0 ? Number(progressUpdatedAt || 0) : latestProgressUpdatedAt;
               latestTokenBadge = tokenBadge || latestTokenBadge;
               setPendingChatTurns((current) => {
                 const currentEntry = current[resolvedEntryKey];
@@ -479,6 +486,9 @@ export function useChatController({
                     ...currentEntry,
                     ...(assistantMessageId ? { assistantMessageId } : {}),
                     lastDeltaAt,
+                    ...(progressLabel ? { progressLabel } : {}),
+                    ...(progressStage ? { progressStage } : {}),
+                    ...(Number(progressUpdatedAt || 0) > 0 ? { progressUpdatedAt: Number(progressUpdatedAt || 0) } : {}),
                     streamText,
                     ...(tokenBadge ? { tokenBadge } : {}),
                   },
@@ -490,6 +500,12 @@ export function useChatController({
         : await response.json() as ChatStreamPayload;
       latestPartialOutputText = String(payload.outputText || latestPartialOutputText || "");
       latestAssistantMessageId = String(payload.assistantMessageId || latestAssistantMessageId || resolvedPendingAssistantMessageId);
+      latestProgressLabel =
+        typeof payload.progressLabel === "string" && payload.progressLabel ? payload.progressLabel : latestProgressLabel;
+      latestProgressStage =
+        typeof payload.progressStage === "string" && payload.progressStage ? payload.progressStage : latestProgressStage;
+      latestProgressUpdatedAt =
+        Number(payload.progressUpdatedAt || 0) > 0 ? Number(payload.progressUpdatedAt || 0) : latestProgressUpdatedAt;
       latestTokenBadge = String(payload.tokenBadge || latestTokenBadge || "");
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || i18n.common.requestFailed);
@@ -690,6 +706,9 @@ export function useChatController({
             ...(latestAssistantMessageId
               ? { assistantMessageId: String(latestAssistantMessageId) }
               : {}),
+            ...(latestProgressLabel ? { progressLabel: latestProgressLabel } : {}),
+            ...(latestProgressStage ? { progressStage: latestProgressStage } : {}),
+            ...(latestProgressUpdatedAt ? { progressUpdatedAt: latestProgressUpdatedAt } : {}),
             ...(latestPartialOutputText.trim() ? { streamText: latestPartialOutputText } : {}),
             ...(latestTokenBadge ? { tokenBadge: latestTokenBadge } : {}),
             stopped: true,
@@ -716,6 +735,9 @@ export function useChatController({
             ...(latestAssistantMessageId
               ? { assistantMessageId: String(latestAssistantMessageId) }
               : {}),
+            ...(latestProgressLabel ? { progressLabel: latestProgressLabel } : {}),
+            ...(latestProgressStage ? { progressStage: latestProgressStage } : {}),
+            ...(latestProgressUpdatedAt ? { progressUpdatedAt: latestProgressUpdatedAt } : {}),
             ...(latestTokenBadge ? { tokenBadge: latestTokenBadge } : {}),
             suppressPendingPlaceholder: true,
           };
