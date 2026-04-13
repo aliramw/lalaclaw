@@ -75,9 +75,11 @@ describe("createOpenClawClient", () => {
       "command-center",
     );
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "已分析图片",
       usage: { total_tokens: 12 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:18789/v1/chat/completions",
@@ -163,9 +165,11 @@ describe("createOpenClawClient", () => {
       "command-center",
     );
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "会话输出",
       usage: { output_tokens: 5 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(execFileAsync).toHaveBeenCalledTimes(3);
     expect(execFileAsync.mock.calls[0][1]).toContain("agent");
@@ -254,9 +258,11 @@ describe("createOpenClawClient", () => {
       "command-center",
     );
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "快速输出",
       usage: { total_tokens: 9 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(execFileAsync).not.toHaveBeenCalled();
@@ -287,9 +293,11 @@ describe("createOpenClawClient", () => {
     await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(250);
 
-    await expect(resultPromise).resolves.toMatchObject({
+    await expect(resultPromise).resolves.toEqual({
       outputText: "重连成功",
       usage: { total_tokens: 3 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -381,9 +389,11 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["流式", "输出"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "流式输出",
       usage: null,
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
   });
 
@@ -462,7 +472,7 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["最终回复"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "最终回复",
       usage: { output_tokens: 4 },
       progressStage: "thinking",
@@ -571,9 +581,11 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["钉钉流式输出"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "钉钉流式输出",
       usage: { output_tokens: 6 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(execFileAsync).toHaveBeenCalledTimes(1);
     expect(execFileAsync.mock.calls[0][1]).toContain("chat.history");
@@ -655,9 +667,11 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["流式", "输出"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "流式输出",
       usage: { output_tokens: 7 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(execFileAsync).toHaveBeenCalledTimes(2);
     expect(execFileAsync.mock.calls[0][1]).toContain("agent.wait");
@@ -751,9 +765,11 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["钉钉", "恢复输出"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "钉钉恢复输出",
       usage: { output_tokens: 7 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(execFileAsync).toHaveBeenCalledTimes(2);
     expect(execFileAsync.mock.calls[0][1]).toContain("agent.wait");
@@ -840,9 +856,11 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["钉钉", "恢复输出"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "钉钉恢复输出",
       usage: { output_tokens: 7 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
     expect(execFileAsync).toHaveBeenCalledTimes(2);
     expect(execFileAsync.mock.calls[0][1]).toContain("agent.wait");
@@ -1021,9 +1039,11 @@ describe("createOpenClawClient", () => {
         new Promise((_, reject) => setTimeout(() => reject(new Error("dispatch timed out waiting for mirror")), 50)),
       ]);
 
-      expect(result).toMatchObject({
+      expect(result).toEqual({
         outputText: "钉钉最终输出",
         usage: { output_tokens: 6 },
+        progressStage: "thinking",
+        progressUpdatedAt: expect.any(Number),
       });
     } finally {
       global.fetch = originalFetch;
@@ -1825,9 +1845,11 @@ describe("createOpenClawClient", () => {
 
     const result = await promise;
     expect(deltas).toEqual(["前半段", "后半段"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "前半段后半段",
       usage: { output_tokens: 9 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
   });
 
@@ -1925,9 +1947,11 @@ describe("createOpenClawClient", () => {
 
     const result = await promise;
     expect(deltas).toEqual(["恢复输出"]);
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       outputText: "恢复输出",
       usage: { output_tokens: 7 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
     });
   });
 

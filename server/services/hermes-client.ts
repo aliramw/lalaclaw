@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import {
   inferHermesProgressState,
+  stripHermesProgressLines,
 } from './agent-progress.ts';
 
 type LooseRecord = Record<string, any>;
@@ -382,7 +383,7 @@ export function createHermesClient({
     });
 
     return {
-      outputText: trimHermesOutput(response?.stdout || ''),
+      outputText: trimHermesOutput(stripHermesProgressLines(response?.stdout || '')),
       sessionId: parseHermesSessionId(response?.stdout || '') || requestedSessionId || undefined,
       usage: null,
       ...progressState,

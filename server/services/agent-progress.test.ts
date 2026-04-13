@@ -4,6 +4,7 @@ import {
   AGENT_PROGRESS_STAGES,
   coerceAgentProgressStage,
   createAgentProgressState,
+  mapHermesProgressLine,
   inferHermesProgressState,
   inferOpenClawDispatchProgressState,
   inferOpenClawStreamProgressState,
@@ -117,6 +118,14 @@ describe("agent progress helpers", () => {
       progressLabel: "执行命令…",
       progressUpdatedAt: 12345,
     });
+  });
+
+  it("does not classify ordinary assistant prose as hermes progress", () => {
+    expect(mapHermesProgressLine("我会先查看你的上下文，再分析结果并输出一个完成后的建议。")).toEqual({});
+    expect(inferHermesProgressState({
+      stdout: "我会先查看你的上下文，再分析结果并输出一个完成后的建议。",
+      progressUpdatedAt: 12345,
+    })).toEqual({});
   });
 
   it("treats an openclaw stream with no visible delta as thinking", () => {

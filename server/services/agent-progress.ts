@@ -113,34 +113,67 @@ type OpenClawStreamProgressInput = {
 
 const HERMES_PROGRESS_STAGE_PATTERNS: Array<{
   stage: AgentProgressStage;
-  patterns: RegExp[];
+  labels: string[];
 }> = [
   {
     stage: "thinking",
-    patterns: [
-      /^(?:思考中|正在思考|分析请求|准备中|等待中|处理中)[…。．.、\s]*$/i,
-      /(?:思考中|正在思考|分析请求|准备中|等待中|处理中)/i,
-    ],
+    labels: ["思考中", "正在思考", "分析请求", "准备中", "等待中", "处理中"],
   },
   {
     stage: "inspecting",
-    patterns: [
-      /检查.*(工作区|上下文|文件|目录|项目|环境|仓库)/i,
-      /(?:查看|读取|浏览|扫描|分析).*(?:工作区|上下文|文件|目录|项目|环境|仓库)/i,
-      /(?:查看|读取|浏览|扫描|分析)/i,
+    labels: [
+      "检查工作区",
+      "检查上下文",
+      "检查文件",
+      "检查目录",
+      "检查项目",
+      "检查环境",
+      "检查仓库",
+      "查看相关文件",
+      "查看工作区",
+      "读取文件",
+      "浏览文件",
+      "扫描文件",
+      "分析上下文",
+      "分析工作区",
     ],
   },
   {
     stage: "executing",
-    patterns: [
-      /(?:执行|修改|写入|编辑|修复|应用|提交|测试|安装)/i,
-      /运行(?:命令|脚本|任务|测试|安装|操作)/i,
+    labels: [
+      "执行命令",
+      "执行操作",
+      "运行命令",
+      "运行脚本",
+      "运行任务",
+      "修改文件",
+      "写入文件",
+      "编辑文件",
+      "修复问题",
+      "应用修改",
+      "提交更改",
+      "测试中",
+      "安装中",
     ],
   },
   {
     stage: "synthesizing",
-    patterns: [
-      /(?:整理|总结|汇总|归纳|收尾|生成|回复|输出|完成)/i,
+    labels: [
+      "整理结果",
+      "总结结果",
+      "汇总结果",
+      "归纳结果",
+      "收尾中",
+      "生成回复",
+      "组织回复",
+    ],
+  },
+  {
+    stage: "finishing",
+    labels: [
+      "写入回复",
+      "正在收尾",
+      "完成回复",
     ],
   },
 ];
@@ -161,8 +194,9 @@ function resolveHermesProgressStage(text = ""): AgentProgressStage | "" {
     return "";
   }
 
-  for (const { stage, patterns } of HERMES_PROGRESS_STAGE_PATTERNS) {
-    if (patterns.some((pattern) => pattern.test(normalizedText))) {
+  const normalizedStem = normalizedText.replace(/(?:\s*(?:…|\.{3})\s*)$/u, "").trim();
+  for (const { stage, labels } of HERMES_PROGRESS_STAGE_PATTERNS) {
+    if (labels.some((label) => normalizedStem === label)) {
       return stage;
     }
   }
@@ -211,6 +245,17 @@ export function inferHermesProgressState({
     ...latestProgress,
     progressUpdatedAt: progressUpdatedAt ?? (latestProgress as AgentProgressState).progressUpdatedAt,
   });
+}
+
+export function stripHermesProgressLines(stdout = "") {
+  return String(stdout || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => {
+      const progress = mapHermesProgressLine(line);
+      return !progress.progressStage && !progress.progressLabel;
+    })
+    .join("\n");
 }
 
 export function inferOpenClawDispatchProgressState({

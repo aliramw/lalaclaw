@@ -126,7 +126,7 @@ describe("createHermesClient", () => {
     await expect(
       client.dispatchHermes([{ role: "user", content: "继续" }], { model: "gpt-5.4" }),
     ).resolves.toMatchObject({
-      outputText: "检查工作区…\n执行命令…\n第二轮已收",
+      outputText: "第二轮已收",
       sessionId: "20260413_151122_ba5e9f",
       usage: null,
       progressStage: "executing",
