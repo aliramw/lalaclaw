@@ -26,14 +26,20 @@ export function sanitizePendingChatTurnsMap(value: unknown): ConversationPending
     }
 
     const normalizedEntry = entry as PendingChatTurn;
+    const {
+      progressStage: rawProgressStage,
+      progressLabel: rawProgressLabel,
+      progressUpdatedAt: rawProgressUpdatedAt,
+      ...restEntry
+    } = normalizedEntry as PendingChatTurn & Record<string, unknown>;
     const parsedConversationKey = parseStoredConversationKey(normalizedKey);
-    const progressLabel = String(normalizedEntry.progressLabel || "").trim();
-    const progressUpdatedAt = Number(normalizedEntry.progressUpdatedAt || 0) || 0;
-    const hasProgressStage = String(normalizedEntry.progressStage || "").trim();
+    const progressStage = coerceAgentProgressStage(rawProgressStage);
+    const progressLabel = String(rawProgressLabel || "").trim();
+    const progressUpdatedAt = Number(rawProgressUpdatedAt || 0) || 0;
     accumulator[normalizedKey] = {
-      ...normalizedEntry,
+      ...restEntry,
       key: normalizedKey,
-      ...(hasProgressStage ? { progressStage: coerceAgentProgressStage(normalizedEntry.progressStage) } : {}),
+      ...(progressStage ? { progressStage } : {}),
       ...(progressLabel ? { progressLabel } : {}),
       ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
       ...(parsedConversationKey

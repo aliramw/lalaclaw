@@ -9,12 +9,10 @@ export const AGENT_PROGRESS_STAGES = [
 export type AgentProgressStage = (typeof AGENT_PROGRESS_STAGES)[number];
 
 export type AgentProgressState = {
-  stage: AgentProgressStage;
-  label?: string;
-  updatedAt: number;
+  progressStage?: AgentProgressStage;
+  progressLabel?: string;
+  progressUpdatedAt?: number;
 };
-
-const DEFAULT_AGENT_PROGRESS_STAGE: AgentProgressStage = "thinking";
 
 function isAgentProgressStage(value: unknown): value is AgentProgressStage {
   return AGENT_PROGRESS_STAGES.includes(String(value || "").trim().toLowerCase() as AgentProgressStage);
@@ -22,26 +20,30 @@ function isAgentProgressStage(value: unknown): value is AgentProgressStage {
 
 export function coerceAgentProgressStage(
   value: unknown,
-  fallback: AgentProgressStage = DEFAULT_AGENT_PROGRESS_STAGE,
-): AgentProgressStage {
+  fallback: AgentProgressStage | "" = "",
+): AgentProgressStage | "" {
   const normalized = String(value || "").trim().toLowerCase();
   if (isAgentProgressStage(normalized)) {
     return normalized;
   }
 
-  return isAgentProgressStage(fallback) ? fallback : DEFAULT_AGENT_PROGRESS_STAGE;
+  return isAgentProgressStage(fallback) ? fallback : "";
 }
 
 export function createAgentProgressState(
-  value: Partial<Pick<AgentProgressState, "stage" | "label" | "updatedAt">> = {},
-): AgentProgressState {
-  const stage = coerceAgentProgressStage(value.stage);
-  const label = String(value.label || "").trim();
-  const updatedAt = Number(value.updatedAt || 0) || Date.now();
+  value: Partial<Pick<AgentProgressState, "progressStage" | "progressLabel" | "progressUpdatedAt">> = {},
+): AgentProgressState | Record<string, never> {
+  const progressStage = coerceAgentProgressStage(value.progressStage);
+  const progressLabel = String(value.progressLabel || "").trim();
+  const progressUpdatedAt = Number(value.progressUpdatedAt || 0) || Date.now();
+
+  if (!progressStage && !progressLabel) {
+    return {};
+  }
 
   return {
-    stage,
-    ...(label ? { label } : {}),
-    updatedAt,
+    ...(progressStage ? { progressStage } : {}),
+    ...(progressLabel ? { progressLabel } : {}),
+    progressUpdatedAt,
   };
 }

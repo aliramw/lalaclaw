@@ -8,7 +8,6 @@ export const agentProgressStages = [
   "finishing",
 ] as const satisfies readonly AgentProgressStage[];
 
-const DEFAULT_AGENT_PROGRESS_STAGE: AgentProgressStage = "thinking";
 const STALE_PROGRESS_STAGE_THRESHOLD_MS = 45_000;
 
 type AgentProgressMessageDictionary = {
@@ -19,15 +18,13 @@ type AgentProgressMessageDictionary = {
 };
 
 type AgentProgressLikeState = Partial<AgentProgressState> & {
-  progressLabel?: string;
   progressStage?: unknown;
-  progressUpdatedAt?: number;
 };
 
 export function coerceAgentProgressStage(
   value: unknown,
-  fallback: AgentProgressStage = DEFAULT_AGENT_PROGRESS_STAGE,
-): AgentProgressStage {
+  fallback: AgentProgressStage | "" = "",
+): AgentProgressStage | "" {
   const normalized = String(value || "").trim().toLowerCase();
   if ((agentProgressStages as readonly string[]).includes(normalized)) {
     return normalized as AgentProgressStage;
@@ -38,19 +35,19 @@ export function coerceAgentProgressStage(
     return normalizedFallback as AgentProgressStage;
   }
 
-  return DEFAULT_AGENT_PROGRESS_STAGE;
+  return "";
 }
 
-function resolveProgressStage(progress: AgentProgressLikeState | null | undefined): AgentProgressStage {
-  return coerceAgentProgressStage(progress?.progressStage ?? progress?.stage);
+function resolveProgressStage(progress: AgentProgressLikeState | null | undefined): AgentProgressStage | "" {
+  return coerceAgentProgressStage(progress?.progressStage);
 }
 
 function resolveProgressLabel(progress: AgentProgressLikeState | null | undefined): string {
-  return String(progress?.progressLabel ?? progress?.label ?? "").trim();
+  return String(progress?.progressLabel || "").trim();
 }
 
 function resolveProgressUpdatedAt(progress: AgentProgressLikeState | null | undefined): number {
-  return Number(progress?.progressUpdatedAt ?? progress?.updatedAt ?? 0) || 0;
+  return Number(progress?.progressUpdatedAt || 0) || 0;
 }
 
 export function buildAgentProgressMessage(
@@ -74,9 +71,11 @@ export function buildAgentProgressMessage(
         ? "staleSynthesizing"
         : stage;
 
+  const stageMessage = stage ? progressMessages[stage] : "";
+  const localizedMessage = localizedKey ? progressMessages[localizedKey] : "";
   return String(
-    progressMessages[localizedKey]
-    || progressMessages[stage]
+    localizedMessage
+    || stageMessage
     || messages.chat?.thinkingPlaceholder
     || "",
   ).trim();

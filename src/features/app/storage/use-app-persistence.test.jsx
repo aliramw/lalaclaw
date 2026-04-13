@@ -210,6 +210,65 @@ describe("useAppPersistence", () => {
     });
   });
 
+  it("drops malformed pending progress stages while preserving the rest of the pending payload", async () => {
+    attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
+      messagesByKey: {
+        "agent:main": [
+          { role: "user", content: "你好", timestamp: 1, pending: false },
+        ],
+      },
+      pendingChatTurns: {
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 1,
+          pendingTimestamp: 2,
+          progressStage: "not-a-stage",
+          progressLabel: "Inspecting",
+          progressUpdatedAt: 3,
+          userMessage: { role: "user", content: "你好", timestamp: 1 },
+        },
+      },
+    });
+    attachmentStorageMocks.hydrateAttachmentStateByKeyFromStorage.mockResolvedValue({
+      messagesByKey: {},
+      pendingChatTurns: {},
+    });
+
+    renderHook(() =>
+      useAppPersistence(createProps({
+        pendingChatTurns: {
+          "command-center:main": {
+            key: "command-center:main",
+            startedAt: 1,
+            pendingTimestamp: 2,
+            progressStage: "not-a-stage",
+            progressLabel: "Inspecting",
+            progressUpdatedAt: 3,
+            userMessage: { role: "user", content: "你好", timestamp: 1 },
+          },
+        },
+      })),
+    );
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem("command-center-pending-chat-v1") || "{}")).toEqual({
+        _persistedAt: expect.any(Number),
+        pendingChatTurns: {
+          "command-center:main": {
+            agentId: "main",
+            key: "command-center:main",
+            pendingTimestamp: 2,
+            progressLabel: "Inspecting",
+            progressUpdatedAt: 3,
+            sessionUser: "command-center",
+            startedAt: 1,
+            userMessage: { role: "user", content: "你好", timestamp: 1 },
+          },
+        },
+      });
+    });
+  });
+
   it("persists top-level active messages from structured tab storage instead of a stale messages prop", async () => {
     attachmentStorageMocks.serializeAttachmentStateByKeyForStorage.mockResolvedValue({
       messagesByKey: {
@@ -322,6 +381,9 @@ describe("useAppPersistence", () => {
     const initialPending = {
       "command-center:main": {
         key: "command-center:main",
+        progressStage: "synthesizing",
+        progressLabel: "Synthesizing",
+        progressUpdatedAt: 4,
       },
     };
     const initialStoredMessagesByTabIdRef = { current: initialMessagesByTabId };
@@ -333,6 +395,9 @@ describe("useAppPersistence", () => {
       pendingChatTurns: {
         "command-center:main": {
           key: "command-center:main",
+          progressStage: "synthesizing",
+          progressLabel: "Synthesizing",
+          progressUpdatedAt: 4,
           userMessage: { attachments: [{ id: "p1" }] },
         },
       },

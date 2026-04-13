@@ -16,20 +16,36 @@ describe("agent progress helpers", () => {
     ]);
   });
 
-  it("coerces unknown stage values back to the default stage", () => {
+  it("coerces unknown stage values to an empty stage", () => {
     expect(coerceAgentProgressStage("EXECUTING")).toBe("executing");
-    expect(coerceAgentProgressStage(" not-a-stage ")).toBe("thinking");
+    expect(coerceAgentProgressStage(" not-a-stage ")).toBe("");
   });
 
   it("creates a normalized agent progress state", () => {
     expect(createAgentProgressState({
-      stage: "synthesizing",
-      label: "Synthesizing answer",
-      updatedAt: 12345,
+      progressStage: "synthesizing",
+      progressLabel: "Synthesizing answer",
+      progressUpdatedAt: 12345,
     })).toEqual({
-      stage: "synthesizing",
-      label: "Synthesizing answer",
-      updatedAt: 12345,
+      progressStage: "synthesizing",
+      progressLabel: "Synthesizing answer",
+      progressUpdatedAt: 12345,
+    });
+  });
+
+  it("drops malformed stages instead of inventing thinking", () => {
+    expect(createAgentProgressState({
+      progressStage: "mystery",
+      progressLabel: "",
+      progressUpdatedAt: 12345,
+    })).toEqual({});
+    expect(createAgentProgressState({
+      progressStage: "mystery",
+      progressLabel: "Still working",
+      progressUpdatedAt: 12345,
+    })).toEqual({
+      progressLabel: "Still working",
+      progressUpdatedAt: 12345,
     });
   });
 });

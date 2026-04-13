@@ -3,9 +3,9 @@ export type ChatRole = "system" | "user" | "assistant" | string;
 export type AgentProgressStage = "thinking" | "inspecting" | "executing" | "synthesizing" | "finishing";
 
 export type AgentProgressState = {
-  stage: AgentProgressStage;
-  label?: string;
-  updatedAt: number;
+  progressStage?: AgentProgressStage;
+  progressLabel?: string;
+  progressUpdatedAt?: number;
 };
 
 export type ChatAttachment = {
