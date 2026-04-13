@@ -683,13 +683,20 @@ function buildAssistantOverlayMessage({
   const progressStage = coerceAgentProgressStage(pendingEntry.progressStage);
   const progressLabel = typeof pendingEntry.progressLabel === "string" ? pendingEntry.progressLabel.trim() : "";
   const progressContent = progressLabel || thinkingPlaceholder;
+  const overlayTimestamp = Number(
+    pendingEntry.progressUpdatedAt
+    || pendingEntry.lastDeltaAt
+    || pendingEntry.pendingTimestamp
+    || pendingEntry.startedAt
+    || Date.now(),
+  );
   const streamText = String(run?.streamText || "").trim();
   if (streamText) {
     return {
       id: String(pendingEntry.assistantMessageId || run?.runId || `msg-assistant-overlay-${pendingEntry.pendingTimestamp || Date.now()}`),
       role: "assistant" as const,
       content: streamText,
-      timestamp: Number(run?.lastDeltaAt || pendingEntry.pendingTimestamp || pendingEntry.startedAt || Date.now()),
+      timestamp: Number(run?.lastDeltaAt || overlayTimestamp),
       streaming: true,
       ...(progressStage ? { progressStage } : {}),
       ...(progressLabel ? { progressLabel } : {}),
@@ -700,7 +707,7 @@ function buildAssistantOverlayMessage({
     id: String(pendingEntry.assistantMessageId || `msg-assistant-pending-${pendingEntry.pendingTimestamp || Date.now()}`),
     role: "assistant" as const,
     content: progressContent,
-    timestamp: Number(pendingEntry.pendingTimestamp || pendingEntry.startedAt || Date.now()),
+    timestamp: overlayTimestamp,
     pending: true,
     ...(progressStage ? { progressStage } : {}),
     ...(progressLabel ? { progressLabel } : {}),

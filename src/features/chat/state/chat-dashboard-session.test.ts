@@ -3,6 +3,7 @@ import {
   buildDashboardChatSessionState,
   buildDashboardSettledMessages,
 } from "@/features/chat/state/chat-dashboard-session";
+import { buildAgentProgressMessage } from "@/features/chat/state/chat-progress";
 import { selectChatRunBusy } from "@/features/chat/state/chat-session-state";
 
 describe("buildDashboardChatSessionState", () => {
@@ -51,6 +52,54 @@ describe("buildDashboardChatSessionState", () => {
         pending: true,
       },
     ]);
+  });
+
+  it("keeps overlay progress fresh for the chat panel handoff when a newer provider update exists", () => {
+    const state = buildDashboardChatSessionState({
+      conversationKey: "main::command-center",
+      messages: [],
+      pendingEntry: {
+        key: "pending-overlay-progress-fresh",
+        startedAt: 8_000,
+        pendingTimestamp: 8_001,
+        progressStage: "executing",
+        progressUpdatedAt: 8_030,
+        assistantMessageId: "assistant-pending-overlay-progress-fresh",
+        userMessage: {
+          id: "optimistic-user-overlay-progress-fresh",
+          role: "user",
+          content: "继续执行",
+          timestamp: 8_000,
+        },
+      },
+      rawBusy: true,
+      sessionStatus: "running",
+      thinkingPlaceholder: "正在思考...",
+      transport: "ws",
+    });
+
+    expect(state.visibleMessages.at(-1)).toMatchObject({
+      id: "assistant-pending-overlay-progress-fresh",
+      role: "assistant",
+      timestamp: 8_030,
+      pending: true,
+      progressStage: "executing",
+    });
+    expect(
+      buildAgentProgressMessage(
+        state.visibleMessages.at(-1),
+        {
+          chat: {
+            agentProgress: {
+              executing: "正在执行...",
+              staleExecuting: "执行中，有点久了...",
+            },
+            thinkingPlaceholder: "正在思考...",
+          },
+        },
+        8_040,
+      ),
+    ).toBe("正在执行...");
   });
 
   it("keeps a pending text user turn continuously visible across optimistic and runtime snapshots", () => {
