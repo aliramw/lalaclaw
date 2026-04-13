@@ -134,4 +134,30 @@ describe("createHermesClient", () => {
       progressUpdatedAt: expect.any(Number),
     });
   });
+
+  it("preserves a standalone progress-like reply as output text", async () => {
+    const client = createHermesClient({
+      HERMES_BIN: "hermes",
+      PROJECT_ROOT: "/workspace/project",
+      execFileAsync: vi.fn(async () => ({
+        stdout: [
+          "╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮",
+          "执行命令…",
+          "",
+          "session_id: 20260413_151122_ba5e9f",
+        ].join("\n"),
+      })),
+    });
+
+    await expect(
+      client.dispatchHermes([{ role: "user", content: "继续" }], { model: "gpt-5.4" }),
+    ).resolves.toEqual({
+      outputText: "执行命令…",
+      sessionId: "20260413_151122_ba5e9f",
+      usage: null,
+      progressStage: "executing",
+      progressLabel: "执行命令…",
+      progressUpdatedAt: expect.any(Number),
+    });
+  });
 });

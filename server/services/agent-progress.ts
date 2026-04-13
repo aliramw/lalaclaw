@@ -248,13 +248,38 @@ export function inferHermesProgressState({
 }
 
 export function stripHermesProgressLines(stdout = "") {
-  return String(stdout || "")
+  const lines = String(stdout || "")
     .replace(/\r\n/g, "\n")
-    .split("\n")
-    .filter((line) => {
-      const progress = mapHermesProgressLine(line);
-      return !progress.progressStage && !progress.progressLabel;
+    .split("\n");
+  const normalizedLines = lines.map((line) => ({
+    line,
+    trimmed: String(line || "").trim(),
+    progress: mapHermesProgressLine(line),
+  }));
+  const hasNonProgressReplyLine = normalizedLines.some((entry) => (
+    Boolean(entry.trimmed)
+    && !isHermesNoiseLine(entry.trimmed)
+    && !entry.progress.progressStage
+    && !entry.progress.progressLabel
+  ));
+
+  if (!hasNonProgressReplyLine) {
+    return lines.join("\n");
+  }
+
+  return normalizedLines
+    .filter((entry) => {
+      if (!entry.trimmed) {
+        return true;
+      }
+
+      if (isHermesNoiseLine(entry.trimmed)) {
+        return false;
+      }
+
+      return !entry.progress.progressStage && !entry.progress.progressLabel;
     })
+    .map((entry) => entry.line)
     .join("\n");
 }
 
