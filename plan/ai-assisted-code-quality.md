@@ -43,6 +43,36 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 
 - After each AI-involved PR, append a short summary: prompt used, files touched, tests rerun, reviewer, and whether any manual validation (UI, smoke, environment) was required. Keep at least the last three summaries in this file for traceability.
 
+### 2026-04-13 — Runtime Catch-up Pending Progress Continuity
+
+- Prompt/workstream: as the Task 5 implementation subagent, lock restored pending-turn continuity so authoritative runtime catch-up keeps the latest `progressStage` / `progressLabel` / `progressUpdatedAt` until the final assistant reply takes over, and cover the no-gap handoff with hook-level plus `App`-level regressions.
+- AI model/version: GPT-5 Codex（Codex desktop agent）。
+- Generation time: 2026-04-13 Asia/Shanghai.
+- Files touched:
+  - `src/features/session/runtime/use-runtime-snapshot.test.jsx`
+  - `src/App.test.jsx`
+  - `plan/ai-assisted-code-quality.md`
+- High-risk decision record:
+  - this work stays in the `runtime/session` recovery surface, which is a high-risk area under repository policy
+  - AI scope was deliberately limited to regression coverage and behavior verification; `src/features/session/runtime/use-runtime-snapshot.ts` was reviewed but not changed because the corrected contract-level tests passed without implementation edits
+  - the initial red run exposed an incorrect hook assertion against durable conversation output; the regression was tightened to the actual hook contract before declaring green
+- Quality gates rerun:
+  - red: `npm test -- src/features/session/runtime/use-runtime-snapshot.test.jsx -t "preserves recovered pending progress fields while the authoritative snapshot still has only the echoed user turn"`
+  - red/verification: `npm test -- src/App.test.jsx -t "keeps one pending bubble visible from progress catch-up until the final assistant reply takes over"`
+  - green: `npm test -- src/features/session/runtime/use-runtime-snapshot.test.jsx -t "preserves recovered pending progress fields while the authoritative snapshot still has only the echoed user turn"`
+  - green: `npm test -- src/App.test.jsx -t "keeps one pending bubble visible from progress catch-up until the final assistant reply takes over"`
+  - required validation: `npm test -- src/features/session/runtime/use-runtime-snapshot.test.jsx src/App.test.jsx`
+  - required validation: `npm test -- test/chat-route.test.js server/services/hermes-client.test.js src/components/command-center/chat-panel.test.jsx src/features/session/runtime/use-runtime-snapshot.test.jsx src/App.test.jsx`
+- Manual/equivalent validation:
+  - the new `App` regression simulates a restored pending turn with stored progress metadata, an authoritative user-only runtime catch-up snapshot, and a later final assistant snapshot, then asserts the same turn never drops out of view before handoff
+- Reviewer/sign-off:
+  - pending human review
+  - reviewer should confirm the corrected hook assertion matches the intended `use-runtime-snapshot` contract and that no implementation edit was required
+- Reviewer checklist:
+  - confirm recovered pending progress metadata is preserved when runtime catch-up only echoes the user turn
+  - confirm the pending bubble remains visible through the catch-up snapshot and only disappears once the final assistant reply is present
+  - confirm no unrelated runtime/session behavior changed because the patch is test-only
+
 ### 2026-04-13 — 聊天中间态动态进度卡设计
 
 - Prompt/workstream: 响应用户对聊天空窗期的反馈，把静态 `正在思考…` pending 卡片设计为一套可复用的动态阶段卡，目标同时覆盖 `hermes` 与 `openclaw`，并保持主聊天区简洁。

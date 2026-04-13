@@ -4878,6 +4878,138 @@ describe("App", () => {
     expect(await screen.findByText("正在思考…")).toBeInTheDocument();
   });
 
+  it("keeps one pending bubble visible from progress catch-up until the final assistant reply takes over", async () => {
+    const promptText = "继续帮我处理";
+    const progressLabel = "执行命令…";
+    const finalReply = "处理完成，下面是最终结果。";
+
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        "command-center:main": {
+          key: "command-center:main",
+          startedAt: 4100,
+          pendingTimestamp: 4101,
+          assistantMessageId: "assistant-pending-progress-1",
+          progressStage: "executing",
+          progressLabel,
+          progressUpdatedAt: 4200,
+          userMessage: {
+            id: "runtime-user-progress-1",
+            role: "user",
+            content: promptText,
+            timestamp: 4100,
+          },
+        },
+      }),
+    );
+
+    const fetchMock = vi.fn((input) => {
+      const url = String(input);
+      if (url.startsWith("/api/runtime")) {
+        return mockJsonResponse(
+          createSnapshot({
+            session: {
+              ...createSnapshot().session,
+              status: "运行中",
+            },
+            conversation: [
+              {
+                id: "runtime-user-progress-1",
+                role: "user",
+                content: promptText,
+                timestamp: 4100,
+              },
+            ],
+          }),
+        );
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    stubFetchWithAccessState(fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText(progressLabel)).toBeInTheDocument();
+      const bodyText = getNormalizedBodyText();
+      const occurrences = bodyText.split(promptText).length - 1;
+      expect(occurrences).toBe(1);
+    });
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances.length).toBeGreaterThan(0);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket.simulateOpen();
+
+    act(() => {
+      socket.simulateMessage({
+        type: "runtime.snapshot",
+        session: {
+          ...createSnapshot().session,
+          sessionUser: "command-center",
+          agentId: "main",
+          status: "运行中",
+        },
+        conversation: [
+          {
+            id: "runtime-user-progress-1",
+            role: "user",
+            content: promptText,
+            timestamp: 4100,
+          },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(progressLabel)).toBeInTheDocument();
+      expect(screen.queryByText(finalReply)).not.toBeInTheDocument();
+      const assistantMessages = document.querySelectorAll('[data-message-role="assistant"]');
+      expect(assistantMessages.length).toBe(1);
+    });
+
+    act(() => {
+      socket.simulateMessage({
+        type: "runtime.snapshot",
+        session: {
+          ...createSnapshot().session,
+          sessionUser: "command-center",
+          agentId: "main",
+          status: "空闲",
+        },
+        conversation: [
+          {
+            id: "runtime-user-progress-1",
+            role: "user",
+            content: promptText,
+            timestamp: 4100,
+          },
+          {
+            id: "assistant-pending-progress-1",
+            role: "assistant",
+            content: finalReply,
+            timestamp: 4300,
+          },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(finalReply)).toBeInTheDocument();
+      expect(screen.queryByText(progressLabel)).not.toBeInTheDocument();
+      const assistantMessages = document.querySelectorAll('[data-message-role="assistant"]');
+      expect(assistantMessages.length).toBe(1);
+      const bodyText = getNormalizedBodyText();
+      const occurrences = bodyText.split(promptText).length - 1;
+      expect(occurrences).toBe(1);
+    });
+  });
+
   it("does not reinsert the latest user message between assistant replies after refresh", async () => {
     const promptText = "最后一句";
     window.localStorage.setItem(

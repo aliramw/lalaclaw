@@ -1527,6 +1527,110 @@ describe("useRuntimeSnapshot", () => {
     expect(setPendingChatTurns).not.toHaveBeenCalled();
   });
 
+  it("preserves recovered pending progress fields while the authoritative snapshot still has only the echoed user turn", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const prompt = "继续帮我处理这个恢复中的会话";
+    let pendingState = {
+      "command-center:main": {
+        key: "command-center:main",
+        startedAt: 100,
+        pendingTimestamp: 120,
+        assistantMessageId: "msg-assistant-progress-1",
+        progressStage: "executing",
+        progressLabel: "执行命令…",
+        progressUpdatedAt: 456,
+        userMessage: {
+          id: "msg-user-progress-1",
+          role: "user",
+          content: prompt,
+          timestamp: 100,
+        },
+      },
+    };
+    const setPendingChatTurns = vi.fn((value) => {
+      pendingState = typeof value === "function" ? value(pendingState) : value;
+    });
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "openclaw",
+          availableModels: ["openclaw"],
+          availableAgents: ["main"],
+          status: "运行中",
+        },
+        conversation: [
+          { id: "msg-user-progress-1", role: "user", content: prompt, timestamp: 100 },
+        ],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: {
+          key: "command-center:main",
+          startedAt: 100,
+          pendingTimestamp: 120,
+          assistantMessageId: "msg-assistant-progress-1",
+          progressStage: "executing",
+          progressLabel: "执行命令…",
+          progressUpdatedAt: 456,
+          userMessage: {
+            id: "msg-user-progress-1",
+            role: "user",
+            content: prompt,
+            timestamp: 100,
+          },
+        },
+        busy: false,
+        recoveringPendingReply: true,
+        i18n: createI18n(),
+        messagesRef: {
+          current: [
+            { id: "msg-user-progress-1", role: "user", content: prompt, timestamp: 100 },
+          ],
+        },
+        pendingChatTurns: pendingState,
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(setMessagesSynced).toHaveBeenCalled();
+    });
+
+    const syncedMessages = setMessagesSynced.mock.calls.at(-1)?.[0] || [];
+    expect(syncedMessages).toHaveLength(1);
+    expect(syncedMessages[0]).toMatchObject({
+      role: "user",
+      content: prompt,
+    });
+    expect(pendingState["command-center:main"]).toMatchObject({
+      assistantMessageId: "msg-assistant-progress-1",
+      progressStage: "executing",
+      progressLabel: "执行命令…",
+      progressUpdatedAt: 456,
+    });
+    expect(setBusy).toHaveBeenLastCalledWith(true);
+    expect(setPendingChatTurns).not.toHaveBeenCalled();
+  });
+
   it("shows a fresh thinking placeholder when an IM runtime snapshot ends on a synced user message", async () => {
     const setBusy = vi.fn();
     const setFastMode = vi.fn();
