@@ -50,6 +50,21 @@ describe("agent progress helpers", () => {
     });
   });
 
+  it("falls back to provider fields when canonical fields are invalid", () => {
+    expect(createAgentProgressState({
+      progressStage: "mystery",
+      stage: "executing",
+      progressLabel: " ",
+      label: "Executing answer",
+      progressUpdatedAt: 0,
+      updatedAt: 12345,
+    })).toEqual({
+      progressStage: "executing",
+      progressLabel: "Executing answer",
+      progressUpdatedAt: 12345,
+    });
+  });
+
   it("drops malformed stages instead of inventing thinking", () => {
     expect(createAgentProgressState({
       progressStage: "mystery",
