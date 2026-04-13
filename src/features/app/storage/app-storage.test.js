@@ -2970,6 +2970,47 @@ describe("loadStoredState", () => {
     });
   });
 
+  it("drops object-like pending progress labels during restore", () => {
+    const conversationKey = "command-center:main";
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        pendingChatTurns: {
+          [conversationKey]: {
+            key: conversationKey,
+            startedAt: 100,
+            pendingTimestamp: 120,
+            progressStage: "executing",
+            progressLabel: { value: "ignored" },
+            progressUpdatedAt: 1700000000000,
+            userMessage: {
+              role: "user",
+              content: "帮我看看",
+              timestamp: 100,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(loadPendingChatTurns()).toEqual({
+      [conversationKey]: {
+        key: conversationKey,
+        startedAt: 100,
+        pendingTimestamp: 120,
+        agentId: "main",
+        sessionUser: "command-center",
+        progressStage: "executing",
+        progressUpdatedAt: 1700000000000,
+        userMessage: {
+          role: "user",
+          content: "帮我看看",
+          timestamp: 100,
+        },
+      },
+    });
+  });
+
   it("loads the global chat font size from the current storage shape", () => {
     window.localStorage.setItem(
       storageKey,

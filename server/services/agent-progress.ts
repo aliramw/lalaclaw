@@ -40,7 +40,11 @@ function resolveAgentProgressStage(...values: unknown[]): AgentProgressStage | "
 
 function resolveAgentProgressLabel(...values: unknown[]): string {
   for (const value of values) {
-    const normalized = String(value || "").trim();
+    if (typeof value !== "string") {
+      continue;
+    }
+
+    const normalized = value.trim();
     if (normalized) {
       return normalized;
     }

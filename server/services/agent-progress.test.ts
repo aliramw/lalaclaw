@@ -65,6 +65,19 @@ describe("agent progress helpers", () => {
     });
   });
 
+  it("drops object-like labels and falls back to the provider string label", () => {
+    expect(createAgentProgressState({
+      progressStage: "executing",
+      progressLabel: { value: "ignored" },
+      label: " Executing answer ",
+      progressUpdatedAt: 12345,
+    })).toEqual({
+      progressStage: "executing",
+      progressLabel: "Executing answer",
+      progressUpdatedAt: 12345,
+    });
+  });
+
   it("drops malformed stages instead of inventing thinking", () => {
     expect(createAgentProgressState({
       progressStage: "mystery",

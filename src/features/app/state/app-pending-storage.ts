@@ -34,7 +34,7 @@ export function sanitizePendingChatTurnsMap(value: unknown): ConversationPending
     } = normalizedEntry as PendingChatTurn & Record<string, unknown>;
     const parsedConversationKey = parseStoredConversationKey(normalizedKey);
     const progressStage = coerceAgentProgressStage(rawProgressStage);
-    const progressLabel = String(rawProgressLabel || "").trim();
+    const progressLabel = typeof rawProgressLabel === "string" ? rawProgressLabel.trim() : "";
     const progressUpdatedAt = Number(rawProgressUpdatedAt || 0) || 0;
     accumulator[normalizedKey] = {
       ...restEntry,
