@@ -68,6 +68,29 @@ This plan captures how we treat AI-generated code (including prompts, model vers
   - 确认 `hermes` 与 `openclaw` 共用统一阶段字段，而不是在前端分叉 provider 逻辑
   - 确认刷新、切 tab、runtime catch-up 场景下的阶段恢复已写入设计边界
 
+### 2026-04-13 — 聊天中间态动态进度卡实现计划
+
+- Prompt/workstream: 基于已确认 spec，把统一 progress stage 的实现拆成共享状态模型、provider 归一化、流式事件传输、pending bubble 渲染与 `App` 级连续性回归五个任务块。
+- AI model/version: GPT-5 Codex（Codex desktop agent）。
+- Generation time: 2026-04-13 Asia/Shanghai.
+- Files touched:
+  - 实现计划 `plan/2026-04-13-agent-progress-stage-implementation-plan.md`
+  - AI 质量追踪登记 `plan/ai-assisted-code-quality.md`
+- High-risk decision record:
+  - 该实现计划显式把高风险改动限定在 chat controller、pending storage、runtime catch-up 与 `/api/chat` 流事件
+  - 计划要求控制器级、runtime hook 级和 `App` 级回归同时存在，避免只靠组件测试宣布完成
+- Quality gates rerun:
+  - 未运行测试；本轮仅新增实现计划与治理登记
+- Manual/equivalent validation:
+  - 计划中特别要求在实现完成后做一次真实或等价的 Hermes 发送流程验证，确认进度卡不会在正式回复接管前消失
+- Reviewer/sign-off:
+  - pending human review
+  - 进入实现前应由人工 reviewer 再确认任务拆分、字段命名和测试覆盖面
+- Reviewer checklist:
+  - 确认统一字段命名在前后端、流事件和持久化层保持一致
+  - 确认计划包含 `App` 级“无空窗”回归，而不是只有局部 pending bubble 渲染测试
+  - 确认 provider 无信号时的安全退化仍包含在实现任务中
+
 ### 2026-04-13 — Hermes Agent Tab Availability Normalization
 
 - Prompt/workstream: when the local runtime explicitly reports `hermes` as installed, make it eligible for the existing new-agent tab flow without hard-coding it in the UI; prefer `availableAgents`, supplement from installed `agents`, and preserve explicit websocket clears.
