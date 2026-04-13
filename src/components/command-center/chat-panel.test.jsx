@@ -3377,6 +3377,42 @@ describe("ChatPanel", () => {
     expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
   });
 
+  it("settles a stale pending assistant bubble when explicit run state is already idle", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            {
+              role: "assistant",
+              content: "最终答案",
+              timestamp: 2,
+              pending: true,
+              progressStage: "executing",
+              progressUpdatedAt: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          run={{ status: "idle", runId: null, startedAt: null, lastDeltaAt: null, streamText: "" }}
+          session={createSession({ agentId: "paint", status: "待命" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("最终答案")).toBeInTheDocument();
+    expect(screen.queryByText("正在执行…")).not.toBeInTheDocument();
+    expect(screen.queryByText("执行中，有点久了…")).not.toBeInTheDocument();
+  });
+
   it("renders the provider progress label before assistant text arrives", () => {
     render(
       <TooltipProvider>
@@ -3510,7 +3546,6 @@ describe("ChatPanel", () => {
           prompt=""
           promptRef={null}
           session={createSession({ agentId: "paint" })}
-          run={{ status: "idle", runId: null, startedAt: null, lastDeltaAt: null, streamText: "" }}
         />
       </TooltipProvider>,
     );

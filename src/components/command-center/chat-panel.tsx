@@ -463,15 +463,6 @@ function resolveAssistantVisualState({
     typeof isLatestAssistant === "boolean"
       ? isLatestAssistant
       : Boolean(latestAssistantMessageId && latestAssistantMessageId === messageId);
-  if (message?.pending) {
-    if (runIsBusy && latestMessageIsAssistant && matchesLatestAssistant) {
-      return String(run?.streamText || "").trim()
-        ? "streaming" as const
-        : "pending" as const;
-    }
-
-    return "pending" as const;
-  }
 
   if (runIsBusy && latestMessageIsAssistant && matchesLatestAssistant) {
     return String(run?.streamText || "").trim() || String(message?.content || "").trim()
@@ -481,6 +472,10 @@ function resolveAssistantVisualState({
 
   if (preferRunState) {
     return "settled" as const;
+  }
+
+  if (message?.pending) {
+    return "pending" as const;
   }
 
   if (message?.streaming) {
