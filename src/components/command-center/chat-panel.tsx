@@ -47,14 +47,14 @@ import { UserMessageBubble } from "./chat-user-bubble";
 import { PendingAssistantBubble } from "./chat-pending-bubble";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
-import { buildAgentProgressMessage } from "@/features/chat/state/chat-progress";
+import { buildAgentProgressMessage, getAgentProgressStaleTransitionDelay } from "@/features/chat/state/chat-progress";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
 import { maxPromptRows } from "@/features/chat/utils";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { useStaleRunningDetector } from "@/features/session/runtime/use-stale-running-detector";
 import { useI18n } from "@/lib/i18n";
-import type { ChatScrollState } from "@/types/chat";
+import type { AgentProgressStage, ChatScrollState } from "@/types/chat";
 
 type AttachmentLike = {
   dataUrl?: string;
@@ -79,7 +79,7 @@ type MessageLike = {
   timestamp?: number | string;
   tokenBadge?: string;
   progressLabel?: string;
-  progressStage?: "thinking" | "inspecting" | "executing" | "synthesizing" | "finishing";
+  progressStage?: AgentProgressStage;
   progressUpdatedAt?: number;
 };
 
@@ -827,6 +827,7 @@ const MessageBubble = memo(function MessageBubble({
   const isAssistant = message.role === "assistant";
   const isPending = isAssistant && assistantVisualState === "pending";
   const bubbleStreaming = isAssistant && assistantVisualState === "streaming";
+  const [pendingProgressTick, setPendingProgressTick] = useState(0);
   const pendingProgressContent = isPending ? buildAgentProgressMessage(message, i18n) : "";
   const renderedContent = useMemo(
     () => stripDingTalkImagePlaceholderForDisplay(
@@ -839,7 +840,7 @@ const MessageBubble = memo(function MessageBubble({
         : unwrapAssistantEnvelope(message.content, message.role),
       sessionUser,
     ),
-    [i18n.chat.thinkingPlaceholder, isPending, message.content, message.role, pendingProgressContent, sessionUser],
+    [i18n.chat.thinkingPlaceholder, isPending, message.content, message.role, pendingProgressContent, pendingProgressTick, sessionUser],
   );
   const supportsBubbleTopJump = isAssistant && !messageHasVisualMedia(message);
   const assistantTurnInProgress = isAssistant && !isPending && (bubbleStreaming || showStreamingTail);
@@ -964,6 +965,25 @@ const MessageBubble = memo(function MessageBubble({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isPending) {
+      return undefined;
+    }
+
+    const delay = getAgentProgressStaleTransitionDelay(message);
+    if (delay === null) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setPendingProgressTick((current) => current + 1);
+    }, delay + 1);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isPending, message]);
 
   useEffect(() => {
     const eligibleForBubbleTopJump = supportsBubbleTopJump && isAssistant && !isPending && !useCompactAssistantBubble;

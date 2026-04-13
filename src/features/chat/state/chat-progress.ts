@@ -53,6 +53,33 @@ function resolveProgressUpdatedAt(progress: AgentProgressLikeState | null | unde
   return Number(progress?.progressUpdatedAt || progress?.timestamp || 0) || 0;
 }
 
+export function getAgentProgressStaleTransitionDelay(
+  progress: AgentProgressLikeState | null | undefined,
+  now = Date.now(),
+) {
+  const label = resolveProgressLabel(progress);
+  if (label) {
+    return null;
+  }
+
+  const stage = resolveProgressStage(progress);
+  if (stage !== "executing" && stage !== "synthesizing") {
+    return null;
+  }
+
+  const updatedAt = resolveProgressUpdatedAt(progress);
+  if (!updatedAt) {
+    return null;
+  }
+
+  const staleAt = updatedAt + STALE_PROGRESS_STAGE_THRESHOLD_MS;
+  if (Number(now || 0) >= staleAt) {
+    return null;
+  }
+
+  return Math.max(0, staleAt - Number(now || 0));
+}
+
 export function buildAgentProgressMessage(
   progress: AgentProgressLikeState | null | undefined,
   messages: AgentProgressMessageDictionary = {},

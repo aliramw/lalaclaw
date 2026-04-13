@@ -3481,6 +3481,51 @@ describe("ChatPanel", () => {
     expect(screen.queryByText("执行中，有点久了…")).not.toBeInTheDocument();
   });
 
+  it("updates a mounted pending bubble to stale progress copy after the threshold passes without requiring unrelated rerenders", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T12:00:00.000Z"));
+
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            {
+              role: "assistant",
+              content: "",
+              pending: true,
+              progressStage: "executing",
+              progressUpdatedAt: Date.now(),
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "paint" })}
+          run={{ status: "idle", runId: null, startedAt: null, lastDeltaAt: null, streamText: "" }}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("正在执行…")).toBeInTheDocument();
+    expect(screen.queryByText("执行中，有点久了…")).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(45_001);
+    });
+
+    expect(screen.getByText("执行中，有点久了…")).toBeInTheDocument();
+    expect(screen.queryByText("正在执行…")).not.toBeInTheDocument();
+  });
+
   it("shows busy and stop from explicit run state even when messages are already settled", () => {
     render(
       <TooltipProvider>
