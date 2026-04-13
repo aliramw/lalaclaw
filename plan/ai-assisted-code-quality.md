@@ -43,6 +43,31 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 
 - After each AI-involved PR, append a short summary: prompt used, files touched, tests rerun, reviewer, and whether any manual validation (UI, smoke, environment) was required. Keep at least the last three summaries in this file for traceability.
 
+### 2026-04-13 — 聊天中间态动态进度卡设计
+
+- Prompt/workstream: 响应用户对聊天空窗期的反馈，把静态 `正在思考…` pending 卡片设计为一套可复用的动态阶段卡，目标同时覆盖 `hermes` 与 `openclaw`，并保持主聊天区简洁。
+- AI model/version: GPT-5 Codex（Codex desktop agent）。
+- Generation time: 2026-04-13 Asia/Shanghai.
+- Files touched:
+  - 设计文档 `plan/2026-04-13-agent-progress-stage-design.md`
+  - AI 质量追踪登记 `plan/ai-assisted-code-quality.md`
+- High-risk decision record:
+  - 该工作流涉及聊天 pending 状态、controller、hydration、runtime catch-up，属于状态管理与会话连续性敏感区域
+  - 本轮仅产出设计/spec，不直接修改 runtime、controller 或 storage 代码
+  - 设计中明确要求后续实现必须补控制器级与 `App` 级回归，避免只做浅层组件测试
+- Quality gates rerun:
+  - 未运行测试；本轮仅新增设计文档与治理登记
+- Manual/equivalent validation:
+  - 对照用户提供的录屏确认问题发生在“pending 卡片提前消失，但正式 assistant 回复尚未接管”的空窗期
+  - 对照现有 `pending`、`hydration`、`App` 级相关测试与聊天组件结构，确保设计边界沿用现有状态模型而非引入额外消息流
+- Reviewer/sign-off:
+  - pending human review
+  - 进入实现前应由人工 reviewer 再确认阶段模型、pending 结束条件和恢复策略
+- Reviewer checklist:
+  - 确认 pending bubble 的唯一结束条件是“正式 assistant 消息接管当前 turn”
+  - 确认 `hermes` 与 `openclaw` 共用统一阶段字段，而不是在前端分叉 provider 逻辑
+  - 确认刷新、切 tab、runtime catch-up 场景下的阶段恢复已写入设计边界
+
 ### 2026-04-13 — Hermes Agent Tab Availability Normalization
 
 - Prompt/workstream: when the local runtime explicitly reports `hermes` as installed, make it eligible for the existing new-agent tab flow without hard-coding it in the UI; prefer `availableAgents`, supplement from installed `agents`, and preserve explicit websocket clears.
