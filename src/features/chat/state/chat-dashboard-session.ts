@@ -35,6 +35,13 @@ function cloneMessage(message: ChatMessage = { role: "assistant" }): ChatMessage
   };
 }
 
+function cloneSettledMessage(message: ChatMessage = { role: "assistant" }): ChatMessage {
+  const nextMessage = cloneMessage(message);
+  delete nextMessage.pending;
+  delete nextMessage.streaming;
+  return nextMessage;
+}
+
 function normalizeMessageId(message: ChatMessage | null | undefined) {
   return String(message?.id || "").trim();
 }
@@ -168,11 +175,7 @@ function buildConversationMessages(
       && (message.pending || message.streaming);
 
     if (!isPendingAssistantProjection) {
-      const normalizedMessage = cloneMessage({
-        ...message,
-        pending: undefined,
-        streaming: undefined,
-      });
+      const normalizedMessage = cloneSettledMessage(message);
       const explicitId = normalizeMessageId(normalizedMessage);
       if (explicitId) {
         const existingIndex = items.findIndex(
@@ -341,11 +344,7 @@ function mergePendingAssistantReplayCandidate(
   }
 
   const nextMessages = [...conversationMessages];
-  nextMessages[pendingAssistantIndex] = cloneMessage({
-    ...preferred,
-    pending: undefined,
-    streaming: undefined,
-  });
+  nextMessages[pendingAssistantIndex] = cloneSettledMessage(preferred);
   return nextMessages;
 }
 
@@ -449,20 +448,10 @@ export function buildDashboardSettledMessages({
   snapshotHasAssistantReply?: boolean;
   allowEmptySnapshotLocalTail?: boolean;
 } = {}) {
-  const snapshotMessages = (messages || []).map((message) =>
-    cloneMessage({
-      ...message,
-      pending: undefined,
-      streaming: undefined,
-    }),
-  );
+  const snapshotMessages = (messages || []).map((message) => cloneSettledMessage(message));
   const settledLocalMessages = (localMessages || [])
     .filter((message) => !message?.pending && !message?.streaming)
-    .map((message) => cloneMessage({
-      ...message,
-      pending: undefined,
-      streaming: undefined,
-    }));
+    .map((message) => cloneSettledMessage(message));
 
   if (!pendingEntry) {
     return buildDurableConversationWithLocalTail(
@@ -480,17 +469,9 @@ export function buildDashboardSettledMessages({
     if (!hasSnapshotAdvancedPastPendingTurn(nextMessages, pendingEntry) && localAssistantCandidate) {
       const pendingAssistantIndex = findPendingAssistantTranscriptIndex(nextMessages, pendingEntry);
       if (pendingAssistantIndex >= 0) {
-        nextMessages[pendingAssistantIndex] = cloneMessage({
-          ...localAssistantCandidate,
-          pending: undefined,
-          streaming: undefined,
-        });
+        nextMessages[pendingAssistantIndex] = cloneSettledMessage(localAssistantCandidate);
       } else if (!hasEquivalentAssistantMessage(nextMessages, localAssistantCandidate, pendingEntry)) {
-        nextMessages.push(cloneMessage({
-          ...localAssistantCandidate,
-          pending: undefined,
-          streaming: undefined,
-        }));
+        nextMessages.push(cloneSettledMessage(localAssistantCandidate));
       }
     }
 
@@ -510,11 +491,7 @@ export function buildDashboardSettledMessages({
     && !(localHasLivePendingAssistant && localHasExplicitLivePendingAssistant)
     && !hasEquivalentAssistantMessage(nextMessages, localAssistantCandidate, pendingEntry)
   ) {
-    nextMessages.push(cloneMessage({
-      ...localAssistantCandidate,
-      pending: undefined,
-      streaming: undefined,
-    }));
+    nextMessages.push(cloneSettledMessage(localAssistantCandidate));
   }
 
   const hasPendingUserMessage = nextMessages.some((message) => matchesPendingUserMessage(message, pendingEntry));
@@ -705,7 +682,6 @@ function buildAssistantOverlayMessage({
 
   const progressStage = coerceAgentProgressStage(pendingEntry.progressStage);
   const progressLabel = typeof pendingEntry.progressLabel === "string" ? pendingEntry.progressLabel.trim() : "";
-  const progressUpdatedAt = Number(pendingEntry.progressUpdatedAt || pendingEntry.lastDeltaAt || pendingEntry.pendingTimestamp || pendingEntry.startedAt || 0) || 0;
   const progressContent = progressLabel || thinkingPlaceholder;
   const streamText = String(run?.streamText || "").trim();
   if (streamText) {
@@ -717,7 +693,6 @@ function buildAssistantOverlayMessage({
       streaming: true,
       ...(progressStage ? { progressStage } : {}),
       ...(progressLabel ? { progressLabel } : {}),
-      ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
     };
   }
 
@@ -729,7 +704,6 @@ function buildAssistantOverlayMessage({
     pending: true,
     ...(progressStage ? { progressStage } : {}),
     ...(progressLabel ? { progressLabel } : {}),
-    ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
   };
 }
 

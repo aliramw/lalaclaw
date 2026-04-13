@@ -19,6 +19,7 @@ type AgentProgressMessageDictionary = {
 
 type AgentProgressLikeState = Partial<AgentProgressState> & {
   progressStage?: unknown;
+  timestamp?: unknown;
 };
 
 export function coerceAgentProgressStage(
@@ -49,7 +50,7 @@ function resolveProgressLabel(progress: AgentProgressLikeState | null | undefine
 }
 
 function resolveProgressUpdatedAt(progress: AgentProgressLikeState | null | undefined): number {
-  return Number(progress?.progressUpdatedAt || 0) || 0;
+  return Number(progress?.progressUpdatedAt || progress?.timestamp || 0) || 0;
 }
 
 export function buildAgentProgressMessage(
