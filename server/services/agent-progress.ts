@@ -14,6 +14,15 @@ export type AgentProgressState = {
   progressUpdatedAt?: number;
 };
 
+type AgentProgressInput = Partial<{
+  stage: unknown;
+  label: unknown;
+  updatedAt: unknown;
+  progressStage: unknown;
+  progressLabel: unknown;
+  progressUpdatedAt: unknown;
+}>;
+
 function isAgentProgressStage(value: unknown): value is AgentProgressStage {
   return AGENT_PROGRESS_STAGES.includes(String(value || "").trim().toLowerCase() as AgentProgressStage);
 }
@@ -31,11 +40,11 @@ export function coerceAgentProgressStage(
 }
 
 export function createAgentProgressState(
-  value: Partial<Pick<AgentProgressState, "progressStage" | "progressLabel" | "progressUpdatedAt">> = {},
+  value: AgentProgressInput = {},
 ): AgentProgressState | Record<string, never> {
-  const progressStage = coerceAgentProgressStage(value.progressStage);
-  const progressLabel = String(value.progressLabel || "").trim();
-  const progressUpdatedAt = Number(value.progressUpdatedAt || 0) || Date.now();
+  const progressStage = coerceAgentProgressStage(value.progressStage ?? value.stage);
+  const progressLabel = String(value.progressLabel ?? value.label ?? "").trim();
+  const progressUpdatedAt = Number((value.progressUpdatedAt ?? value.updatedAt) || 0) || Date.now();
 
   if (!progressStage && !progressLabel) {
     return {};

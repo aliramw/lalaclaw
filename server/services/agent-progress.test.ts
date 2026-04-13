@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { agentProgressStages } from "@/features/chat/state/chat-progress";
 import {
   AGENT_PROGRESS_STAGES,
   coerceAgentProgressStage,
@@ -16,6 +17,10 @@ describe("agent progress helpers", () => {
     ]);
   });
 
+  it("stays aligned with the client-side stage list", () => {
+    expect(AGENT_PROGRESS_STAGES).toEqual(agentProgressStages);
+  });
+
   it("coerces unknown stage values to an empty stage", () => {
     expect(coerceAgentProgressStage("EXECUTING")).toBe("executing");
     expect(coerceAgentProgressStage(" not-a-stage ")).toBe("");
@@ -23,12 +28,24 @@ describe("agent progress helpers", () => {
 
   it("creates a normalized agent progress state", () => {
     expect(createAgentProgressState({
-      progressStage: "synthesizing",
-      progressLabel: "Synthesizing answer",
-      progressUpdatedAt: 12345,
+      stage: "synthesizing",
+      label: "Synthesizing answer",
+      updatedAt: 12345,
     })).toEqual({
       progressStage: "synthesizing",
       progressLabel: "Synthesizing answer",
+      progressUpdatedAt: 12345,
+    });
+  });
+
+  it("accepts canonical progress fields too", () => {
+    expect(createAgentProgressState({
+      progressStage: "executing",
+      progressLabel: "Executing answer",
+      progressUpdatedAt: 12345,
+    })).toEqual({
+      progressStage: "executing",
+      progressLabel: "Executing answer",
       progressUpdatedAt: 12345,
     });
   });
