@@ -107,7 +107,7 @@ describe("createHermesClient", () => {
     });
   });
 
-  it("returns the latest hermes progress stage alongside normalized output", async () => {
+  it("returns the latest hermes progress stage without rewriting the normalized output body", async () => {
     const client = createHermesClient({
       HERMES_BIN: "hermes",
       PROJECT_ROOT: "/workspace/project",
@@ -127,7 +127,7 @@ describe("createHermesClient", () => {
     await expect(
       client.dispatchHermes([{ role: "user", content: "继续" }], { model: "gpt-5.4" }),
     ).resolves.toMatchObject({
-      outputText: "第二轮已收",
+      outputText: "检查工作区…\n执行命令…\n\n第二轮已收",
       sessionId: "20260413_151122_ba5e9f",
       usage: null,
       progressStage: "executing",
