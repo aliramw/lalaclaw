@@ -1,5 +1,13 @@
 export type ChatRole = "system" | "user" | "assistant" | string;
 
+export type AgentProgressStage = "thinking" | "inspecting" | "executing" | "synthesizing" | "finishing";
+
+export type AgentProgressState = {
+  stage: AgentProgressStage;
+  label?: string;
+  updatedAt: number;
+};
+
 export type ChatAttachment = {
   id?: string;
   kind?: string;
@@ -25,6 +33,9 @@ export type ChatMessage = {
   tokenBadge?: string;
   attachments?: ChatAttachment[];
   suppressPendingPlaceholder?: boolean;
+  progressStage?: AgentProgressStage;
+  progressLabel?: string;
+  progressUpdatedAt?: number;
 };
 
 export type PendingUserMessage = ChatMessage & {
@@ -57,6 +68,9 @@ export type ChatStreamPayload = {
   outputText?: string;
   tokenBadge?: string;
   assistantMessageId?: string;
+  progressStage?: AgentProgressStage;
+  progressLabel?: string;
+  progressUpdatedAt?: number;
   conversation?: ChatMessage[];
   metadata?: Record<string, unknown>;
   session?: Record<string, unknown>;
@@ -95,6 +109,9 @@ export type PendingChatTurn = {
   stopped?: boolean;
   stoppedAt?: number;
   suppressPendingPlaceholder?: boolean;
+  progressStage?: AgentProgressStage;
+  progressLabel?: string;
+  progressUpdatedAt?: number;
   userMessage?: PendingUserMessage;
   agentId?: string;
   sessionUser?: string;

@@ -6,6 +6,7 @@ import {
   parseStoredConversationKey,
   sanitizeSessionUser,
 } from "@/features/app/state/app-session-identity";
+import { coerceAgentProgressStage } from "@/features/chat/state/chat-progress";
 import {
   hasAuthoritativePendingAssistantReply,
   hasSnapshotAdvancedPastPendingTurn,
@@ -26,9 +27,15 @@ export function sanitizePendingChatTurnsMap(value: unknown): ConversationPending
 
     const normalizedEntry = entry as PendingChatTurn;
     const parsedConversationKey = parseStoredConversationKey(normalizedKey);
+    const progressLabel = String(normalizedEntry.progressLabel || "").trim();
+    const progressUpdatedAt = Number(normalizedEntry.progressUpdatedAt || 0) || 0;
+    const hasProgressStage = String(normalizedEntry.progressStage || "").trim();
     accumulator[normalizedKey] = {
       ...normalizedEntry,
       key: normalizedKey,
+      ...(hasProgressStage ? { progressStage: coerceAgentProgressStage(normalizedEntry.progressStage) } : {}),
+      ...(progressLabel ? { progressLabel } : {}),
+      ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
       ...(parsedConversationKey
         ? {
             agentId: normalizedEntry.agentId || parsedConversationKey.agentId,
