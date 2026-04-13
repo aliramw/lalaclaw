@@ -286,7 +286,7 @@ export function stripHermesProgressLines(stdout = "") {
     break;
   }
 
-  if (!leadingProgressIndexes.length || answerIndex < 0) {
+  if (leadingProgressIndexes.length < 2 || answerIndex < 0) {
     return lines.join("\n");
   }
 

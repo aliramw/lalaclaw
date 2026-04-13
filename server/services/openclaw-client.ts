@@ -2131,9 +2131,11 @@ export function createOpenClawClient({
   async function pollOpenClawSessionRun(runState: OpenClawRunState, timeoutMs = 30000, options: OpenClawDispatchOptions = {}): Promise<OpenClawResult> {
     const onDelta = typeof options.onDelta === 'function' ? options.onDelta : () => {};
     let latestText = typeof options.initialText === 'string' ? options.initialText : '';
-    let sawVisibleDelta = false;
+    const hasInitialVisibleOutput = Boolean(latestText);
+    let sawVisibleDelta = hasInitialVisibleOutput;
     let progressState = inferOpenClawStreamProgressState({
       hasStarted: true,
+      hasVisibleDelta: hasInitialVisibleOutput,
       progressUpdatedAt: Date.now(),
     });
 
