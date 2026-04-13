@@ -1,12 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { agentProgressStages } from "@/features/chat/state/chat-progress";
 import {
   AGENT_PROGRESS_STAGES,
   coerceAgentProgressStage,
   createAgentProgressState,
+  inferHermesProgressState,
+  inferOpenClawDispatchProgressState,
+  inferOpenClawStreamProgressState,
 } from "./agent-progress.ts";
 
 describe("agent progress helpers", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("exposes the canonical agent progress stage order", () => {
     expect(AGENT_PROGRESS_STAGES).toEqual([
       "thinking",
@@ -90,6 +97,44 @@ describe("agent progress helpers", () => {
       progressUpdatedAt: 12345,
     })).toEqual({
       progressLabel: "Still working",
+      progressUpdatedAt: 12345,
+    });
+  });
+
+  it("maps the latest hermes progress line to a normalized provider stage", () => {
+    const progress = inferHermesProgressState({
+      stdout: [
+        "检查工作区…",
+        "执行命令…",
+        "第二轮已收",
+        "session_id: hermes-session-1",
+      ].join("\n"),
+      progressUpdatedAt: 12345,
+    });
+
+    expect(progress).toEqual({
+      progressStage: "executing",
+      progressLabel: "执行命令…",
+      progressUpdatedAt: 12345,
+    });
+  });
+
+  it("treats an openclaw stream with no visible delta as thinking", () => {
+    expect(inferOpenClawStreamProgressState({
+      hasStarted: true,
+      progressUpdatedAt: 12345,
+    })).toEqual({
+      progressStage: "thinking",
+      progressUpdatedAt: 12345,
+    });
+  });
+
+  it("marks a completed openclaw dispatch as synthesizing", () => {
+    expect(inferOpenClawDispatchProgressState({
+      hasOutput: true,
+      progressUpdatedAt: 12345,
+    })).toEqual({
+      progressStage: "synthesizing",
       progressUpdatedAt: 12345,
     });
   });

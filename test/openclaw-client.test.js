@@ -75,7 +75,7 @@ describe("createOpenClawClient", () => {
       "command-center",
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "已分析图片",
       usage: { total_tokens: 12 },
     });
@@ -163,7 +163,7 @@ describe("createOpenClawClient", () => {
       "command-center",
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "会话输出",
       usage: { output_tokens: 5 },
     });
@@ -254,7 +254,7 @@ describe("createOpenClawClient", () => {
       "command-center",
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "快速输出",
       usage: { total_tokens: 9 },
     });
@@ -287,7 +287,7 @@ describe("createOpenClawClient", () => {
     await flushGatewayTurnSetup();
     await vi.advanceTimersByTimeAsync(250);
 
-    await expect(resultPromise).resolves.toEqual({
+    await expect(resultPromise).resolves.toMatchObject({
       outputText: "重连成功",
       usage: { total_tokens: 3 },
     });
@@ -381,9 +381,92 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["流式", "输出"]);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "流式输出",
       usage: null,
+    });
+  });
+
+  it("keeps a started openclaw stream at thinking when no visible delta arrives before completion", async () => {
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("chat.send");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "最终回复" }],
+              },
+            },
+          });
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi
+      .fn()
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          messages: [
+            {
+              role: "assistant",
+              timestamp: 125,
+              content: [{ type: "text", text: "最终回复" }],
+              usage: { output_tokens: 4 },
+            },
+          ],
+        }),
+      });
+
+    const client = createClient({
+      execFileAsync,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const result = await client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      "command-center",
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    expect(deltas).toEqual(["最终回复"]);
+    expect(result).toMatchObject({
+      outputText: "最终回复",
+      usage: { output_tokens: 4 },
+      progressStage: "thinking",
+      progressUpdatedAt: expect.any(Number),
     });
   });
 
@@ -488,7 +571,7 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["钉钉流式输出"]);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "钉钉流式输出",
       usage: { output_tokens: 6 },
     });
@@ -572,7 +655,7 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["流式", "输出"]);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "流式输出",
       usage: { output_tokens: 7 },
     });
@@ -668,7 +751,7 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["钉钉", "恢复输出"]);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "钉钉恢复输出",
       usage: { output_tokens: 7 },
     });
@@ -757,7 +840,7 @@ describe("createOpenClawClient", () => {
     );
 
     expect(deltas).toEqual(["钉钉", "恢复输出"]);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "钉钉恢复输出",
       usage: { output_tokens: 7 },
     });
@@ -938,7 +1021,7 @@ describe("createOpenClawClient", () => {
         new Promise((_, reject) => setTimeout(() => reject(new Error("dispatch timed out waiting for mirror")), 50)),
       ]);
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         outputText: "钉钉最终输出",
         usage: { output_tokens: 6 },
       });
@@ -1742,7 +1825,7 @@ describe("createOpenClawClient", () => {
 
     const result = await promise;
     expect(deltas).toEqual(["前半段", "后半段"]);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "前半段后半段",
       usage: { output_tokens: 9 },
     });
@@ -1842,7 +1925,7 @@ describe("createOpenClawClient", () => {
 
     const result = await promise;
     expect(deltas).toEqual(["恢复输出"]);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outputText: "恢复输出",
       usage: { output_tokens: 7 },
     });
