@@ -351,3 +351,24 @@ This plan captures how we treat AI-generated code (including prompts, model vers
   - pending human review before implementation begins
 - Follow-up expectation:
   - the implementation workstream should log the concrete runtime payload assumptions, touched files, and validation commands separately once code changes start
+
+### 2026-04-13 — Hermes Agent Tab Implementation Plan
+
+- Prompt/workstream: turn the approved `hermes` agent tab design into an implementation plan that keeps runtime agent normalization isolated near snapshot state and verifies the add-tab flow with focused regressions.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-13 Asia/Shanghai.
+- Files touched:
+  - `plan/2026-04-13-hermes-agent-tab-implementation-plan.md`
+  - `plan/ai-assisted-code-quality.md`
+- Quality gates rerun:
+  - not run; this workstream only records the implementation plan before code changes begin
+- Manual/equivalent validation:
+  - reviewed the approved design in `plan/2026-04-13-hermes-agent-tab-design.md`
+  - reviewed the current hook test scaffolding in `src/features/session/runtime/use-runtime-snapshot.test.jsx`
+  - reviewed the session menu regression patterns in `src/components/command-center/session-overview.test.jsx`
+  - reviewed the existing app-level agent switcher tests in `src/App.test.jsx`
+  - verified that the narrowest implementation plan is helper-first, hook wiring second, menu regression third, with app-level coverage optional only if the earlier layers leave a gap
+- Reviewer/sign-off:
+  - pending human review before implementation begins
+- Follow-up expectation:
+  - the implementation workstream should record the actual runtime payload fields used to infer installed state and the exact validation commands that were run
