@@ -1852,7 +1852,16 @@ export function FilePreviewOverlay({
     body = <FilePreviewCodeBlock content={effectivePreviewContent} language="json" fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />;
   } else if (preview.kind === "text") {
     body = isCodeLikePreviewTarget(title, preview.kind, effectivePreviewContent)
-      ? <FilePreviewCodeBlock content={effectivePreviewContent} language={inferPreviewLanguage(title, preview.kind, effectivePreviewContent)} fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />
+      ? (
+        <>
+          <FilePreviewCodeBlock content={effectivePreviewContent} language={inferPreviewLanguage(title, preview.kind, effectivePreviewContent)} fontSize={filePreviewFontSize} resolvedTheme={resolvedTheme} fillHeight />
+          {preview.truncated ? (
+            <div className={cn("pt-3 text-xs", isDark ? "text-zinc-500" : "text-slate-500")}>
+              {messages.inspector.previewActions.truncatedPreview}
+            </div>
+          ) : null}
+        </>
+      )
       : (
         <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-border/70 bg-background/80" : "border-slate-200 bg-white")}>
           <pre className={cn("overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-foreground", richTextPreviewFontSizeClassName)}>{effectivePreviewContent}</pre>
