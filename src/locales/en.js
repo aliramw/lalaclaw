@@ -380,7 +380,6 @@ const en = {
     },
     promptPlaceholder: (agentName) => `💡 Want to do something with ${agentName}?`,
     disconnectedPlaceholder: "OpenClaw is not connected yet. Please wait.",
-    hermesDisconnectedPlaceholder: "Hermes agent is not ready yet. Please wait.",
     composerEnterToSendHint: "Up/Down input history - Enter to send, Shift + Enter for newline",
     composerDoubleEnterHint: "Up/Down input history - Double-tap Enter or Shift + Enter to send, Enter for newline",
     composerFocusHint: "PS: No need to click the input. Just start typing anytime.",

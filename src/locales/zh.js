@@ -380,7 +380,6 @@ const zh = {
     },
     promptPlaceholder: (agentName) => `💡 想要和 ${agentName} 一起做点什么？`,
     disconnectedPlaceholder: "Openclaw尚未连接，请稍候。",
-    hermesDisconnectedPlaceholder: "Hermes Agent 尚未就绪，请稍候。",
     composerEnterToSendHint: "↑↓输入历史 - 回车发送，Shift + 回车换行",
     composerDoubleEnterHint: "↑↓输入历史 - 快速连按回车或 Shift + 回车发送，回车换行",
     composerFocusHint: "PS: 不用点击输入框，任何时候直接打字",
