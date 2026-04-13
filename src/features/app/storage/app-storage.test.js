@@ -2900,6 +2900,76 @@ describe("loadStoredState", () => {
     });
   });
 
+  it("restores pending progress fields from localStorage and drops malformed stages", () => {
+    const canonicalKey = "command-center:main";
+    const malformedKey = "command-center:expert";
+    window.localStorage.setItem(
+      pendingChatStorageKey,
+      JSON.stringify({
+        pendingChatTurns: {
+          [canonicalKey]: {
+            key: canonicalKey,
+            startedAt: 100,
+            pendingTimestamp: 120,
+            progressStage: "executing",
+            progressLabel: "Inspecting graph",
+            progressUpdatedAt: 1700000000000,
+            userMessage: {
+              role: "user",
+              content: "帮我看看",
+              timestamp: 100,
+            },
+          },
+          [malformedKey]: {
+            key: malformedKey,
+            startedAt: 200,
+            pendingTimestamp: 220,
+            progressStage: "not-a-real-stage",
+            progressLabel: "Still working",
+            progressUpdatedAt: 1700000001234,
+            userMessage: {
+              role: "user",
+              content: "再看看",
+              timestamp: 200,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(loadPendingChatTurns()).toEqual({
+      [canonicalKey]: {
+        key: canonicalKey,
+        startedAt: 100,
+        pendingTimestamp: 120,
+        agentId: "main",
+        sessionUser: "command-center",
+        progressStage: "executing",
+        progressLabel: "Inspecting graph",
+        progressUpdatedAt: 1700000000000,
+        userMessage: {
+          role: "user",
+          content: "帮我看看",
+          timestamp: 100,
+        },
+      },
+      [malformedKey]: {
+        key: malformedKey,
+        startedAt: 200,
+        pendingTimestamp: 220,
+        agentId: "expert",
+        sessionUser: "command-center",
+        progressLabel: "Still working",
+        progressUpdatedAt: 1700000001234,
+        userMessage: {
+          role: "user",
+          content: "再看看",
+          timestamp: 200,
+        },
+      },
+    });
+  });
+
   it("loads the global chat font size from the current storage shape", () => {
     window.localStorage.setItem(
       storageKey,
