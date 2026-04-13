@@ -256,29 +256,41 @@ export function stripHermesProgressLines(stdout = "") {
     trimmed: String(line || "").trim(),
     progress: mapHermesProgressLine(line),
   }));
-  const hasNonProgressReplyLine = normalizedLines.some((entry) => (
-    Boolean(entry.trimmed)
-    && !isHermesNoiseLine(entry.trimmed)
-    && !entry.progress.progressStage
-    && !entry.progress.progressLabel
-  ));
+  const contentIndexes = normalizedLines
+    .map((entry, index) => (
+      entry.trimmed && !isHermesNoiseLine(entry.trimmed)
+        ? index
+        : -1
+    ))
+    .filter((index) => index >= 0);
 
-  if (!hasNonProgressReplyLine) {
+  if (!contentIndexes.length) {
+    return lines.join("\n");
+  }
+
+  const leadingProgressIndexes: number[] = [];
+  let replyStartIndex = -1;
+
+  for (const index of contentIndexes) {
+    const entry = normalizedLines[index];
+    if (entry.progress.progressStage || entry.progress.progressLabel) {
+      if (replyStartIndex >= 0) {
+        break;
+      }
+      leadingProgressIndexes.push(index);
+      continue;
+    }
+
+    replyStartIndex = index;
+    break;
+  }
+
+  if (replyStartIndex < 0 || leadingProgressIndexes.length < 2) {
     return lines.join("\n");
   }
 
   return normalizedLines
-    .filter((entry) => {
-      if (!entry.trimmed) {
-        return true;
-      }
-
-      if (isHermesNoiseLine(entry.trimmed)) {
-        return false;
-      }
-
-      return !entry.progress.progressStage && !entry.progress.progressLabel;
-    })
+    .filter((_entry, index) => !leadingProgressIndexes.includes(index))
     .map((entry) => entry.line)
     .join("\n");
 }
