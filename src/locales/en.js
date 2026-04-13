@@ -1454,6 +1454,9 @@ const en = {
       previewFontSizeOptionTooltip: (label) => `Preview font size: ${label}`,
       renderingDocx: "Rendering DOCX preview...",
       frontMatter: "Front Matter",
+      outline: "Outline",
+      outlineTooltip: "Show document outline",
+      outlineEmpty: "No headings found in this document yet.",
       editSelectionUnavailable: "This file type can't be selected while editing.",
       unsavedChanges: {
         cancelTitle: "Discard edits?",

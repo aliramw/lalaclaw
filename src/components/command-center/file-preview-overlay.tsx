@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { FolderOpen, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
+import { FolderOpen, ListTree, LoaderCircle, Maximize2, Minimize2, Pencil, RefreshCcw, RotateCcw, RotateCw, SquareArrowOutUpRight, X, ZoomIn, ZoomOut } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { InspectorFilesPanel } from "@/components/command-center/inspector-files-panel";
+import { extractHeadingOutline } from "@/components/command-center/chat-message-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MarkdownContent } from "@/components/command-center/markdown-content";
 import { MarkdownPreviewAnnotationWorkbench } from "@/components/command-center/markdown-preview-annotation-workbench";
+import { scrollElementIntoNearestContainer } from "@/components/command-center/markdown-scroll-utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isEditableElement } from "@/features/chat/utils";
@@ -22,6 +25,9 @@ const PreviewScrollArea = ScrollArea as any;
 const PreviewTooltip = Tooltip as any;
 const PreviewTooltipContent = TooltipContent as any;
 const PreviewTooltipTrigger = TooltipTrigger as any;
+const PreviewDropdownMenu = DropdownMenu as any;
+const PreviewDropdownMenuContent = DropdownMenuContent as any;
+const PreviewDropdownMenuTrigger = DropdownMenuTrigger as any;
 const previewToolbarSurfaceClassName = "border border-border/70 bg-[var(--surface)] shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]";
 const previewToolbarInteractiveClassName = "text-muted-foreground transition hover:border-[var(--border-strong)] hover:bg-accent/28 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 const previewToolbarGhostActionClassName = "text-muted-foreground transition hover:bg-accent/28 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
@@ -855,6 +861,56 @@ function AudioPreview({ preview, resolvedTheme = "light" }: { preview: PreviewLi
   );
 }
 
+function MarkdownOutlinePopover({
+  headingScopeId = "file-preview",
+  items = [],
+  isDark = false,
+  onSelect,
+}: {
+  headingScopeId?: string;
+  items?: Array<{ id: string; level: number; text: string }>;
+  isDark?: boolean;
+  onSelect: (anchorId: string) => void;
+}) {
+  const { messages } = useI18n();
+
+  return (
+    <div data-testid="file-preview-markdown-outline-popover" className="w-[min(24rem,calc(100vw-3rem))]">
+      <div className={cn("mb-1.5 px-1 text-[10px] font-medium uppercase tracking-[0.14em]", isDark ? "text-zinc-400" : "text-muted-foreground")}>
+        {messages.inspector.previewActions.outline}
+      </div>
+      {items.length ? (
+        <div className="cc-scroll-region max-h-[min(24rem,60vh)] overflow-x-hidden overflow-y-auto pr-1">
+          <div className="grid gap-px">
+            {items.map((item) => (
+              <button
+                key={`${headingScopeId}-${item.id}`}
+                type="button"
+                onClick={() => onSelect(`${headingScopeId}-${item.id}`)}
+                className={cn(
+                  "w-full cursor-pointer rounded-[6px] px-2 py-1 text-left text-[12px] leading-[1.15rem] transition hover:bg-accent/45 hover:text-foreground",
+                  isDark ? "text-zinc-300" : "text-muted-foreground",
+                  item.level === 1 ? (isDark ? "text-zinc-100" : "text-foreground") : "",
+                  item.level === 2 ? (isDark ? "pl-3 text-[13px] font-extrabold text-zinc-100" : "pl-3 text-[13px] font-extrabold text-foreground") : "",
+                  item.level === 3 ? "pl-4" : "",
+                  item.level === 4 ? "pl-5 text-[11px]" : "",
+                  item.level >= 5 ? "pl-6 text-[11px]" : "",
+                )}
+              >
+                <span className="line-clamp-2">{item.text}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className={cn("rounded-lg border px-3 py-2 text-sm", isDark ? "border-white/10 bg-white/[0.03] text-zinc-400" : "border-border/60 bg-muted/20 text-muted-foreground")}>
+          {messages.inspector.previewActions.outlineEmpty}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ImagePreviewOverlay({ image, onClose }: { image: PreviewLike; onClose?: () => void }) {
   const { messages } = useI18n();
   const hasImageSrc = Boolean(image?.src);
@@ -1260,6 +1316,7 @@ export function FilePreviewOverlay({
   const [pendingLeaveAction, setPendingLeaveAction] = useState<MarkdownAnnotationLeaveAction>("");
   const [markdownAnnotationSubmitError, setMarkdownAnnotationSubmitError] = useState("");
   const [isSubmittingMarkdownAnnotationPrompt, setIsSubmittingMarkdownAnnotationPrompt] = useState(false);
+  const [isMarkdownOutlineOpen, setIsMarkdownOutlineOpen] = useState(false);
   const previewViewportRef = useRef<HTMLElement | null>(null);
   const pendingEditorScrollRatioRef = useRef<number | null>(null);
   const editSessionInitialContentRef = useRef("");
@@ -1315,6 +1372,7 @@ export function FilePreviewOverlay({
       setPreviewContentOverride(null);
       setSaveError("");
       setSaveNotice(null);
+      setIsMarkdownOutlineOpen(false);
       setEditSessionDirty(false);
       setPendingLeaveAction("");
       editSessionInitialContentRef.current = "";
@@ -1334,6 +1392,7 @@ export function FilePreviewOverlay({
     setMarkdownAnnotationCount(0);
     setMarkdownAnnotationSubmitError("");
     setIsSubmittingMarkdownAnnotationPrompt(false);
+    setIsMarkdownOutlineOpen(false);
     setEditSessionDirty(false);
     setPendingLeaveAction("");
     pendingEditorScrollRatioRef.current = null;
@@ -1376,6 +1435,12 @@ export function FilePreviewOverlay({
   const showPreviewFontSizeControls = preview?.kind === "markdown" || preview?.kind === "text" || preview?.kind === "json";
   const annotationShortcutLabel = "A";
   const editShortcutLabel = "E";
+  const markdownHeadingScopeId = `file-preview-${preview?.path || preview?.item?.path || "file"}`;
+  const { body: markdownOutlineBody } = splitMarkdownFrontMatter(preview?.kind === "markdown" ? effectivePreviewContent : "");
+  const markdownOutlineItems = useMemo(
+    () => (preview?.kind === "markdown" ? extractHeadingOutline(markdownOutlineBody) : []),
+    [markdownOutlineBody, preview?.kind],
+  );
   const markdownAnnotationWorkbenchLabels = messages.inspector.previewActions.markdownAnnotationWorkbench;
   const markdownAnnotationToggleLabel = isMarkdownAnnotationMode
     ? messages.inspector.previewActions.annotationUpdateActive
@@ -1407,6 +1472,7 @@ export function FilePreviewOverlay({
 
   const hasMarkdownAnnotationDrafts = markdownAnnotationCount > 0;
   const showMarkdownAnnotationToggle = preview?.kind === "markdown" && !isEditing && !preview?.loading && !preview?.error && !preview?.truncated;
+  const showMarkdownOutlineToggle = preview?.kind === "markdown" && !isEditing && !isMarkdownAnnotationMode && !preview?.loading && !preview?.error;
 
   const handleMarkdownAnnotationStateChange = useCallback((state: { annotationCount: number; hasDraftAnnotations: boolean }) => {
     setMarkdownAnnotationCount(Number(state?.annotationCount || 0));
@@ -1424,11 +1490,13 @@ export function FilePreviewOverlay({
       }
 
       setIsMarkdownAnnotationMode(false);
+      setIsMarkdownOutlineOpen(false);
       setMarkdownAnnotationSubmitError("");
       return;
     }
 
     setIsMarkdownAnnotationMode(true);
+    setIsMarkdownOutlineOpen(false);
     setMarkdownAnnotationSubmitError("");
   }, [hasMarkdownAnnotationDrafts, isMarkdownAnnotationMode, showMarkdownAnnotationToggle]);
 
@@ -1457,6 +1525,16 @@ export function FilePreviewOverlay({
     }
   }, [messages.inspector.previewActions.annotationUpdateSubmitFailed, onClose, onSendPreparedPrompt]);
 
+  const handleSelectMarkdownOutline = useCallback((anchorId: string) => {
+    const element = document.getElementById(anchorId);
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    scrollElementIntoNearestContainer(element, { behavior: "smooth", topOffset: 12 });
+    setIsMarkdownOutlineOpen(false);
+  }, []);
+
   const handleStartEditing = useCallback(() => {
     if (!canEditPreview) {
       return;
@@ -1475,6 +1553,7 @@ export function FilePreviewOverlay({
     setEditSessionDirty(false);
     setSaveError("");
     setSaveNotice(null);
+    setIsMarkdownOutlineOpen(false);
     setIsEditing(true);
   }, [canEditPreview, effectivePreviewContent]);
 
@@ -1724,7 +1803,7 @@ export function FilePreviewOverlay({
               filePath={title}
               files={files || []}
               fontSize={filePreviewFontSize}
-              headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
+              headingScopeId={markdownHeadingScopeId}
               labels={markdownAnnotationWorkbenchLabels}
               lineNumberOffset={markdownBodyLineOffset}
               onOpenFilePreview={onOpenFilePreview}
@@ -1758,7 +1837,7 @@ export function FilePreviewOverlay({
             <MarkdownContent
               content={markdownBody}
               files={files || []}
-              headingScopeId={`file-preview-${preview.path || preview.item?.path || "file"}`}
+              headingScopeId={markdownHeadingScopeId}
               resolvedTheme={resolvedTheme}
               className={cn("min-w-0 max-w-full", richTextPreviewFontSizeClassName)}
               onOpenFilePreview={onOpenFilePreview}
@@ -2034,6 +2113,45 @@ export function FilePreviewOverlay({
                   </PreviewTooltipTrigger>
                   <PreviewTooltipContent>{renderShortcutTooltip(markdownAnnotationToggleTooltip, annotationShortcutLabel, messages.theme.shortcutHint)}</PreviewTooltipContent>
                 </PreviewTooltip>
+              ) : null}
+              {showMarkdownOutlineToggle ? (
+                <PreviewDropdownMenu open={isMarkdownOutlineOpen} onOpenChange={setIsMarkdownOutlineOpen}>
+                  <PreviewTooltip>
+                    <PreviewTooltipTrigger asChild>
+                      <PreviewDropdownMenuTrigger asChild>
+                        <PreviewButton
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className={cn(
+                            "h-8 px-2.5 text-xs",
+                            previewToolbarSurfaceClassName,
+                            isMarkdownOutlineOpen ? "bg-muted/80 text-foreground" : previewToolbarInteractiveClassName,
+                          )}
+                          aria-label={messages.inspector.previewActions.outlineTooltip}
+                        >
+                          <ListTree className="h-3.5 w-3.5" />
+                        </PreviewButton>
+                      </PreviewDropdownMenuTrigger>
+                    </PreviewTooltipTrigger>
+                    <PreviewTooltipContent>{messages.inspector.previewActions.outlineTooltip}</PreviewTooltipContent>
+                  </PreviewTooltip>
+                  <PreviewDropdownMenuContent
+                    align="end"
+                    side="bottom"
+                    className={cn(
+                      "w-[min(24rem,calc(100vw-2rem))] rounded-2xl p-2",
+                      isDark ? "border-white/10 bg-[#16181d] text-zinc-100" : "bg-white",
+                    )}
+                  >
+                    <MarkdownOutlinePopover
+                      headingScopeId={markdownHeadingScopeId}
+                      items={markdownOutlineItems}
+                      isDark={isDark}
+                      onSelect={handleSelectMarkdownOutline}
+                    />
+                  </PreviewDropdownMenuContent>
+                </PreviewDropdownMenu>
               ) : null}
               <div
                 className={cn(

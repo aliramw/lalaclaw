@@ -1454,6 +1454,9 @@ const zh = {
       previewFontSizeOptionTooltip: (label) => `预览字号：${label}`,
       renderingDocx: "正在渲染 DOCX 预览…",
       frontMatter: "Front Matter",
+      outline: "大纲",
+      outlineTooltip: "查看文档大纲",
+      outlineEmpty: "当前文档里还没有可用标题。",
       editSelectionUnavailable: "编辑时无法选择此类文件",
       unsavedChanges: {
         cancelTitle: "确认放弃当前编辑？",

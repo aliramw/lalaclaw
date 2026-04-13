@@ -377,6 +377,88 @@ describe("FilePreviewOverlay", () => {
     expect(screen.getByTestId("markdown-preview-content").firstChild).toHaveClass("text-[16px]", "leading-7", "[&_p]:!leading-7", "[&_ul]:!my-2.5");
   });
 
+  it("shows a markdown outline popover from the toolbar", async () => {
+    const user = userEvent.setup();
+
+    renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "physics.md",
+          path: "/Users/marila/projects/lalaclaw/physics.md",
+          content: "# 物理公式汇总\n\n## 力学\n\n内容\n\n## 电学\n\n更多内容",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Show document outline|查看文档大纲/ }));
+
+    const popover = screen.getByTestId("file-preview-markdown-outline-popover");
+    expect(within(popover).getByText(/Outline|大纲/)).toBeInTheDocument();
+    expect(within(popover).getByRole("button", { name: "物理公式汇总" })).not.toHaveClass("font-extrabold");
+    expect(within(popover).getByRole("button", { name: "力学" })).toHaveClass("font-extrabold", "text-[13px]", "pl-3");
+    expect(within(popover).getByRole("button", { name: "电学" })).toBeInTheDocument();
+  });
+
+  it("scrolls the markdown preview to the selected outline heading", async () => {
+    const user = userEvent.setup();
+    const { container } = renderPreview(
+      <FilePreviewOverlay
+        files={[]}
+        preview={{
+          kind: "markdown",
+          name: "physics.md",
+          path: "/Users/marila/projects/lalaclaw/physics.md",
+          content: "# 物理公式汇总\n\n## 力学\n\n内容\n\n## 电学\n\n更多内容",
+        }}
+        onClose={() => {}}
+        onOpenFilePreview={() => {}}
+      />,
+    );
+
+    const heading = await screen.findByRole("heading", { name: "力学" });
+    const viewport = container.querySelector("[data-radix-scroll-area-viewport]");
+    expect(viewport).toBeTruthy();
+    viewport.scrollTop = 240;
+    viewport.scrollTo = vi.fn();
+    viewport.getBoundingClientRect = () => ({
+      top: 100,
+      bottom: 700,
+      left: 0,
+      right: 900,
+      width: 900,
+      height: 600,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    heading.getBoundingClientRect = () => ({
+      top: 420,
+      bottom: 460,
+      left: 0,
+      right: 600,
+      width: 600,
+      height: 40,
+      x: 0,
+      y: 420,
+      toJSON: () => ({}),
+    });
+
+    await user.click(screen.getByRole("button", { name: /Show document outline|查看文档大纲/ }));
+    await user.click(within(screen.getByTestId("file-preview-markdown-outline-popover")).getByRole("button", { name: "力学" }));
+
+    expect(viewport.scrollTo).toHaveBeenCalledWith({
+      top: 548,
+      behavior: "smooth",
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("file-preview-markdown-outline-popover")).not.toBeInTheDocument();
+    });
+  });
+
   it("shows a markdown annotation toolbar button and enters annotation mode", async () => {
     const user = userEvent.setup();
 
