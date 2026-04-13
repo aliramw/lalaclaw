@@ -1240,42 +1240,6 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
-  it("keeps hermes sessions interactive without reusing openclaw disconnected copy", async () => {
-    window.localStorage.setItem(localeStorageKey, "zh");
-
-    render(
-      <I18nProvider>
-        <TooltipProvider>
-          <ChatPanel
-            busy={false}
-            formatTime={() => "10:00:00"}
-            messageViewportRef={null}
-            messages={[]}
-            onChatFontSizeChange={() => {}}
-            onPromptChange={() => {}}
-            onPromptKeyDown={() => {}}
-            onReset={() => {}}
-            onSend={() => {}}
-            prompt=""
-            promptRef={null}
-            session={createSession({ mode: "hermes", agentId: "hermes", status: "空闲" })}
-          />
-        </TooltipProvider>
-      </I18nProvider>,
-    );
-
-    const user = userEvent.setup();
-    const composer = screen.getByPlaceholderText("💡 想要和 hermes 一起做点什么？");
-    expect(composer).not.toBeDisabled();
-    expect(screen.getByLabelText("开启新会话")).not.toBeDisabled();
-    expect(screen.queryByPlaceholderText("Openclaw尚未连接，请稍候。")).not.toBeInTheDocument();
-
-    await user.hover(screen.getByText("Hermes 就绪"));
-
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hermes Agent 状态");
-    expect(screen.getByRole("tooltip")).toHaveTextContent("本地 Hermes Agent");
-  });
-
   it("keeps the composer frame quiet at rest and reserves the stronger ring for focus", () => {
     render(
       <TooltipProvider>
