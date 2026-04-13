@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import {
   inferHermesProgressState,
-} from './agent-progress.ts';
+} from './agent-progress';
 
 type LooseRecord = Record<string, any>;
 

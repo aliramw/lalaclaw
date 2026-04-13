@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createOpenClawClient = createOpenClawClient;
 exports.importOpenClawFileModule = importOpenClawFileModule;
 exports.resolveOpenClawGatewaySdkArtifactsForPackageRoot = resolveOpenClawGatewaySdkArtifactsForPackageRoot;
+const agent_progress_1 = require("./agent-progress");
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -473,7 +474,14 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             throw new Error(`OpenClaw request failed: ${response.status} ${clipText(errorText, 200)}`);
         }
         const data = await response.json();
-        return parseOpenClawResponse(data);
+        const parsed = parseOpenClawResponse(data);
+        return {
+            ...parsed,
+            ...(0, agent_progress_1.inferOpenClawDispatchProgressState)({
+                hasOutput: Boolean(parsed.outputText),
+                progressUpdatedAt: Date.now(),
+            }),
+        };
     }
     function buildOpenClawRequest(messages, fastMode, sessionUser = 'command-center', options = {}, stream = false) {
         const agentId = resolveAgentId(sessionUser);
@@ -953,9 +961,14 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         const finalText = (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
             || finalSession?.errorText
             || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE;
+        const progressState = (0, agent_progress_1.inferOpenClawDispatchProgressState)({
+            hasOutput: Boolean(finalText),
+            progressUpdatedAt: Date.now(),
+        });
         return {
             outputText: finalText,
             usage: finalAssistant?.usage || null,
+            ...progressState,
             ...(finalSession?.errorText && !normalizeChatMessageValue(finalAssistant) ? { isError: true } : {}),
         };
     }
@@ -1026,6 +1039,18 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
     }
     function normalizeComparableMessageText(message) {
         return normalizeChatMessageValue(message).replace(/\r\n/g, '\n').trim();
+    }
+    function inferOpenClawCompletionProgressState({ hasFinalOutput = false, progressUpdatedAt, } = {}) {
+        if (hasFinalOutput) {
+            return (0, agent_progress_1.createAgentProgressState)({
+                progressStage: 'synthesizing',
+                progressUpdatedAt,
+            });
+        }
+        return (0, agent_progress_1.inferOpenClawStreamProgressState)({
+            hasStarted: true,
+            progressUpdatedAt,
+        });
     }
     function isTerminalOpenClawWaitStatus(status = '') {
         const normalizedStatus = String(status || '').trim().toLowerCase();
@@ -1254,7 +1279,13 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             if (parsed.outputText) {
                 onDelta(parsed.outputText);
             }
-            return parsed;
+            return {
+                ...parsed,
+                ...inferOpenClawCompletionProgressState({
+                    hasFinalOutput: Boolean(parsed.outputText),
+                    progressUpdatedAt: Date.now(),
+                }),
+            };
         }
         let outputText = '';
         let usage = null;
@@ -1276,6 +1307,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
         return {
             outputText: outputText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
             usage,
+            ...inferOpenClawCompletionProgressState({
+                hasFinalOutput: Boolean(outputText),
+                progressUpdatedAt: Date.now(),
+            }),
         };
     }
     async function callOpenClawSessionStream(messages, sessionUser = 'command-center', timeoutMs = 30000, options = {}) {
@@ -1394,11 +1429,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
                         ? latestAssistantState.value
                         : null;
                     const nextText = latestAssistant ? normalizeChatMessageValue(latestAssistant) || '' : '';
-                    const previousLatestText = latestText;
                     emitDeltaFromFullText(nextText);
-                    const historyReplyMatchesActivePrefix = !previousLatestText
-                        || nextText === previousLatestText
-                        || nextText.startsWith(previousLatestText);
+                    const historyReplyMatchesActivePrefix = !latestText
+                        || nextText === latestText
+                        || nextText.startsWith(latestText);
                     if (!settled && latestAssistant && nextText && historyReplyMatchesActivePrefix) {
                         settled = true;
                         resolveFinal({
@@ -1520,9 +1554,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             }
             catch { }
             const finalAssistant = finalSession.assistant;
+            const finalPayloadMessage = normalizeChatMessageValue(finalPayload?.message);
             const finalErrorText = extractOpenClawEventError(finalPayload)
                 || finalSession.errorText;
-            const finalText = normalizeChatMessageValue(finalPayload?.message)
+            const finalText = finalPayloadMessage
                 || (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
                 || latestText
                 || finalErrorText;
@@ -1534,6 +1569,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             return {
                 outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
                 usage: finalAssistant?.usage || null,
+                ...inferOpenClawCompletionProgressState({
+                    hasFinalOutput: Boolean(finalPayloadMessage || finalAssistant || latestText),
+                    progressUpdatedAt: Date.now(),
+                }),
                 ...(isErrorResponse ? { isError: true } : {}),
             };
         }
@@ -1583,6 +1622,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
                     return {
                         outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
                         usage: finalAssistant?.usage || null,
+                        ...inferOpenClawCompletionProgressState({
+                            hasFinalOutput: Boolean(finalAssistant || latestText),
+                            progressUpdatedAt: Date.now(),
+                        }),
                         ...(isErrorResponse ? { isError: true } : {}),
                     };
                 }
@@ -1608,6 +1651,10 @@ function createOpenClawClient({ config, execFileAsync, PROJECT_ROOT, OPENCLAW_BI
             return {
                 outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
                 usage: finalAssistant?.usage || null,
+                ...inferOpenClawCompletionProgressState({
+                    hasFinalOutput: Boolean(finalAssistant || latestText),
+                    progressUpdatedAt: Date.now(),
+                }),
                 ...(isErrorResponse ? { isError: true } : {}),
             };
         }

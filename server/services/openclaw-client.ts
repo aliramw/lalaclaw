@@ -1,13 +1,14 @@
+import {
+  createAgentProgressState,
+  inferOpenClawDispatchProgressState,
+  inferOpenClawStreamProgressState,
+} from './agent-progress';
+
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { URL, pathToFileURL } = require('node:url');
 const { parseImSessionIdentity } = require('../../shared/im-session-key.cjs');
-const {
-  createAgentProgressState,
-  inferOpenClawDispatchProgressState,
-  inferOpenClawStreamProgressState,
-} = require('./agent-progress.ts');
 
 type LooseRecord = Record<string, any>;
 
