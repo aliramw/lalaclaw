@@ -177,6 +177,232 @@ describe("useRuntimeSnapshot", () => {
     expect(setPromptHistoryByConversation).toHaveBeenCalled();
   });
 
+  it("supplements availableAgents from explicitly installed runtime agents", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "就绪",
+        },
+        agents: [
+          { agentId: "hermes", installed: true },
+        ],
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.availableAgents).toEqual(["main", "hermes"]);
+    });
+  });
+
+  it("keeps derived installed agents available when snapshots omit availableAgents", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          status: "就绪",
+        },
+        agents: [
+          { agentId: "hermes", installed: true },
+        ],
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.availableAgents).toEqual(["hermes"]);
+    });
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket.simulateOpen();
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: "agents.sync",
+          agents: [
+            { agentId: "hermes", installed: true },
+            { agentId: "writer", installed: true },
+          ],
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.availableAgents).toEqual(["hermes", "writer"]);
+    });
+  });
+
+  it("keeps websocket availableAgents aligned with agents.sync updates and still clears explicit empty updates", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center",
+          agentId: "main",
+          selectedModel: "gpt-5",
+          availableModels: ["gpt-5"],
+          availableAgents: ["main"],
+          status: "就绪",
+        },
+        agents: [],
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession(),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.availableAgents).toEqual(["main"]);
+    });
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    act(() => {
+      socket.simulateOpen();
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: "agents.sync",
+          agents: [
+            { agentId: "hermes", installed: true },
+          ],
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.availableAgents).toEqual(["main", "hermes"]);
+    });
+
+    act(() => {
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: "session.sync",
+          session: {
+            sessionUser: "command-center",
+            agentId: "main",
+            availableAgents: [],
+            status: "就绪",
+          },
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.availableAgents).toEqual([]);
+    });
+
+    act(() => {
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: "agents.sync",
+          agents: [
+            { agentId: "hermes", installed: true },
+          ],
+        }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.availableAgents).toEqual([]);
+    });
+  });
+
   it("preserves previously detected files when a later snapshot temporarily reports no files", async () => {
     const setBusy = vi.fn();
     const setFastMode = vi.fn();

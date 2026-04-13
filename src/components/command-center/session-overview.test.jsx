@@ -1155,6 +1155,42 @@ describe("SessionOverview", () => {
     expect(screen.getByRole("menuitem", { name: "writer" })).toBeInTheDocument();
   });
 
+  it("keeps installed agents visible in the switcher menu when main is already open", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+    const onAgentChange = vi.fn();
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main", "hermes"]}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
+            model="openclaw"
+            onAgentChange={onAgentChange}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            openAgentIds={["main"]}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
+
+    expect(screen.queryByRole("menuitem", { name: "main" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "hermes" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("menuitem", { name: "hermes" }));
+
+    expect(onAgentChange).toHaveBeenCalledWith("hermes");
+  });
+
   it("shows the new-agent hint when every agent already has an open session", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 

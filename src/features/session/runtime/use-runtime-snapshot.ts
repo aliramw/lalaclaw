@@ -34,6 +34,7 @@ import type {
   RuntimeSocketPayload,
   RuntimeTaskRelationship,
 } from "@/types/runtime";
+import { collectAvailableRuntimeAgentIds } from "./runtime-agent-availability";
 import { useRuntimeSocket } from "./use-runtime-socket";
 
 const EMPTY_RUNTIME_PEEKS: RuntimePeeks = { workspace: null, terminal: null, browser: null, environment: null };
@@ -1005,6 +1006,9 @@ export function useRuntimeSnapshot({
   const [snapshots, setSnapshots] = useState<unknown[]>([]);
   const [agents, setAgents] = useState<unknown[]>([]);
   const [peeks, setPeeks] = useState<RuntimePeeks>(EMPTY_RUNTIME_PEEKS);
+  const agentsRef = useRef<unknown[]>([]);
+  const availableAgentsRef = useRef<unknown[] | null>(null);
+  const availableAgentsClearedRef = useRef(false);
   const stopOverrideUntilRef = useRef(
     (() => { try { const v = Number(sessionStorage.getItem("cc-stop-override-until") || 0); return v > Date.now() ? v : 0; } catch { return 0; } })()
   );
@@ -1019,6 +1023,7 @@ export function useRuntimeSnapshot({
 
   trackedPendingChatTurnsRef.current = externalPendingChatTurnsRef?.current || pendingChatTurns;
   sessionRef.current = session;
+  agentsRef.current = agents;
 
   const updatePendingChatTurns = useCallback((value) => {
     if (typeof setPendingChatTurns !== "function") {
@@ -1168,8 +1173,16 @@ export function useRuntimeSnapshot({
 
   const hydrateRuntimeState = useCallback((state: RuntimeSnapshot | null = null) => {
     const nextState = state || {};
+    const nextStateAvailableAgents = Object.prototype.hasOwnProperty.call(nextState, "availableAgents")
+      ? (Array.isArray(nextState.availableAgents) ? nextState.availableAgents : [])
+      : null;
     setIfChanged(setAvailableModels, nextState.availableModels || []);
-    setIfChanged(setAvailableAgents, nextState.availableAgents || []);
+    availableAgentsRef.current = nextStateAvailableAgents;
+    availableAgentsClearedRef.current = false;
+    setIfChanged(setAvailableAgents, collectAvailableRuntimeAgentIds({
+      availableAgents: nextStateAvailableAgents || [],
+      agents: nextState.agents || [],
+    }));
     setIfChanged(setTaskRelationships, nextState.taskRelationships || []);
     setTaskTimeline((current) => {
       const merged = mergeTaskTimeline(current, nextState.taskTimeline || []);
@@ -1178,6 +1191,7 @@ export function useRuntimeSnapshot({
     setIfChanged(setFiles, nextState.files || []);
     setIfChanged(setArtifacts, nextState.artifacts || []);
     setIfChanged(setSnapshots, nextState.snapshots || []);
+    agentsRef.current = nextState.agents || [];
     setIfChanged(setAgents, nextState.agents || []);
     setIfChanged(setPeeks, nextState.peeks || EMPTY_RUNTIME_PEEKS);
     setRuntimeOverviewReady(Boolean(state && state.overviewReady !== false));
@@ -1350,8 +1364,19 @@ export function useRuntimeSnapshot({
       setBusy(effectiveDeferBusy);
     }
 
+    const snapshotAvailableAgents = snapshot.session && Object.prototype.hasOwnProperty.call(snapshot.session, "availableAgents")
+      ? (Array.isArray(snapshot.session.availableAgents) ? snapshot.session.availableAgents : [])
+      : Object.prototype.hasOwnProperty.call(snapshot, "availableAgents")
+        ? (Array.isArray(snapshot.availableAgents) ? snapshot.availableAgents : [])
+        : null;
+
     setIfChanged(setAvailableModels, snapshot.session?.availableModels || snapshot.availableModels || []);
-    setIfChanged(setAvailableAgents, snapshot.session?.availableAgents || snapshot.availableAgents || []);
+    availableAgentsRef.current = snapshotAvailableAgents;
+    availableAgentsClearedRef.current = false;
+    setIfChanged(setAvailableAgents, collectAvailableRuntimeAgentIds({
+      availableAgents: snapshotAvailableAgents || [],
+      agents: snapshot.agents || [],
+    }));
     if (Object.prototype.hasOwnProperty.call(snapshot, "taskRelationships")) {
       setTaskRelationships((current) => {
         const merged = mergeTaskRelationships(current, snapshot.taskRelationships || []);
@@ -1367,6 +1392,7 @@ export function useRuntimeSnapshot({
     setFilesFromSnapshot(snapshot.files || []);
     setIfChanged(setArtifacts, snapshot.artifacts || []);
     setIfChanged(setSnapshots, snapshot.snapshots || []);
+    agentsRef.current = snapshot.agents || [];
     setIfChanged(setAgents, snapshot.agents || []);
     setIfChanged(setPeeks, snapshot.peeks || EMPTY_RUNTIME_PEEKS);
     setModel(snapshot.session?.selectedModel || snapshot.model || nextSession.model || "");
@@ -1585,8 +1611,21 @@ export function useRuntimeSnapshot({
       if (payload.session.availableModels) {
         setIfChanged(setAvailableModels, payload.session.availableModels);
       }
-      if (payload.session.availableAgents) {
-        setIfChanged(setAvailableAgents, payload.session.availableAgents);
+      if (Object.prototype.hasOwnProperty.call(payload.session, "availableAgents")) {
+        const explicitAvailableAgents = Array.isArray(payload.session.availableAgents)
+          ? payload.session.availableAgents
+          : availableAgentsRef.current;
+        const didExplicitlyClearAvailableAgents = Array.isArray(payload.session.availableAgents)
+          && payload.session.availableAgents.length === 0;
+        availableAgentsRef.current = explicitAvailableAgents;
+        availableAgentsClearedRef.current = didExplicitlyClearAvailableAgents;
+        const nextAvailableAgents = didExplicitlyClearAvailableAgents
+          ? []
+          : collectAvailableRuntimeAgentIds({
+            availableAgents: explicitAvailableAgents || [],
+            agents: agentsRef.current,
+          });
+        setIfChanged(setAvailableAgents, nextAvailableAgents);
       }
       if (payload.session.selectedModel) {
         setModel(payload.session.selectedModel);
@@ -1659,6 +1698,14 @@ export function useRuntimeSnapshot({
     }
 
     if (payload.type === 'agents.sync') {
+      const nextAvailableAgents = availableAgentsClearedRef.current
+        ? []
+        : collectAvailableRuntimeAgentIds({
+          availableAgents: availableAgentsRef.current || [],
+          agents: payload.agents || [],
+        });
+      agentsRef.current = payload.agents || [];
+      setIfChanged(setAvailableAgents, nextAvailableAgents);
       setIfChanged(setAgents, payload.agents || []);
       return;
     }
@@ -1817,6 +1864,9 @@ export function useRuntimeSnapshot({
     setFiles([]);
     setArtifacts([]);
     setSnapshots([]);
+    availableAgentsRef.current = null;
+    availableAgentsClearedRef.current = false;
+    agentsRef.current = [];
     setAgents([]);
     setPeeks(EMPTY_RUNTIME_PEEKS);
   };

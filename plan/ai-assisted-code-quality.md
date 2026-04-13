@@ -43,6 +43,34 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 
 - After each AI-involved PR, append a short summary: prompt used, files touched, tests rerun, reviewer, and whether any manual validation (UI, smoke, environment) was required. Keep at least the last three summaries in this file for traceability.
 
+### 2026-04-13 — Hermes Agent Tab Availability Normalization
+
+- Prompt/workstream: when the local runtime explicitly reports `hermes` as installed, make it eligible for the existing new-agent tab flow without hard-coding it in the UI; prefer `availableAgents`, supplement from installed `agents`, and preserve explicit websocket clears.
+- AI model/version: GPT-5 Codex (Codex desktop agent, with bounded subagent review/worker passes).
+- Generation time: 2026-04-13 Asia/Shanghai.
+- Files touched:
+  - runtime availability normalization and wiring such as `src/features/session/runtime/runtime-agent-availability.ts`, `src/features/session/runtime/runtime-agent-availability.test.ts`, `src/features/session/runtime/use-runtime-snapshot.ts`, and `src/features/session/runtime/use-runtime-snapshot.test.jsx`
+  - agent-switcher regression coverage in `src/components/command-center/session-overview.test.jsx`
+  - governance tracking in this file
+- High-risk decision record:
+  - this work touches `runtime/session` and websocket-driven state, so AI involvement was limited to a small helper, narrow hook wiring, and regressions rather than broader transport or storage refactors
+  - independent review passes caught two concrete websocket issues before completion: stale `availableAgents` after `agents.sync`, and the distinction between missing `availableAgents` and explicit `session.sync` clears
+- Quality gates rerun:
+  - `npm test -- src/features/session/runtime/runtime-agent-availability.test.ts`
+  - `npm test -- src/features/session/runtime/use-runtime-snapshot.test.jsx`
+  - `npm test -- src/features/session/runtime/runtime-agent-availability.test.ts src/features/session/runtime/use-runtime-snapshot.test.jsx src/components/command-center/session-overview.test.jsx`
+  - `npm test`
+- Manual/equivalent validation:
+  - verified the feature at the runtime-hook and menu-component layers instead of adding a `hermes` UI special case
+  - confirmed websocket behavior for three cases: supplementing from `agents.sync`, preserving derived installed agents when snapshots omit `availableAgents`, and keeping explicit `session.sync` `[]` clears authoritative across later `agents.sync`
+- Reviewer/sign-off:
+  - pending human review
+  - AI-assisted implementation was manually re-reviewed after each flagged websocket edge case and finished with the full repository test suite green
+- Reviewer checklist:
+  - confirm `hermes` appears in the new-agent switcher only when runtime reports it installed
+  - confirm already-open agent tabs are still excluded from the switcher menu
+  - confirm explicit websocket clears do not let later `agents.sync` payloads silently re-add removed agent tabs
+
 ### 2026-04-06 — Workspace Shell Contrast and Environment Tab Background Flattening
 
 - Prompt/workstream: respond to visual feedback that the large light-mode workspace container blended too closely into white surfaces, and remove the inspector environment tab body's own background tint so the right column relies on the shared shell plus inner section cards.
