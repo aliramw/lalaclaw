@@ -6,6 +6,7 @@ import {
   hasSnapshotAdvancedPastPendingTurn,
 } from "@/features/chat/state/chat-runtime-pending";
 import { buildDurableConversationWithLocalTail } from "@/features/chat/state/chat-settled-conversation";
+import { coerceAgentProgressStage } from "@/features/chat/state/chat-progress";
 import {
   createEmptyChatSessionState,
   getConversationRevision,
@@ -702,6 +703,10 @@ function buildAssistantOverlayMessage({
     return null;
   }
 
+  const progressStage = coerceAgentProgressStage(pendingEntry.progressStage);
+  const progressLabel = typeof pendingEntry.progressLabel === "string" ? pendingEntry.progressLabel.trim() : "";
+  const progressUpdatedAt = Number(pendingEntry.progressUpdatedAt || pendingEntry.lastDeltaAt || pendingEntry.pendingTimestamp || pendingEntry.startedAt || 0) || 0;
+  const progressContent = progressLabel || thinkingPlaceholder;
   const streamText = String(run?.streamText || "").trim();
   if (streamText) {
     return {
@@ -710,15 +715,21 @@ function buildAssistantOverlayMessage({
       content: streamText,
       timestamp: Number(run?.lastDeltaAt || pendingEntry.pendingTimestamp || pendingEntry.startedAt || Date.now()),
       streaming: true,
+      ...(progressStage ? { progressStage } : {}),
+      ...(progressLabel ? { progressLabel } : {}),
+      ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
     };
   }
 
   return {
     id: String(pendingEntry.assistantMessageId || `msg-assistant-pending-${pendingEntry.pendingTimestamp || Date.now()}`),
     role: "assistant" as const,
-    content: thinkingPlaceholder,
+    content: progressContent,
     timestamp: Number(pendingEntry.pendingTimestamp || pendingEntry.startedAt || Date.now()),
     pending: true,
+    ...(progressStage ? { progressStage } : {}),
+    ...(progressLabel ? { progressLabel } : {}),
+    ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
   };
 }
 

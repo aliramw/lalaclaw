@@ -47,6 +47,7 @@ import { UserMessageBubble } from "./chat-user-bubble";
 import { PendingAssistantBubble } from "./chat-pending-bubble";
 import { isOfflineStatus } from "@/features/session/status-display";
 import { createConversationKey } from "@/features/app/state/app-session-identity";
+import { buildAgentProgressMessage } from "@/features/chat/state/chat-progress";
 import { createEmptyChatRunState, deriveLegacyChatRunState, selectChatRunBusy, type ChatRunState } from "@/features/chat/state/chat-session-state";
 import { maxPromptRows } from "@/features/chat/utils";
 import { cn, formatShortcutForPlatform } from "@/lib/utils";
@@ -77,6 +78,9 @@ type MessageLike = {
   streaming?: boolean;
   timestamp?: number | string;
   tokenBadge?: string;
+  progressLabel?: string;
+  progressStage?: "thinking" | "inspecting" | "executing" | "synthesizing" | "finishing";
+  progressUpdatedAt?: number;
 };
 
 type MessageBubbleProps = {
@@ -459,6 +463,16 @@ function resolveAssistantVisualState({
     typeof isLatestAssistant === "boolean"
       ? isLatestAssistant
       : Boolean(latestAssistantMessageId && latestAssistantMessageId === messageId);
+  if (message?.pending) {
+    if (runIsBusy && latestMessageIsAssistant && matchesLatestAssistant) {
+      return String(run?.streamText || "").trim()
+        ? "streaming" as const
+        : "pending" as const;
+    }
+
+    return "pending" as const;
+  }
+
   if (runIsBusy && latestMessageIsAssistant && matchesLatestAssistant) {
     return String(run?.streamText || "").trim() || String(message?.content || "").trim()
       ? "streaming" as const
@@ -467,10 +481,6 @@ function resolveAssistantVisualState({
 
   if (preferRunState) {
     return "settled" as const;
-  }
-
-  if (message?.pending) {
-    return "pending" as const;
   }
 
   if (message?.streaming) {
@@ -773,6 +783,9 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.message?.content === next.message?.content
     && previous.message?.timestamp === next.message?.timestamp
     && String(previous.message?.tokenBadge || "") === String(next.message?.tokenBadge || "")
+    && String(previous.message?.progressLabel || "") === String(next.message?.progressLabel || "")
+    && String(previous.message?.progressStage || "") === String(next.message?.progressStage || "")
+    && Number(previous.message?.progressUpdatedAt || 0) === Number(next.message?.progressUpdatedAt || 0)
     && areMessageAttachmentsEqual(previous.message?.attachments || [], next.message?.attachments || []);
 }
 
@@ -814,12 +827,19 @@ const MessageBubble = memo(function MessageBubble({
   const isAssistant = message.role === "assistant";
   const isPending = isAssistant && assistantVisualState === "pending";
   const bubbleStreaming = isAssistant && assistantVisualState === "streaming";
+  const pendingProgressContent = isPending ? buildAgentProgressMessage(message, i18n) : "";
   const renderedContent = useMemo(
     () => stripDingTalkImagePlaceholderForDisplay(
-      unwrapAssistantEnvelope(message.content, message.role),
+      isPending
+        ? (
+          pendingProgressContent && pendingProgressContent !== String(i18n.chat.thinkingPlaceholder || "").trim()
+            ? pendingProgressContent
+            : unwrapAssistantEnvelope(message.content, message.role) || pendingProgressContent
+        )
+        : unwrapAssistantEnvelope(message.content, message.role),
       sessionUser,
     ),
-    [message.content, message.role, sessionUser],
+    [i18n.chat.thinkingPlaceholder, isPending, message.content, message.role, pendingProgressContent, sessionUser],
   );
   const supportsBubbleTopJump = isAssistant && !messageHasVisualMedia(message);
   const assistantTurnInProgress = isAssistant && !isPending && (bubbleStreaming || showStreamingTail);
@@ -1352,14 +1372,24 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
   const { messages } = useI18n();
   const isOffline = isOfflineStatus(session.status);
   const isOpenClaw = session.mode === "openclaw";
-  const toneClassName = isOffline ? "bg-rose-500" : isOpenClaw ? "bg-emerald-500" : "bg-slate-400";
+  const isHermes = session.mode === "hermes";
+  const toneClassName = isOffline ? "bg-rose-500" : isOpenClaw ? "bg-emerald-500" : isHermes ? "bg-sky-500" : "bg-slate-400";
   const statusLabel = isOffline
-    ? (messages.chat.connectionStatusDisconnectedDisplay || messages.chat.connectionStatusDisconnected)
+    ? (isHermes
+      ? (
+        messages.chat.connectionStatusHermesDisconnectedDisplay
+        || messages.chat.connectionStatusHermesDisconnected
+        || messages.chat.connectionStatusDisconnectedDisplay
+        || messages.chat.connectionStatusDisconnected
+      )
+      : (messages.chat.connectionStatusDisconnectedDisplay || messages.chat.connectionStatusDisconnected))
     : isOpenClaw
       ? (messages.chat.connectionStatusConnectedDisplay || messages.chat.connectionStatusConnected)
+      : isHermes
+        ? (messages.chat.connectionStatusHermesDisplay || messages.chat.connectionStatusHermes)
       : (messages.chat.connectionStatusLocalDisplay || messages.chat.connectionStatusLocal);
   const statusHint = isOffline
-    ? messages.chat.disconnectedPlaceholder
+    ? (isHermes ? (messages.chat.hermesDisconnectedPlaceholder || messages.chat.disconnectedPlaceholder) : messages.chat.disconnectedPlaceholder)
     : composerSendMode === "enter-send"
       ? messages.chat.composerEnterToSendHint
       : messages.chat.composerDoubleEnterHint;
@@ -1367,10 +1397,15 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
     ? messages.chat.composerSwitchToShiftEnterSend
     : messages.chat.composerSwitchToEnterSend;
   const tooltipDetail = isOffline
-    ? messages.chat.connectionStatusDisconnected
+    ? (isHermes ? (messages.chat.connectionStatusHermesDisconnected || messages.chat.connectionStatusDisconnected) : messages.chat.connectionStatusDisconnected)
     : isOpenClaw
       ? messages.chat.connectionStatusConnected
+      : isHermes
+        ? (messages.chat.connectionStatusHermes || messages.chat.connectionStatusLocal)
       : messages.chat.connectionStatusLocal;
+  const tooltipTitle = isHermes
+    ? (messages.chat.hermesStatusTooltip || messages.chat.openClawStatusTooltip)
+    : messages.chat.openClawStatusTooltip;
   const composerSendModeTooltipTitle = messages.chat.composerSendModeTooltipTitle || toggleLabel;
   const composerSendModeTooltipDescription = messages.chat.composerSendModeTooltipDescription || statusHint;
   const toggleClassName = resolvedTheme === "dark"
@@ -1388,7 +1423,7 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
         </TooltipTrigger>
         <TooltipContent side="top" className="px-2.5 py-2">
           <div className="space-y-0.5">
-            <div>{messages.chat.openClawStatusTooltip}</div>
+            <div>{tooltipTitle}</div>
             <div className="text-[11px] text-muted-foreground">{tooltipDetail}</div>
           </div>
         </TooltipContent>
@@ -2688,7 +2723,9 @@ export function ChatPanel({
     [latestAssistantMessage, latestMessageIsAssistant, messages.length],
   );
   const openClawConnected = session.mode === "openclaw" && !isOfflineStatus(session.status);
-  const composerLocked = interactionLocked || !openClawConnected;
+  const hermesReady = session.mode === "hermes" && !isOfflineStatus(session.status);
+  const sessionReady = openClawConnected || hermesReady;
+  const composerLocked = interactionLocked || !sessionReady;
   const visibleConversationKey = session?.sessionUser
     ? createConversationKey(session.sessionUser, session.agentId)
     : restoredScrollKey;
@@ -4013,7 +4050,7 @@ export function ChatPanel({
                         onClick={handleResetWithConfirm}
                         className="h-6 w-6 rounded-md text-muted-foreground/70 hover:text-foreground"
                         aria-label={i18n.chat.resetConversation}
-                        disabled={interactionLocked || !openClawConnected}
+                        disabled={interactionLocked || !sessionReady}
                       >
                         <RotateCcw className="h-4 w-4" />
                       </Button>
@@ -4182,7 +4219,7 @@ export function ChatPanel({
                     </>
                   ) : null}
                   <div className={cn("relative", composerAttachments?.length ? "-mt-px" : "")}>
-                    {openClawConnected && !composerPrompt ? (
+                    {sessionReady && !composerPrompt ? (
                       <div
                         aria-hidden="true"
                         data-testid="composer-placeholder-overlay"
@@ -4271,12 +4308,12 @@ export function ChatPanel({
                         onPromptKeyDown(event);
                       }}
                       onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-                      placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
+                      placeholder={sessionReady ? promptPlaceholder : (session.mode === "hermes" ? (i18n.chat.hermesDisconnectedPlaceholder || i18n.chat.disconnectedPlaceholder) : i18n.chat.disconnectedPlaceholder)}
                       disabled={composerLocked}
                       className={cn(
                         "min-h-[4.6rem] resize-none rounded-none border-0 shadow-none focus:border-0 focus:shadow-none focus:outline-none focus-visible:border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none focus-visible:outline-none",
                         resolvedTheme === "dark" ? "bg-background" : "bg-transparent",
-                        openClawConnected ? "placeholder:text-transparent" : "",
+                        sessionReady ? "placeholder:text-transparent" : "",
                       )}
                     />
             </div>

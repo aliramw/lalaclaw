@@ -1,4 +1,5 @@
 import type { ChatControllerEntry, ChatMessage } from "@/types/chat";
+import { coerceAgentProgressStage } from "@/features/chat/state/chat-progress";
 
 const OPTIMISTIC_USER_MATCH_WINDOW_MS = 5000;
 
@@ -110,12 +111,18 @@ export function createUserMessage(entry: ChatControllerEntry = {}, attachmentSum
 
 export function createPendingAssistantMessage(entry: ChatControllerEntry = {}, thinkingPlaceholder = ""): ChatMessage {
   const pendingTimestamp = Number(entry.pendingTimestamp || 0) || Date.now();
+  const progressStage = coerceAgentProgressStage(entry.progressStage);
+  const progressLabel = typeof entry.progressLabel === "string" ? entry.progressLabel.trim() : "";
+  const progressUpdatedAt = Number(entry.progressUpdatedAt || 0) || 0;
   return {
     id: String(entry.assistantMessageId || `msg-assistant-pending-${pendingTimestamp}`),
     role: "assistant",
     content: thinkingPlaceholder,
     timestamp: pendingTimestamp,
     pending: true,
+    ...(progressStage ? { progressStage } : {}),
+    ...(progressLabel ? { progressLabel } : {}),
+    ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
   };
 }
 

@@ -1240,6 +1240,42 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
+  it("keeps hermes sessions interactive without reusing openclaw disconnected copy", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <ChatPanel
+            busy={false}
+            formatTime={() => "10:00:00"}
+            messageViewportRef={null}
+            messages={[]}
+            onChatFontSizeChange={() => {}}
+            onPromptChange={() => {}}
+            onPromptKeyDown={() => {}}
+            onReset={() => {}}
+            onSend={() => {}}
+            prompt=""
+            promptRef={null}
+            session={createSession({ mode: "hermes", agentId: "hermes", status: "空闲" })}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    const composer = screen.getByPlaceholderText("💡 想要和 hermes 一起做点什么？");
+    expect(composer).not.toBeDisabled();
+    expect(screen.getByLabelText("开启新会话")).not.toBeDisabled();
+    expect(screen.queryByPlaceholderText("Openclaw尚未连接，请稍候。")).not.toBeInTheDocument();
+
+    await user.hover(screen.getByText("Hermes 就绪"));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hermes Agent 状态");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("本地 Hermes Agent");
+  });
+
   it("keeps the composer frame quiet at rest and reserves the stronger ring for focus", () => {
     render(
       <TooltipProvider>
@@ -3375,6 +3411,110 @@ describe("ChatPanel", () => {
     expect(screen.getByText("待命")).toBeInTheDocument();
     expect(screen.queryByText("消化 Token 中")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
+  });
+
+  it("renders the provider progress label before assistant text arrives", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            {
+              role: "assistant",
+              content: "",
+              pending: true,
+              progressLabel: "正在检查…",
+              progressStage: "inspecting",
+              progressUpdatedAt: 2,
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "paint" })}
+          run={{ status: "starting", runId: "run-1", startedAt: 2, lastDeltaAt: 2, streamText: "" }}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("正在检查…")).toBeInTheDocument();
+    expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the progress stage and stale progress copy when the label is missing", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T12:00:00.000Z"));
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            {
+              role: "assistant",
+              content: "",
+              pending: true,
+              progressStage: "executing",
+              progressUpdatedAt: Date.now() - 60_000,
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "paint" })}
+          run={{ status: "starting", runId: "run-2", startedAt: 2, lastDeltaAt: 2, streamText: "" }}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("执行中，有点久了…")).toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[
+            { role: "user", content: "继续", timestamp: 1 },
+            {
+              role: "assistant",
+              content: "最终答案",
+              streaming: true,
+              timestamp: 2,
+            },
+          ]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ agentId: "paint" })}
+          run={{ status: "streaming", runId: "run-2", startedAt: 2, lastDeltaAt: 2, streamText: "最终答案" }}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("最终答案")).toBeInTheDocument();
+    expect(screen.queryByText("执行中，有点久了…")).not.toBeInTheDocument();
   });
 
   it("shows busy and stop from explicit run state even when messages are already settled", () => {

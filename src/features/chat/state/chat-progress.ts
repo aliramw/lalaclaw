@@ -43,7 +43,9 @@ function resolveProgressStage(progress: AgentProgressLikeState | null | undefine
 }
 
 function resolveProgressLabel(progress: AgentProgressLikeState | null | undefined): string {
-  return String(progress?.progressLabel || "").trim();
+  return typeof progress?.progressLabel === "string"
+    ? progress.progressLabel.trim()
+    : "";
 }
 
 function resolveProgressUpdatedAt(progress: AgentProgressLikeState | null | undefined): number {
