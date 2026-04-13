@@ -331,3 +331,23 @@ This plan captures how we treat AI-generated code (including prompts, model vers
 - Reviewer checklist:
   - confirm a single long user message in `main` no longer pushes the chat column or inspector column out of alignment
   - confirm the long string wraps inside the bubble instead of truncating or forcing horizontal overflow
+
+### 2026-04-13 — Hermes Agent Tab Design
+
+- Prompt/workstream: if the local/runtime environment reports that the `hermes` agent is installed, allow the command-center to add a `hermes` conversation tab from the existing add-tab menu.
+- AI model/version: GPT-5 Codex (Codex desktop agent).
+- Generation time: 2026-04-13 Asia/Shanghai.
+- Files touched:
+  - `plan/2026-04-13-hermes-agent-tab-design.md`
+  - `plan/ai-assisted-code-quality.md`
+- Quality gates rerun:
+  - not run; this workstream only records design/spec updates before implementation begins
+- Manual/equivalent validation:
+  - reviewed the current add-tab flow in `src/components/command-center/session-overview.tsx`
+  - reviewed runtime state ingestion in `src/features/session/runtime/use-runtime-snapshot.ts`
+  - reviewed tab creation and activation flow in `src/features/app/controllers/use-command-center-session-selection.ts`
+  - verified that the least-risk design is to normalize runtime agent candidates once near snapshot state and keep downstream UI on the existing `string[] availableAgents` contract
+- Reviewer/sign-off:
+  - pending human review before implementation begins
+- Follow-up expectation:
+  - the implementation workstream should log the concrete runtime payload assumptions, touched files, and validation commands separately once code changes start
