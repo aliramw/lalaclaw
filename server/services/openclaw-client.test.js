@@ -744,6 +744,8 @@ describe('createOpenClawClient', () => {
       expect(reply).toEqual({
         outputText: '我看到一张人物头像插画。',
         usage: { total_tokens: 18 },
+        progressStage: 'synthesizing',
+        progressUpdatedAt: expect.any(Number),
       });
     } finally {
       global.fetch = originalFetch;

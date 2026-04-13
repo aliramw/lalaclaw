@@ -1396,6 +1396,26 @@ export function createOpenClawClient({
     return normalizeChatMessageValue(message).replace(/\r\n/g, '\n').trim();
   }
 
+  function inferOpenClawCompletionProgressState({
+    hasFinalOutput = false,
+    progressUpdatedAt,
+  }: {
+    hasFinalOutput?: boolean;
+    progressUpdatedAt?: unknown;
+  } = {}) {
+    if (hasFinalOutput) {
+      return createAgentProgressState({
+        progressStage: 'synthesizing',
+        progressUpdatedAt,
+      });
+    }
+
+    return inferOpenClawStreamProgressState({
+      hasStarted: true,
+      progressUpdatedAt,
+    });
+  }
+
   function isTerminalOpenClawWaitStatus(status = '') {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     return Boolean(normalizedStatus) && !['timeout', 'started', 'running'].includes(normalizedStatus);
@@ -1715,11 +1735,6 @@ export function createOpenClawClient({
       headers: request.headers,
       body: JSON.stringify(request.payload),
     }));
-    let progressState = inferOpenClawStreamProgressState({
-      hasStarted: true,
-      progressUpdatedAt: Date.now(),
-    });
-    let sawVisibleDelta = false;
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1734,8 +1749,8 @@ export function createOpenClawClient({
       }
       return {
         ...parsed,
-        ...inferOpenClawDispatchProgressState({
-          hasOutput: Boolean(parsed.outputText),
+        ...inferOpenClawCompletionProgressState({
+          hasFinalOutput: Boolean(parsed.outputText),
           progressUpdatedAt: Date.now(),
         }),
       };
@@ -1749,12 +1764,6 @@ export function createOpenClawClient({
       if (delta) {
         outputText += delta;
         onDelta(delta);
-        sawVisibleDelta = true;
-        progressState = inferOpenClawStreamProgressState({
-          hasStarted: true,
-          hasVisibleDelta: true,
-          progressUpdatedAt: Date.now(),
-        });
       }
 
       const finalOutput = extractOpenClawStreamOutput(event);
@@ -1771,12 +1780,10 @@ export function createOpenClawClient({
     return {
       outputText: outputText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
       usage,
-      ...(sawVisibleDelta
-        ? createAgentProgressState({
-            progressStage: 'synthesizing',
-            progressUpdatedAt: Date.now(),
-          })
-        : progressState),
+      ...inferOpenClawCompletionProgressState({
+        hasFinalOutput: Boolean(outputText),
+        progressUpdatedAt: Date.now(),
+      }),
     };
   }
 
@@ -1834,18 +1841,13 @@ export function createOpenClawClient({
     const { promise: finalPromise, resolve: resolveFinal, reject: rejectFinal } = createDeferred();
     let settled = false;
     let latestText = '';
-    let sawVisibleDelta = false;
-    let progressState = inferOpenClawStreamProgressState({
-      hasStarted: true,
-      progressUpdatedAt: Date.now(),
-    });
     let activeRunState: OpenClawRunState | null = null;
     const acceptedRunIds = new Set([runId]);
     let silentDeltaPollTimer: ReturnType<typeof setTimeout> | null = null;
     let silentDeltaPollInFlight = false;
     let lastDeltaAt = Date.now();
 
-    const emitDeltaFromFullText = (nextText = '', countAsVisibleDelta = true) => {
+    const emitDeltaFromFullText = (nextText = '') => {
       if (!nextText) {
         return;
       }
@@ -1854,14 +1856,6 @@ export function createOpenClawClient({
         latestText = nextText;
         onDelta(nextText);
         lastDeltaAt = Date.now();
-        if (countAsVisibleDelta) {
-          sawVisibleDelta = true;
-          progressState = inferOpenClawStreamProgressState({
-            hasStarted: true,
-            hasVisibleDelta: true,
-            progressUpdatedAt: Date.now(),
-          });
-        }
         return;
       }
 
@@ -1874,14 +1868,6 @@ export function createOpenClawClient({
       if (delta) {
         onDelta(delta);
         lastDeltaAt = Date.now();
-        if (countAsVisibleDelta) {
-          sawVisibleDelta = true;
-          progressState = inferOpenClawStreamProgressState({
-            hasStarted: true,
-            hasVisibleDelta: true,
-            progressUpdatedAt: Date.now(),
-          });
-        }
       }
     };
 
@@ -1947,12 +1933,11 @@ export function createOpenClawClient({
             ? latestAssistantState.value
             : null;
           const nextText = latestAssistant ? normalizeChatMessageValue(latestAssistant) || '' : '';
-          const previousLatestText = latestText;
           emitDeltaFromFullText(nextText);
           const historyReplyMatchesActivePrefix =
-            !previousLatestText
-            || nextText === previousLatestText
-            || nextText.startsWith(previousLatestText);
+            !latestText
+            || nextText === latestText
+            || nextText.startsWith(latestText);
           if (!settled && latestAssistant && nextText && historyReplyMatchesActivePrefix) {
             settled = true;
             resolveFinal({
@@ -2086,11 +2071,12 @@ export function createOpenClawClient({
         finalSession = await readOpenClawSessionSnapshot(activeRunState);
       } catch {}
       const finalAssistant = finalSession.assistant;
+      const finalPayloadMessage = normalizeChatMessageValue((finalPayload as { message?: unknown } | null)?.message);
       const finalErrorText =
         extractOpenClawEventError(finalPayload as OpenClawStreamEvent | null)
         || finalSession.errorText;
       const finalText =
-        normalizeChatMessageValue((finalPayload as { message?: unknown } | null)?.message)
+        finalPayloadMessage
         || (finalAssistant ? normalizeChatMessageValue(finalAssistant) : '')
         || latestText
         || finalErrorText;
@@ -2101,17 +2087,15 @@ export function createOpenClawClient({
         && !latestText,
       );
 
-      emitDeltaFromFullText(finalText, false);
+      emitDeltaFromFullText(finalText);
 
       return {
         outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
         usage: finalAssistant?.usage || null,
-        ...(sawVisibleDelta
-          ? createAgentProgressState({
-              progressStage: 'synthesizing',
-              progressUpdatedAt: Date.now(),
-            })
-          : progressState),
+        ...inferOpenClawCompletionProgressState({
+          hasFinalOutput: Boolean(finalPayloadMessage || finalAssistant || latestText),
+          progressUpdatedAt: Date.now(),
+        }),
         ...(isErrorResponse ? { isError: true } : {}),
       };
     } catch (error) {
@@ -2131,13 +2115,6 @@ export function createOpenClawClient({
   async function pollOpenClawSessionRun(runState: OpenClawRunState, timeoutMs = 30000, options: OpenClawDispatchOptions = {}): Promise<OpenClawResult> {
     const onDelta = typeof options.onDelta === 'function' ? options.onDelta : () => {};
     let latestText = typeof options.initialText === 'string' ? options.initialText : '';
-    const hasInitialVisibleOutput = Boolean(latestText);
-    let sawVisibleDelta = hasInitialVisibleOutput;
-    let progressState = inferOpenClawStreamProgressState({
-      hasStarted: true,
-      hasVisibleDelta: hasInitialVisibleOutput,
-      progressUpdatedAt: Date.now(),
-    });
 
     while (true) {
       const waitResult = await callOpenClawGateway(
@@ -2156,25 +2133,9 @@ export function createOpenClawClient({
         const delta = nextText.slice(latestText.length);
         latestText = nextText;
         onDelta(delta);
-        if (delta) {
-          sawVisibleDelta = true;
-          progressState = inferOpenClawStreamProgressState({
-            hasStarted: true,
-            hasVisibleDelta: true,
-            progressUpdatedAt: Date.now(),
-          });
-        }
       } else if (!latestText && nextText) {
         latestText = nextText;
         onDelta(nextText);
-        if (nextText) {
-          sawVisibleDelta = true;
-          progressState = inferOpenClawStreamProgressState({
-            hasStarted: true,
-            hasVisibleDelta: true,
-            progressUpdatedAt: Date.now(),
-          });
-        }
       }
 
       if (String(waitResult?.status || '').trim().toLowerCase() === 'timeout') {
@@ -2192,12 +2153,10 @@ export function createOpenClawClient({
           return {
             outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
             usage: finalAssistant?.usage || null,
-            ...(sawVisibleDelta
-              ? createAgentProgressState({
-                  progressStage: 'synthesizing',
-                  progressUpdatedAt: Date.now(),
-                })
-              : progressState),
+            ...inferOpenClawCompletionProgressState({
+              hasFinalOutput: Boolean(finalAssistant || latestText),
+              progressUpdatedAt: Date.now(),
+            }),
             ...(isErrorResponse ? { isError: true } : {}),
           };
         }
@@ -2230,12 +2189,10 @@ export function createOpenClawClient({
       return {
         outputText: finalText || SYNTHETIC_EMPTY_OPENCLAW_RESPONSE,
         usage: finalAssistant?.usage || null,
-        ...(sawVisibleDelta
-          ? createAgentProgressState({
-              progressStage: 'synthesizing',
-              progressUpdatedAt: Date.now(),
-            })
-          : progressState),
+        ...inferOpenClawCompletionProgressState({
+          hasFinalOutput: Boolean(finalAssistant || latestText),
+          progressUpdatedAt: Date.now(),
+        }),
         ...(isErrorResponse ? { isError: true } : {}),
       };
     }

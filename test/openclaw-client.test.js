@@ -105,7 +105,7 @@ describe("createOpenClawClient", () => {
       buildOpenClawMessageContent,
     });
 
-    await client.dispatchOpenClawStream(
+    const result = await client.dispatchOpenClawStream(
       [
         {
           role: "user",
@@ -138,6 +138,12 @@ describe("createOpenClawClient", () => {
       { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
     ]);
     expect(payload.stream).toBe(true);
+    expect(result).toEqual({
+      outputText: "已分析图片",
+      usage: { total_tokens: 8 },
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
+    });
   });
 
   it("dispatches text-only conversations through gateway session calls", async () => {
@@ -397,7 +403,7 @@ describe("createOpenClawClient", () => {
     });
   });
 
-  it("keeps a started openclaw stream at thinking when no visible delta arrives before completion", async () => {
+  it("promotes a final-only openclaw stream to synthesizing when no visible delta arrives before completion", async () => {
     const deltas = [];
 
     class FakeGatewayClient {
@@ -475,7 +481,7 @@ describe("createOpenClawClient", () => {
     expect(result).toEqual({
       outputText: "最终回复",
       usage: { output_tokens: 4 },
-      progressStage: "thinking",
+      progressStage: "synthesizing",
       progressUpdatedAt: expect.any(Number),
     });
   });
@@ -1130,12 +1136,91 @@ describe("createOpenClawClient", () => {
       expect(result).toEqual({
         outputText: "钉钉最终输出",
         usage: { output_tokens: 6 },
-        progressStage: "thinking",
+        progressStage: "synthesizing",
         progressUpdatedAt: expect.any(Number),
       });
     } finally {
       global.fetch = originalFetch;
     }
+  });
+
+  it("treats a gateway session final payload message as synthesizing when history is empty", async () => {
+    const rawSessionUser = '{"channel":"dingtalk-connector","accountid":"__default__","chattype":"direct","peerid":"398058","sendername":"马锐拉"}';
+    const deltas = [];
+
+    class FakeGatewayClient {
+      constructor(opts) {
+        this.opts = opts;
+      }
+
+      start() {
+        queueMicrotask(() => this.opts.onHelloOk?.({}));
+      }
+
+      stop() {}
+
+      async request(method, params) {
+        expect(method).toBe("agent");
+
+        queueMicrotask(() => {
+          this.opts.onEvent?.({
+            event: "chat",
+            payload: {
+              runId: params.idempotencyKey,
+              sessionKey: params.sessionKey,
+              state: "final",
+              message: "最终只来自 payload",
+            },
+          });
+        });
+
+        return {
+          runId: params.idempotencyKey,
+          acceptedAt: 123,
+          status: "started",
+        };
+      }
+    }
+
+    const execFileAsync = vi.fn(async (_cmd, args) => {
+      if (args.includes("chat.history")) {
+        return {
+          stdout: JSON.stringify({
+            messages: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected gateway call: ${args.join(" ")}`);
+    });
+
+    const client = createClient({
+      execFileAsync,
+      getCommandCenterSessionKey: (agentId, sessionUser) => `agent:${agentId}:openai-user:${sessionUser}`,
+      loadGatewaySdk: async () => ({
+        GatewayClient: FakeGatewayClient,
+        GATEWAY_CLIENT_NAMES: { GATEWAY_CLIENT: "gateway-client" },
+        GATEWAY_CLIENT_MODES: { BACKEND: "backend" },
+        VERSION: "test-version",
+      }),
+    });
+
+    const result = await client.dispatchOpenClawStream(
+      [{ role: "user", content: "继续" }],
+      false,
+      rawSessionUser,
+      {
+        onDelta: (delta) => deltas.push(delta),
+      },
+    );
+
+    expect(deltas).toEqual(["最终只来自 payload"]);
+    expect(result).toEqual({
+      outputText: "最终只来自 payload",
+      usage: null,
+      progressStage: "synthesizing",
+      progressUpdatedAt: expect.any(Number),
+    });
   });
 
   it("fills in silent stream gaps by polling the session history before the final event arrives", async () => {
