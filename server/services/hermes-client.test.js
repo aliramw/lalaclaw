@@ -3,6 +3,31 @@ import { describe, expect, it, vi } from "vitest";
 import { createHermesClient } from "./hermes-client.ts";
 
 describe("createHermesClient", () => {
+  it("runs hermes chat from the hermes agent workspace instead of the lalaclaw project root", async () => {
+    const execFileAsync = vi.fn(async () => ({
+      stdout: [
+        "╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮",
+        "ok",
+        "",
+        "session_id: 20260424_101500_workspace",
+      ].join("\n"),
+    }));
+    const client = createHermesClient({
+      HERMES_BIN: "hermes",
+      HERMES_WORKSPACE_ROOT: "/workspace/hermes-agent",
+      PROJECT_ROOT: "/workspace/lalaclaw",
+      execFileAsync,
+    });
+
+    await client.dispatchHermes([{ role: "user", content: "pwd" }], { model: "gpt-5.4" });
+
+    expect(execFileAsync).toHaveBeenCalledWith(
+      "hermes",
+      expect.any(Array),
+      expect.objectContaining({ cwd: "/workspace/hermes-agent" }),
+    );
+  });
+
   it("preserves normal assistant text while trimming the hermes banner and session id", async () => {
     const client = createHermesClient({
       HERMES_BIN: "hermes",

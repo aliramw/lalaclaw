@@ -40,7 +40,7 @@ const {
 } = require('../formatters/chat-commands');
 const { createDashboardService } = require('../services/dashboard');
 const { collapseDuplicateConversationTurns, mergeConversationMessages } = require('../services/dashboard');
-const { createHermesClient, isHermesAgentId } = require('../services/hermes-client');
+const { createHermesClient, isHermesAgentId, resolveHermesWorkspaceRoot } = require('../services/hermes-client');
 const { createOpenClawClient } = require('../services/openclaw-client');
 const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler, createChatStopHandler } = require('../routes/chat');
@@ -109,7 +109,11 @@ export function createAppContext() {
 
   function getAgentWorkspace(agentId: string): string {
     if (isHermesAgentId(agentId)) {
-      return PROJECT_ROOT;
+      return resolveHermesWorkspaceRoot({
+        HERMES_WORKSPACE_ROOT: String(process.env.HERMES_WORKSPACE_ROOT || '').trim(),
+        hermesBin: String(process.env.HERMES_BIN || '').trim(),
+        projectRoot: PROJECT_ROOT,
+      });
     }
     const agentConfig = getAgentConfig(agentId);
     return agentConfig?.workspace || config.localConfig?.agents?.defaults?.workspace || path.join(LOCAL_OPENCLAW_DIR, 'workspace');
@@ -262,6 +266,7 @@ export function createAppContext() {
   } = createHermesClient({
     execFileAsync,
     HERMES_BIN: String(process.env.HERMES_BIN || '').trim(),
+    HERMES_WORKSPACE_ROOT: String(process.env.HERMES_WORKSPACE_ROOT || '').trim(),
     PROJECT_ROOT,
   });
 

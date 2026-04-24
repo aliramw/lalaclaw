@@ -3,9 +3,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveHermesWorkspaceRoot = resolveHermesWorkspaceRoot;
 exports.isHermesAgentId = isHermesAgentId;
 exports.createHermesClient = createHermesClient;
 const node_child_process_1 = require("node:child_process");
+const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const agent_progress_1 = require("./agent-progress");
 const DEFAULT_HERMES_MODEL = 'gpt-5.4';
@@ -31,6 +33,33 @@ function resolveHermesBin(explicitBin = '') {
         homeDir ? node_path_1.default.join(homeDir, '.hermes', 'hermes-agent', 'hermes') : '',
         'hermes',
     ].find(Boolean) || 'hermes';
+}
+function resolveHermesWorkspaceRoot({ HERMES_WORKSPACE_ROOT, hermesBin, homeDir = String(process.env.HOME || '').trim(), projectRoot = process.cwd(), } = {}) {
+    const explicitWorkspaceRoot = String(HERMES_WORKSPACE_ROOT || process.env.HERMES_WORKSPACE_ROOT || '').trim();
+    if (explicitWorkspaceRoot) {
+        return explicitWorkspaceRoot;
+    }
+    const defaultHermesRoot = homeDir ? node_path_1.default.join(homeDir, '.hermes', 'hermes-agent') : '';
+    if (defaultHermesRoot && node_fs_1.default.existsSync(defaultHermesRoot)) {
+        return defaultHermesRoot;
+    }
+    const normalizedHermesBin = String(hermesBin || '').trim();
+    if (normalizedHermesBin && node_path_1.default.isAbsolute(normalizedHermesBin)) {
+        try {
+            const realHermesBin = node_fs_1.default.realpathSync(normalizedHermesBin);
+            const binDir = node_path_1.default.dirname(realHermesBin);
+            const candidateRoot = node_path_1.default.basename(node_path_1.default.dirname(binDir)) === 'venv'
+                ? node_path_1.default.dirname(node_path_1.default.dirname(binDir))
+                : node_path_1.default.dirname(realHermesBin);
+            if (candidateRoot && node_fs_1.default.existsSync(candidateRoot)) {
+                return candidateRoot;
+            }
+        }
+        catch {
+            // Keep the project root fallback for unusual installs.
+        }
+    }
+    return String(projectRoot || process.cwd()).trim() || process.cwd();
 }
 function getHermesProgressStageRank(value = '') {
     return HERMES_PROGRESS_STAGE_ORDER.indexOf(String(value || '').trim().toLowerCase());
@@ -165,10 +194,16 @@ function buildHermesPrompt(messages = []) {
         ...normalizedMessages.map((message) => formatHermesMessage(message)),
     ].join('\n');
 }
-function createHermesClient({ execFileAsync, HERMES_BIN, PROJECT_ROOT, spawnProcess, } = {}) {
+function createHermesClient({ execFileAsync, HERMES_BIN, HERMES_WORKSPACE_ROOT, PROJECT_ROOT, spawnProcess, } = {}) {
     const hermesBin = resolveHermesBin(HERMES_BIN);
     const projectRoot = String(PROJECT_ROOT || process.cwd()).trim() || process.cwd();
     const homeDir = String(process.env.HOME || '').trim();
+    const hermesWorkspaceRoot = resolveHermesWorkspaceRoot({
+        HERMES_WORKSPACE_ROOT,
+        hermesBin,
+        homeDir,
+        projectRoot,
+    });
     const hermesRoot = homeDir ? node_path_1.default.join(homeDir, '.hermes', 'hermes-agent') : '';
     const hermesStateDbPath = homeDir ? node_path_1.default.join(homeDir, '.hermes', 'state.db') : '';
     const hermesVenvPython = hermesRoot ? node_path_1.default.join(hermesRoot, 'venv', 'bin', 'python') : '';
@@ -285,7 +320,7 @@ function createHermesClient({ execFileAsync, HERMES_BIN, PROJECT_ROOT, spawnProc
                 let lastProgressSignature = '';
                 const fallbackTimeouts = new Set();
                 const child = spawnHermesProcess(hermesBin, args, {
-                    cwd: projectRoot,
+                    cwd: hermesWorkspaceRoot,
                     env: buildHermesExecEnv(hermesBin),
                     stdio: ['ignore', 'pipe', 'pipe'],
                 });
@@ -392,7 +427,7 @@ function createHermesClient({ execFileAsync, HERMES_BIN, PROJECT_ROOT, spawnProc
         else {
             const execFile = getExecFileAsync();
             response = await execFile(hermesBin, args, {
-                cwd: projectRoot,
+                cwd: hermesWorkspaceRoot,
                 env: buildHermesExecEnv(hermesBin),
                 maxBuffer: 4 * 1024 * 1024,
             });

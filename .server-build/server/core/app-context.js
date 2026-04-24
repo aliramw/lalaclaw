@@ -13,7 +13,7 @@ const { buildOpenClawMessageContent, describeAttachmentForModel, getMessageAttac
 const { parseFastCommand, parseModelCommand, parseSessionResetCommand, parseSlashCommandState, } = require('../formatters/chat-commands');
 const { createDashboardService } = require('../services/dashboard');
 const { collapseDuplicateConversationTurns, mergeConversationMessages } = require('../services/dashboard');
-const { createHermesClient, isHermesAgentId } = require('../services/hermes-client');
+const { createHermesClient, isHermesAgentId, resolveHermesWorkspaceRoot } = require('../services/hermes-client');
 const { createOpenClawClient } = require('../services/openclaw-client');
 const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler, createChatStopHandler } = require('../routes/chat');
@@ -68,7 +68,11 @@ function createAppContext() {
     }
     function getAgentWorkspace(agentId) {
         if (isHermesAgentId(agentId)) {
-            return config_1.PROJECT_ROOT;
+            return resolveHermesWorkspaceRoot({
+                HERMES_WORKSPACE_ROOT: String(process.env.HERMES_WORKSPACE_ROOT || '').trim(),
+                hermesBin: String(process.env.HERMES_BIN || '').trim(),
+                projectRoot: config_1.PROJECT_ROOT,
+            });
         }
         const agentConfig = getAgentConfig(agentId);
         return agentConfig?.workspace || config.localConfig?.agents?.defaults?.workspace || node_path_1.default.join(config_1.LOCAL_OPENCLAW_DIR, 'workspace');
@@ -163,6 +167,7 @@ function createAppContext() {
     const { dispatchHermes, getHermesModelContextWindow, getHermesSessionStats, getHermesStatus, } = createHermesClient({
         execFileAsync,
         HERMES_BIN: String(process.env.HERMES_BIN || '').trim(),
+        HERMES_WORKSPACE_ROOT: String(process.env.HERMES_WORKSPACE_ROOT || '').trim(),
         PROJECT_ROOT: config_1.PROJECT_ROOT,
     });
     const { callOpenClawGateway, dispatchOpenClaw, dispatchOpenClawStream, fetchBrowserPeek, invokeOpenClawTool, mirrorOpenClawUserMessage, parseOpenClawResponse, subscribeGatewayEvents, } = createOpenClawClient({
