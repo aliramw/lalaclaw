@@ -19,3 +19,4 @@ pnpm-debug.log*
 .venv/
 venv/
 .worktrees/
+.codex-logs/
