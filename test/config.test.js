@@ -99,6 +99,117 @@ describe("config", () => {
     expect(collectAvailableAgents(localConfig, ["worker", "main"])).toEqual(["worker", "main"]);
   });
 
+  it("does not expose raw agent models.json catalog entries as selectable models", () => {
+    const localConfig = {
+      agents: {
+        defaults: {
+          model: { primary: "openai-codex/gpt-5.4" },
+        },
+      },
+    };
+
+    const homeDir = process.env.HOME || "";
+    const agentModelsPath = `${homeDir}/.openclaw/agents/main/agent/models.json`;
+    const existsSpy = vi.spyOn(fs, "existsSync").mockImplementation((filePath) => (
+      String(filePath) === agentModelsPath
+    ));
+    const readSpy = vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
+      if (String(filePath) !== agentModelsPath) {
+        return "";
+      }
+      return JSON.stringify({
+        providers: {
+          openrouter: {
+            models: [
+              { id: "auto" },
+              { id: "openrouter/hunter-alpha" },
+            ],
+          },
+        },
+      });
+    });
+
+    expect(collectAvailableModels(localConfig, ["openai-codex/gpt-5.4"], { agentId: "main" })).toEqual([
+      "openai-codex/gpt-5.4",
+    ]);
+
+    existsSpy.mockRestore();
+    readSpy.mockRestore();
+  });
+
+  it("falls back to the latest saved OpenClaw config backup when the live config omits configured model options", () => {
+    const localConfig = {
+      agents: {
+        defaults: {
+          model: { primary: "openai-codex/gpt-5.4" },
+        },
+      },
+    };
+
+    const homeDir = process.env.HOME || "";
+    const backupStorePath = `${homeDir}/.config/lalaclaw/openclaw-backups.json`;
+    const existsSpy = vi.spyOn(fs, "existsSync").mockImplementation((filePath) => (
+      String(filePath) === backupStorePath
+    ));
+    const readSpy = vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
+      if (String(filePath) !== backupStorePath) {
+        return "";
+      }
+      return JSON.stringify([
+        {
+          id: "backup-local-1",
+          createdAt: 1773923009388,
+          scope: "config",
+          target: "local",
+          raw: JSON.stringify({
+            agents: {
+              defaults: {
+                model: { primary: "openai-codex/gpt-5.4" },
+                models: {
+                  "openrouter/auto": { alias: "OpenRouter" },
+                  "openrouter/anthropic/claude-sonnet-4.6": { alias: "sonnet" },
+                  "openrouter/google/gemini-3-flash-preview": { alias: "gemini" },
+                  "openrouter/minimax/minimax-m2.5": { alias: "minimax" },
+                  "openai-codex/gpt-5.4": {},
+                },
+              },
+              list: [
+                { id: "main", model: "openai-codex/gpt-5.4" },
+              ],
+            },
+          }),
+        },
+      ]);
+    });
+
+    expect(collectAvailableModels(localConfig, ["openai-codex/gpt-5.4"], { agentId: "main" })).toEqual([
+      "openai-codex/gpt-5.4",
+      "openrouter/auto",
+      "openrouter/anthropic/claude-sonnet-4.6",
+      "openrouter/google/gemini-3-flash-preview",
+      "openrouter/minimax/minimax-m2.5",
+    ]);
+
+    existsSpy.mockRestore();
+    readSpy.mockRestore();
+  });
+
+  it("supplements a locally installed hermes agent even when openclaw config does not list it", () => {
+    const localConfig = {
+      agents: {
+        list: [
+          { id: "main", default: true },
+        ],
+      },
+    };
+
+    vi.spyOn(fs, "existsSync").mockImplementation((filePath) => (
+      String(filePath) === `${process.env.HOME || ""}/.local/bin/hermes`
+    ));
+
+    expect(collectAvailableAgents(localConfig, ["main"], { includeLocallyInstalledAgents: true })).toEqual(["main", "hermes"]);
+  });
+
   it("collects only the configured sub agents allowed by the current agent", () => {
     const localConfig = {
       agents: {

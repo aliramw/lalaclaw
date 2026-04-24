@@ -1875,6 +1875,8 @@ export function SessionOverview({
   const pendingSummaryValue = messages.sessionOverview.pendingValue || "--";
   const pendingSummaryValueClassName = isLightTheme ? "text-slate-400" : "text-muted-foreground/70";
   const openClawConnected = session.mode === "openclaw" && !isOfflineStatus(session.status);
+  const hermesAvailable = (availableAgents || []).some((agentId) => String(agentId || "").trim() === "hermes");
+  const agentSwitcherEnabled = openClawConnected || hermesAvailable;
   const selectedModel = model || session.selectedModel || session.model || "";
   const displayedModel = formatModelLabel(selectedModel) || messages.common.unknown;
   const runtimeTransportLabel =
@@ -2154,7 +2156,7 @@ export function SessionOverview({
       <>
         <div className="flex items-center">
           <SelectionMenu
-            disabled={!openClawConnected}
+            disabled={!agentSwitcherEnabled}
             label={messages.sessionOverview.menus.switchAgent}
             onOpenChange={(nextOpen) => {
               if (nextOpen) {
@@ -2223,7 +2225,7 @@ export function SessionOverview({
           >
             <button
               type="button"
-              disabled={!openClawConnected}
+              disabled={!agentSwitcherEnabled}
               aria-label={messages.sessionOverview.menus.switchAgentTrigger || messages.sessionOverview.menus.switchAgent}
               className={cn(
                 "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-[background-color,border-color,color] focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-55",

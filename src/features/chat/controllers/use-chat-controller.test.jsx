@@ -2311,6 +2311,85 @@ describe("useChatController", () => {
     ]);
   });
 
+  it("keeps the thinking placeholder visible when the response has no user-visible assistant text yet", async () => {
+    const setBusy = vi.fn();
+    const appliedMessageSnapshots = [];
+    const setPendingChatTurns = vi.fn();
+    const setSession = vi.fn();
+    const applySnapshot = vi.fn();
+    const messagesRef = { current: [] };
+
+    vi.stubGlobal("fetch", vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        assistantMessageId: "msg-assistant-runtime-catchup",
+        outputText: "[[reply_to_current]]\n\n",
+        conversation: [],
+        metadata: { status: "已完成 / 标准" },
+        sessionPatch: {
+          agentId: "main",
+          sessionUser: "command-center",
+          selectedModel: "gpt-5",
+          thinkMode: "off",
+        },
+      }),
+    ));
+
+    const entry = {
+      id: "entry-runtime-catchup",
+      key: "command-center:main",
+      content: "继续处理",
+      attachments: [],
+      timestamp: 700,
+      agentId: "main",
+      sessionUser: "command-center",
+      model: "gpt-5",
+      fastMode: false,
+    };
+
+    let currentMessagesState = [];
+    const setMessagesForTab = vi.fn((_tabId, value) => {
+      currentMessagesState = typeof value === "function" ? value(currentMessagesState) : value;
+      appliedMessageSnapshots.push(currentMessagesState);
+    });
+
+    const { result } = renderHook(() =>
+      useChatController({
+        activeChatTabId: "agent:main",
+        activeConversationKey: "command-center:main",
+        applySnapshot,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef,
+        setBusy,
+        setMessagesForTab,
+        setPendingChatTurns,
+        setSession,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.enqueueOrRunEntry(entry);
+    });
+
+    expect(appliedMessageSnapshots.at(-1)).toEqual([
+      { id: "msg-user-entry-runtime-catchup", role: "user", content: "继续处理", timestamp: 700 },
+      {
+        id: expect.stringMatching(/^msg-assistant-pending-/),
+        role: "assistant",
+        content: "正在思考…",
+        timestamp: expect.any(Number),
+        pending: true,
+      },
+    ]);
+    const pendingSnapshots = collectPendingSnapshots(setPendingChatTurns);
+    expect(pendingSnapshots.at(-1)?.["command-center:main"]).toMatchObject({
+      assistantMessageId: "msg-assistant-runtime-catchup",
+      suppressPendingPlaceholder: true,
+      userMessage: { content: "继续处理", timestamp: 700 },
+    });
+  });
+
   it("streams assistant output incrementally when the chat API returns ndjson", async () => {
     const setBusy = vi.fn();
     const setMessagesSynced = vi.fn();

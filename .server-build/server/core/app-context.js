@@ -13,6 +13,7 @@ const { buildOpenClawMessageContent, describeAttachmentForModel, getMessageAttac
 const { parseFastCommand, parseModelCommand, parseSessionResetCommand, parseSlashCommandState, } = require('../formatters/chat-commands');
 const { createDashboardService } = require('../services/dashboard');
 const { collapseDuplicateConversationTurns, mergeConversationMessages } = require('../services/dashboard');
+const { createHermesClient, isHermesAgentId } = require('../services/hermes-client');
 const { createOpenClawClient } = require('../services/openclaw-client');
 const { parseRequestBody, sendFile, sendJson } = require('../http/http-utils');
 const { createChatHandler, createChatStopHandler } = require('../routes/chat');
@@ -66,6 +67,9 @@ function createAppContext() {
         return String(config.agentId || '').trim() || 'main';
     }
     function getAgentWorkspace(agentId) {
+        if (isHermesAgentId(agentId)) {
+            return config_1.PROJECT_ROOT;
+        }
         const agentConfig = getAgentConfig(agentId);
         return agentConfig?.workspace || config.localConfig?.agents?.defaults?.workspace || node_path_1.default.join(config_1.LOCAL_OPENCLAW_DIR, 'workspace');
     }
@@ -98,8 +102,14 @@ function createAppContext() {
     }
     function getDefaultModelForAgent(agentId = config.agentId) {
         const trimmedAgentId = String(agentId || config.agentId).trim() || config.agentId;
+        if (isHermesAgentId(trimmedAgentId)) {
+            return config_1.HERMES_DEFAULT_MODEL;
+        }
         const agentConfig = getAgentConfig(trimmedAgentId);
         return (0, config_1.resolveCanonicalModelId)((0, config_1.resolveAgentModel)(agentConfig) || config.localConfig?.agents?.defaults?.model?.primary || config.model);
+    }
+    function resolveModeForAgent(agentId = '') {
+        return isHermesAgentId(agentId) ? 'hermes' : config.mode;
     }
     const { appendLocalSessionFileEntries, appendLocalSessionConversation, clearLocalSessionConversation, clearLocalSessionFileEntries, clearSessionPreferences, getLocalSessionFileEntries, getLocalSessionConversation, getSessionPreferences, resolveSessionAgentId, resolveSessionFastMode, resolveSessionModel, resolveSessionThinkMode, setSessionPreferences, } = (0, session_store_1.createSessionStore)({
         getDefaultAgentId,
@@ -150,6 +160,11 @@ function createAppContext() {
         clip,
         formatTimestamp,
     });
+    const { dispatchHermes, getHermesModelContextWindow, getHermesSessionStats, getHermesStatus, } = createHermesClient({
+        execFileAsync,
+        HERMES_BIN: String(process.env.HERMES_BIN || '').trim(),
+        PROJECT_ROOT: config_1.PROJECT_ROOT,
+    });
     const { callOpenClawGateway, dispatchOpenClaw, dispatchOpenClawStream, fetchBrowserPeek, invokeOpenClawTool, mirrorOpenClawUserMessage, parseOpenClawResponse, subscribeGatewayEvents, } = createOpenClawClient({
         config,
         execFileAsync,
@@ -194,8 +209,12 @@ function createAppContext() {
         formatTimestamp,
         getCommandCenterSessionKey,
         getDefaultModelForAgent,
+        getHermesModelContextWindow,
+        getHermesSessionStats,
+        getHermesStatus,
         getLocalSessionFileEntries,
         getLocalSessionConversation,
+        getSessionPreferences,
         getTranscriptEntriesForSession,
         getTranscriptPath,
         getRuntimeHubDebugInfo: ({ sessionUser, agentId } = { sessionUser: '', agentId: '' }) => runtimeHub?.getDebugInfo({ sessionUser, agentId }) || null,
@@ -209,6 +228,7 @@ function createAppContext() {
         readTextIfExists: config_1.readTextIfExists,
         resolveAgentDisplayName,
         resolveAgentWorkspace: getAgentWorkspace,
+        resolveModeForAgent,
         findLatestSessionForAgent,
         resolveSessionAgentId,
         resolveSessionFastMode,
@@ -228,6 +248,7 @@ function createAppContext() {
         clip,
         config,
         delay,
+        dispatchHermes,
         dispatchOpenClaw,
         dispatchOpenClawStream,
         formatTokenBadge,
@@ -246,6 +267,7 @@ function createAppContext() {
         parseSessionResetCommand,
         parseSlashCommandState: parseChatSlashCommandState,
         resolveCanonicalModelId: config_1.resolveCanonicalModelId,
+        resolveModeForAgent,
         resolveSessionAgentId,
         resolveSessionFastMode,
         resolveSessionModel,
@@ -259,6 +281,7 @@ function createAppContext() {
         config,
         getCommandCenterSessionKey,
         parseRequestBody,
+        resolveModeForAgent,
         resolveSessionAgentId,
         sendJson,
     });
@@ -397,6 +420,7 @@ function createAppContext() {
         normalizeThinkMode: session_store_1.normalizeThinkMode,
         parseRequestBody,
         resolveAgentDisplayName,
+        resolveModeForAgent,
         resolveCanonicalModelId: config_1.resolveCanonicalModelId,
         resolveSessionAgentId,
         resolveSessionFastMode,

@@ -56,6 +56,7 @@ export type ChatControllerEntry = {
   suppressPendingPlaceholder?: boolean;
   agentId?: string;
   sessionUser?: string;
+  hermesSessionId?: string;
   model?: string;
   fastMode?: boolean;
   thinkMode?: string;
@@ -90,6 +91,7 @@ export type ChatRequestBody = {
   model?: string;
   agentId?: string;
   sessionUser?: string;
+  hermesSessionId?: string;
   assistantMessageId?: string;
   userLabel?: string;
   fastMode?: boolean;
@@ -156,6 +158,7 @@ export type ChatTabMeta = {
   agentId: string;
   sessionUser: string;
   title?: string;
+  hermesSessionId?: string;
   model: string;
   fastMode: boolean;
   thinkMode: string;

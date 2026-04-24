@@ -50,6 +50,7 @@ export function buildChatRequestBody({
     model: typeof entry.model === "string" ? entry.model : undefined,
     agentId: typeof entry.agentId === "string" ? entry.agentId : undefined,
     sessionUser: typeof entry.sessionUser === "string" ? entry.sessionUser : undefined,
+    hermesSessionId: typeof entry.hermesSessionId === "string" && entry.hermesSessionId ? entry.hermesSessionId : undefined,
     assistantMessageId,
     ...(userLabel ? { userLabel } : {}),
     fastMode: Boolean(entry.fastMode),

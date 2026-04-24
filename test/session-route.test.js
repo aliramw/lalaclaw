@@ -17,12 +17,15 @@ function createHarness(overrides = {}) {
     buildDashboardSnapshot: vi.fn(async () => ({
       session: {
         agentId: "worker",
+        mode: "openclaw",
         selectedModel: "openai/gpt-5-mini",
       },
       conversation: [],
     })),
     callOpenClawGateway: vi.fn(async () => ({})),
     collectAvailableAgents: vi.fn(() => ["main", "worker"]),
+    collectAvailableSkills: vi.fn(() => []),
+    collectAllowedSubagents: vi.fn(() => []),
     collectAvailableModels: vi.fn(() => ["gpt-5", "openai/gpt-5-mini"]),
     config: { mode: "openclaw", model: "gpt-5" },
     delay: vi.fn(async () => {}),
@@ -37,6 +40,7 @@ function createHarness(overrides = {}) {
     }),
     parseRequestBody: vi.fn(async () => ({})),
     resolveAgentDisplayName: vi.fn(() => "worker"),
+    resolveModeForAgent: vi.fn((agentId) => (agentId === "hermes" ? "hermes" : "openclaw")),
     resolveCanonicalModelId: vi.fn((value) => (value === "gpt-5-mini" ? "openai/gpt-5-mini" : value)),
     resolveSessionAgentId: vi.fn(() => "main"),
     resolveSessionFastMode: vi.fn(() => false),
@@ -114,6 +118,46 @@ describe("createSessionHandlers", () => {
       payload: {
         ok: false,
         error: "session patch failed",
+      },
+    });
+  });
+
+  it("serves hermes session metadata from a hermes snapshot instead of resolving back to main", async () => {
+    const harness = createHarness({
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {
+          mode: "hermes",
+          agentId: "hermes",
+          agentLabel: "hermes",
+          selectedModel: "gpt-5.4",
+          model: "gpt-5.4",
+          sessionUser: "command-center-hermes",
+          sessionKey: "agent:hermes:command-center-hermes",
+          availableAgents: ["main", "hermes"],
+          availableModels: ["gpt-5.4"],
+        },
+        conversation: [],
+      })),
+      resolveSessionAgentId: vi.fn(() => "main"),
+    });
+
+    await harness.handlers.handleSession(
+      {
+        headers: { host: "127.0.0.1:3000" },
+        url: "/api/session?sessionUser=command-center-hermes&agentId=hermes",
+      },
+      {},
+    );
+
+    expect(harness.buildDashboardSnapshot).toHaveBeenCalledWith("command-center-hermes", { agentId: "hermes" });
+    expect(harness.responseRecorder.calls[0]).toMatchObject({
+      statusCode: 200,
+      payload: {
+        mode: "hermes",
+        agentId: "hermes",
+        model: "gpt-5.4",
+        sessionUser: "command-center-hermes",
+        sessionKey: "agent:hermes:command-center-hermes",
       },
     });
   });

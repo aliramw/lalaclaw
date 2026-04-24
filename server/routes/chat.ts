@@ -558,7 +558,8 @@ export function createChatHandler({
       const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
       const nextThinkMode = slashCommandState?.kind === 'thinkMode' ? slashCommandState.value : resolveSessionThinkMode(sessionUser);
       const requestedModel = typeof body.model === 'string' ? resolveCanonicalModelId(body.model) : '';
-      const hermesSessionId = String(currentPreferences?.hermesSessionId || '').trim();
+      const requestedHermesSessionId = typeof body.hermesSessionId === 'string' ? String(body.hermesSessionId || '').trim() : '';
+      const hermesSessionId = requestedHermesSessionId || String(currentPreferences?.hermesSessionId || '').trim();
 
       let nextModel = resolveSessionModel(sessionUser, currentAgentId);
       let shouldPersistModel = Boolean(currentPreferences.model);
@@ -644,7 +645,24 @@ export function createChatHandler({
             : await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
           : activeMode === 'hermes' && typeof dispatchHermes === 'function'
             ? await dispatchHermes(outboundMessages, {
+                assistantMessageId,
                 model: nextModel,
+                onProgress: (progress: LooseRecord = {}) => {
+                  if (!shouldStream || clientDisconnected || res.destroyed || res.writableEnded) {
+                    return;
+                  }
+
+                  const progressPayload = getReplyProgressPayload(progress as ChatReply);
+                  if (!Object.keys(progressPayload).length) {
+                    return;
+                  }
+
+                  writeChatStreamEvent(res, {
+                    type: 'message.progress',
+                    messageId: assistantMessageId,
+                    ...progressPayload,
+                  });
+                },
                 sessionId: hermesSessionId,
                 sessionUser,
               })
@@ -702,7 +720,12 @@ export function createChatHandler({
           : []),
       ]);
 
-      const snapshot = await buildDashboardSnapshot(sessionUser, { agentId: nextAgentId });
+      const snapshot = await buildDashboardSnapshot(sessionUser, {
+        agentId: nextAgentId,
+        ...(activeMode === 'hermes' && (reply.sessionId || hermesSessionId)
+          ? { hermesSessionId: String(reply.sessionId || hermesSessionId || '').trim() }
+          : {}),
+      });
       if (usesGatewayNativeCommands && (nativeModelCommand || nativeResetCommand)) {
         const authoritativeModel = snapshot.session?.model || snapshot.model || '';
         if (authoritativeModel) {

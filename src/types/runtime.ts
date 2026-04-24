@@ -6,6 +6,7 @@ export type RuntimeSession = {
   selectedModel?: string;
   agentId?: string;
   sessionUser?: string;
+  hermesSessionId?: string;
   status?: string;
   fastMode?: boolean | string;
   availableModels?: string[];
@@ -71,6 +72,7 @@ export type RuntimePollIntervalInput = {
 
 export type RuntimeSnapshotRequestOverrides = {
   agentId?: string;
+  hermesSessionId?: string;
 };
 
 export type RuntimeSnapshotHookI18n = {

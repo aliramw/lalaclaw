@@ -255,6 +255,82 @@ describe("createDashboardService", () => {
     expect(snapshot.conversation.at(-1)).toMatchObject({ role: "user", content: "我测试一下" });
   });
 
+  it("does not expose raw agent catalog models in the openclaw dashboard snapshot", async () => {
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: "/tmp/project",
+      buildAgentGraph: () => [],
+      callOpenClawGateway: async () => ({ ok: true }),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAllowedSubagents: () => [],
+      collectArtifacts: () => [],
+      collectAvailableAgents: () => ["main"],
+      collectAvailableModels: (_localConfig, preferred, options) => {
+        expect(preferred).toEqual(["openai-codex/gpt-5.4", "openai-codex/gpt-5.4"]);
+        expect(options).toEqual({ agentId: "main" });
+        return ["openai-codex/gpt-5.4"];
+      },
+      collectAvailableSkills: () => [],
+      collectConversationMessages: () => [],
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: { mode: "openclaw", workspaceRoot: "/tmp/project", model: "openai-codex/gpt-5.4", localConfig: {} },
+      extractTextSegments: () => [],
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      findLatestSessionForAgent: () => ({
+        sessionUser: "main",
+        sessionRecord: {
+          modelProvider: "openai-codex",
+          model: "gpt-5.4",
+        },
+      }),
+      formatTimestamp: (value) => String(value),
+      formatTokenBadge: () => "",
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openai-codex/gpt-5.4",
+      getLocalSessionConversation: () => [],
+      getLocalSessionFileEntries: () => [],
+      getTranscriptEntriesForSession: () => [],
+      getTranscriptPath: () => "",
+      invokeOpenClawTool: async (toolName) => {
+        if (toolName === "status") {
+          return {
+            details: {
+              statusText: "model: openai-codex/gpt-5.4",
+            },
+          };
+        }
+        return null;
+      },
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      parseSessionStatusText: () => ({ modelDisplay: "openai-codex/gpt-5.4" }),
+      readJsonLines: () => [],
+      readTextIfExists: () => "",
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => "/tmp/project",
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openai-codex/gpt-5.4",
+      resolveSessionRecord: () => ({
+        modelProvider: "openai-codex",
+        model: "gpt-5.4",
+      }),
+      resolveSessionThinkMode: () => "off",
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot("command-center", { agentId: "main" });
+
+    expect(snapshot.session.availableModels).toEqual(["openai-codex/gpt-5.4"]);
+  });
+
   it("scopes fallback transcript history to the requested session when another IM session shares the same file tail", async () => {
     const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-fallback-scope-"));
     tempDirs.push(rootDir);
@@ -1306,6 +1382,229 @@ describe("createDashboardService", () => {
     const snapshot = await snapshotPromise;
     expect(snapshot.session.sessionUser).toBe("command-center");
     expect(snapshot.session.selectedModel).toBe("openai-codex/gpt-5.4");
+  });
+  it("prefers the latest observed openclaw model when the configured model is only a placeholder", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-"));
+    tempDirs.push(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      buildAgentGraph: () => [],
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => ["main"],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: (_localConfig, preferred) => Array.from(new Set((preferred || []).filter(Boolean))),
+      collectArtifacts: () => [],
+      collectConversationMessages: () => [],
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: {
+        mode: "openclaw",
+        workspaceRoot: rootDir,
+        model: "openclaw",
+        localConfig: {},
+      },
+      extractTextSegments: () => [],
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      findLatestSessionForAgent: () => null,
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openclaw",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getRuntimeHubDebugInfo: () => null,
+      getTranscriptEntriesForSession: () => [
+        {
+          type: "message",
+          sessionKey: "agent:main:openai-user:command-center",
+          message: {
+            role: "assistant",
+            model: "anthropic/claude-opus-4-6",
+            content: [{ type: "text", text: "hello" }],
+          },
+        },
+      ],
+      getTranscriptPath: () => "",
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      parseSessionStatusText: () => null,
+      readJsonLines: () => [],
+      readTextIfExists: () => "",
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openclaw",
+      resolveSessionRecord: () => null,
+      resolveSessionThinkMode: () => "off",
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot("command-center", { agentId: "main" });
+
+    expect(snapshot.session.model).toBe("anthropic/claude-opus-4-6");
+    expect(snapshot.session.selectedModel).toBe("anthropic/claude-opus-4-6");
+    expect(snapshot.session.availableModels).toEqual(["anthropic/claude-opus-4-6"]);
+  });
+
+  it("falls back to the latest main-agent session metadata when command-center has no direct session record yet", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-"));
+    tempDirs.push(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      buildAgentGraph: () => [],
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => ["main"],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: (_localConfig, preferred) => Array.from(new Set((preferred || []).filter(Boolean))),
+      collectArtifacts: () => [],
+      collectConversationMessages: () => [],
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: {
+        mode: "openclaw",
+        workspaceRoot: rootDir,
+        model: "openclaw",
+        localConfig: {},
+      },
+      extractTextSegments: () => [],
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      findLatestSessionForAgent: () => ({
+        sessionKey: "agent:main:main",
+        sessionUser: "main",
+        updatedAt: 1,
+        sessionRecord: {
+          sessionId: "abc",
+          modelProvider: "openai-codex",
+          model: "gpt-5.4",
+        },
+      }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openclaw",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getRuntimeHubDebugInfo: () => null,
+      getTranscriptEntriesForSession: () => [],
+      getTranscriptPath: () => "",
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      parseSessionStatusText: () => null,
+      readJsonLines: () => [],
+      readTextIfExists: () => "",
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openclaw",
+      resolveSessionRecord: () => null,
+      resolveSessionThinkMode: () => "off",
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot("command-center", { agentId: "main" });
+
+    expect(snapshot.session.model).toBe("openai-codex/gpt-5.4");
+    expect(snapshot.session.selectedModel).toBe("openai-codex/gpt-5.4");
+    expect(snapshot.session.availableModels).toEqual(["openai-codex/gpt-5.4"]);
+  });
+
+  it("prefers the stable direct main session model over a newer reset placeholder session", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "dashboard-runtime-"));
+    tempDirs.push(rootDir);
+    const dashboard = createDashboardService({
+      HOST: "127.0.0.1",
+      PORT: 3000,
+      PROJECT_ROOT: rootDir,
+      buildAgentGraph: () => [],
+      callOpenClawGateway: async () => ({}),
+      clip: (text, maxLength = 180) => String(text || "").slice(0, maxLength),
+      collectAvailableAgents: () => ["main"],
+      collectAvailableSkills: () => [],
+      collectAllowedSubagents: () => [],
+      collectAvailableModels: (_localConfig, preferred) => Array.from(new Set((preferred || []).filter(Boolean))),
+      collectArtifacts: () => [],
+      collectConversationMessages: () => [],
+      collectFiles: () => [],
+      collectLatestRunUsage: () => null,
+      collectSnapshots: () => [],
+      collectTaskRelationships: () => [],
+      collectTaskTimeline: () => [],
+      collectToolHistory: () => [],
+      config: {
+        mode: "openclaw",
+        workspaceRoot: rootDir,
+        model: "openclaw",
+        localConfig: {},
+      },
+      extractTextSegments: () => [],
+      fetchBrowserPeek: async () => ({ summary: "", items: [] }),
+      findLatestSessionForAgent: () => ({
+        sessionKey: "agent:main:openai-user:command-center-reset-main-1",
+        sessionUser: "command-center-reset-main-1",
+        updatedAt: 2,
+        sessionRecord: {
+          sessionId: "reset",
+          providerOverride: "anthropic",
+          modelOverride: "openclaw",
+        },
+      }),
+      formatTokenBadge: () => "",
+      formatTimestamp: (value) => String(value),
+      getCommandCenterSessionKey: (_agentId, nextSessionUser) => `agent:main:openai-user:${nextSessionUser}`,
+      getDefaultModelForAgent: () => "openclaw",
+      getLocalSessionFileEntries: () => [],
+      getLocalSessionConversation: () => [],
+      getRuntimeHubDebugInfo: () => null,
+      getTranscriptEntriesForSession: () => [],
+      getTranscriptPath: () => "",
+      invokeOpenClawTool: async () => null,
+      listDirectoryPreview: () => [],
+      listImSessionsForAgent: () => [],
+      normalizeSessionUser: (value) => String(value || "").trim(),
+      parseSessionStatusText: () => ({ modelDisplay: "anthropic/openclaw" }),
+      readJsonLines: () => [],
+      readTextIfExists: () => "",
+      resolveAgentDisplayName: () => "Tom Cruise",
+      resolveAgentWorkspace: () => rootDir,
+      resolveSessionAgentId: () => "main",
+      resolveSessionFastMode: () => false,
+      resolveSessionModel: () => "openclaw",
+      resolveSessionRecord: (_agentId, sessionKey) => (
+        sessionKey === "agent:main:main"
+          ? { sessionId: "stable-main", modelProvider: "openai-codex", model: "gpt-5.4" }
+          : null
+      ),
+      resolveSessionThinkMode: () => "off",
+      tailLines: () => [],
+    });
+
+    const snapshot = await dashboard.buildDashboardSnapshot("command-center", { agentId: "main" });
+
+    expect(snapshot.session.model).toBe("openai-codex/gpt-5.4");
+    expect(snapshot.session.selectedModel).toBe("openai-codex/gpt-5.4");
+    expect(snapshot.session.availableModels).toEqual(["openai-codex/gpt-5.4"]);
   });
 });
 

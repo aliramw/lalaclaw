@@ -81,6 +81,7 @@ export function createTabMeta(tab, overrides = {}): ChatTabMeta {
   return {
     agentId: canonicalAgentId,
     sessionUser: tab?.sessionUser || defaultSessionUser,
+    hermesSessionId: "",
     model: "",
     fastMode: false,
     thinkMode: "off",
@@ -164,11 +165,15 @@ export function createSessionForTab(
   }
 
   const canonicalAgentId = resolveAgentIdFromTabId(tab?.id) || meta?.agentId || tab?.agentId || "main";
+  const isHermesAgent = canonicalAgentId === "hermes";
 
   return createBaseSession(messages, {
+    mode: isHermesAgent ? "hermes" : "mock",
+    runtime: isHermesAgent ? "hermes" : "mock",
     agentId: canonicalAgentId,
     selectedAgentId: canonicalAgentId,
     sessionUser: meta?.sessionUser || tab?.sessionUser || defaultSessionUser,
+    hermesSessionId: meta?.hermesSessionId || "",
     thinkMode: meta?.thinkMode || "off",
     model: meta?.model || "",
     selectedModel: meta?.model || "",

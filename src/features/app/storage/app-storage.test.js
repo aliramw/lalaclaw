@@ -2567,6 +2567,36 @@ describe("loadStoredState", () => {
     });
   });
 
+  it("persists hermes session ids in tab metadata so hermes tabs can resume after reload", () => {
+    persistUiStateSnapshot({
+      activeChatTabId: "agent:hermes",
+      activeTab: "timeline",
+      agentId: "hermes",
+      chatTabs: [{ id: "agent:hermes", agentId: "hermes", sessionUser: "command-center-hermes" }],
+      sessionUser: "command-center-hermes",
+      tabMetaById: {
+        "agent:hermes": {
+          agentId: "hermes",
+          fastMode: false,
+          model: "gpt-5.4",
+          sessionUser: "command-center-hermes",
+          thinkMode: "off",
+          hermesSessionId: "hermes-session-42",
+        },
+      },
+      messagesByTabId: {
+        "agent:hermes": [],
+      },
+    });
+
+    expect(loadStoredState()?.tabMetaById["agent:hermes"]).toMatchObject({
+      agentId: "hermes",
+      model: "gpt-5.4",
+      sessionUser: "command-center-hermes",
+      hermesSessionId: "hermes-session-42",
+    });
+  });
+
   it("does not let an older persisted snapshot overwrite a newer one", () => {
     persistUiStateSnapshot({
       persistedAt: 200,

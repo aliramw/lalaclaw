@@ -1387,14 +1387,21 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
   const { messages } = useI18n();
   const isOffline = isOfflineStatus(session.status);
   const isOpenClaw = session.mode === "openclaw";
-  const toneClassName = isOffline ? "bg-rose-500" : isOpenClaw ? "bg-emerald-500" : "bg-slate-400";
+  const isHermes = session.mode === "hermes";
+  const toneClassName = isOffline ? "bg-rose-500" : (isOpenClaw || isHermes) ? "bg-emerald-500" : "bg-slate-400";
   const statusLabel = isOffline
-    ? (messages.chat.connectionStatusDisconnectedDisplay || messages.chat.connectionStatusDisconnected)
-    : isOpenClaw
+    ? (
+      isHermes
+        ? (messages.chat.connectionStatusHermesDisconnectedDisplay || messages.chat.connectionStatusDisconnectedDisplay || messages.chat.connectionStatusDisconnected)
+        : (messages.chat.connectionStatusDisconnectedDisplay || messages.chat.connectionStatusDisconnected)
+    )
+    : isHermes
+      ? (messages.chat.connectionStatusHermesDisplay || messages.chat.connectionStatusLocalDisplay || messages.chat.connectionStatusLocal)
+      : isOpenClaw
       ? (messages.chat.connectionStatusConnectedDisplay || messages.chat.connectionStatusConnected)
       : (messages.chat.connectionStatusLocalDisplay || messages.chat.connectionStatusLocal);
   const statusHint = isOffline
-    ? messages.chat.disconnectedPlaceholder
+    ? (isHermes ? (messages.chat.disconnectedPlaceholderHermes || messages.chat.disconnectedPlaceholder) : messages.chat.disconnectedPlaceholder)
     : composerSendMode === "enter-send"
       ? messages.chat.composerEnterToSendHint
       : messages.chat.composerDoubleEnterHint;
@@ -1402,11 +1409,15 @@ function ConnectionStatus({ composerSendMode = "enter-send", onToggleComposerSen
     ? messages.chat.composerSwitchToShiftEnterSend
     : messages.chat.composerSwitchToEnterSend;
   const tooltipDetail = isOffline
-    ? messages.chat.connectionStatusDisconnected
-    : isOpenClaw
+    ? (isHermes ? (messages.chat.connectionStatusHermesDisconnected || messages.chat.connectionStatusDisconnected) : messages.chat.connectionStatusDisconnected)
+    : isHermes
+      ? (messages.chat.connectionStatusHermes || messages.chat.connectionStatusLocal)
+      : isOpenClaw
       ? messages.chat.connectionStatusConnected
       : messages.chat.connectionStatusLocal;
-  const tooltipTitle = messages.chat.openClawStatusTooltip;
+  const tooltipTitle = isHermes
+    ? (messages.chat.hermesStatusTooltip || messages.chat.openClawStatusTooltip)
+    : messages.chat.openClawStatusTooltip;
   const composerSendModeTooltipTitle = messages.chat.composerSendModeTooltipTitle || toggleLabel;
   const composerSendModeTooltipDescription = messages.chat.composerSendModeTooltipDescription || statusHint;
   const toggleClassName = resolvedTheme === "dark"
@@ -2723,8 +2734,8 @@ export function ChatPanel({
       ),
     [latestAssistantMessage, latestMessageIsAssistant, messages.length],
   );
-  const openClawConnected = session.mode === "openclaw" && !isOfflineStatus(session.status);
-  const composerLocked = interactionLocked || !openClawConnected;
+  const providerConnected = !isOfflineStatus(session.status) && (session.mode === "openclaw" || session.mode === "hermes");
+  const composerLocked = interactionLocked || !providerConnected;
   const visibleConversationKey = session?.sessionUser
     ? createConversationKey(session.sessionUser, session.agentId)
     : restoredScrollKey;
@@ -4049,7 +4060,7 @@ export function ChatPanel({
                         onClick={handleResetWithConfirm}
                         className="h-6 w-6 rounded-md text-muted-foreground/70 hover:text-foreground"
                         aria-label={i18n.chat.resetConversation}
-                        disabled={interactionLocked || !openClawConnected}
+                        disabled={interactionLocked || !providerConnected}
                       >
                         <RotateCcw className="h-4 w-4" />
                       </Button>
@@ -4218,7 +4229,7 @@ export function ChatPanel({
                     </>
                   ) : null}
                   <div className={cn("relative", composerAttachments?.length ? "-mt-px" : "")}>
-                    {openClawConnected && !composerPrompt ? (
+                    {providerConnected && !composerPrompt ? (
                       <div
                         aria-hidden="true"
                         data-testid="composer-placeholder-overlay"
@@ -4307,12 +4318,18 @@ export function ChatPanel({
                         onPromptKeyDown(event);
                       }}
                       onSelect={(event) => syncAgentMention(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
-                      placeholder={openClawConnected ? promptPlaceholder : i18n.chat.disconnectedPlaceholder}
+                      placeholder={
+                        providerConnected
+                          ? promptPlaceholder
+                          : session.mode === "hermes"
+                            ? (i18n.chat.disconnectedPlaceholderHermes || i18n.chat.disconnectedPlaceholder)
+                            : i18n.chat.disconnectedPlaceholder
+                      }
                       disabled={composerLocked}
                       className={cn(
                         "min-h-[4.6rem] resize-none rounded-none border-0 shadow-none focus:border-0 focus:shadow-none focus:outline-none focus-visible:border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none focus-visible:outline-none",
                         resolvedTheme === "dark" ? "bg-background" : "bg-transparent",
-                        openClawConnected ? "placeholder:text-transparent" : "",
+                        providerConnected ? "placeholder:text-transparent" : "",
                       )}
                     />
             </div>

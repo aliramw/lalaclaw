@@ -81,6 +81,50 @@ describe("searchSessionsForAgent", () => {
     expect(results.every((entry) => entry.sessionUser.includes("dingtalk-connector"))).toBe(true);
   });
 
+  it("finds the latest main-agent session even when it uses the direct agent session key", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
+    tempDirs.push(rootDir);
+    const sessionsDir = path.join(rootDir, "agents", "main", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    fs.writeFileSync(path.join(sessionsDir, "sessions.json"), JSON.stringify({
+      "agent:main:main": {
+        updatedAt: 200,
+        sessionId: "main-latest",
+        modelProvider: "openai-codex",
+        model: "gpt-5.4",
+      },
+      "agent:main:openai-user:command-center": {
+        updatedAt: 100,
+        sessionId: "command-center-older",
+      },
+    }), "utf8");
+
+    fs.writeFileSync(
+      path.join(sessionsDir, "main-latest.jsonl"),
+      [
+        JSON.stringify({ type: "session", id: "main-latest", timestamp: "2026-04-13T00:00:00.000Z" }),
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-04-13T00:00:01.000Z",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "HEARTBEAT_OK" }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const projector = createTestProjector(rootDir);
+    const latest = projector.findLatestSessionForAgent("main");
+
+    expect(latest.sessionKey).toBe("agent:main:main");
+    expect(latest.sessionUser).toBe("main");
+    expect(latest.sessionRecord.modelProvider).toBe("openai-codex");
+    expect(latest.sessionRecord.model).toBe("gpt-5.4");
+  });
+
   it("falls back to matching transcript files when the indexed sessionId file is missing", () => {
     const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-search-"));
     tempDirs.push(rootDir);

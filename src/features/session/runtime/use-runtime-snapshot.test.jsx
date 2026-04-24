@@ -1893,6 +1893,65 @@ describe("useRuntimeSnapshot", () => {
     expect(setSession).not.toHaveBeenCalled();
   });
 
+  it("includes the persisted hermes session id when loading a hermes runtime snapshot", async () => {
+    const setBusy = vi.fn();
+    const setFastMode = vi.fn();
+    const setMessagesSynced = vi.fn();
+    const setModel = vi.fn();
+    const setPendingChatTurns = vi.fn();
+    const setPromptHistoryByConversation = vi.fn();
+    const setSession = vi.fn();
+    const fetchMock = vi.fn(() =>
+      mockJsonResponse({
+        ok: true,
+        session: {
+          sessionUser: "command-center-hermes",
+          agentId: "hermes",
+          selectedModel: "gpt-5.4",
+          availableModels: ["gpt-5.4"],
+          availableAgents: ["main", "hermes"],
+        },
+        conversation: [],
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() =>
+      useRuntimeSnapshot({
+        activePendingChat: null,
+        busy: false,
+        i18n: createI18n(),
+        messagesRef: { current: [] },
+        pendingChatTurns: {},
+        session: createSession({
+          mode: "hermes",
+          agentId: "hermes",
+          sessionUser: "command-center-hermes",
+          hermesSessionId: "hermes-session-42",
+        }),
+        setBusy,
+        setFastMode,
+        setMessagesSynced,
+        setModel,
+        setPendingChatTurns,
+        setPromptHistoryByConversation,
+        setSession,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/runtime?${new URLSearchParams({
+          sessionUser: "command-center-hermes",
+          agentId: "hermes",
+          hermesSessionId: "hermes-session-42",
+        }).toString()}`,
+        { credentials: "same-origin" },
+      );
+    });
+  });
+
   it("posts session updates with the active session user and applies the returned snapshot", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const setBusy = vi.fn();

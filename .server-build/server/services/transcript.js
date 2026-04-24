@@ -1691,15 +1691,22 @@ function createTranscriptProjector({ PROJECT_ROOT, LOCAL_OPENCLAW_DIR, config, f
     function findLatestSessionForAgent(agentId) {
         const normalizedAgentId = String(agentId || config.agentId || 'main').trim() || 'main';
         const sessions = loadSessionsIndex(normalizedAgentId);
-        const prefix = `agent:${normalizedAgentId}:openai-user:`;
+        const openAiUserPrefix = `agent:${normalizedAgentId}:openai-user:`;
+        const directAgentSessionKey = `agent:${normalizedAgentId}:main`;
         const candidates = Object.entries(sessions)
             .map(([sessionKey, sessionRecord]) => ({
             sessionKey,
             sessionRecord,
-            sessionUser: String(sessionKey).slice(prefix.length).trim(),
+            sessionUser: String(sessionKey) === directAgentSessionKey
+                ? 'main'
+                : String(sessionKey).startsWith(openAiUserPrefix)
+                    ? String(sessionKey).slice(openAiUserPrefix.length).trim()
+                    : '',
             updatedAt: Number(sessionRecord?.updatedAt || 0),
         }))
-            .filter((entry) => entry.updatedAt && String(entry.sessionKey || '').startsWith(prefix))
+            .filter((entry) => (entry.updatedAt
+            && (String(entry.sessionKey || '').startsWith(openAiUserPrefix)
+                || String(entry.sessionKey || '') === directAgentSessionKey)))
             .sort((left, right) => right.updatedAt - left.updatedAt);
         let latestEntry = null;
         for (const entry of candidates) {

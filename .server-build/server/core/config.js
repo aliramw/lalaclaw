@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OPENCLAW_BIN = exports.LOCAL_OPENCLAW_DIR = exports.DIST_DIR = exports.PUBLIC_DIR = exports.PROJECT_ROOT = exports.PORT = exports.HOST = void 0;
+exports.OPENCLAW_BIN = exports.LOCAL_OPENCLAW_DIR = exports.DIST_DIR = exports.PUBLIC_DIR = exports.PROJECT_ROOT = exports.HERMES_DEFAULT_MODEL = exports.PORT = exports.HOST = void 0;
 exports.resolveLalaclawStateDir = resolveLalaclawStateDir;
 exports.readJsonIfExists = readJsonIfExists;
 exports.readTextIfExists = readTextIfExists;
@@ -21,6 +21,7 @@ const node_path_1 = __importDefault(require("node:path"));
 const openclaw_operations_1 = require("../services/openclaw-operations");
 exports.HOST = process.env.HOST || '127.0.0.1';
 exports.PORT = Number(process.env.PORT || 3000);
+exports.HERMES_DEFAULT_MODEL = String(process.env.HERMES_DEFAULT_MODEL || 'gpt-5.4').trim() || 'gpt-5.4';
 const projectRootCandidate = node_path_1.default.resolve(__dirname, '..', '..');
 exports.PROJECT_ROOT = node_path_1.default.basename(projectRootCandidate) === '.server-build'
     ? node_path_1.default.dirname(projectRootCandidate)
@@ -118,6 +119,54 @@ function getConfiguredModelEntries(localConfig = null) {
         return entries;
     }, []);
 }
+function getOpenClawBackupStorePath() {
+    return node_path_1.default.join(resolveDefaultConfigDir(), 'openclaw-backups.json');
+}
+function readLatestBackedUpOpenClawConfig() {
+    const entries = readJsonIfExists(getOpenClawBackupStorePath());
+    if (!Array.isArray(entries) || !entries.length) {
+        return null;
+    }
+    const latestConfigBackup = [...entries]
+        .filter((entry) => String(entry?.scope || '').trim() === 'config')
+        .sort((left, right) => Number(right?.createdAt || 0) - Number(left?.createdAt || 0))
+        .find((entry) => String(entry?.raw || '').trim());
+    if (!latestConfigBackup?.raw) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(String(latestConfigBackup.raw || ''));
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    }
+    catch {
+        return null;
+    }
+}
+function resolveModelConfigSource(localConfig = null) {
+    if (getConfiguredModelEntries(localConfig).length) {
+        return localConfig;
+    }
+    const backupConfig = readLatestBackedUpOpenClawConfig();
+    if (!backupConfig) {
+        return localConfig;
+    }
+    return {
+        ...backupConfig,
+        ...localConfig,
+        agents: {
+            ...(backupConfig?.agents || {}),
+            ...(localConfig?.agents || {}),
+            defaults: {
+                ...(backupConfig?.agents?.defaults || {}),
+                ...(localConfig?.agents?.defaults || {}),
+                models: localConfig?.agents?.defaults?.models || backupConfig?.agents?.defaults?.models || {},
+            },
+            list: Array.isArray(localConfig?.agents?.list) && localConfig.agents.list.length
+                ? localConfig.agents.list
+                : (Array.isArray(backupConfig?.agents?.list) ? backupConfig.agents.list : []),
+        },
+    };
+}
 function resolveCanonicalModelId(value = '', localConfig = null) {
     const requestedModel = String(value || '').trim();
     if (!requestedModel) {
@@ -146,12 +195,13 @@ function resolveAgentModel(agent, localConfig = null) {
     const primary = agent?.model?.primary || (typeof agent?.model === 'string' ? agent.model : '');
     return resolveCanonicalModelId(primary, localConfig);
 }
-function collectAvailableModels(localConfig, preferred = []) {
+function collectAvailableModels(localConfig, preferred = [], _options = {}) {
+    const effectiveLocalConfig = resolveModelConfigSource(localConfig);
     const seen = new Set();
     const ordered = [];
-    const configuredModels = getConfiguredModelEntries(localConfig);
+    const configuredModels = getConfiguredModelEntries(effectiveLocalConfig);
     function addModel(value) {
-        const model = resolveCanonicalModelId(value, localConfig);
+        const model = resolveCanonicalModelId(value, effectiveLocalConfig);
         if (!model || seen.has(model)) {
             return;
         }
@@ -159,12 +209,27 @@ function collectAvailableModels(localConfig, preferred = []) {
         ordered.push(model);
     }
     preferred.forEach(addModel);
-    addModel(localConfig?.agents?.defaults?.model?.primary);
+    addModel(effectiveLocalConfig?.agents?.defaults?.model?.primary);
     configuredModels.forEach(([modelId]) => addModel(modelId));
-    (localConfig?.agents?.list || []).forEach((agent) => addModel(resolveAgentModel(agent, localConfig)));
+    (effectiveLocalConfig?.agents?.list || []).forEach((agent) => addModel(resolveAgentModel(agent, effectiveLocalConfig)));
     return ordered;
 }
-function collectAvailableAgents(localConfig, preferred = []) {
+function collectLocallyInstalledAgentIds() {
+    const candidates = [
+        {
+            id: 'hermes',
+            paths: [
+                String(process.env.HERMES_BIN || '').trim(),
+                node_path_1.default.join(HOME_DIR, '.local', 'bin', 'hermes'),
+                node_path_1.default.join(HOME_DIR, '.hermes', 'hermes-agent', 'hermes'),
+            ].filter(Boolean),
+        },
+    ];
+    return candidates
+        .filter((entry) => entry.paths.some((candidatePath) => fileExists(candidatePath)))
+        .map((entry) => entry.id);
+}
+function collectAvailableAgents(localConfig, preferred = [], options = {}) {
     const seen = new Set();
     const ordered = [];
     function addAgent(value) {
@@ -177,6 +242,9 @@ function collectAvailableAgents(localConfig, preferred = []) {
     }
     preferred.forEach(addAgent);
     (localConfig?.agents?.list || []).forEach((agent) => addAgent(agent?.id));
+    if (options.includeLocallyInstalledAgents) {
+        collectLocallyInstalledAgentIds().forEach(addAgent);
+    }
     return ordered;
 }
 function collectAvailableSkills(localConfig, agentId) {
@@ -281,7 +349,7 @@ function buildRuntimeConfig() {
     const defaultModel = resolveCanonicalModelId(localConfig?.agents?.defaults?.model?.primary || resolveAgentModel(localConfig?.agents?.list?.find((agent) => agent?.id === agentId), localConfig), localConfig);
     const workspaceRoot = localConfig?.agents?.defaults?.workspace || node_path_1.default.join(exports.LOCAL_OPENCLAW_DIR, 'workspace');
     const availableModels = collectAvailableModels(localConfig, [envModel]);
-    const availableAgents = collectAvailableAgents(localConfig, [agentId]);
+    const availableAgents = collectAvailableAgents(localConfig, [agentId], { includeLocallyInstalledAgents: true });
     const availableSkills = collectAvailableSkills(localConfig, agentId);
     const runtimeConfig = {
         mode: baseUrl ? 'openclaw' : 'mock',

@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { createHermesClient } from "./hermes-client.ts";
 
@@ -134,6 +135,97 @@ describe("createHermesClient", () => {
       progressLabel: "执行命令…",
       progressUpdatedAt: expect.any(Number),
     });
+  });
+
+  it("emits progress updates while the hermes process is still running", async () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = vi.fn();
+
+    const spawnProcess = vi.fn(() => child);
+    const onProgress = vi.fn();
+    const client = createHermesClient({
+      HERMES_BIN: "hermes",
+      PROJECT_ROOT: "/workspace/project",
+      execFileAsync: vi.fn(),
+      spawnProcess,
+    });
+
+    const replyPromise = client.dispatchHermes([{ role: "user", content: "继续" }], {
+      model: "gpt-5.4",
+      onProgress,
+    });
+
+    child.stdout.emit("data", Buffer.from("检查工作区…\n"));
+    await vi.waitFor(() => {
+      expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+        progressStage: "inspecting",
+        progressLabel: "检查工作区…",
+      }));
+    });
+
+    child.stdout.emit("data", Buffer.from("执行命令…\n"));
+    child.stdout.emit("data", Buffer.from("\n最终答案\n\nsession_id: 20260414_150000_live\n"));
+    child.stderr.emit("data", Buffer.from(""));
+    child.emit("close", 0);
+
+    await expect(replyPromise).resolves.toMatchObject({
+      outputText: "检查工作区…\n执行命令…\n\n最终答案",
+      sessionId: "20260414_150000_live",
+      usage: null,
+      progressStage: "executing",
+      progressLabel: "执行命令…",
+      progressUpdatedAt: expect.any(Number),
+    });
+  });
+
+  it("emits fallback lifecycle progress while waiting for the final hermes reply", async () => {
+    vi.useFakeTimers();
+
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = vi.fn();
+
+    const onProgress = vi.fn();
+    const client = createHermesClient({
+      HERMES_BIN: "hermes",
+      PROJECT_ROOT: "/workspace/project",
+      execFileAsync: vi.fn(),
+      spawnProcess: vi.fn(() => child),
+    });
+
+    const replyPromise = client.dispatchHermes([{ role: "user", content: "继续" }], {
+      model: "gpt-5.4",
+      onProgress,
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+      progressStage: "thinking",
+    }));
+
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+      progressStage: "inspecting",
+    }));
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
+      progressStage: "executing",
+    }));
+
+    child.stdout.emit("data", Buffer.from("最终答案\n\nsession_id: 20260414_150001_wait\n"));
+    child.emit("close", 0);
+
+    await expect(replyPromise).resolves.toMatchObject({
+      outputText: "最终答案",
+      sessionId: "20260414_150001_wait",
+      usage: null,
+    });
+
+    vi.useRealTimers();
   });
 
   it("preserves a standalone progress-like reply as output text", async () => {

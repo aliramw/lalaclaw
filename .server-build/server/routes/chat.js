@@ -51,14 +51,27 @@ function sanitizeChatErrorMessage(error) {
     }
     return 'OpenClaw request failed.';
 }
-function createChatStopHandler({ callOpenClawGateway, config, getCommandCenterSessionKey, parseRequestBody, resolveSessionAgentId, sendJson, }) {
+function getReplyProgressPayload(reply) {
+    const progressUpdatedAt = Number(reply?.progressUpdatedAt || 0) || 0;
+    return {
+        ...(typeof reply?.progressStage === 'string' && reply.progressStage.trim()
+            ? { progressStage: reply.progressStage.trim() }
+            : {}),
+        ...(typeof reply?.progressLabel === 'string' && reply.progressLabel.trim()
+            ? { progressLabel: reply.progressLabel.trim() }
+            : {}),
+        ...(progressUpdatedAt ? { progressUpdatedAt } : {}),
+    };
+}
+function createChatStopHandler({ callOpenClawGateway, config, getCommandCenterSessionKey, parseRequestBody, resolveModeForAgent, resolveSessionAgentId, sendJson, }) {
     return async function handleChatStop(req, res) {
         try {
             const body = await parseRequestBody(req);
             const sessionUser = parseRequestedSessionUser(body.sessionUser);
             const requestedAgentId = typeof body.agentId === 'string' ? body.agentId.trim() : '';
             const agentId = requestedAgentId || resolveSessionAgentId(sessionUser);
-            if (config.mode === 'openclaw') {
+            const mode = typeof resolveModeForAgent === 'function' ? resolveModeForAgent(agentId) : config.mode;
+            if (mode === 'openclaw') {
                 await callOpenClawGateway('chat.abort', {
                     sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
                 });
@@ -74,7 +87,7 @@ function createChatStopHandler({ callOpenClawGateway, config, getCommandCenterSe
         }
     };
 }
-function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionConversation, buildDashboardSnapshot, callOpenClawGateway, clearLocalSessionConversation, clearLocalSessionFileEntries, clip, config, delay, dispatchOpenClaw, dispatchOpenClawStream, formatTokenBadge, getCommandCenterSessionKey, getDefaultAgentId, getDefaultModelForAgent, getMessageAttachments, getSessionPreferences, mirrorOpenClawUserMessage, materializeMessageAttachments, normalizeChatMessage, normalizeSessionUser, parseFastCommand, parseModelCommand, parseRequestBody, parseSessionResetCommand, parseSlashCommandState, resolveCanonicalModelId, resolveSessionAgentId, resolveSessionFastMode, resolveSessionModel, resolveSessionThinkMode, sendJson, setSessionPreferences, summarizeMessages, }) {
+function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionConversation, buildDashboardSnapshot, callOpenClawGateway, clearLocalSessionConversation, clearLocalSessionFileEntries, clip, config, delay, dispatchHermes, dispatchOpenClaw, dispatchOpenClawStream, formatTokenBadge, getCommandCenterSessionKey, getDefaultAgentId, getDefaultModelForAgent, getMessageAttachments, getSessionPreferences, mirrorOpenClawUserMessage, materializeMessageAttachments, normalizeChatMessage, normalizeSessionUser, parseFastCommand, parseModelCommand, parseRequestBody, parseSessionResetCommand, parseSlashCommandState, resolveCanonicalModelId, resolveModeForAgent, resolveSessionAgentId, resolveSessionFastMode, resolveSessionModel, resolveSessionThinkMode, sendJson, setSessionPreferences, summarizeMessages, }) {
     function startChatStream(res) {
         res.writeHead(200, {
             'Content-Type': 'application/x-ndjson; charset=utf-8',
@@ -131,9 +144,12 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
             const body = await parseRequestBody(req);
             const messages = Array.isArray(body.messages) ? body.messages : [];
             const shouldStream = body.stream !== false;
-            const usesGatewayNativeCommands = config.mode === 'openclaw';
             const fastMode = Boolean(body.fastMode);
             const sessionUser = parseRequestedSessionUser(body.sessionUser);
+            const requestedAgentId = typeof body.agentId === 'string' ? body.agentId.trim() : '';
+            const sessionAgentId = requestedAgentId || resolveSessionAgentId(sessionUser);
+            const activeMode = typeof resolveModeForAgent === 'function' ? resolveModeForAgent(sessionAgentId) : config.mode;
+            const usesGatewayNativeCommands = activeMode === 'openclaw';
             assistantMessageId = typeof body.assistantMessageId === 'string' && body.assistantMessageId.trim()
                 ? body.assistantMessageId.trim()
                 : `msg-assistant-${Date.now()}`;
@@ -187,11 +203,11 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                         timestamp: responseTimestamp,
                     },
                 ]);
-                const snapshot = await buildDashboardSnapshot(sessionUser);
+                const snapshot = await buildDashboardSnapshot(sessionUser, { agentId: sessionAgentId });
                 snapshot.session.status = '已完成 / 标准';
                 sendJson(res, 200, {
                     ok: true,
-                    mode: config.mode,
+                    mode: snapshot.session?.mode || activeMode,
                     model: snapshot.session?.model || config.model,
                     outputText,
                     usage: null,
@@ -208,7 +224,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
             if (!usesGatewayNativeCommands && modelCommand) {
                 const responseTimestamp = requestTimestamp || Date.now();
                 const currentPreferences = getSessionPreferences(sessionUser);
-                const currentAgentId = resolveSessionAgentId(sessionUser);
+                const currentAgentId = activeMode === 'openclaw' ? resolveSessionAgentId(sessionUser) : sessionAgentId;
                 const defaultModelForCurrentAgent = getDefaultModelForAgent(currentAgentId);
                 const currentModel = resolveSessionModel(sessionUser, currentAgentId);
                 let nextModel = currentModel;
@@ -217,7 +233,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                     nextModel = requestedModel || defaultModelForCurrentAgent;
                     const shouldPersistModel = Boolean(requestedModel) && requestedModel !== defaultModelForCurrentAgent;
                     const shouldPatchModel = nextModel !== currentModel;
-                    if (config.mode === 'openclaw' && shouldPatchModel) {
+                    if (activeMode === 'openclaw' && shouldPatchModel) {
                         await patchOpenClawSession(callOpenClawGateway, delay, getCommandCenterSessionKey(currentAgentId, sessionUser), { model: nextModel });
                     }
                     setSessionPreferences(sessionUser, {
@@ -225,7 +241,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                         model: shouldPersistModel ? nextModel : undefined,
                     });
                 }
-                const snapshot = await buildDashboardSnapshot(sessionUser);
+                const snapshot = await buildDashboardSnapshot(sessionUser, { agentId: sessionAgentId });
                 const selectedModel = snapshot.session?.selectedModel || snapshot.session?.model || nextModel || currentModel || '';
                 const availableModels = Array.isArray(snapshot.session?.availableModels) && snapshot.session.availableModels.length
                     ? snapshot.session.availableModels
@@ -251,7 +267,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                 snapshot.session.status = '已完成 / 标准';
                 sendJson(res, 200, {
                     ok: true,
-                    mode: config.mode,
+                    mode: snapshot.session?.mode || activeMode,
                     model: selectedModel || config.model,
                     outputText,
                     usage: null,
@@ -270,15 +286,30 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
             if (!usesGatewayNativeCommands && resetCommand) {
                 const nextSessionUser = normalizeSessionUser(`${sessionUser}-${Date.now()}`);
                 const currentPreferences = getSessionPreferences(sessionUser);
-                setSessionPreferences(nextSessionUser, { ...currentPreferences });
+                const nextSessionPreferences = { ...currentPreferences };
+                delete nextSessionPreferences.hermesSessionId;
+                setSessionPreferences(nextSessionUser, nextSessionPreferences);
                 let outputText = '新会话已开始。直接说你要我干什么。';
                 let usage = null;
+                let nextHermesSessionId = '';
                 if (resetCommand.tail) {
-                    const resetReply = config.mode === 'openclaw'
+                    const resetReply = activeMode === 'openclaw'
                         ? await dispatchOpenClaw([{ role: 'user', content: resetCommand.tail }], fastMode, nextSessionUser)
-                        : createMockReply(resetCommand.tail, clip);
+                        : activeMode === 'hermes' && typeof dispatchHermes === 'function'
+                            ? await dispatchHermes([{ role: 'user', content: resetCommand.tail }], {
+                                model: resolveSessionModel(nextSessionUser, sessionAgentId),
+                                sessionUser: nextSessionUser,
+                            })
+                            : createMockReply(resetCommand.tail, clip);
                     outputText = resetReply.outputText;
                     usage = resetReply.usage;
+                    nextHermesSessionId = String(resetReply.sessionId || '').trim();
+                }
+                if (activeMode === 'hermes' && nextHermesSessionId) {
+                    setSessionPreferences(nextSessionUser, {
+                        ...getSessionPreferences(nextSessionUser),
+                        hermesSessionId: nextHermesSessionId,
+                    });
                 }
                 appendLocalSessionConversation(nextSessionUser, resetCommand.tail
                     ? [
@@ -301,11 +332,11 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                             timestamp: Date.now(),
                         },
                     ]);
-                const snapshot = await buildDashboardSnapshot(nextSessionUser);
+                const snapshot = await buildDashboardSnapshot(nextSessionUser, { agentId: sessionAgentId });
                 snapshot.session.status = fastMode ? '已完成 / 快速' : '已完成 / 标准';
                 sendJson(res, 200, {
                     ok: true,
-                    mode: config.mode,
+                    mode: snapshot.session?.mode || activeMode,
                     model: snapshot.session?.model || config.model,
                     outputText,
                     usage,
@@ -321,12 +352,14 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                 return;
             }
             const currentPreferences = getSessionPreferences(sessionUser);
-            const currentAgentId = resolveSessionAgentId(sessionUser);
+            const currentAgentId = activeMode === 'openclaw' ? resolveSessionAgentId(sessionUser) : sessionAgentId;
             const nextAgentId = body.agentId ? String(body.agentId).trim() || currentAgentId : currentAgentId;
             const defaultModelForNextAgent = getDefaultModelForAgent(nextAgentId);
             const nextFastMode = slashCommandState?.kind === 'fastMode' ? slashCommandState.value : fastMode;
             const nextThinkMode = slashCommandState?.kind === 'thinkMode' ? slashCommandState.value : resolveSessionThinkMode(sessionUser);
             const requestedModel = typeof body.model === 'string' ? resolveCanonicalModelId(body.model) : '';
+            const requestedHermesSessionId = typeof body.hermesSessionId === 'string' ? String(body.hermesSessionId || '').trim() : '';
+            const hermesSessionId = requestedHermesSessionId || String(currentPreferences?.hermesSessionId || '').trim();
             let nextModel = resolveSessionModel(sessionUser, currentAgentId);
             let shouldPersistModel = Boolean(currentPreferences.model);
             if (nextAgentId !== currentAgentId && !body.model) {
@@ -345,7 +378,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                 fastMode: nextFastMode,
                 thinkMode: nextThinkMode,
             };
-            if (config.mode === 'openclaw' && (shouldPatchModel || shouldPatchThinkMode)) {
+            if (activeMode === 'openclaw' && (shouldPatchModel || shouldPatchThinkMode)) {
                 await patchOpenClawSession(callOpenClawGateway, delay, getCommandCenterSessionKey(nextAgentId, sessionUser), {
                     ...(shouldPatchModel ? { model: nextModel } : {}),
                     ...(shouldPatchThinkMode ? { thinkingLevel: nextThinkMode } : {}),
@@ -355,7 +388,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
             const operatorName = typeof body.userLabel === 'string' && body.userLabel.trim()
                 ? body.userLabel.trim()
                 : '';
-            if (config.mode === 'openclaw' && latestUserContent && !latestUserContent.startsWith('/')) {
+            if (activeMode === 'openclaw' && latestUserContent && !latestUserContent.startsWith('/')) {
                 try {
                     await mirrorOpenClawUserMessage?.(sessionUser, latestUserContent, { operatorName });
                 }
@@ -380,7 +413,7 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                     });
                 }
             }
-            const reply = config.mode === 'openclaw'
+            const reply = activeMode === 'openclaw'
                 ? shouldStream
                     ? await dispatchOpenClawStream(outboundMessages, nextFastMode, sessionUser, {
                         commandBody,
@@ -394,7 +427,34 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                         },
                     })
                     : await dispatchOpenClaw(outboundMessages, nextFastMode, sessionUser, { commandBody, thinkMode: nextThinkMode })
-                : createMockReply(latestUserContent, clip);
+                : activeMode === 'hermes' && typeof dispatchHermes === 'function'
+                    ? await dispatchHermes(outboundMessages, {
+                        assistantMessageId,
+                        model: nextModel,
+                        onProgress: (progress = {}) => {
+                            if (!shouldStream || clientDisconnected || res.destroyed || res.writableEnded) {
+                                return;
+                            }
+                            const progressPayload = getReplyProgressPayload(progress);
+                            if (!Object.keys(progressPayload).length) {
+                                return;
+                            }
+                            writeChatStreamEvent(res, {
+                                type: 'message.progress',
+                                messageId: assistantMessageId,
+                                ...progressPayload,
+                            });
+                        },
+                        sessionId: hermesSessionId,
+                        sessionUser,
+                    })
+                    : createMockReply(latestUserContent, clip);
+            if (activeMode === 'hermes' && reply.sessionId) {
+                setSessionPreferences(sessionUser, {
+                    ...getSessionPreferences(sessionUser),
+                    hermesSessionId: reply.sessionId,
+                });
+            }
             const nativeFastCommand = usesGatewayNativeCommands ? parseFastCommand(latestUserContent) : null;
             const nativeModelCommand = usesGatewayNativeCommands ? parseModelCommand?.(latestUserContent) || null : null;
             const nativeResetCommand = usesGatewayNativeCommands ? parseSessionResetCommand(latestUserContent) : null;
@@ -437,7 +497,12 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
                     ]
                     : []),
             ]);
-            const snapshot = await buildDashboardSnapshot(sessionUser);
+            const snapshot = await buildDashboardSnapshot(sessionUser, {
+                agentId: nextAgentId,
+                ...(activeMode === 'hermes' && (reply.sessionId || hermesSessionId)
+                    ? { hermesSessionId: String(reply.sessionId || hermesSessionId || '').trim() }
+                    : {}),
+            });
             if (usesGatewayNativeCommands && (nativeModelCommand || nativeResetCommand)) {
                 const authoritativeModel = snapshot.session?.model || snapshot.model || '';
                 if (authoritativeModel) {
@@ -455,14 +520,16 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
             }
             snapshot.session.status = nextFastMode ? '已完成 / 快速' : '已完成 / 标准';
             const resolvedModel = snapshot.session?.model || config.model;
+            const replyProgress = getReplyProgressPayload(reply);
             const responsePayload = {
                 ok: true,
-                mode: config.mode,
+                mode: snapshot.session?.mode || activeMode,
                 model: resolvedModel,
                 assistantMessageId,
                 outputText: reply.outputText,
                 usage: reply.usage,
                 tokenBadge: formatTokenBadge(reply.usage),
+                ...replyProgress,
                 metadata: {
                     status: snapshot.session.status,
                     summary: summarizeMessages(messages),
@@ -471,17 +538,25 @@ function createChatHandler({ appendLocalSessionFileEntries, appendLocalSessionCo
             };
             if (shouldStream) {
                 if (!clientDisconnected && !res.destroyed && !res.writableEnded) {
+                    if (Object.keys(replyProgress).length) {
+                        writeChatStreamEvent(res, {
+                            type: 'message.progress',
+                            messageId: assistantMessageId,
+                            ...replyProgress,
+                        });
+                    }
                     writeChatStreamEvent(res, {
                         type: 'message.complete',
                         messageId: assistantMessageId,
                         payload: {
                             ok: true,
-                            mode: config.mode,
+                            mode: snapshot.session?.mode || activeMode,
                             model: resolvedModel,
                             assistantMessageId,
                             outputText: reply.outputText,
                             usage: reply.usage,
                             tokenBadge: formatTokenBadge(reply.usage),
+                            ...replyProgress,
                             session: {
                                 ...(snapshot.session || {}),
                                 status: snapshot.session.status,

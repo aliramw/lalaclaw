@@ -131,23 +131,25 @@ export function useCommandCenterSessionSelection({
       agentId: nextAgent,
       sessionUser,
     });
+    const shouldInheritActiveSession = nextAgent !== "hermes";
+    const baseSession = createSessionForTab(i18n, nextTab, nextMeta);
     const nextSession = sessionByTabIdRef.current[tabId] || {
-      ...createSessionForTab(i18n, nextTab, nextMeta),
-      ...sessionStateRef.current,
-      ...session,
+      ...baseSession,
+      ...(shouldInheritActiveSession ? sessionStateRef.current : {}),
+      ...(shouldInheritActiveSession ? session : {}),
       agentId: nextAgent,
       agentLabel: nextAgent,
       selectedAgentId: nextAgent,
       sessionUser,
       sessionKey: buildOptimisticSessionKey(nextAgent, sessionUser),
-      model: nextMeta.model || session.model || "",
-      selectedModel: nextMeta.model || session.selectedModel || session.model || "",
-      fastMode: session.fastMode,
-      thinkMode: nextMeta.thinkMode || session.thinkMode || "off",
+      model: nextMeta.model || (shouldInheritActiveSession ? session.model : "") || "",
+      selectedModel: nextMeta.model || (shouldInheritActiveSession ? session.selectedModel || session.model : "") || "",
+      fastMode: shouldInheritActiveSession ? session.fastMode : baseSession.fastMode,
+      thinkMode: nextMeta.thinkMode || (shouldInheritActiveSession ? session.thinkMode : "off") || "off",
       availableAgents: availableAgents.length ? availableAgents : session.availableAgents || [],
-      availableModels: availableModels.length ? availableModels : session.availableModels || [],
-      availableMentionAgents: session.availableMentionAgents || [],
-      availableSkills: session.availableSkills || [],
+      availableModels: shouldInheritActiveSession ? (availableModels.length ? availableModels : session.availableModels || []) : [],
+      availableMentionAgents: shouldInheritActiveSession ? session.availableMentionAgents || [] : [],
+      availableSkills: shouldInheritActiveSession ? session.availableSkills || [] : [],
     };
 
     setChatTabs((current) => {

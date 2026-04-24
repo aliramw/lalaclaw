@@ -80,11 +80,14 @@ export function resolveCommandCenterSendTarget({
     || (isActiveTargetTab ? session.thinkMode || "off" : "")
     || sessionStateRef.current.thinkMode
     || "off";
+  const targetHermesSessionId =
+    String(targetMeta?.hermesSessionId || targetSession?.hermesSessionId || "").trim();
 
   return {
     isActiveTargetTab,
     targetAgentId,
     targetFastMode,
+    targetHermesSessionId,
     targetMeta,
     targetModel,
     targetSession,

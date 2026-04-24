@@ -1,7 +1,9 @@
+import { spawn as defaultSpawn } from 'node:child_process';
 import path from 'node:path';
 
 import {
   inferHermesProgressState,
+  mapHermesProgressLine,
 } from './agent-progress';
 
 type LooseRecord = Record<string, any>;
@@ -13,6 +15,11 @@ type ExecFileResponse = {
 
 type HermesDispatchOptions = {
   model?: string;
+  onProgress?: (progress: {
+    progressLabel?: string;
+    progressStage?: string;
+    progressUpdatedAt?: number;
+  }) => void;
   sessionId?: string;
   sessionUser?: string;
 };
@@ -49,6 +56,12 @@ type HermesClientOptions = {
   execFileAsync?: (file: string, args?: string[], options?: Record<string, unknown>) => Promise<ExecFileResponse>;
   HERMES_BIN?: string;
   PROJECT_ROOT?: string;
+  spawnProcess?: (file: string, args?: string[], options?: Record<string, unknown>) => {
+    kill?: (signal?: string | number) => boolean;
+    on: (event: string, listener: (...args: unknown[]) => void) => unknown;
+    stderr?: { on: (event: string, listener: (...args: unknown[]) => void) => unknown };
+    stdout?: { on: (event: string, listener: (...args: unknown[]) => void) => unknown };
+  };
 };
 
 const DEFAULT_HERMES_MODEL = 'gpt-5.4';
@@ -56,6 +69,12 @@ const FALLBACK_HERMES_CONTEXT_WINDOWS: Record<string, number> = {
   'gpt-5.4': 1050000,
   'openai/gpt-5.4': 1050000,
 };
+const HERMES_PROGRESS_STAGE_ORDER = ['thinking', 'inspecting', 'executing', 'synthesizing', 'finishing'] as const;
+const HERMES_FALLBACK_PROGRESS_SEQUENCE = [
+  { delayMs: 1_200, progressStage: 'inspecting' },
+  { delayMs: 4_000, progressStage: 'executing' },
+  { delayMs: 9_000, progressStage: 'synthesizing' },
+] as const;
 
 function resolveHermesBin(explicitBin = '') {
   const normalizedExplicitBin = String(explicitBin || '').trim();
@@ -70,6 +89,12 @@ function resolveHermesBin(explicitBin = '') {
     homeDir ? path.join(homeDir, '.hermes', 'hermes-agent', 'hermes') : '',
     'hermes',
   ].find(Boolean) || 'hermes';
+}
+
+function getHermesProgressStageRank(value = '') {
+  return HERMES_PROGRESS_STAGE_ORDER.indexOf(
+    String(value || '').trim().toLowerCase() as (typeof HERMES_PROGRESS_STAGE_ORDER)[number],
+  );
 }
 
 export function isHermesAgentId(agentId = '') {
@@ -250,6 +275,7 @@ export function createHermesClient({
   execFileAsync,
   HERMES_BIN,
   PROJECT_ROOT,
+  spawnProcess,
 }: HermesClientOptions = {}) {
   const hermesBin = resolveHermesBin(HERMES_BIN);
   const projectRoot = String(PROJECT_ROOT || process.cwd()).trim() || process.cwd();
@@ -258,6 +284,7 @@ export function createHermesClient({
   const hermesStateDbPath = homeDir ? path.join(homeDir, '.hermes', 'state.db') : '';
   const hermesVenvPython = hermesRoot ? path.join(hermesRoot, 'venv', 'bin', 'python') : '';
   const contextWindowCache = new Map<string, number>();
+  const spawnHermesProcess = typeof spawnProcess === 'function' ? spawnProcess : defaultSpawn;
 
   function getExecFileAsync() {
     if (typeof execFileAsync !== 'function') {
@@ -360,7 +387,6 @@ export function createHermesClient({
 
   async function dispatchHermes(messages: LooseRecord[] = [], options: HermesDispatchOptions = {}): Promise<HermesDispatchResult> {
     const prompt = buildHermesPrompt(messages);
-    const execFile = getExecFileAsync();
     const args = ['chat', '-q', prompt, '-Q'];
     const requestedModel = String(options.model || '').trim();
     const requestedSessionId = String(options.sessionId || '').trim();
@@ -372,11 +398,154 @@ export function createHermesClient({
       args.push('--resume', requestedSessionId);
     }
 
-    const response = await execFile(hermesBin, args, {
-      cwd: projectRoot,
-      env: buildHermesExecEnv(hermesBin),
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    let response: ExecFileResponse;
+    if (typeof options.onProgress === 'function') {
+      response = await new Promise<ExecFileResponse>((resolve, reject) => {
+        let stdout = '';
+        let stderr = '';
+        let lineBuffer = '';
+        let latestProgressRank = -1;
+        let lastProgressSignature = '';
+        const fallbackTimeouts = new Set<ReturnType<typeof setTimeout>>();
+        const child = spawnHermesProcess(hermesBin, args, {
+          cwd: projectRoot,
+          env: buildHermesExecEnv(hermesBin),
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        const clearFallbackTimeouts = () => {
+          fallbackTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+          fallbackTimeouts.clear();
+        };
+
+        const emitProgressState = (
+          progressState: {
+            progressLabel?: string;
+            progressStage?: string;
+            progressUpdatedAt?: number;
+          } = {},
+        ) => {
+          if (!progressState.progressStage && !progressState.progressLabel) {
+            return;
+          }
+
+          const progressStage = String(progressState.progressStage || '').trim().toLowerCase();
+          const progressLabel = String(progressState.progressLabel || '').trim();
+          const progressRank = getHermesProgressStageRank(progressStage);
+          if (
+            progressRank >= 0
+            && progressRank < latestProgressRank
+          ) {
+            return;
+          }
+          if (
+            progressRank >= 0
+            && !progressLabel
+            && progressRank <= latestProgressRank
+          ) {
+            return;
+          }
+
+          const nextSignature = [
+            progressStage,
+            progressLabel,
+          ].join('::');
+          if (!nextSignature || nextSignature === lastProgressSignature) {
+            return;
+          }
+
+          if (progressRank >= 0) {
+            latestProgressRank = progressRank;
+          }
+          lastProgressSignature = nextSignature;
+          options.onProgress?.({
+            ...progressState,
+            progressStage,
+            ...(progressLabel ? { progressLabel } : {}),
+            progressUpdatedAt: Number(progressState.progressUpdatedAt || 0) || Date.now(),
+          });
+        };
+
+        const emitProgress = (line: unknown) => {
+          const progressState = mapHermesProgressLine(line);
+          emitProgressState(progressState);
+        };
+
+        const flushLineBuffer = (force = false) => {
+          const normalizedBuffer = force ? lineBuffer : lineBuffer.replace(/\r/g, '\n');
+          let newlineIndex = normalizedBuffer.indexOf('\n');
+          while (newlineIndex >= 0) {
+            const line = normalizedBuffer.slice(0, newlineIndex);
+            emitProgress(line);
+            lineBuffer = normalizedBuffer.slice(newlineIndex + 1);
+            return flushLineBuffer(force);
+          }
+
+          if (force && lineBuffer.trim()) {
+            emitProgress(lineBuffer);
+            lineBuffer = '';
+          }
+        };
+
+        child.stdout?.on('data', (chunk) => {
+          const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk || '');
+          if (!text) {
+            return;
+          }
+          stdout += text;
+          lineBuffer += text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+          flushLineBuffer();
+        });
+
+        child.stderr?.on('data', (chunk) => {
+          const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk || '');
+          if (!text) {
+            return;
+          }
+          stderr += text;
+        });
+
+        child.on('error', (error) => {
+          clearFallbackTimeouts();
+          reject(error);
+        });
+
+        child.on('close', (code, signal) => {
+          clearFallbackTimeouts();
+          flushLineBuffer(true);
+          if (Number(code || 0) === 0) {
+            resolve({ stdout, stderr });
+            return;
+          }
+
+          const error = new Error(
+            String(stderr || stdout || `Hermes exited with code ${String(code || '') || 'unknown'}${signal ? ` (${String(signal)})` : ''}`),
+          ) as Error & ExecFileResponse & { code?: number | null; signal?: unknown };
+          error.code = typeof code === 'number' ? code : null;
+          error.signal = signal;
+          error.stdout = stdout;
+          error.stderr = stderr;
+          reject(error);
+        });
+
+        emitProgressState({ progressStage: 'thinking' });
+        HERMES_FALLBACK_PROGRESS_SEQUENCE.forEach(({ delayMs, progressStage }) => {
+          const timeoutId = setTimeout(() => {
+            fallbackTimeouts.delete(timeoutId);
+            emitProgressState({ progressStage });
+          }, delayMs);
+          fallbackTimeouts.add(timeoutId);
+        });
+      });
+    } else {
+      const execFile = getExecFileAsync();
+      response = await execFile(hermesBin, args, {
+        cwd: projectRoot,
+        env: buildHermesExecEnv(hermesBin),
+        maxBuffer: 4 * 1024 * 1024,
+      });
+    }
+
     const progressState = inferHermesProgressState({
       stdout: response?.stdout || '',
     });

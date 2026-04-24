@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, Copy, ScrollText } from "lucide-react";
+import { Check, Copy, ScrollText, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -401,7 +401,7 @@ export function FileFilterInput({ filterInput = "", messages, onChange, onClear 
           onClick={onClear}
           className="absolute inset-y-0 right-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <span aria-hidden="true" className="text-sm leading-none">x</span>
+          <X aria-hidden="true" className="h-3.5 w-3.5" />
         </button>
       ) : null}
     </label>

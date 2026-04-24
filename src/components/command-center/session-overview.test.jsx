@@ -403,6 +403,51 @@ describe("SessionOverview", () => {
     expect(onOpenImSession).not.toHaveBeenCalled();
   });
 
+  it("keeps the IM section visible when every IM channel is disabled", async () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main", "hermes"]}
+            availableImChannels={{
+              "dingtalk-connector": { enabled: false, defaultAgentId: "main" },
+              feishu: { enabled: false, defaultAgentId: "main" },
+              wecom: { enabled: false, defaultAgentId: "main" },
+              "openclaw-weixin": { enabled: false, defaultAgentId: "main" },
+            }}
+            availableModels={["openclaw"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
+            model="openclaw"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onOpenImSession={vi.fn()}
+            onSearchSessions={vi.fn()}
+            onSelectSearchedSession={vi.fn()}
+            onThinkModeChange={() => {}}
+            openAgentIds={["main"]}
+            session={createSession()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "切换 Agent" }));
+
+    expect(screen.getByRole("menuitem", { name: "hermes" })).toBeInTheDocument();
+    expect(screen.getByText("IM 对话")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /钉钉/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /飞书/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /企微/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /微信/ })).toBeInTheDocument();
+    expect(screen.getAllByText("未启用插件")).toHaveLength(4);
+  });
+
   it("renders IM platform logos inline so they are visible immediately", async () => {
     window.localStorage.setItem(localeStorageKey, "zh");
 
@@ -489,6 +534,33 @@ describe("SessionOverview", () => {
     expect(screen.getByRole("button", { name: "快速模式 已关闭" })).toBeDisabled();
     expect(screen.getByLabelText("切换思考模式")).toBeDisabled();
     expect(screen.getByRole("button", { name: "切换 Agent" })).toBeDisabled();
+  });
+
+  it("keeps the plus button enabled when hermes is available even if OpenClaw is offline", () => {
+    window.localStorage.setItem(localeStorageKey, "zh");
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <SessionOverview
+            availableAgents={["main", "hermes", "expert"]}
+            availableModels={["openai-codex/gpt-5.4"]}
+            fastMode={false}
+            formatCompactK={(value) => `${value}`}
+            layout="agent-tab"
+            model="openai-codex/gpt-5.4"
+            onAgentChange={() => {}}
+            onFastModeChange={() => {}}
+            onModelChange={() => {}}
+            onThinkModeChange={() => {}}
+            openAgentIds={["main"]}
+            session={createSession({ mode: "mock", status: "空闲" })}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "切换 Agent" })).toBeEnabled();
   });
 
   it("shows context guidance in the tooltip", async () => {

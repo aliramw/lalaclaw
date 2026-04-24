@@ -4976,13 +4976,15 @@ describe("InspectorPanel", () => {
 
     await user.type(filterInput, ".md");
 
-    expect(await screen.findByRole("button", { name: "清空 workspace 过滤" })).toBeInTheDocument();
+    const clearButton = await screen.findByRole("button", { name: "清空 workspace 过滤" });
+    expect(clearButton).toBeInTheDocument();
+    expect(clearButton.querySelector("svg")).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByText("README.md")).toBeInTheDocument();
       expect(screen.queryByText("package.json")).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "清空 workspace 过滤" }));
+    await user.click(clearButton);
 
     expect(screen.queryByRole("button", { name: "清空 workspace 过滤" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "过滤 workspace 文件" })).toHaveValue("");

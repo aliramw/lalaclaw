@@ -177,6 +177,7 @@ export async function sendCommandCenterPreparedPrompt({
   const {
     targetAgentId,
     targetFastMode,
+    targetHermesSessionId,
     targetModel,
     targetSessionUser,
     targetTabId,
@@ -211,6 +212,7 @@ export async function sendCommandCenterPreparedPrompt({
     userMessageId: `msg-user-${entryId}`,
     agentId: targetAgentId,
     sessionUser: resolvedTargetSessionUser,
+    ...(targetHermesSessionId ? { hermesSessionId: targetHermesSessionId } : {}),
     model: targetModel,
     fastMode: targetFastMode,
     thinkMode: targetThinkMode,

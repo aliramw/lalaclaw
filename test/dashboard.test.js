@@ -35,8 +35,16 @@ function createService(overrides = {}) {
     formatTimestamp: vi.fn((value) => `ts-${value}`),
     getCommandCenterSessionKey: vi.fn((agentId, sessionUser) => `agent:${agentId}:${sessionUser}`),
     getDefaultModelForAgent: vi.fn(() => "gpt-5"),
+    getHermesModelContextWindow: vi.fn(async () => 1050000),
+    getHermesSessionStats: vi.fn(async () => null),
+    getHermesStatus: vi.fn(async () => ({
+      installPath: "/Users/marila/.hermes/hermes-agent",
+      model: "gpt-5.4",
+      provider: "OpenAI Codex",
+    })),
     getLocalSessionFileEntries: vi.fn(() => []),
     getLocalSessionConversation: vi.fn(() => []),
+    getSessionPreferences: vi.fn(() => ({})),
     getTranscriptPath: vi.fn(() => "/workspace/openclaw/session.jsonl"),
     invokeOpenClawTool: vi.fn(async () => ({ details: { statusText: "status-text" } })),
     listDirectoryPreview: vi.fn((root) =>
@@ -55,6 +63,7 @@ function createService(overrides = {}) {
     readJsonLines: vi.fn(() => []),
     readTextIfExists: vi.fn(() => "line-1\nline-2\nline-3"),
     resolveAgentDisplayName: vi.fn((agentId) => `Agent ${agentId}`),
+    resolveModeForAgent: vi.fn((agentId) => (agentId === "hermes" ? "hermes" : "openclaw")),
     resolveSessionAgentId: vi.fn(() => "main"),
     resolveSessionFastMode: vi.fn(() => false),
     resolveSessionModel: vi.fn(() => "gpt-5"),
@@ -109,6 +118,91 @@ describe("createDashboardService", () => {
     ]);
     expect(snapshot.peeks.workspace.totalCount).toBe(5);
     expect(snapshot.peeks.terminal.items[2].value).toContain("line-1");
+  });
+
+  it("builds a hermes snapshot without routing through openclaw state", async () => {
+    const localConversation = [{ role: "assistant", content: "hermes says hi", timestamp: 1 }];
+    const service = createService({
+      config: {
+        mode: "openclaw",
+        model: "openclaw",
+        baseUrl: "http://127.0.0.1:18789",
+        workspaceRoot: "/workspace/openclaw",
+        logsDir: "/workspace/logs",
+        localConfig: null,
+      },
+      getDefaultModelForAgent: vi.fn((agentId) => (agentId === "hermes" ? "gpt-5.4" : "gpt-5")),
+      getLocalSessionConversation: vi.fn(() => localConversation),
+      getSessionPreferences: vi.fn(() => ({ hermesSessionId: "hermes-session-1" })),
+      getHermesSessionStats: vi.fn(async () => ({
+        sessionId: "hermes-session-1",
+        inputTokens: 41600,
+        outputTokens: 120,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+      })),
+      getHermesModelContextWindow: vi.fn(async () => 1050000),
+      collectAvailableAgents: vi.fn(() => ["main", "hermes"]),
+      collectAvailableModels: vi.fn(() => ["gpt-5.4"]),
+      resolveSessionAgentId: vi.fn(() => "main"),
+    });
+
+    const snapshot = await service.buildDashboardSnapshot("command-center-hermes", { agentId: "hermes" });
+
+    expect(snapshot.session).toMatchObject({
+      mode: "hermes",
+      model: "gpt-5.4",
+      selectedModel: "gpt-5.4",
+      agentId: "hermes",
+      agentLabel: "Agent hermes",
+      sessionUser: "command-center-hermes",
+      availableAgents: ["main", "hermes"],
+      availableModels: ["gpt-5.4"],
+      contextUsed: 41720,
+      contextMax: 1050000,
+    });
+    expect(snapshot.conversation).toEqual(localConversation);
+    expect(snapshot.session.runtime).toBe("hermes");
+    expect(snapshot.session.auth).toBe("OpenAI Codex");
+    expect(snapshot.session.contextDisplay).toBe("41720 / 1050000");
+    expect(snapshot.peeks.environment.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "session.mode", value: "hermes" }),
+        expect.objectContaining({ label: "session.context", value: "41720 / 1050000" }),
+      ]),
+    );
+  });
+
+  it("uses an explicit hermes session id override when the backend preferences cache is empty", async () => {
+    const service = createService({
+      getSessionPreferences: vi.fn(() => ({})),
+      getHermesSessionStats: vi.fn(async (sessionId) => (
+        sessionId === "hermes-session-42"
+          ? {
+              sessionId,
+              inputTokens: 512,
+              outputTokens: 32,
+              cacheReadTokens: 16,
+              cacheWriteTokens: 0,
+              reasoningTokens: 8,
+            }
+          : null
+      )),
+      getHermesModelContextWindow: vi.fn(async () => 1050000),
+    });
+
+    const snapshot = await service.buildDashboardSnapshot("command-center-hermes", {
+      agentId: "hermes",
+      hermesSessionId: "hermes-session-42",
+    });
+
+    expect(snapshot.session).toMatchObject({
+      mode: "hermes",
+      contextUsed: 568,
+      contextMax: 1050000,
+      contextDisplay: "568 / 1050000",
+    });
   });
 
   it("keeps attachment-only conversation entries when merging runtime and local messages", () => {

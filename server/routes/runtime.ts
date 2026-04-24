@@ -5,6 +5,7 @@ type JsonSender = (res: unknown, status: number, body: Record<string, unknown>) 
 
 type RuntimeSnapshot = {
   session?: {
+    mode?: string;
     model?: string;
     sessionUser?: string;
   };
@@ -17,6 +18,7 @@ type RuntimeRequestOptions = {
   model?: string;
   thinkMode?: string;
   fastMode?: boolean;
+  hermesSessionId?: string;
 };
 
 function parseOptionalBoolean(value: string | null): boolean | undefined {
@@ -51,16 +53,19 @@ export function createRuntimeHandler({
       const model = String(searchParams.get('model') || '').trim();
       const thinkMode = String(searchParams.get('thinkMode') || '').trim();
       const fastMode = parseOptionalBoolean(searchParams.get('fastMode'));
+      const hermesSessionId = String(searchParams.get('hermesSessionId') || '').trim();
       const snapshot = await buildDashboardSnapshot(sessionUser, {
         ...(agentId ? { agentId } : {}),
         ...(model ? { model } : {}),
         ...(thinkMode ? { thinkMode } : {}),
         ...(typeof fastMode === 'boolean' ? { fastMode } : {}),
+        ...(hermesSessionId ? { hermesSessionId } : {}),
       });
       const resolvedModel = snapshot.session?.model || config.model;
+      const resolvedMode = String(snapshot.session?.mode || config.mode || '').trim() || config.mode;
       sendJson(res, 200, {
         ok: true,
-        mode: config.mode,
+        mode: resolvedMode,
         model: resolvedModel,
         ...snapshot,
       });

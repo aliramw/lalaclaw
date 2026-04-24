@@ -522,6 +522,7 @@ export function useChatController({
         const nextSessionUser = payload.resetSessionUser;
         const nextAgentId = payload.session?.agentId || resolvedEntry.agentId;
         const nextModel = payload.session?.selectedModel || payload.session?.model || resolvedEntry.model;
+        const nextHermesSessionId = String(payload.session?.hermesSessionId || "").trim();
         const nextFastMode =
           payload.session?.fastMode === i18n.sessionOverview.fastMode.on ||
           payload.session?.fastMode === "开启" ||
@@ -537,6 +538,7 @@ export function useChatController({
         updateTabMeta(targetTabId, {
           agentId: nextAgentId,
           fastMode: nextFastMode,
+          ...(nextHermesSessionId ? { hermesSessionId: nextHermesSessionId } : {}),
           model: nextModel,
           sessionUser: nextSessionUser,
           thinkMode: nextThinkMode,
@@ -559,6 +561,7 @@ export function useChatController({
           ...current,
           ...(payload.session || {}),
           agentId: nextAgentId,
+          ...(nextHermesSessionId ? { hermesSessionId: nextHermesSessionId } : {}),
           selectedAgentId: nextAgentId,
           model: nextModel || current.model,
           selectedModel: nextModel || current.selectedModel,
@@ -573,28 +576,38 @@ export function useChatController({
         return;
       }
 
-      setMessagesForTab(targetTabId, (current) => {
-        const nextMessages = replaceAssistantPreservingTurn(
-          current,
-          {
-            ...resolvedEntry,
-            pendingTimestamp: resolvedPendingTimestamp,
-          },
-          i18n.chat.thinkingPlaceholder,
-          String(payload.outputText || ""),
-          String(payload.tokenBadge || ""),
-          false,
-          payload.assistantMessageId || resolvedPendingAssistantMessageId,
-          i18n.chat.sentAttachmentCount,
-        );
-        pushCcDebugEvent("chat.messages.replace-assistant", {
-          tabId: targetTabId,
-          entryId: resolvedEntry.id,
-          before: summarizeCcMessages(current),
-          after: summarizeCcMessages(nextMessages),
+      const isSessionResetCommand = /^\/(?:new|reset)(?:\s|$)/i.test(String(resolvedEntry.content || "").trim());
+      const payloadIncludesUserTurn = Array.isArray(payload.conversation)
+        && conversationIncludesUserTurn(payload.conversation, resolvedEntry);
+      const payloadHasFinalAssistantReply = hasVisibleAssistantContent(String(payload.outputText || ""));
+      const canSyncConversationFromPayload = Array.isArray(payload.conversation)
+        && (isSessionResetCommand || payloadIncludesUserTurn);
+      retainPendingUntilRuntimeCatchup = !isSessionResetCommand && !payloadIncludesUserTurn && !payloadHasFinalAssistantReply;
+
+      if (!retainPendingUntilRuntimeCatchup) {
+        setMessagesForTab(targetTabId, (current) => {
+          const nextMessages = replaceAssistantPreservingTurn(
+            current,
+            {
+              ...resolvedEntry,
+              pendingTimestamp: resolvedPendingTimestamp,
+            },
+            i18n.chat.thinkingPlaceholder,
+            String(payload.outputText || ""),
+            String(payload.tokenBadge || ""),
+            false,
+            payload.assistantMessageId || resolvedPendingAssistantMessageId,
+            i18n.chat.sentAttachmentCount,
+          );
+          pushCcDebugEvent("chat.messages.replace-assistant", {
+            tabId: targetTabId,
+            entryId: resolvedEntry.id,
+            before: summarizeCcMessages(current),
+            after: summarizeCcMessages(nextMessages),
+          });
+          return nextMessages;
         });
-        return nextMessages;
-      });
+      }
       const sessionPatch = (
         payload.sessionSync
         || payload.sessionPatch
@@ -609,18 +622,11 @@ export function useChatController({
       updateTabMeta(targetTabId, (current) => ({
         ...current,
         agentId: sessionPatch.agentId || current.agentId || resolvedEntry.agentId,
+        hermesSessionId: String(sessionPatch.hermesSessionId || current.hermesSessionId || "").trim(),
         model: sessionPatch.selectedModel || sessionPatch.model || current.model || resolvedEntry.model || "",
         sessionUser: sessionPatch.sessionUser || current.sessionUser || resolvedEntry.sessionUser,
         thinkMode: sessionPatch.thinkMode || current.thinkMode || resolvedEntry.thinkMode || "off",
       }));
-
-      const isSessionResetCommand = /^\/(?:new|reset)(?:\s|$)/i.test(String(resolvedEntry.content || "").trim());
-      const payloadIncludesUserTurn = Array.isArray(payload.conversation)
-        && conversationIncludesUserTurn(payload.conversation, resolvedEntry);
-      const payloadHasFinalAssistantReply = hasVisibleAssistantContent(String(payload.outputText || ""));
-      const canSyncConversationFromPayload = Array.isArray(payload.conversation)
-        && (isSessionResetCommand || payloadIncludesUserTurn);
-      retainPendingUntilRuntimeCatchup = !isSessionResetCommand && !payloadIncludesUserTurn && !payloadHasFinalAssistantReply;
 
       if (isTabActive(targetTabId) && payload.session) {
         applySnapshot?.(payload, { syncConversation: canSyncConversationFromPayload });

@@ -1240,6 +1240,86 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
+  it("uses the hermes disconnected placeholder when the hermes session is offline", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ mode: "hermes", agentId: "hermes", status: "离线" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByPlaceholderText("Hermes Agent 尚未连接，请稍候。")).toBeDisabled();
+    expect(screen.getByText("无马")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+  });
+
+  it("shows hermes-specific footer status copy instead of openclaw wording", async () => {
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <ChatPanel
+            busy={false}
+            formatTime={() => "10:00:00"}
+            messageViewportRef={null}
+            messages={[]}
+            onChatFontSizeChange={() => {}}
+            onPromptChange={() => {}}
+            onPromptKeyDown={() => {}}
+            onReset={() => {}}
+            onSend={() => {}}
+            prompt=""
+            promptRef={null}
+            session={createSession({ mode: "hermes", agentId: "hermes", status: "待命" })}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("Horse ready")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.hover(screen.getByText("Horse ready"));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hermes agent status");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Connected");
+  });
+
+  it("keeps the hermes composer enabled when the local hermes session is online", () => {
+    render(
+      <TooltipProvider>
+        <ChatPanel
+          busy={false}
+          formatTime={() => "10:00:00"}
+          messageViewportRef={null}
+          messages={[]}
+          onChatFontSizeChange={() => {}}
+          onPromptChange={() => {}}
+          onPromptKeyDown={() => {}}
+          onReset={() => {}}
+          onSend={() => {}}
+          prompt=""
+          promptRef={null}
+          session={createSession({ mode: "hermes", agentId: "hermes", status: "已完成" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByPlaceholderText("💡 想要和 hermes 一起做点什么？")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
+  });
+
   it("keeps the composer frame quiet at rest and reserves the stronger ring for focus", () => {
     render(
       <TooltipProvider>

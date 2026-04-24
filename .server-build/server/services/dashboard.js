@@ -18,6 +18,21 @@ const UNTRUSTED_METADATA_SENTINELS = [
     /^Chat history since last reply \(untrusted, for context\):/i,
 ];
 const MESSAGE_ID_LINE = /^\s*\[message_id:\s*[^\]]+\]\s*$/i;
+function isPlaceholderOpenClawModel(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'openclaw' || normalized.endsWith('/openclaw');
+}
+function formatSessionRecordModel(sessionRecord) {
+    const model = String(sessionRecord?.model || '').trim();
+    const provider = String(sessionRecord?.modelProvider || '').trim();
+    if (!model) {
+        return '';
+    }
+    if (model.includes('/')) {
+        return model;
+    }
+    return provider ? `${provider}/${model}` : model;
+}
 const ABORTED_RUN_NOTE_LINE = /^Note:\s*The previous agent run was aborted by the user\b/i;
 const DEFAULT_WORKSPACE_FILE_LIMIT = 200;
 const DEFAULT_FRONTEND_URL = 'http://127.0.0.1:5173';
@@ -661,7 +676,7 @@ function flattenEnvironmentObject(value, prefix = '', items = []) {
     }
     return items;
 }
-function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway, clip, collectAvailableAgents, collectAvailableSkills, collectAllowedSubagents, collectAvailableModels, collectArtifacts, collectConversationMessages, collectFiles, collectLatestRunUsage, collectSnapshots, collectTaskRelationships, collectTaskTimeline, collectToolHistory, config, lalaclawVersion = LALACLAW_VERSION, extractTextSegments, fetchBrowserPeek, formatTokenBadge, formatTimestamp, getCommandCenterSessionKey, getDefaultModelForAgent, getLocalSessionFileEntries, getLocalSessionConversation, getTranscriptEntriesForSession, getTranscriptPath, getOpenClawOperationSummary, getRuntimeHubDebugInfo, invokeOpenClawTool, countWorkspaceFiles = defaultCountWorkspaceFiles, listDirectoryPreview, listWorkspaceFiles = defaultListWorkspaceFiles, normalizeSessionUser, findLatestSessionForAgent, listImSessionsForAgent, parseSessionStatusText, readJsonLines, readTextIfExists, resolveAgentDisplayName, resolveAgentWorkspace, resolveSessionAgentId, resolveSessionFastMode, resolveSessionModel, resolveSessionRecord, resolveSessionThinkMode, buildAgentGraph, tailLines, }) {
+function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway, clip, collectAvailableAgents, collectAvailableSkills, collectAllowedSubagents, collectAvailableModels, collectArtifacts, collectConversationMessages, collectFiles, collectLatestRunUsage, collectSnapshots, collectTaskRelationships, collectTaskTimeline, collectToolHistory, config, lalaclawVersion = LALACLAW_VERSION, extractTextSegments, fetchBrowserPeek, formatTokenBadge, formatTimestamp, getCommandCenterSessionKey, getDefaultModelForAgent, getHermesModelContextWindow, getHermesSessionStats, getHermesStatus, getLocalSessionFileEntries, getLocalSessionConversation, getSessionPreferences, getTranscriptEntriesForSession, getTranscriptPath, getOpenClawOperationSummary, getRuntimeHubDebugInfo, invokeOpenClawTool, countWorkspaceFiles = defaultCountWorkspaceFiles, listDirectoryPreview, listWorkspaceFiles = defaultListWorkspaceFiles, normalizeSessionUser, findLatestSessionForAgent, listImSessionsForAgent, parseSessionStatusText, readJsonLines, readTextIfExists, resolveAgentDisplayName, resolveAgentWorkspace, resolveModeForAgent, resolveSessionAgentId, resolveSessionFastMode, resolveSessionModel, resolveSessionRecord, resolveSessionThinkMode, buildAgentGraph, tailLines, }) {
     let liveConfigCache = {
         fetchedAt: 0,
         value: null,
@@ -867,7 +882,7 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
             buildEnvironmentItem('LALACLAW.ACCESS_MODE', config.accessMode || 'off'),
             buildEnvironmentItem('LALACLAW.GATEWAY_AUTH', config.apiKey ? 'token' : 'none'),
             buildEnvironmentItem('OPENCLAW.VERSION', openClawVersion),
-            buildEnvironmentItem('session.mode', config.mode),
+            buildEnvironmentItem('session.mode', parsedStatus?.runtimeDisplay || config.mode),
             buildEnvironmentItem('session.agent', normalizedAgentId),
             buildEnvironmentItem('session.sessionKey', sessionKey || parsedStatus?.sessionKey || ''),
             buildEnvironmentItem('session.workspaceRoot', normalizedWorkspaceRoot, { revealable: directoryExists(normalizedWorkspaceRoot) }),
@@ -938,8 +953,8 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
                 queue: 'none',
                 updatedLabel: '',
                 updatedAt: now,
-                availableModels: collectAvailableModels(config.localConfig, [model]),
-                availableAgents: collectAvailableAgents(config.localConfig, [agentId]),
+                availableModels: collectAvailableModels(config.localConfig, [model], { agentId }),
+                availableAgents: collectAvailableAgents(config.localConfig, [String(config.agentId || 'main').trim() || 'main', agentId], { includeLocallyInstalledAgents: true }),
                 availableMentionAgents,
                 availableSkills,
             },
@@ -1021,6 +1036,115 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
             },
         };
     }
+    async function buildHermesSnapshot(sessionUser = 'command-center', overrides = {}) {
+        const agentId = String(overrides?.agentId || resolveSessionAgentId(sessionUser) || 'hermes').trim() || 'hermes';
+        const status = typeof getHermesStatus === 'function'
+            ? await getHermesStatus().catch(() => null)
+            : null;
+        const workspaceRoot = typeof resolveAgentWorkspace === 'function' ? resolveAgentWorkspace(agentId) : PROJECT_ROOT;
+        const model = String(overrides?.model || '').trim()
+            || String(status?.model || '').trim()
+            || resolveSessionModel(sessionUser, agentId)
+            || getDefaultModelForAgent(agentId);
+        const provider = String(status?.provider || '').trim();
+        const installPath = String(status?.installPath || '').trim();
+        const localConversation = getLocalSessionConversation(sessionUser);
+        const localFileEntries = getLocalSessionFileEntries(sessionUser);
+        const sessionPreferences = typeof getSessionPreferences === 'function'
+            ? getSessionPreferences(sessionUser) || {}
+            : {};
+        const hermesSessionId = String(overrides?.hermesSessionId || sessionPreferences?.hermesSessionId || '').trim();
+        const sessionStats = hermesSessionId && typeof getHermesSessionStats === 'function'
+            ? await getHermesSessionStats(hermesSessionId).catch(() => null)
+            : null;
+        const contextUsed = [
+            Number(sessionStats?.inputTokens) || 0,
+            Number(sessionStats?.outputTokens) || 0,
+            Number(sessionStats?.cacheReadTokens) || 0,
+            Number(sessionStats?.cacheWriteTokens) || 0,
+            Number(sessionStats?.reasoningTokens) || 0,
+        ].reduce((sum, value) => sum + value, 0);
+        const contextMax = typeof getHermesModelContextWindow === 'function'
+            ? await getHermesModelContextWindow(model).catch(() => 0)
+            : 0;
+        const contextDisplay = `${contextUsed} / ${contextMax}`;
+        return {
+            session: {
+                mode: 'hermes',
+                model,
+                selectedModel: model,
+                agentId,
+                agentLabel: resolveAgentDisplayName(agentId),
+                selectedAgentId: agentId,
+                sessionUser: String(sessionUser || 'command-center').trim() || 'command-center',
+                sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
+                hermesSessionId,
+                workspaceRoot,
+                status: '已完成',
+                fastMode: '关闭',
+                thinkMode: 'off',
+                contextUsed,
+                contextMax,
+                contextDisplay,
+                runtime: 'hermes',
+                queue: 'none',
+                updatedLabel: '',
+                updatedAt: Date.now(),
+                tokens: '',
+                auth: provider,
+                version: '',
+                time: '',
+                availableModels: [model].filter(Boolean),
+                availableAgents: collectAvailableAgents(config.localConfig, [String(config.agentId || 'main').trim() || 'main', agentId], { includeLocallyInstalledAgents: true }),
+                availableMentionAgents: [],
+                availableSkills: [],
+            },
+            conversation: localConversation,
+            taskRelationships: [],
+            taskTimeline: [],
+            toolHistory: [],
+            files: mergeProjectedFiles(collectFiles(localFileEntries, [PROJECT_ROOT, workspaceRoot], { injectedFiles: [] }), []),
+            artifacts: [],
+            snapshots: [],
+            agents: [
+                {
+                    id: agentId,
+                    label: agentId,
+                    state: 'active',
+                    detail: provider ? `${provider} · ${clip(model, 42)}` : clip(model, 42),
+                    updatedAt: Date.now(),
+                    sessionCount: 1,
+                },
+            ],
+            peeks: {
+                workspace: buildWorkspacePeek(workspaceRoot),
+                terminal: buildTerminalPeek(),
+                browser: {
+                    summary: 'Hermes 会话未接入浏览器遥测。',
+                    items: [{ label: '状态', value: '本地 CLI' }],
+                },
+                environment: buildEnvironmentPeek({
+                    agentId,
+                    fastMode: false,
+                    latestModel: model,
+                    liveConfig: installPath ? { installPath, provider } : { provider },
+                    parsedStatus: {
+                        contextDisplay,
+                        queueDisplay: 'none',
+                        runtimeDisplay: 'hermes',
+                        thinkMode: 'off',
+                        versionDisplay: '',
+                    },
+                    selectedModel: model,
+                    sessionUser,
+                    sessionKey: getCommandCenterSessionKey(agentId, sessionUser),
+                    sessionVersion: '',
+                    thinkMode: 'off',
+                    workspaceRoot,
+                }),
+            },
+        };
+    }
     async function buildOpenClawSnapshot(sessionUser = 'command-center', overrides = {}) {
         const forcedAgentId = String(overrides?.agentId || '').trim();
         const forcedModel = String(overrides?.model || '').trim();
@@ -1058,12 +1182,13 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         let sessionRecord = resolveSessionRecord(agentId, sessionKey);
         let localConversation = getLocalSessionConversation(effectiveSessionUser);
         let localFileEntries = getLocalSessionFileEntries(effectiveSessionUser);
+        const latestSession = typeof findLatestSessionForAgent === 'function'
+            ? findLatestSessionForAgent(agentId)
+            : null;
         if (forcedAgentId &&
             agentId !== 'main' &&
             !sessionRecord &&
-            normalizeSessionUser(effectiveSessionUser) === 'command-center' &&
-            typeof findLatestSessionForAgent === 'function') {
-            const latestSession = findLatestSessionForAgent(agentId);
+            normalizeSessionUser(effectiveSessionUser) === 'command-center') {
             if (latestSession?.sessionUser) {
                 effectiveSessionUser = latestSession.sessionUser;
                 sessionKey = latestSession.sessionKey || getCommandCenterSessionKey(agentId, effectiveSessionUser);
@@ -1074,7 +1199,7 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         }
         const agentLabel = resolveAgentDisplayName(agentId);
         const workspaceRoot = typeof resolveAgentWorkspace === 'function' ? resolveAgentWorkspace(agentId) : config.workspaceRoot;
-        const selectedModel = forcedModel || resolveSessionModel(effectiveSessionUser, agentId);
+        const resolvedSelectedModel = forcedModel || resolveSessionModel(effectiveSessionUser, agentId);
         const fastMode = typeof overrides?.fastMode === 'boolean' ? overrides.fastMode : resolveSessionFastMode(effectiveSessionUser);
         const preferredThinkMode = forcedThinkMode || resolveSessionThinkMode(effectiveSessionUser);
         const transcriptPath = sessionRecord ? getTranscriptPath(agentId, sessionRecord.sessionId) : '';
@@ -1098,12 +1223,24 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         const latestAssistant = [...sessionEntries]
             .reverse()
             .find((entry) => entry.type === 'message' && entry.message?.role === 'assistant');
-        const latestModel = parsedStatus?.modelDisplay ||
-            latestAssistant?.message?.model ||
-            getDefaultModelForAgent(agentId) ||
-            config.model;
-        const availableModels = collectAvailableModels(config.localConfig, [selectedModel, latestModel]);
-        const availableAgents = collectAvailableAgents(config.localConfig, [agentId]);
+        const rawLatestObservedModel = parsedStatus?.modelDisplay || latestAssistant?.message?.model || '';
+        const latestObservedModel = isPlaceholderOpenClawModel(rawLatestObservedModel) ? '' : rawLatestObservedModel;
+        const configuredDefaultModel = getDefaultModelForAgent(agentId);
+        const directAgentSessionModel = agentId === 'main'
+            ? formatSessionRecordModel(resolveSessionRecord(agentId, `agent:${agentId}:main`))
+            : '';
+        const latestSessionModel = formatSessionRecordModel(latestSession?.sessionRecord);
+        const latestModel = latestObservedModel ||
+            directAgentSessionModel ||
+            latestSessionModel ||
+            (isPlaceholderOpenClawModel(configuredDefaultModel) ? '' : configuredDefaultModel) ||
+            (isPlaceholderOpenClawModel(config.model) ? '' : config.model) ||
+            '';
+        const selectedModel = isPlaceholderOpenClawModel(resolvedSelectedModel)
+            ? (latestModel || '')
+            : resolvedSelectedModel;
+        const availableModels = collectAvailableModels(config.localConfig, [selectedModel, latestModel], { agentId });
+        const availableAgents = collectAvailableAgents(config.localConfig, [agentId], { includeLocallyInstalledAgents: true });
         const availableMentionAgents = collectAllowedSubagents(config.localConfig, agentId);
         const availableSkills = collectAvailableSkills(liveConfig || config.localConfig, agentId);
         const gatewayConversation = collectConversationMessages(sessionEntries);
@@ -1122,7 +1259,7 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         return {
             session: {
                 mode: 'openclaw',
-                model: latestModel,
+                model: latestModel || selectedModel,
                 selectedModel,
                 agentId,
                 agentLabel,
@@ -1180,6 +1317,10 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
         };
     }
     async function buildDashboardSnapshot(sessionUser = 'command-center', overrides = {}) {
+        const requestedAgentId = String(overrides?.agentId || resolveSessionAgentId(sessionUser) || '').trim();
+        if (typeof resolveModeForAgent === 'function' && resolveModeForAgent(requestedAgentId) === 'hermes') {
+            return await buildHermesSnapshot(sessionUser, overrides);
+        }
         if (config.mode !== 'openclaw') {
             return buildMockSnapshot(sessionUser, overrides);
         }
@@ -1187,6 +1328,7 @@ function createDashboardService({ HOST, PORT, PROJECT_ROOT, callOpenClawGateway,
     }
     return {
         buildDashboardSnapshot,
+        buildHermesSnapshot,
         buildMockSnapshot,
         buildOpenClawSnapshot,
         buildTerminalPeek,

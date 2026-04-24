@@ -1735,9 +1735,13 @@ export function useRuntimeSnapshot({
       sessionUser: requestedSessionUser,
     });
     const resolvedAgentId = String(overrides.agentId || currentSession.agentId || "").trim();
+    const resolvedHermesSessionId = String(overrides.hermesSessionId || currentSession.hermesSessionId || "").trim();
 
     if (resolvedAgentId) {
       params.set("agentId", resolvedAgentId);
+    }
+    if (resolvedHermesSessionId) {
+      params.set("hermesSessionId", resolvedHermesSessionId);
     }
 
     const requestKey = params.toString();
@@ -1844,6 +1848,9 @@ export function useRuntimeSnapshot({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...payload,
+        ...(String(payload?.hermesSessionId || session.hermesSessionId || "").trim()
+          ? { hermesSessionId: String(payload?.hermesSessionId || session.hermesSessionId || "").trim() }
+          : {}),
         sessionUser: targetSessionUser,
       }),
     });

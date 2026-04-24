@@ -318,6 +318,56 @@ describe("createChatHandler", () => {
     );
   });
 
+  it("prefers the request hermes session id when the backend cache was lost after a restart", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "openclaw" },
+      getSessionPreferences: vi.fn(() => ({ fastMode: false, thinkMode: "off" })),
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center-hermes",
+        agentId: "hermes",
+        model: "gpt-5.4",
+        hermesSessionId: "hermes-session-from-tab",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchHermes: vi.fn(async () => ({
+        outputText: "Hermes 继续",
+        usage: null,
+        sessionId: "hermes-session-from-tab",
+      })),
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {
+          mode: "hermes",
+          agentId: "hermes",
+          selectedModel: "gpt-5.4",
+          model: "gpt-5.4",
+          sessionUser: "command-center-hermes",
+          availableModels: ["gpt-5.4"],
+          availableAgents: ["main", "hermes"],
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.dispatchHermes).toHaveBeenCalledWith(
+      [{ role: "user", content: "继续" }],
+      expect.objectContaining({
+        model: "gpt-5.4",
+        sessionUser: "command-center-hermes",
+        sessionId: "hermes-session-from-tab",
+      }),
+    );
+    expect(harness.setSessionPreferences).toHaveBeenCalledWith(
+      "command-center-hermes",
+      expect.objectContaining({
+        hermesSessionId: "hermes-session-from-tab",
+      }),
+    );
+  });
+
   it("handles fast commands without dispatching a model request", async () => {
     const harness = createHandler({
       parseRequestBody: vi.fn(async () => ({
@@ -630,6 +680,78 @@ describe("createChatHandler", () => {
       progressLabel: "执行命令…",
       progressUpdatedAt: 12345,
     });
+  });
+
+  it("forwards hermes progress events before the final streamed reply completes", async () => {
+    const harness = createHandler({
+      config: { mode: "mock", model: "gpt-5.4" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center",
+        agentId: "hermes",
+        fastMode: false,
+        stream: true,
+        messages: [{ role: "user", content: "继续" }],
+      })),
+      dispatchHermes: vi.fn(async (_messages, options = {}) => {
+        options.onProgress?.({
+          progressStage: "inspecting",
+          progressLabel: "检查工作区…",
+          progressUpdatedAt: 101,
+        });
+        options.onProgress?.({
+          progressStage: "executing",
+          progressLabel: "执行命令…",
+          progressUpdatedAt: 102,
+        });
+        return {
+          outputText: "已完成",
+          sessionId: "hermes-session-1",
+          usage: null,
+        };
+      }),
+    });
+
+    const req = new EventEmitter();
+    req.once = req.once.bind(req);
+    const writes = [];
+    const res = new EventEmitter();
+    res.once = res.once.bind(res);
+    res.headersSent = false;
+    res.destroyed = false;
+    res.writableEnded = false;
+    res.writeHead = vi.fn(() => {
+      res.headersSent = true;
+    });
+    res.write = vi.fn((chunk) => {
+      writes.push(chunk);
+    });
+    res.end = vi.fn(() => {
+      res.writableEnded = true;
+    });
+
+    await harness.handler(req, res);
+
+    const events = writes.map((chunk) => JSON.parse(String(chunk || "").trim()));
+    const progressEvents = events.filter((event) => event.type === "message.progress");
+    const completeIndex = events.findIndex((event) => event.type === "message.complete");
+
+    expect(progressEvents).toEqual([
+      expect.objectContaining({
+        type: "message.progress",
+        messageId: expect.any(String),
+        progressStage: "inspecting",
+        progressLabel: "检查工作区…",
+        progressUpdatedAt: 101,
+      }),
+      expect.objectContaining({
+        type: "message.progress",
+        messageId: expect.any(String),
+        progressStage: "executing",
+        progressLabel: "执行命令…",
+        progressUpdatedAt: 102,
+      }),
+    ]);
+    expect(completeIndex).toBeGreaterThan(events.findIndex((event) => event.type === "message.progress"));
   });
 
   it("includes provider progress fields in non-streaming json responses", async () => {

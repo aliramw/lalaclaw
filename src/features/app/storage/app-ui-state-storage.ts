@@ -246,6 +246,7 @@ function sanitizeTabMetaMap(value: unknown, tabs: ChatTab[] = []): TabMetaById {
         {
           agentId: tab.agentId,
           sessionUser: tab.sessionUser,
+          hermesSessionId: "",
           model: "",
           fastMode: false,
           thinkMode: "off",
@@ -265,6 +266,7 @@ function sanitizeTabMetaMap(value: unknown, tabs: ChatTab[] = []): TabMetaById {
         {
           agentId: resolveAgentIdFromTabId(tab.id) || normalizeAgentId(meta.agentId || tab.agentId),
           sessionUser: sanitizeSessionUser(meta.sessionUser || tab.sessionUser, meta.agentId || tab.agentId),
+          hermesSessionId: String(meta.hermesSessionId || "").trim(),
           model: String(meta.model || "").trim(),
           fastMode: Boolean(meta.fastMode),
           thinkMode: typeof meta.thinkMode === "string" ? meta.thinkMode : "off",
@@ -343,10 +345,11 @@ function loadParsedStorageState(raw: string | null): StoredUiState | null {
   const tabMetaById = sanitizeTabMetaMap(parsed?.tabMetaById, knownTabs);
 
   if (activeTab && !tabMetaById[activeTab.id]) {
-    tabMetaById[activeTab.id] = {
-      agentId: activeTab.agentId,
-      sessionUser: activeTab.sessionUser,
-      model: parsed?.model || "",
+      tabMetaById[activeTab.id] = {
+        agentId: activeTab.agentId,
+        sessionUser: activeTab.sessionUser,
+        hermesSessionId: "",
+        model: parsed?.model || "",
       fastMode: Boolean(parsed?.fastMode),
       thinkMode: typeof parsed?.thinkMode === "string" ? parsed.thinkMode : "off",
       sessionFiles: [],

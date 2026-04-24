@@ -31,4 +31,40 @@ describe("createRuntimeHandler", () => {
     expect(responseStatus).toBe(200);
     expect(responseBody.session.sessionUser).toBe("agent:main:dingtalk-connector:direct:398058");
   });
+
+  it("forwards a persisted hermes session id to the dashboard snapshot loader", async () => {
+    let receivedOverrides = null;
+    const buildDashboardSnapshot = async (_sessionUser, overrides) => {
+      receivedOverrides = overrides;
+      return {
+        session: {
+          sessionUser: "command-center-hermes",
+          mode: "hermes",
+        },
+        conversation: [],
+      };
+    };
+    let responseStatus = null;
+    const handleRuntime = createRuntimeHandler({
+      buildDashboardSnapshot,
+      config: { mode: "openclaw", model: "openai-codex/gpt-5.4" },
+      sendJson: (_res, status) => {
+        responseStatus = status;
+      },
+    });
+
+    await handleRuntime(
+      {
+        headers: { host: "127.0.0.1:3000" },
+        url: "/api/runtime?agentId=hermes&sessionUser=command-center-hermes&hermesSessionId=hermes-session-42",
+      },
+      {},
+    );
+
+    expect(responseStatus).toBe(200);
+    expect(receivedOverrides).toMatchObject({
+      agentId: "hermes",
+      hermesSessionId: "hermes-session-42",
+    });
+  });
 });
