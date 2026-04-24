@@ -269,6 +269,63 @@ describe("createChatHandler", () => {
     });
   });
 
+  it("stores Hermes assistant replies in local file entries so created files can appear in the session files panel", async () => {
+    const harness = createHandler({
+      config: { mode: "openclaw", model: "openclaw" },
+      parseRequestBody: vi.fn(async () => ({
+        sessionUser: "command-center-hermes",
+        agentId: "hermes",
+        model: "gpt-5.4",
+        fastMode: false,
+        stream: false,
+        messages: [{ role: "user", content: "创建 notes/today.md" }],
+      })),
+      dispatchHermes: vi.fn(async () => ({
+        outputText: "已创建 `notes/today.md`，并更新 `notes/index.md`。",
+        usage: null,
+        sessionId: "hermes-session-1",
+      })),
+      buildDashboardSnapshot: vi.fn(async () => ({
+        session: {
+          mode: "hermes",
+          agentId: "hermes",
+          selectedModel: "gpt-5.4",
+          model: "gpt-5.4",
+          sessionUser: "command-center-hermes",
+          availableModels: ["gpt-5.4"],
+          availableAgents: ["main", "hermes"],
+        },
+        conversation: [],
+      })),
+    });
+
+    await harness.handler({}, {});
+
+    expect(harness.appendLocalSessionFileEntries).toHaveBeenNthCalledWith(
+      1,
+      "command-center-hermes",
+      [
+        {
+          role: "user",
+          content: "创建 notes/today.md",
+          timestamp: expect.any(Number),
+          attachments: [],
+        },
+      ],
+    );
+    expect(harness.appendLocalSessionFileEntries).toHaveBeenNthCalledWith(
+      2,
+      "command-center-hermes",
+      [
+        {
+          role: "assistant",
+          content: "已创建 `notes/today.md`，并更新 `notes/index.md`。",
+          timestamp: expect.any(Number),
+        },
+      ],
+    );
+  });
+
   it("resumes the same hermes session for later turns and persists the returned session id", async () => {
     const harness = createHandler({
       config: { mode: "openclaw", model: "openclaw" },

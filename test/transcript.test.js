@@ -1028,6 +1028,43 @@ describe("createTranscriptProjector", () => {
     }
   });
 
+  it("collects root-level files when a non-tool-result message mentions a bare basename in backticks", () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lalaclaw-transcript-root-basename-"));
+    try {
+      const rootFile = path.join(tmpRoot, "goal.md");
+      fs.writeFileSync(rootFile, "# goals\n");
+
+      const projector = createProjector({
+        PROJECT_ROOT: tmpRoot,
+      });
+
+      const files = projector.collectFiles(
+        [
+          {
+            type: "message",
+            timestamp: 1,
+            message: {
+              role: "assistant",
+              timestamp: 1,
+              content: [{ type: "text", text: "看完了，`goal.md` 里刚补充的关键事项已经进去了。" }],
+            },
+          },
+        ],
+        [tmpRoot],
+      );
+
+      expect(files).toEqual([
+        expect.objectContaining({
+          path: "goal.md",
+          fullPath: rootFile,
+          primaryAction: "viewed",
+        }),
+      ]);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
   it("builds agent graph from local config and session index activity", () => {
     const tmpRoot = path.join(os.tmpdir(), "lalaclaw-transcript-test");
     const sessionsDir = path.join(tmpRoot, "agents", "worker", "sessions");

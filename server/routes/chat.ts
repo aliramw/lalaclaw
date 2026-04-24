@@ -720,6 +720,16 @@ export function createChatHandler({
           : []),
       ]);
 
+      if (activeMode !== 'openclaw' && reply.outputText) {
+        appendLocalSessionFileEntries(sessionUser, [
+          {
+            role: 'assistant',
+            content: reply.outputText,
+            timestamp: Math.max(Date.now(), requestTimestamp + 1),
+          },
+        ]);
+      }
+
       const snapshot = await buildDashboardSnapshot(sessionUser, {
         agentId: nextAgentId,
         ...(activeMode === 'hermes' && (reply.sessionId || hermesSessionId)

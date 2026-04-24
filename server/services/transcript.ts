@@ -1190,6 +1190,31 @@ export function createTranscriptProjector({
     return [...resolvedPaths];
   }
 
+  function collectRootLevelBasenameFilePaths(source: unknown, roots: string[]): string[] {
+    const basenames = extractMentionedBasenamesFromSource(source);
+    if (!basenames.length || !roots.length) {
+      return [];
+    }
+
+    const resolvedPaths = new Set<string>();
+    for (const root of roots) {
+      const normalizedRoot = normalizeCandidatePath(root, roots);
+      if (!normalizedRoot) {
+        continue;
+      }
+
+      for (const basename of basenames) {
+        const candidatePath = path.join(normalizedRoot, basename);
+        if (!fileExists(candidatePath) || isIgnoredWorkspacePath(candidatePath)) {
+          continue;
+        }
+        resolvedPaths.add(candidatePath);
+      }
+    }
+
+    return [...resolvedPaths];
+  }
+
   function collectMentionedInjectedPaths(source: unknown, injectedFiles: LooseRecord[] = []): string[] {
     const text = String(source || '');
     if (!text || !injectedFiles.length) {
@@ -1254,6 +1279,7 @@ export function createTranscriptProjector({
       const mentionedPaths = [
         ...extractResolvedPathsFromSource(plainText, roots),
         ...collectDirectoryContextFilePaths(plainText, roots),
+        ...(payload.role === 'toolResult' ? [] : collectRootLevelBasenameFilePaths(plainText, roots)),
         ...(payload.role === 'toolResult' ? [] : collectMentionedInjectedPaths(plainText, injectedFiles)),
       ];
 
